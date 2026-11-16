@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# concierge start|stop|restart|status|open|exec|logs|install-skills — run the dashboard in the background.
+set -euo pipefail
+APP="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+base="${XDG_STATE_HOME:-$HOME/.local/state}"; STATE="$base/concierge"; [[ -d $base/review-deck ]] && STATE="$base/review-deck" # (an install from before the rename)
+PID="$STATE/server.pid"; LOG="$STATE/server.log"
+# settings live in ~/.config/concierge/config.json, written by the onboarding in the app
+cbase="${XDG_CONFIG_HOME:-$HOME/.config}"; CDIR="$cbase/concierge"; [[ -d $cbase/review-deck ]] && CDIR="$cbase/review-deck"
+CONFIG="$CDIR/config.json"
+# secrets and server settings (CONCIERGE_HOST, CONCIERGE_PASSWORD, CRIT_HOST, LINEAR_API_KEY…), one KEY=value a line
+ENVF="$CDIR/env"
+if [[ -f $ENVF ]]; then set -a; . "$ENVF"; set +a; fi
+PORT=${CONCIERGE_PORT:-${REVIEW_DECK_PORT:-}}; [[ -n $PORT ]] || PORT=$(node -p "try { require('$CONFIG').port ?? 4747 } catch { try { require('$APP/config.json').port ?? 4747 } catch { 4747 } }")
+URL="http://127.0.0.1:$PORT"
+mkdir -p "$STATE"
+
+# macOS open, WSL wslview, Linux xdg-open; on a headless server just print the address
+browse() { if command -v open >/dev/null && [[ $(uname) == Darwin ]]; then open "$1"; elif command -v wslview >/dev/null; then wslview "$1"; elif command -v xdg-open >/dev/null; then xdg-open "$1"; else echo "$1"; fi; }
+running() { [[ -f $PID ]] && kill -0 "$(cat "$PID")" 2>/dev/null; }
+
+start() {
+  if running; then echo "already running ($URL, pid $(cat "$PID"))"; return; fi
+  # rebuild the UI when any source file is newer than the last build
+  if [[ ! -f $APP/dist/index.html ]] || [[ -n $(find "$APP/src" "$APP/index.html" -newer "$APP/dist/index.html" -print -quit) ]]; then
+    (cd "$APP" && pnpm -s build >/dev/null)
+  fi
+  # nohup + the user's PATH, so the server can find claude, gh, crit and pnpm after this shell exits
+  NODE_ENV=production nohup node "$APP/server/index.ts" >>"$LOG" 2>&1 &
+  echo $! >"$PID"
+  for _ in {1..20}; do curl -sf "$URL/api/me" >/dev/null && { echo "Concierge running at $URL"; return; }; sleep 0.25; done
+  echo "Concierge did not come up, see $LOG" >&2; tail -5 "$LOG" >&2; exit 1
+}
+
+stop() {
+  if ! running; then echo "not running"; rm -f "$PID"; return; fi
+  kill "$(cat "$PID")"
+  for _ in {1..20}; do running || break; sleep 0.25; done
+  rm -f "$PID"; echo "stopped"
+}
+
+case "${1:-status}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; start ;;
+  open) running || start; browse "$URL" ;;
+  exec) running || start; browse "$URL/exec" ;;
+  logs) tail -f "$LOG" ;;
+  install-skills)
+    dest="$HOME/.claude/skills"; mkdir -p "$dest"
+    for d in "$APP"/skills/*/; do
+      name=$(basename "$d")
+      if [[ -e $dest/$name ]]; then echo "skip $name (already in $dest)"; else cp -R "$d" "$dest/$name"; echo "installed $name"; fi
+    done ;;
+  status) running && echo "running at $URL (pid $(cat "$PID"))" || { echo "stopped"; exit 1; } ;;
+  *) echo "usage: concierge start|stop|restart|status|open|exec|logs|install-skills" >&2; exit 2 ;;
+esac

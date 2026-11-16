@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <!-- added to the home screen it opens as an app of its own, without Safari's bars -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Concierge" />
+    <title>Concierge</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b5cf6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='18' cy='18' r='3'/><circle cx='6' cy='6' r='3'/><path d='M13 6h3a2 2 0 0 1 2 2v7'/><path d='M6 9v12'/></svg>" />
+    <script>
+      // apply the saved theme before first paint so it never flashes
+      try {
+        const t = localStorage.getItem('theme') || 'system'
+        document.documentElement.classList.toggle('dark', t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches))
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <!-- drawn before any script: the logo on the app's background, replaced as soon as React renders -->
+    <div id="root"><div style="height:100dvh;display:grid;place-items:center"><span style="width:44px;height:44px;border-radius:12px;background:#7c3aed;display:grid;place-items:center;animation:boot 1.4s ease-in-out infinite"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></svg></span></div></div>
+    <style>@keyframes boot{50%{opacity:.55}} html{background:#fafafa} html.dark{background:#09090b}</style>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

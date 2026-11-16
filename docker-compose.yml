@@ -1,0 +1,95 @@
+# Concierge in Docker. Copy .env.example to .env, fill it, then: docker compose up -d
+# Dashboard: http://127.0.0.1:4747 (or CONCIERGE_PORT).
+services:
+  review-deck:
+    build: { context: ., args: { DECK_VERSION: '${DECK_VERSION:-}', DECK_FLEET: '${DECK_FLEET:-}', DECK_REPOS: '${DECK_REPOS:-}' } } # bin/update passes the commits built
+    image: concierge:local
+    container_name: concierge
+    # DECK_RESTART=no: something else starts and stops it (an extension in fleet/)
+    restart: ${DECK_RESTART:-unless-stopped}
+    # Host networking: the dashboard and every crit server (each review picks its own random port on 127.0.0.1)
+    # are reachable from your browser as-is. On Docker Desktop turn it on once:
+    # Settings → Resources → Network → "Enable host networking" (Docker Desktop 4.34+).
+    network_mode: host
+    env_file: .env
+    environment:
+      # the home and code paths inside the container: by default the same as on your machine, so ~ and absolute
+      # paths in config.json work; with two machines both set the same DECK_HOME/DECK_CODE, so state, sessions
+      # and worktree paths are identical on each and sync as they are
+      HOME: ${DECK_HOME:-${HOME}}
+      GH_TOKEN: ${GITHUB_TOKEN:-}       # the gh CLI reads GH_TOKEN; Concierge itself reads GITHUB_TOKEN
+      # the Azure sign-in in the config folder, which every machine syncs: one az login (Settings) for all of them
+      AZURE_CONFIG_DIR: ${DECK_HOME:-${HOME}}/.config/${CONCIERGE_DIRNAME:-concierge}/azure
+      # agents start their connectors with npx: use what's in the cache instead of asking the registry every time
+      npm_config_prefer_offline: "true"
+      # uv's Pythons next to your clones, so a worktree's .venv resolves inside the container and on a Linux host alike
+      UV_PYTHON_INSTALL_DIR: ${DECK_CODE:-${CODE_DIR}}/.uv-python
+      # worktrees share one installed copy of each package: pnpm's global virtual store links a worktree's node_modules into
+      # it (a new worktree installs in seconds and takes ~1 MB instead of a minute and 1.2 GB), and uv's cache sits on the
+      # clones' drive (hard links work there, not across from a volume), so a .venv is links instead of copies. Your own installs on the host are untouched.
+      pnpm_config_virtual_store_type: global
+      UV_CACHE_DIR: ${DECK_CODE:-${CODE_DIR}}/.uv-cache
+      UV_LINK_MODE: hardlink
+    volumes:
+      # your clones, at the SAME absolute path, so config.json's repo paths and agent worktrees line up
+      - ${CODE_DIR:?set CODE_DIR in .env}:${DECK_CODE:-${CODE_DIR}}
+      # its settings and state, shared with a native install (CONCIERGE_DIRNAME: the folders' name; an install from
+      # before the rename keeps review-deck, which bin/update writes into .env)
+      - ${HOME}/.config/${CONCIERGE_DIRNAME:-concierge}:${DECK_HOME:-${HOME}}/.config/${CONCIERGE_DIRNAME:-concierge}
+      - ${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}:${DECK_HOME:-${HOME}}/.local/state/${CONCIERGE_DIRNAME:-concierge}
+      # the review and revise skills' working files per PR (findings, crit.env, the diff, revise's worktrees): kept
+      # inside its state, so a redeploy, a Docker restart or a hand-over to the other machine doesn't lose a review mid-way
+      - ${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/review-pr:${DECK_HOME:-${HOME}}/.local/state/review-pr
+      - ${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/revise:${DECK_HOME:-${HOME}}/.local/state/revise
+      # your Claude Code skills, commands and settings
+      - ${HOME}/.claude:${DECK_HOME:-${HOME}}/.claude
+      # OpenAI's Codex: its sign-in and sessions, for agents run on OpenAI (Settings → Agents)
+      - ${HOME}/.codex:${DECK_HOME:-${HOME}}/.codex
+      # crit reviews: kept in a volume, not your host ~/.crit (its session files hold pids that mean
+      # nothing across the container boundary); CRIT_DIR puts them in a folder instead, so they can sync
+      - ${CRIT_DIR:-crit}:${DECK_HOME:-${HOME}}/.crit
+      # caches that survive a rebuild: without them every redeploy re-downloads the agents' connectors (npm) and
+      # tools (~/.cache), and the first runs after it are slow
+      - npm-cache:${DECK_HOME:-${HOME}}/.npm
+      - tool-cache:${DECK_HOME:-${HOME}}/.cache
+      - gh-extensions:${DECK_HOME:-${HOME}}/.local/share/gh # gh stack
+      - azure-config:${DECK_HOME:-${HOME}}/.azure # your Azure sign-in survives rebuilds
+      - atlas-config:${DECK_HOME:-${HOME}}/.config/atlascli # your Atlas sign-in survives rebuilds
+
+  # Llama's models, in a container (COMPOSE_PROFILES=ollama): it runs wherever Concierge does, so a second machine has
+  # it too. Models stay in your ~/.ollama (shared with the Ollama app, which must be closed: they use the same port).
+  # A model a Llama account needs and this machine lacks is downloaded by Concierge itself. CPU only on a Mac (Docker
+  # can't reach its GPU, so a Mac runs the Ollama app instead). On Linux/WSL bin/update starts it on the NVIDIA GPU when
+  # Docker can reach one (compose.gpu.yml; Docker in WSL needs the NVIDIA container toolkit), and on the CPU otherwise.
+  ollama:
+    container_name: concierge-ollama
+    profiles: [ollama]
+    image: ollama/ollama:0.40.13
+    restart: unless-stopped
+    network_mode: host # Concierge reaches it at 127.0.0.1:11434, as it would the app
+    environment:
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_CONTEXT_LENGTH: "32768" # agent work reads a lot; the default is far too short
+      OLLAMA_KEEP_ALIVE: 10m
+    volumes:
+      - ${HOME}/.ollama:/root/.ollama
+
+  # Llama's models in the Ollama app on Windows, for Concierge in WSL (COMPOSE_PROFILES=ollama-windows, in place of
+  # ollama): the app reaches any GPU Windows has (an Intel or AMD one too, through Vulkan), Docker in WSL only an NVIDIA
+  # one. bin/ollama-windows.ps1 keeps the app listening on the address WSL reaches Windows by (only WSL can reach it);
+  # this passes 127.0.0.1:11434 on to it, so Concierge reaches it as it would the app. That address is WSL's default
+  # route, read at every start: it can change when WSL restarts, and this restarts with it.
+  ollama-windows:
+    profiles: [ollama-windows]
+    image: alpine/socat:1.8.0.3
+    restart: unless-stopped
+    network_mode: host
+    entrypoint: ["sh", "-c", "exec socat TCP-LISTEN:11434,bind=127.0.0.1,reuseaddr,fork TCP:$$(ip route | awk '/default/ {print $$3; exit}'):11434"]
+
+volumes:
+  crit:
+  npm-cache:
+  tool-cache:
+  atlas-config:
+  azure-config:
+  gh-extensions:

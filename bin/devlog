@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Run a dev server exactly as before, and keep its recent output where Concierge's agents can read it.
+
+  devlog <name> <command…>      e.g.  devlog backend pnpm dev:backend
+
+The server runs in a terminal of its own, so it behaves as if you started it directly (colours, interactive keys,
+Ctrl-C). Its newest output also goes to ~/.local/state/concierge/devlogs/<machine>/<name>.log, timestamped and
+without colour codes, at most 2 MB, which syncs to the other machine with the rest of its state. Logs
+untouched for 3 days are removed. Your ~/.zshrc can route `pnpm dev:*` and `nx serve` through it, so you type the same.
+"""
+import fcntl
+import os
+import pty
+import re
+import signal
+import socket
+import sys
+import termios
+import time
+import tty
+
+CAP, KEEP, STALE = 2 * 1024 * 1024, 1024 * 1024, 3 * 86400  # trim at 2 MB down to the newest 1 MB; drop after 3 days
+ANSI = re.compile(rb'\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[()][A-Z0-9]|\x1b[=>]')
+
+
+def machine():
+    env = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), '.env')
+    try:
+        for line in open(env):
+            if line.startswith('DECK_NAME='):
+                return line.split('=', 1)[1].strip()
+    except OSError:
+        pass
+    return socket.gethostname().split('.')[0].lower()
+
+
+class Log:
+    """The file: whole lines, each with the time, colour codes and carriage returns out; trimmed to its newest part."""
+    def __init__(self, path):
+        self.path, self.part, self.f = path, b'', open(path, 'ab')
+
+    def write(self, data):
+        lines = (self.part + data).split(b'\n')
+        self.part = lines.pop()
+        for line in lines:
+            text = ANSI.sub(b'', line).rstrip(b'\r').split(b'\r')[-1].rstrip()  # \r\n ends a terminal line; a progress line keeps its last state
+            if text:
+                self.f.write(time.strftime('%H:%M:%S ').encode() + text + b'\n')
+        self.f.flush()
+        if self.f.tell() > CAP:
+            self.f.close()
+            with open(self.path, 'rb') as f:
+                f.seek(-KEEP, os.SEEK_END)
+                tail = f.read()
+            with open(self.path + '.tmp', 'wb') as f:
+                f.write(tail[tail.find(b'\n') + 1:])
+            os.replace(self.path + '.tmp', self.path)
+            self.f = open(self.path, 'ab')
+
+    def note(self, text):
+        self.f.write(f'--- {text}\n'.encode())
+        self.f.flush()
+
+
+def spawn(cmd, read):
+    """pty.spawn, with your window's size: on its own the server's terminal is 0x0, and nx's task view then leaves
+    every line starting where the last one ended."""
+    try:
+        size = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b'\0' * 8)
+    except OSError:
+        size = None
+    pid, fd = pty.fork()
+    if pid == 0:
+        if size:
+            fcntl.ioctl(0, termios.TIOCSWINSZ, size)
+        os.execvp(cmd[0], cmd)
+    if size:  # a resize reaches it too
+        signal.signal(signal.SIGWINCH, lambda *_: fcntl.ioctl(fd, termios.TIOCSWINSZ, fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b'\0' * 8)))
+    try:
+        mode = termios.tcgetattr(0)
+        tty.setraw(0)
+    except termios.error:
+        mode = None
+    try:
+        pty._copy(fd, read, pty._read)
+    finally:
+        if mode:
+            termios.tcsetattr(0, termios.TCSAFLUSH, mode)
+    os.close(fd)
+    return os.waitpid(pid, 0)[1]
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit(__doc__.strip())
+    name, cmd = re.sub(r'[^\w.-]', '-', sys.argv[1]), sys.argv[2:]
+    old = os.path.expanduser('~/.local/state/review-deck')  # an install from before the rename
+    root = os.path.join(old if os.path.isdir(old) else os.path.expanduser('~/.local/state/concierge'), 'devlogs')
+    os.makedirs(os.path.join(root, machine()), exist_ok=True)
+    for d, dirs, files in os.walk(root):  # the ones nobody ran for days are of no use to anyone
+        dirs[:] = [x for x in dirs if not x.startswith('.')]  # (an extension's bookkeeping, not logs)
+        for f in files:
+            if time.time() - os.path.getmtime(os.path.join(d, f)) > STALE:
+                os.remove(os.path.join(d, f))
+    log = Log(os.path.join(root, machine(), f'{name}.log'))
+    log.note(f'{time.strftime("%Y-%m-%d %H:%M:%S")} started: {" ".join(cmd)} (in {os.getcwd()})')
+
+    def read(fd):
+        data = os.read(fd, 65536)
+        try:
+            log.write(data)
+        except OSError:
+            pass  # a full disk or a moved folder never stops your server
+        return data
+
+    status = spawn(cmd, read)
+    code = os.waitstatus_to_exitcode(status) if hasattr(os, 'waitstatus_to_exitcode') else status >> 8
+    log.note(f'{time.strftime("%H:%M:%S")} stopped (exit {code})')
+    sys.exit(code)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,12 @@
+node_modules
+dist
+.scratch
+config.json
+.DS_Store
+.env
+__pycache__/
+.swapping
+.env.*
+!.env.example
+/fleet/
+.asked

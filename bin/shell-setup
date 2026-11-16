@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Put Concierge's shell helpers into your shell's startup file (~/.zshrc, else ~/.bashrc), between two marker lines:
+# running it again replaces that block, so it is safe to repeat after a pull. Works for zsh (a Mac) and bash (WSL).
+#   bin/shell-setup
+#
+# The helpers:
+#   gsreset [stack-or-pr-number]   make this clone's copy of a gh stack match GitHub, then `gs sync` works again
+#   pnpm dev:<x> / nx serve <p>    unchanged for you; their recent output is also kept for Concierge's agents (bin/devlog)
+set -euo pipefail
+here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+rc=~/.bashrc; [[ ${SHELL:-} == */zsh || -f ~/.zshrc ]] && rc=~/.zshrc
+begin='# >>> concierge shell helpers (bin/shell-setup) >>>' end='# <<< concierge shell helpers <<<'
+block=$(cat <<EOF
+$begin
+_rd_bin() { if [ -n "\${ZSH_VERSION:-}" ]; then whence -p "\$1"; else type -P "\$1"; fi; }
+_devlog=$here/bin/devlog
+# your dev servers keep their recent output for the agents; you start them as always, every other command is untouched
+pnpm() { if [[ \${1:-} == dev:* && -x \$_devlog ]]; then "\$_devlog" "\${1#dev:}" "\$(_rd_bin pnpm)" "\$@"; else command pnpm "\$@"; fi; }
+nx() { if [[ \${1:-} == serve && -n \${2:-} && -x \$_devlog ]] && _rd_bin nx >/dev/null; then "\$_devlog" "\$2" "\$(_rd_bin nx)" "\$@"; else command nx "\$@"; fi; }
+# with-secrets <name> -- <command…>: a command with secrets from 1Password (~/.config/concierge/secrets/<name>.env)
+# in its environment only. mongo-prod [ai] [mongosh options…]: the MongoDB shell on production, read-only, the same way
+alias with-secrets='$here/bin/with-secrets'
+# MCP servers that fetch their secrets from 1Password wait for Touch ID when it is locked: give them time to start
+export MCP_TIMEOUT=\${MCP_TIMEOUT:-120000}
+mongo-prod() {
+  local n=mongodb-prod; [ "\${1:-}" = ai ] && { n=mongodb-prod-ai; shift; }
+  WITH_SECRETS_INTERACTIVE=1 "$here/bin/with-secrets" "\$n" -- sh -c 'exec mongosh "\$MDB_MCP_CONNECTION_STRING" "\$@"' mongosh "\$@"
+}
+# gsreset [stack-or-pr-number]: this clone's copy of a gh stack made to match GitHub (its branches and gs's record).
+# Old tips stay in \`git reflog show <branch>\`.
+gsreset() {
+  git diff --quiet && git diff --cached --quiet || { echo "gsreset: commit or stash your edits first"; return 1; }
+  [ -n "\${1:-}" ] && { gh stack checkout "\$1" || return 1; }
+  local here json trunk pr b
+  here=\$(git branch --show-current)
+  json=\$(gh stack view --json) || { echo "gsreset: not on a stack branch (pass the stack or PR number)"; return 1; }
+  trunk=\$(printf '%s' "\$json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["trunk"])')
+  pr=\$(printf '%s' "\$json" | python3 -c 'import json,sys; print(next(b["pr"]["number"] for b in json.load(sys.stdin)["branches"] if b.get("pr")))')
+  git fetch -q origin || return 1
+  gh stack unstack --local || return 1
+  git switch -q "\$trunk" || return 1
+  for b in \$(printf '%s' "\$json" | python3 -c 'import json,sys; print("\n".join(b["name"] for b in json.load(sys.stdin)["branches"]))'); do
+    git show-ref -q --verify "refs/remotes/origin/\$b" && git branch -f "\$b" "origin/\$b"
+  done
+  gh stack checkout "\$pr" >/dev/null && git switch -q "\$here" 2>/dev/null
+  gh stack view --short
+}
+$end
+EOF
+)
+touch "$rc"
+# the old block out (from begin to end), the new one in
+python3 - "$rc" "$begin" "$end" "$block" <<'PY'
+import sys
+path, begin, end, block = sys.argv[1:]
+s = open(path).read()
+# the block from before the rename is replaced too
+for b, e in ((begin, end), ('# >>> review-deck shell helpers (bin/shell-setup) >>>', '# <<< review-deck shell helpers <<<')):
+    if b in s and e in s: begin, end = b, e
+if begin in s and end in s:
+    i, j = s.index(begin), s.index(end) + len(end)
+    s = s[:i].rstrip('\n') + '\n\n' + block + s[j:]
+else:
+    s = s.rstrip('\n') + '\n\n' + block + '\n'
+open(path, 'w').write(s)
+PY
+# pnpm's global virtual store stays off for your own installs: tools that look up a peer they don't declare (electron-vite
+# finding electron) can't resolve from inside it, and pnpm 12 takes it only per project. Concierge's agents keep it (compose).
+command -v pnpm >/dev/null && { pnpm config delete virtual-store-type --location global >/dev/null 2>&1; pnpm config delete enable-global-virtual-store --location global >/dev/null 2>&1; } || true
+echo "Concierge's shell helpers are in $rc: open a new terminal (or: source $rc)"

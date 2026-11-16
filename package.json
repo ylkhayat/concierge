@@ -1,0 +1,43 @@
+{
+  "name": "concierge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server/index.ts & vite",
+    "build": "vite build",
+    "start": "NODE_ENV=production node server/index.ts",
+    "test": "node --import ./server/test-env.ts --test --test-concurrency=1 server/*.test.ts src/*.test.ts src/design/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@hono/node-server": "^2.1.5",
+    "@tanstack/react-query": "^5.107.1",
+    "@xyflow/react": "^12.12.0",
+    "date-fns": "4.1.0",
+    "elkjs": "^0.12.0",
+    "hono": "^4.13.13",
+    "lucide-react": "^1.56.0",
+    "mermaid": "^12.2.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "10.1.0",
+    "remark-breaks": "4.0.0",
+    "remark-gfm": "4.0.1",
+    "sonner": "2.0.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "description": "Local dashboard that runs Claude Code review skills on your GitHub review requests and explains each PR visually."
+}

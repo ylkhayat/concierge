@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# Update a Docker install of Concierge: pull main, rebuild the image while it keeps running, then swap the
+# container once no agent is working: no new run starts meanwhile, and after 30 minutes it swaps anyway (a run the swap
+# stops continues its own session on the next start, store.ts). Nothing new: nothing happens.
+#   bin/update             pull, and redeploy once agents are idle if main moved
+#   bin/update --force     redeploy now, even if nothing was pulled and agents are working
+#   bin/update --if-asked  only if Settings → General → Update now asked for it (else exit at once)
+#   bin/update --upstream  a fork: merge the original repo's main first (CONCIERGE_UPSTREAM=merge in .env: every time)
+# crontab -e: twice a day, and every minute for the button
+#   0 7,19 * * * ~/code/concierge/bin/update >> ~/.local/state/concierge/update.log 2>&1
+#   * * * * * ~/code/concierge/bin/update --if-asked >> ~/.local/state/concierge/update.log 2>&1
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")/.."
+force=0 asked=0 upstream=0
+grep -q '^CONCIERGE_UPSTREAM=merge' .env 2>/dev/null && upstream=1
+for a in "$@"; do case $a in --force) force=1 ;; --if-asked) asked=1 ;; --upstream) upstream=1 ;; --when-idle) ;; *) echo "bin/update: unknown option $a" >&2; exit 2 ;; esac; done
+# --when-idle: the default now, kept for old cron lines
+# a swap stops every agent mid-run (their background tests and evals die with it): it waits for a quiet moment unless
+# forced, or unless Update now was pressed as "restart now anyway" (the ask file then holds "now <epoch>"; the file
+# stays, so only an ask from the last 10 minutes counts)
+state="$HOME/.local/state/concierge"
+# an install from before the rename keeps its folders: the container mounts them by this name (docker-compose.yml)
+if [[ -d $HOME/.local/state/review-deck ]]; then
+  state="$HOME/.local/state/review-deck"
+  grep -q '^CONCIERGE_DIRNAME=' .env 2>/dev/null || printf '\nCONCIERGE_DIRNAME=review-deck\n' >> .env
+fi
+# the container leaves this file when you press the button: it can't rebuild itself. The state folder syncs between
+# machines, so each one notes which ask it handled instead of deleting it (a delete let one machine eat the other's ask)
+name=$(grep '^DECK_NAME=' .env 2>/dev/null | cut -d= -f2-)
+# its own log per machine: the state folder syncs between machines, and one shared log mixed their updates, so each
+# one's Settings read the other's progress. Every line in UTC. (Cron's or the standby's own redirect still gets a copy.)
+# (one machine: cron already writes update.log, so only a run by hand in a terminal adds its copy)
+if [[ -n $name || -t 1 ]]; then exec > >(tee -a "$state/update${name:+.$name}.log") 2>&1; fi
+handled="$state/update-handled${name:+.$name}"
+ask=$(cat "$state/update-asked" 2>/dev/null || true)
+if [[ $asked == 1 ]]; then [[ -n $ask && $ask != "$(cat "$handled" 2>/dev/null)" ]] || exit 0; fi
+# one update at a time (a --when-idle run may still be waiting for a quiet moment)
+# mkdir is atomic everywhere (macOS has no flock); a lock whose update died (killed, rebooted) doesn't count
+lock="$state/update.lock.d"
+if ! mkdir "$lock" 2>/dev/null; then
+  kill -0 "$(cat "$lock/pid" 2>/dev/null)" 2>/dev/null && { echo "$(date -u): an update is already running"; exit 0; }
+  rm -rf "$lock"; mkdir "$lock" 2>/dev/null || { echo "$(date -u): an update is already running"; exit 0; }
+fi
+echo $$ > "$lock/pid"; trap 'rm -rf "$lock"' EXIT
+[[ -n $ask ]] && printf %s "$ask" > "$handled"
+# Settings → Updates → Merge upstream leaves "upstream <time>": this run merges the original repo too
+[[ $asked == 1 && $ask == upstream\ * ]] && upstream=1
+# the commit the container runs: a build that never got swapped in is retried next time
+# per machine: the state folder syncs between two, and one's record must not tell the other it is up to date
+deployed="$state/deployed${name:+.$name}"
+# a dead connection gives up within a minute instead of holding every later update behind its lock
+GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3" \
+  git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 pull -q --ff-only || {
+  # main's history was rewritten (the same files under new commit ids, e.g. authors changed): when this checkout's
+  # files are exactly one of origin's commits and nothing here is uncommitted, take origin's main as it is now
+  branch=$(git rev-parse --abbrev-ref HEAD) here=$(git rev-parse 'HEAD^{tree}')
+  if git diff --quiet && git diff --cached --quiet && git log --format=%T "origin/$branch" | grep -qx "$here"; then
+    echo "$(date -u): $branch was rewritten on origin (same files, new commits): taking it"
+    git reset -q --hard "origin/$branch"
+  else
+    echo "$(date -u): pull failed (local changes or a diverged branch?)"; exit 1
+  fi
+}
+# a fork (an `upstream` remote: the original repo): its new commits are only reported, since your fork has changes of its
+# own. Asked to (--upstream, or CONCIERGE_UPSTREAM=merge), they are merged and the merge goes to your fork, so it and
+# the update check agree. A conflict changes nothing: it is left for you to merge by hand.
+# A fork without that remote gets it (it only reads). Where the fork stands is left for Settings → Updates: the count,
+# and the newest commits it lacks.
+origin_url=$(git remote get-url origin 2>/dev/null || true)
+if [[ -n $origin_url && $origin_url != *ylkhayat/concierge* ]] && ! git remote get-url upstream >/dev/null 2>&1; then
+  git remote add upstream https://github.com/ylkhayat/concierge.git && echo "$(date -u): a fork: added the upstream remote (the original repo)"
+fi
+upfile="$state/upstream${name:+.$name}"
+if git remote get-url upstream >/dev/null 2>&1 && git fetch -q upstream main; then
+  { echo "$(git rev-list --count HEAD..upstream/main) $(date -u +%Y-%m-%dT%H:%M:%SZ) $(git remote get-url upstream)"
+    git log --format='%h %s' -20 HEAD..upstream/main; } > "$upfile.tmp" && mv "$upfile.tmp" "$upfile"
+  if ! git merge-base --is-ancestor upstream/main HEAD; then
+    if [[ $upstream == 0 ]]; then
+      echo "$(date -u): upstream has $(git rev-list --count HEAD..upstream/main) new commit(s): bin/update --upstream merges them"
+    elif git merge -q --no-edit upstream/main; then
+      echo "$(date -u): merged upstream $(git rev-parse --short upstream/main)"
+      git push -q origin HEAD || echo "$(date -u): merged, but could not push to your fork"
+      { echo "0 $(date -u +%Y-%m-%dT%H:%M:%SZ) $(git remote get-url upstream)"; } > "$upfile"
+    else
+      git merge --abort; echo "$(date -u): upstream conflicts with your changes: run git merge upstream/main and resolve them"
+    fi
+  fi
+fi
+# an extension cloned into fleet/ (several machines) updates with the app, and goes into the same build
+# (its history cut or rewritten: the same files under new commits are taken, as for main above)
+[[ -d fleet/.git ]] && { git -C fleet pull -q --ff-only || {
+  fb=$(git -C fleet rev-parse --abbrev-ref HEAD)
+  if git -C fleet diff --quiet && git -C fleet log --format=%T "origin/$fb" | grep -qx "$(git -C fleet rev-parse 'HEAD^{tree}')"; then
+    git -C fleet reset -q --hard "origin/$fb" && echo "$(date -u): fleet/ was rewritten on origin: taking it"
+  else echo "$(date -u): fleet/ pull failed; building with what it has"; fi
+}; }
+# the file sync (Syncthing) is gone: the app keeps the machines in step itself (server/replica.ts). A machine that ran
+# it stops and removes it once, and its compose profile goes, so nothing starts it again at boot. Its files stay where
+# they are (~/.local/share/review-deck-sync: delete it to free the space)
+# found by its compose service, not its name: one from before the rename is still review-deck-sync-1
+sync=$(docker ps -aq --filter label=com.docker.compose.service=sync --filter "label=com.docker.compose.project.working_dir=$PWD" 2>/dev/null)
+if [[ -n $sync ]]; then
+  docker rm -f $sync >/dev/null 2>&1 && echo "$(date -u): stopped the file sync (Syncthing): the machines keep in step over their own link now"
+fi
+# with its own Tailscale (LINK=host), the app asks that one who a machine asking to join is (join.ts): its socket goes in
+if grep -q '^LINK=host' .env 2>/dev/null && [[ -S /var/run/tailscale/tailscaled.sock ]] && ! grep -q '^TAILSCALE_SOCK_DIR=' .env; then
+  printf '\nTAILSCALE_SOCK_DIR=/var/run/tailscale\n' >> .env
+fi
+if grep -qE '^COMPOSE_PROFILES=(.*,)?sync(,|$)' .env 2>/dev/null; then
+  awk -F= '/^COMPOSE_PROFILES=/ { n = split($2, p, ","); o = ""; for (i = 1; i <= n; i++) if (p[i] != "sync") o = o (o ? "," : "") p[i]; print "COMPOSE_PROFILES=" o; next } { print }' .env > .env.tmp && mv .env.tmp .env
+fi
+# the commit deployed: the app's, and the extension's when there is one
+rev() { git rev-parse HEAD; [[ -d fleet/.git ]] && git -C fleet rev-parse HEAD; true; }
+if [[ $(rev) == "$(cat "$deployed" 2>/dev/null)" && $force == 0 ]]; then echo "$(date -u): up to date ($(git rev-parse --short HEAD))"; exit 0; fi
+echo "$(date -u): building $(git log -1 --format='%h %s')"
+# what the image runs, for Settings → Machines to compare with the latest on GitHub: the commits, and their repos
+repo_of() { git -C "$1" remote get-url origin 2>/dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##'; }
+DECK_VERSION="$(git rev-list --count HEAD)-$(git rev-parse --short HEAD)" \
+DECK_FLEET="$([[ -d fleet/.git ]] && git -C fleet rev-parse --short HEAD)" \
+DECK_REPOS="$(repo_of .) $([[ -d fleet/.git ]] && repo_of fleet)" \
+  docker compose build --quiet
+
+swap() {
+  # once: reviews and revises in progress kept their files inside the container until the skills got folders of
+  # their own (a stopped container still has them)
+  mkdir -p "$state/review-pr" "$state/revise" # made here, not by Docker (which would make them root's on Linux)
+  for d in review-pr revise; do
+    if [[ -z $(ls -A "$state/$d" 2>/dev/null) ]] && c=$(docker compose ps -aq review-deck) && [[ -n $c ]]; then
+      home=$(grep '^DECK_HOME=' .env 2>/dev/null | cut -d= -f2-)
+      docker cp "$c:${home:-$HOME}/.local/state/$d/." "$state/$d/" >/dev/null 2>&1 || true
+    fi
+  done
+  # something else decides where it runs (DECK_RESTART=no, an extension in fleet/): where it isn't running, only the
+  # build is new, and it starts with it when it is started here
+  if grep -q '^DECK_RESTART=no' .env 2>/dev/null && [[ -z $(docker compose ps --status running -q review-deck) ]]; then
+    rev > "$deployed"
+    echo "$(date -u): built $(git rev-parse --short HEAD); not running here, it starts with it when it is started here"; return
+  fi
+  # recreating stops it for a few seconds: whatever starts it (fleet/) leaves it alone while this file is fresh
+  touch .swapping
+  docker compose up -d --quiet-pull review-deck || { rm -f .swapping; return 1; }
+  # Llama's Ollama (profile ollama), when it runs here: a changed image or setting reaches it too. On the NVIDIA GPU when
+  # Docker can reach one (its runtime or CDI devices), else on the CPU, so a missing GPU never takes Llama down
+  # (profile ollama-windows: the Ollama app on Windows runs the models, bin/ollama-windows.ps1; only the passage to it
+  # lives here)
+  if grep -qE '^COMPOSE_PROFILES=(.*,)?ollama-windows(,|$)' .env 2>/dev/null; then
+    docker compose up -d --quiet-pull ollama-windows && echo "$(date -u): ollama in the Windows app"
+  elif grep -qE '^COMPOSE_PROFILES=(.*,)?ollama(,|$)' .env 2>/dev/null; then
+    files=$(grep '^COMPOSE_FILE=' .env 2>/dev/null | cut -d= -f2-); files=${files:-docker-compose.yml}
+    if docker info 2>/dev/null | grep -qi 'nvidia'; then
+      COMPOSE_FILE="$files:compose.gpu.yml" docker compose up -d --quiet-pull ollama && echo "$(date -u): ollama on the GPU" \
+        || { echo "$(date -u): ollama couldn't start on the GPU; on the CPU instead"; docker compose up -d --quiet-pull ollama; }
+    else
+      docker compose up -d --quiet-pull ollama && echo "$(date -u): ollama on the CPU (Docker reaches no NVIDIA GPU)"
+    fi
+  fi
+  rm -f .swapping
+  rev > "$deployed"
+  echo "$(date -u): running $(git rev-parse --short HEAD)"
+}
+now_asked() { local a; a=$(cat "$state/update-asked" 2>/dev/null) || return 1; [[ $a =~ ^now\ ([0-9]+) ]] && (( $(date +%s) - BASH_REMATCH[1] < 600 )); }
+[[ $force == 1 ]] || now_asked && { swap; exit 0; }
+
+# asked inside the container: no answer (busy or restarting) counts as busy, never as idle
+idle() {
+  docker compose exec -T review-deck node -e '
+    const e = process.env, pw = e.CONCIERGE_PASSWORD ?? e.REVIEW_DECK_PASSWORD, h = pw ? { authorization: "Basic " + btoa((e.CONCIERGE_USER ?? e.REVIEW_DECK_USER ?? "deck") + ":" + pw) } : {}
+    fetch(`http://127.0.0.1:${e.CONCIERGE_PORT ?? e.REVIEW_DECK_PORT ?? 4747}/api/load`, { headers: h, signal: AbortSignal.timeout(15000) })
+      .then((r) => r.json()).then((d) => process.exit(d.runs.length ? 1 : 0), () => process.exit(1))' 2>/dev/null &&
+  [[ $(docker compose exec -T review-deck sh -c 'ps -eo stat,comm | awk "\$2==\"git\" && \$1 !~ /Z/" | wc -l' 2>/dev/null | tr -d ' ') == 0 ]]
+}
+# Draining: while this file is there, Concierge starts no new run here (queued ones wait for the new version), so the
+# running ones can finish and the swap comes soon. If they haven't within 30 minutes, it swaps anyway: those runs
+# continue where they left off on the new version (what they ran in the background is lost)
+draining="$state/draining${name:+.$name}"
+date +%s > "$draining"; trap 'rm -rf "$lock" "$draining"' EXIT
+echo "$(date -u): built; no new runs start here until it restarts (at most 30 minutes)"
+for _ in $(seq 1 180); do
+  if now_asked || ! docker compose ps -q review-deck | grep -q . || { idle && sleep 2 && idle; }; then swap; exit 0; fi
+  sleep 10
+done
+echo "$(date -u): agents still working after 30 minutes: restarting anyway, they continue where they left off"
+swap
+echo "$(date -u): built, but agents kept running for 2 hours; it tries again shortly"; exit 1

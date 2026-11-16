@@ -1,0 +1,4 @@
+# Llama's Ollama on the NVIDIA GPU: bin/update adds this when Docker can reach one, so a machine without stays on CPU
+services:
+  ollama:
+    gpus: all

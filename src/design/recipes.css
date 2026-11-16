@@ -1,0 +1,56 @@
+/* The few shapes the app repeats, each defined once from the tokens (tokens.css). Change one here and every button,
+   card or label follows. In markup: className="btn-primary", "btn-primary btn-sm", "card", "label text-fg-4". */
+
+/* a small-caps heading over a group: "MODE", "NOT EXPLORED YET" (its colour is the caller's) */
+@utility label { font-size: var(--text-micro); font-weight: 600; text-transform: uppercase; letter-spacing: var(--tracking-label); }
+
+/* a raised surface: a card in a list, a box of settings */
+@utility card { border-radius: var(--radius-card); background: var(--surface-1); box-shadow: var(--e1); }
+
+/* buttons: the one thing to do (primary), and the rest (quiet). Sizes: btn-sm, the default, btn-lg */
+@utility btn-primary {
+  border-radius: var(--radius-ctl); padding: 0.375rem 0.75rem; font-size: var(--text-small); font-weight: 600;
+  background: var(--accent); color: var(--on-accent); transition: background-color 150ms, scale 150ms, opacity 150ms;
+  &:hover:not(:disabled) { background: var(--accent-hover); }
+  &:active:not(:disabled) { scale: 0.98; }
+  &:disabled { opacity: 0.4; }
+}
+@utility btn-quiet {
+  border-radius: var(--radius-ctl); padding: 0.375rem 0.75rem; font-size: var(--text-small); font-weight: 500;
+  background: var(--fill); color: var(--fg-2); transition: background-color 150ms, color 150ms, scale 150ms, opacity 150ms;
+  &:hover:not(:disabled) { background: var(--fill-strong); color: var(--fg-1); }
+  &:active:not(:disabled) { scale: 0.98; }
+  &:disabled { opacity: 0.4; }
+}
+@utility btn-sm { padding: 0.25rem 0.625rem; }
+@utility btn-lg { padding: 0.5rem 1rem; font-size: var(--text-body); }
+
+/* a turn of the chat that belongs to Intent or Understanding: a plain message with a thin rail of its lane's colour
+   (--lane) and its name over it; it fades in as it arrives */
+@utility lane {
+  padding: 0.125rem 0 0.125rem 0.75rem; box-shadow: inset 2px 0 0 color-mix(in oklch, var(--lane) 70%, transparent);
+  animation: detail-in 320ms var(--ease-out);
+}
+@utility lane-intent { --lane: var(--vital-intent); }
+@utility lane-understanding { --lane: var(--vital-understanding); }
+
+/* a vital: a quiet card in the surface's own colour, its edge a hairline, with a faint tint of its colour (--lane)
+   drifting across it: slowly at rest, faster while something works on it (vital-busy). One not assessed yet is dimmer
+   (vital-idle) until pointed at; the open one (vital-open) has its edge in its colour. It never changes size. */
+@utility vital {
+  position: relative; overflow: hidden; outline: none;
+  border-radius: var(--radius-ctl); padding: 0.5rem 0.625rem 0.5rem;
+  background: linear-gradient(105deg, color-mix(in oklch, var(--lane) 9%, transparent), transparent 40%, color-mix(in oklch, var(--lane) 5%, transparent) 70%, transparent) var(--surface-1);
+  background-size: 260% 100%;
+  box-shadow: 0 0 0 1px var(--line);
+  animation: vital-drift 14s var(--ease-inout) infinite alternate;
+  transition: box-shadow 200ms var(--ease-out), opacity 250ms var(--ease-out), filter 250ms var(--ease-out);
+  &:hover, &:focus-visible { box-shadow: 0 0 0 1px color-mix(in oklch, var(--lane) 40%, var(--line)); }
+}
+@utility vital-busy { animation-duration: 3s; }
+@utility vital-open { box-shadow: 0 0 0 1px var(--lane) !important; }
+@utility vital-idle {
+  opacity: 0.7; filter: saturate(0.4);
+  &:hover, &:focus-within, &:focus-visible { opacity: 1; filter: none; }
+}
+@keyframes vital-drift { from { background-position: 0% 0; } to { background-position: 100% 0; } }

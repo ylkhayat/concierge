@@ -1,0 +1,1240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concierge</title>
+<meta name="description" content="A workspace on your own machine for building with AI agents: developers review PRs and ship Linear tickets, product managers break briefs down into Linear projects. You decide.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b5cf6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='18' cy='18' r='3'/><circle cx='6' cy='6' r='3'/><path d='M13 6h3a2 2 0 0 1 2 2v7'/><path d='M6 9v12'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* the app's own tokens (src/index.css): tinted neutrals, one accent hue per workspace, one meaning per status colour */
+:root {
+  --n-h: 265; --n-c: 0.006; --h: 293;
+  --bg: oklch(0.975 0.008 var(--n-h)); --s1: oklch(1 0 0); --s2: oklch(0.985 0.004 var(--n-h));
+  --line: oklch(0.2 var(--n-c) var(--n-h) / 0.08); --line-2: oklch(0.2 var(--n-c) var(--n-h) / 0.14);
+  --fg1: oklch(0.22 0.01 var(--n-h)); --fg2: oklch(0.42 0.01 var(--n-h)); --fg3: oklch(0.56 0.01 var(--n-h)); --fg4: oklch(0.70 0.008 var(--n-h));
+  --accent: oklch(0.58 0.2 var(--h)); --accent-text: oklch(0.48 0.18 var(--h)); --accent-soft: oklch(0.58 0.2 var(--h) / 0.1); --on-accent: oklch(0.99 0 0);
+  --run: oklch(0.66 0.15 250); --wait: oklch(0.76 0.15 75); --ok: oklch(0.70 0.15 155); --fail: oklch(0.64 0.20 25);
+  --e1: 0 0 0 1px var(--line), 0 1px 2px oklch(0.3 0.04 var(--n-h) / 0.08), inset 0 1px 0 oklch(1 0 0 / 0.9);
+  --e3: 0 0 0 1px var(--line-2), 0 24px 64px -16px oklch(0 0 0 / 0.28);
+  --glow: oklch(0.58 0.2 var(--h) / 0.16);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --n-c: 0.014;
+    --bg: oklch(0.135 0.016 var(--n-h)); --s1: oklch(0.185 0.016 var(--n-h)); --s2: oklch(0.165 0.016 var(--n-h));
+    --line: oklch(0.9 0.02 var(--n-h) / 0.075); --line-2: oklch(0.9 0.02 var(--n-h) / 0.13);
+    --fg1: oklch(0.96 0.004 var(--n-h)); --fg2: oklch(0.78 0.008 var(--n-h)); --fg3: oklch(0.62 0.01 var(--n-h)); --fg4: oklch(0.46 0.01 var(--n-h));
+    --accent: oklch(0.70 0.17 var(--h)); --accent-text: oklch(0.80 0.13 var(--h)); --accent-soft: oklch(0.70 0.17 var(--h) / 0.14); --on-accent: oklch(0.16 0.02 var(--h));
+    --e1: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.07);
+    --e3: 0 0 0 1px var(--line-2), 0 24px 64px -16px oklch(0 0 0 / 0.6), inset 0 1px 0 oklch(1 0 0 / 0.07);
+    --glow: oklch(0.7 0.17 var(--h) / 0.26);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --n-c: 0.014;
+  --bg: oklch(0.135 0.016 var(--n-h)); --s1: oklch(0.185 0.016 var(--n-h)); --s2: oklch(0.165 0.016 var(--n-h));
+  --line: oklch(0.9 0.02 var(--n-h) / 0.075); --line-2: oklch(0.9 0.02 var(--n-h) / 0.13);
+  --fg1: oklch(0.96 0.004 var(--n-h)); --fg2: oklch(0.78 0.008 var(--n-h)); --fg3: oklch(0.62 0.01 var(--n-h)); --fg4: oklch(0.46 0.01 var(--n-h));
+  --accent: oklch(0.70 0.17 var(--h)); --accent-text: oklch(0.80 0.13 var(--h)); --accent-soft: oklch(0.70 0.17 var(--h) / 0.14); --on-accent: oklch(0.16 0.02 var(--h));
+  --e1: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.3), inset 0 1px 0 oklch(1 0 0 / 0.07);
+  --e3: 0 0 0 1px var(--line-2), 0 24px 64px -16px oklch(0 0 0 / 0.6), inset 0 1px 0 oklch(1 0 0 / 0.07);
+  --glow: oklch(0.7 0.17 var(--h) / 0.26);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; }
+html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--fg1); font: 15px/1.6 var(--sans); overflow-x: hidden; }
+a { color: inherit; text-decoration: none; }
+code, pre { font-family: var(--mono); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 640px) { .wrap { padding: 0 16px; } }
+
+
+/* nav */
+nav { position: sticky; top: 0; z-index: 20; backdrop-filter: saturate(1.6) blur(14px); background: color-mix(in oklch, var(--bg) 72%, transparent); border-bottom: 1px solid transparent; transition: border-color .3s; }
+nav.scrolled { border-color: var(--line); }
+nav .wrap { display: flex; align-items: center; height: 60px; gap: 24px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
+.logo { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); box-shadow: 0 4px 14px -4px var(--glow); }
+.logo svg { width: 16px; height: 16px; }
+nav .links { margin-left: auto; display: flex; gap: 22px; font-size: 13px; color: var(--fg3); align-items: center; }
+nav .links a:hover { color: var(--fg1); }
+@media (max-width: 640px) { nav .links a.hide-sm { display: none; } }
+
+.btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 500; transition: transform .2s var(--ease), background .2s, box-shadow .2s; }
+.btn:active { transform: scale(.97); }
+.btn-primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 6px 20px -6px var(--glow), inset 0 1px 0 oklch(1 0 0 / 0.18); }
+.btn-primary:hover { transform: translateY(-1px); }
+.btn-quiet { background: var(--s1); box-shadow: var(--e1); color: var(--fg1); }
+.btn-quiet:hover { background: var(--s2); }
+.btn svg { width: 15px; height: 15px; }
+
+/* hero */
+.hero { position: relative; padding: 96px 0 40px; text-align: center; }
+.aurora { position: absolute; inset: -120px 0 auto; height: 720px; pointer-events: none; z-index: -1;
+  background: radial-gradient(40% 50% at 30% 30%, oklch(0.7 0.18 293 / .22), transparent 70%), radial-gradient(35% 45% at 70% 25%, oklch(0.75 0.15 235 / .18), transparent 70%), radial-gradient(30% 40% at 55% 60%, oklch(0.8 0.15 55 / .12), transparent 70%);
+  filter: blur(20px); animation: drift 18s ease-in-out infinite alternate; }
+@keyframes drift { to { transform: translate3d(0, 24px, 0) scale(1.05); } }
+.eyebrow { display: inline-flex; max-width: 100%; text-align: left; align-items: center; gap: 8px; padding: 4px 12px 4px 6px; border-radius: 999px; background: var(--s1); box-shadow: var(--e1); font-size: 12.5px; color: var(--fg2); }
+.eyebrow b { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+h1 { font-size: clamp(38px, 6.4vw, 68px); line-height: 1.04; letter-spacing: -0.035em; font-weight: 700; margin: 22px auto 0; max-width: 17ch; }
+h1 em { font-style: normal; background: linear-gradient(100deg, oklch(0.6 0.2 293), oklch(0.62 0.16 235) 55%, oklch(0.72 0.16 55)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--fg2); max-width: 58ch; margin: 20px auto 0; }
+.cta { display: flex; gap: 10px; justify-content: center; margin-top: 30px; flex-wrap: wrap; }
+
+/* terminal */
+.term { max-width: 640px; margin: 36px auto 0; text-align: left; border-radius: 14px; background: var(--s1); box-shadow: var(--e3); overflow: hidden; }
+.term-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 11.5px; color: var(--fg4); }
+.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-2); }
+.term-bar span { margin-left: 8px; }
+.term-bar button { margin-left: auto; font: inherit; color: var(--fg3); background: none; border: 0; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; padding: 3px 8px; border-radius: 6px; }
+.term-bar button:hover { background: var(--accent-soft); color: var(--accent-text); }
+.term pre { padding: 16px 18px; font-size: 13px; line-height: 1.8; overflow-x: auto; color: var(--fg1); }
+.term .p { color: var(--accent-text); user-select: none; }
+.term .c { color: var(--fg4); }
+
+/* app mock */
+.stage { position: relative; margin: 72px auto 0; max-width: 1040px; perspective: 1800px; }
+.app { border-radius: 16px; background: var(--bg); box-shadow: var(--e3), 0 40px 120px -40px var(--glow); overflow: hidden; display: grid; grid-template-columns: 56px 280px 1fr; height: 520px; transform: rotateX(8deg) scale(.98); transform-origin: 50% 0; transition: transform 1.2s var(--ease); font-size: 12.5px; text-align: left; }
+.app.in { transform: none; }
+@media (max-width: 860px) { .app { grid-template-columns: 48px 1fr; height: auto; } .app .list { display: none; } .detail { padding: 16px; gap: 12px; } }
+@media (max-width: 480px) { .app { grid-template-columns: 1fr; } .app .rail { display: none; } .stage { margin-top: 40px; } }
+/* the three vitals of a PR or ticket: quiet cards that name themselves, a line of what is going on, a hairline of
+   progress, a faint tint of their colour drifting across (the app's own, src/design/recipes.css) */
+.vitals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.vt { --l: oklch(0.62 0.2 276); border-radius: 10px; padding: 8px 10px; min-width: 0;
+  background: linear-gradient(105deg, color-mix(in oklch, var(--l) 11%, transparent), transparent 42%, color-mix(in oklch, var(--l) 6%, transparent) 72%, transparent) var(--s1);
+  background-size: 260% 100%; box-shadow: 0 0 0 1px var(--line); animation: vt-drift 14s ease-in-out infinite alternate; }
+.vt.i { --l: oklch(0.7 0.17 70); } .vt.u { --l: oklch(0.62 0.17 230); }
+.vt.busy { animation-duration: 3s; } .vt.idle { opacity: .6; filter: saturate(.4); }
+.vt .n { display: flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--fg3); white-space: nowrap; overflow: hidden; }
+.vt .n::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--l); flex: none; }
+.vt.busy .n::before { animation: blink 1.2s ease-in-out infinite; }
+.vt .s { margin-top: 3px; font-size: 12px; font-weight: 500; color: var(--fg1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vt .m { display: flex; gap: 2px; margin-top: 7px; } .vt .m i { height: 3px; flex: 1; border-radius: 2px; background: color-mix(in oklch, var(--fg1) 8%, transparent); transition: background .5s; } .vt .m i.on { background: var(--l); }
+@keyframes vt-drift { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+.chat { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; color: var(--fg2); }
+.chat .lane { padding-left: 10px; box-shadow: inset 2px 0 0 var(--l); } .chat .lane b { display: block; font-size: 10px; font-weight: 600; color: var(--l); }
+.chat .lane.i { --l: oklch(0.66 0.17 70); } .chat .lane.u { --l: oklch(0.6 0.17 230); }
+.ask { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.ask .q { font-weight: 600; font-size: 12.5px; color: var(--fg1); }
+.ask .opts { display: flex; flex-wrap: wrap; gap: 6px; } .ask .opts span { padding: 3px 9px; border-radius: 8px; font-size: 11.5px; background: color-mix(in oklch, var(--fg1) 6%, transparent); color: var(--fg2); }
+.ask .opts span.on { background: var(--accent); color: var(--on-accent); font-weight: 500; }
+.ask .sugg { display: flex; flex-wrap: wrap; gap: 6px; } .ask .sugg span { padding: 3px 9px; border-radius: 999px; font-size: 11.5px; color: var(--fg1); background: color-mix(in oklch, var(--l) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--l) 35%, transparent); }
+.ask .sugg span.i { --l: oklch(0.7 0.17 70); } .ask .sugg span.u { --l: oklch(0.62 0.17 230); }
+.ask .send { align-self: flex-end; } 
+@media (prefers-reduced-motion: reduce) { .vt, .vt .n::before { animation: none; } }
+/* planning: a small roadmap where one ticket is dragged earlier, the scenario bar answers, readiness tiles below */
+.strat { margin-top: 40px; border-radius: 20px; background: var(--s1); box-shadow: var(--e3); padding: 18px 20px; overflow: hidden; }
+.strat .bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12.5px; padding: 8px 12px; border-radius: 10px; background: color-mix(in oklch, var(--accent) 9%, transparent); color: var(--fg2); }
+.strat .bar b { color: var(--accent-text); } .strat .bar .good { color: var(--ok); font-weight: 600; }
+.strat .bar .apply { margin-left: auto; padding: 3px 10px; border-radius: 8px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.strat .bar { opacity: 0; animation: strat-bar 7s ease-in-out infinite; }
+.strat .plays { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; font-size: 11.5px; }
+.strat .plays span { padding: 3px 10px; border-radius: 999px; background: color-mix(in oklch, var(--fg1) 6%, transparent); color: var(--fg2); }
+.strat .plays span.on { background: color-mix(in oklch, var(--accent) 14%, transparent); color: var(--accent-text); }
+.lane2 { position: relative; height: 34px; margin-top: 10px; border-radius: 999px; background: color-mix(in oklch, oklch(0.72 0.12 var(--h)) 18%, transparent); }
+.lane2 b { position: absolute; top: 7px; height: 20px; border-radius: 999px; background: oklch(0.72 0.12 var(--h) / .7); }
+.lane2 b.crit { box-shadow: 0 3px 0 -1px var(--accent); }
+.lane2 b.mv { animation: strat-move 7s ease-in-out infinite; }
+.lane2 i { position: absolute; top: 7px; height: 20px; border-radius: 999px; border: 1px dashed var(--fg3); opacity: 0; animation: strat-was 7s ease-in-out infinite; }
+.lane2 em { position: absolute; left: 12px; top: -17px; font-style: normal; font-size: 11px; font-weight: 600; color: var(--fg2); }
+.strat .later { margin-top: 14px; border: 1px dashed var(--line-2); border-radius: 12px; padding: 7px 12px; font-size: 11px; color: var(--fg3); }
+@keyframes strat-move { 0%, 25% { left: 66%; } 45%, 100% { left: 24%; } }
+@keyframes strat-was { 0%, 30% { opacity: 0; } 45%, 95% { opacity: .7; } 100% { opacity: 0; } }
+@keyframes strat-bar { 0%, 40% { opacity: 0; transform: translateY(-4px); } 50%, 95% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.ready { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+@media (max-width: 640px) { .ready { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .lane2 b.mv, .lane2 i, .strat .bar { animation: none; opacity: 1; } .lane2 b.mv { left: 24%; } }
+/* the vitals section: three big cards cycling through what they would say */
+.vbig { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 40px; }
+.vbig .vt { padding: 16px 18px; border-radius: 16px; box-shadow: var(--e3); }
+.vbig .vt .n { font-size: 11px; } .vbig .vt .s { font-size: 16px; margin-top: 8px; white-space: normal; min-height: 2.6em; }
+.vbig .vt .w { margin-top: 6px; font-size: 13px; color: var(--fg3); min-height: 3.2em; } .vbig .vt .m { margin-top: 14px; } .vbig .vt .m i { height: 4px; }
+.vbig .s, .vbig .w { transition: opacity .35s; }
+@media (max-width: 760px) { .vbig { grid-template-columns: 1fr; } .vbig .vt .s, .vbig .vt .w { min-height: 0; } }
+.rail { border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0; background: color-mix(in oklch, var(--s2) 70%, transparent); }
+.rail i { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: var(--fg3); }
+.rail i.on { background: var(--s1); color: var(--accent-text); box-shadow: var(--e1); }
+.rail i svg { width: 16px; height: 16px; }
+.rail .gauge { margin-top: auto; width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(var(--run) 0 62%, var(--line-2) 0); display: grid; place-items: center; }
+.rail .gauge::after { content: ""; width: 20px; height: 20px; border-radius: 50%; background: var(--bg); }
+.list { border-right: 1px solid var(--line); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.list h4 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg4); font-weight: 600; padding: 6px 8px; }
+.row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 10px; border-radius: 10px; }
+.row.on { background: var(--s1); box-shadow: var(--e1); }
+.row .dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex: none; }
+.row .t { font-weight: 500; color: var(--fg1); line-height: 1.35; }
+.row .m { font-size: 11.5px; color: var(--fg3); margin-top: 2px; }
+.detail { padding: 22px 26px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+.detail .crumb { font-size: 11.5px; color: var(--fg3); font-family: var(--mono); }
+.detail h3 { font-size: 18px; letter-spacing: -0.014em; font-weight: 600; }
+.tabs { display: inline-flex; background: color-mix(in oklch, var(--fg1) 6%, transparent); padding: 3px; border-radius: 11px; gap: 2px; align-self: flex-start; }
+.tabs span { padding: 4px 12px; border-radius: 8px; color: var(--fg3); font-weight: 500; }
+.tabs span.on { background: var(--s1); color: var(--fg1); box-shadow: var(--e1); }
+.card { background: var(--s1); border-radius: 12px; box-shadow: var(--e1); padding: 14px 16px; }
+.next { display: flex; gap: 12px; align-items: center; }
+.next .ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); flex: none; }
+.next .ico svg { width: 15px; height: 15px; }
+.next .grow { flex: 1; }
+.next .t { font-weight: 600; }
+.next .m { color: var(--fg3); font-size: 11.5px; }
+.chip { padding: 5px 11px; border-radius: 8px; font-weight: 500; font-size: 12px; white-space: nowrap; }
+.chip.go { background: var(--accent); color: var(--on-accent); }
+.chip.q { box-shadow: var(--e1); background: var(--s1); }
+.feed { display: flex; flex-direction: column; gap: 9px; }
+.feed div { display: flex; gap: 10px; align-items: center; color: var(--fg2); }
+.feed div b { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; flex: none; background: color-mix(in oklch, var(--fg1) 6%, transparent); color: var(--fg3); font-weight: 600; font-size: 10.5px; }
+.feed div.live b { background: color-mix(in oklch, var(--run) 18%, transparent); color: var(--run); }
+.feed div.live span::after { content: ""; display: inline-block; width: 6px; height: 12px; background: var(--run); margin-left: 4px; vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.feed time { margin-left: auto; font: 10.5px var(--mono); color: var(--fg4); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 500; padding: 1px 8px; border-radius: 999px; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* sections */
+section.wrap { padding-top: 120px; }
+.kicker { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-text); }
+h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.03em; line-height: 1.1; font-weight: 700; margin-top: 10px; max-width: 22ch; }
+.sub { color: var(--fg2); max-width: 60ch; margin-top: 14px; font-size: 16px; }
+
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 44px; }
+#features .group { margin-top: 40px; font-size: 13px; font-weight: 600; color: var(--fg3); letter-spacing: .02em; }
+
+/* modes: one switch, the section takes the mode's colour and plays its scene */
+.modes { margin-top: 40px; border-radius: 28px; padding: 22px; position: relative; overflow: hidden; transition: --h 600ms ease;
+  --accent: oklch(0.6 0.19 var(--h)); --accent-text: oklch(0.52 0.17 var(--h)); --accent-soft: oklch(0.6 0.19 var(--h) / 0.12); --on-accent: oklch(0.99 0 0); --glow: oklch(0.6 0.19 var(--h) / 0.35);
+  background: radial-gradient(90% 70% at 15% 0%, oklch(0.62 0.2 var(--h) / .22), transparent 60%), radial-gradient(70% 60% at 100% 100%, oklch(0.62 0.2 var(--h) / .12), transparent 70%), var(--s1); box-shadow: var(--e3); }
+@property --h { syntax: '<number>'; inherits: true; initial-value: 276; }
+.mswitch { position: relative; display: grid; width: min(100%, 480px); grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 5px; border-radius: 16px; background: var(--bg); box-shadow: var(--e1); }
+.mswitch .mpill { position: absolute; inset: 5px auto 5px 5px; width: calc((100% - 10px) / 3); border-radius: 12px; background: var(--accent); box-shadow: 0 8px 24px -8px var(--glow); transition: transform 500ms cubic-bezier(.3,1.4,.5,1), background 600ms; }
+.mswitch button { position: relative; z-index: 1; justify-content: center; white-space: nowrap; font: inherit; font-weight: 600; font-size: 15px; padding: 10px 12px; border: 0; background: none; color: var(--fg2); cursor: pointer; display: flex; align-items: center; gap: 8px; transition: color 300ms; }
+.mswitch button[aria-selected="true"] { color: var(--on-accent); }
+.mswitch button small { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); }
+.mswitch button[aria-selected="true"] small { background: oklch(1 0 0 / .22); color: inherit; }
+.mstage { display: grid; grid-template-columns: 200px 1fr; gap: 18px; margin-top: 20px; min-height: 300px; }
+@media (max-width: 760px) { .mstage { grid-template-columns: 1fr; } .mrail { display: none; } .mswitch button { padding: 9px 12px; font-size: 14px; } }
+.mrail { border-radius: 18px; background: var(--bg); box-shadow: var(--e1); padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.mrail .who { display: flex; align-items: center; gap: 10px; padding: 4px 4px 10px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.mrail .who i { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), oklch(0.5 0.2 calc(var(--h) + 40))); box-shadow: 0 6px 16px -6px var(--glow); }
+.mrail .who b { font-size: 14px; } .mrail .who em { display: block; font-style: normal; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg3); }
+.mrail span { font-size: 13.5px; padding: 7px 10px; border-radius: 10px; color: var(--fg2); animation: rise .5s both; }
+.mrail span:first-of-type { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.mscene { border-radius: 18px; background: var(--bg); box-shadow: var(--e1); padding: 18px; position: relative; overflow: hidden; animation: rise .45s both; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+/* developer: the one box, its lane read as you type */
+.box { border-radius: 14px; box-shadow: inset 0 0 0 1.5px oklch(0.62 0.2 var(--lh, 276) / .55); padding: 12px 14px; transition: box-shadow 400ms; margin-top: 14px; }
+.lanes { display: inline-grid; grid-template-columns: repeat(3, auto); position: relative; padding: 3px; border-radius: 10px; background: var(--s2, oklch(0.5 0 0 / .06)); font-size: 12px; font-weight: 600; }
+.lanes b { position: relative; z-index: 1; padding: 4px 10px; color: var(--fg3); transition: color 300ms; }
+.lanes b.on { color: white; }
+.lanes .lp { position: absolute; top: 3px; bottom: 3px; border-radius: 8px; background: oklch(0.62 0.2 var(--lh, 276)); transition: left 400ms cubic-bezier(.3,1.4,.5,1), width 400ms, background 400ms; }
+.typed { font-size: 15px; color: var(--fg1); min-height: 1.5em; margin-top: 10px; }
+.typed::after { content: ''; display: inline-block; width: 2px; height: 1.1em; margin-left: 2px; vertical-align: -3px; background: var(--fg2); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.sounds { font-size: 12.5px; color: var(--fg3); margin-top: 8px; }
+.turns { display: flex; flex-direction: column; gap: 8px; }
+.turn { border-left: 2px solid oklch(0.62 0.2 var(--th)); padding: 2px 10px; font-size: 13.5px; color: var(--fg2); }
+.turn i { font-style: normal; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: oklch(0.62 0.2 var(--th) / .15); color: oklch(0.5 0.17 var(--th)); margin-right: 6px; }
+/* product: the plan draws itself, beside the domain's notes */
+.pmap { position: relative; height: 230px; }
+.pmap .n { position: absolute; border-radius: 10px; padding: 7px 10px; font-size: 12px; font-weight: 600; box-shadow: var(--e1); background: var(--s1); color: var(--fg1); animation: pop .5s cubic-bezier(.3,1.5,.5,1) both; white-space: nowrap; }
+.pmap .n.g { background: var(--accent); color: var(--on-accent); }
+.pmap .n.e { background: oklch(0.62 0.2 300 / .16); }
+.pmap svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.pmap path { fill: none; stroke: var(--line-strong, oklch(0.6 0 0 / .4)); stroke-width: 1.4; stroke-dasharray: 220; stroke-dashoffset: 220; animation: draw .6s ease forwards; }
+.pmap path.dep { stroke: var(--accent); stroke-dasharray: 5 5; stroke-dashoffset: 0; animation: flow 1s linear infinite, fade .4s both; }
+@keyframes pop { from { opacity: 0; transform: scale(.6); } } @keyframes draw { to { stroke-dashoffset: 0; } } @keyframes flow { to { stroke-dashoffset: -10; } } @keyframes fade { from { opacity: 0; } }
+.notes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.notes span { font-size: 12px; padding: 7px 10px; border-radius: 3px; box-shadow: 0 6px 14px -8px rgb(0 0 0 / .4); animation: pop .5s both; color: #2a1d05; }
+.notes .ev { background: #fdba74; } .notes .en { background: #fde047; } .notes .ru { background: #c4b5fd; color: #1e1240; } .notes .st { background: #7dd3fc; color: #062033; }
+/* design: soon */
+.soon { display: grid; place-items: center; text-align: center; height: 100%; min-height: 260px; }
+.soon .blur { display: flex; gap: 10px; filter: blur(3px); opacity: .55; margin-bottom: 18px; }
+.soon .blur span { width: 92px; height: 120px; border-radius: 14px; background: linear-gradient(160deg, oklch(0.7 0.15 var(--h) / .35), var(--s1)); box-shadow: var(--e1); }
+.soon b { font-size: 22px; letter-spacing: -0.02em; } .soon p { color: var(--fg2); font-size: 14.5px; max-width: 40ch; margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .modes, .mswitch .mpill { transition: none; } .mrail span, .mscene, .pmap .n, .notes span { animation: none; } .typed::after { animation: none; } }
+/* before you trust it: two panels, each a title, a line and a small live picture */
+.pillars { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 44px; }
+@media (max-width: 760px) { .pillars { grid-template-columns: 1fr; } }
+.pillar { position: relative; overflow: hidden; border-radius: 24px; padding: 30px 30px 0; min-height: 340px; display: flex; flex-direction: column; gap: 8px;
+  background: radial-gradient(110% 80% at 0% 0%, oklch(0.62 0.2 var(--h) / .2), transparent 60%), radial-gradient(80% 60% at 100% 100%, oklch(0.62 0.2 var(--h) / .1), transparent 70%), var(--s1);
+  box-shadow: var(--e3); }
+.pillar h3 { font-size: clamp(30px, 3.6vw, 40px); letter-spacing: -0.035em; font-weight: 700; line-height: 1.05;
+  background: linear-gradient(100deg, var(--fg1) 30%, oklch(0.72 0.16 var(--h))); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.pillar p { color: var(--fg2); font-size: 16px; max-width: 28ch; }
+.pillar .viz { margin-top: auto; height: 190px; position: relative; display: grid; place-items: center; }
+/* intent: a decision record turning from proposed to accepted */
+.rec { width: min(320px, 90%); border-radius: 16px; background: var(--bg); box-shadow: var(--e1), 0 20px 50px -20px oklch(0.6 0.2 var(--h) / .45); padding: 16px; display: flex; flex-direction: column; gap: 9px; transform: translateY(18px); }
+.rec-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.rec-head b { font-weight: 600; color: var(--fg1); }
+.adr { margin-left: auto; position: relative; display: inline-grid; font-style: normal; font-size: 11px; font-weight: 600; }
+.adr em { grid-area: 1 / 1; font-style: normal; padding: 2px 9px; border-radius: 999px; text-align: center; }
+.adr em:first-child { background: color-mix(in oklch, var(--wait) 18%, transparent); color: var(--wait); animation: adr-a 5s ease-in-out infinite; }
+.adr em:last-child { background: color-mix(in oklch, var(--ok) 18%, transparent); color: var(--ok); animation: adr-b 5s ease-in-out infinite; }
+@keyframes adr-a { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
+@keyframes adr-b { 0%, 45% { opacity: 0; transform: scale(.9); } 55%, 100% { opacity: 1; transform: none; } }
+.rec span { height: 9px; border-radius: 5px; background: color-mix(in oklch, var(--fg1) 9%, transparent); }
+.rec span.w { width: 72%; } .rec span.s { width: 48%; }
+/* understanding: the angles circling the change */
+.orbit { position: relative; width: 280px; height: 170px; display: grid; place-items: center; }
+.orbit .core { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; background: oklch(0.62 0.2 var(--h) / .16); color: oklch(0.7 0.16 var(--h)); box-shadow: 0 0 40px oklch(0.62 0.2 var(--h) / .35); }
+.orbit .core svg { width: 28px; height: 28px; }
+@property --t { syntax: '<angle>'; inherits: true; initial-value: 0deg; }
+.orbit .ring { position: absolute; inset: 0; animation: orbit 28s linear infinite; }
+/* each angle on an ellipse around the compass, the whole ring turning slowly */
+.orbit .ring b { position: absolute; left: calc(50% + 96px * cos(var(--a) + var(--t))); top: calc(50% + 58px * sin(var(--a) + var(--t))); transform: translate(-50%, -50%);
+  font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--bg); box-shadow: var(--e1); color: var(--fg1); white-space: nowrap; }
+@keyframes orbit { to { --t: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .adr em, .orbit .ring { animation: none; } .adr em:last-child { opacity: 0; } }
+
+@media (max-width: 860px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+.feat { --h: 293; position: relative; padding: 22px; border-radius: 16px; background: var(--s1); box-shadow: var(--e1); overflow: hidden; transition: transform .4s var(--ease), box-shadow .4s; }
+.feat:hover { transform: translateY(-3px); box-shadow: var(--e3); }
+.feat::before { content: ""; position: absolute; inset: -40% -40% auto auto; width: 180px; height: 180px; border-radius: 50%; background: oklch(0.7 0.17 var(--h) / .16); filter: blur(30px); opacity: 0; transition: opacity .4s; }
+.feat:hover::before { opacity: 1; }
+.feat .ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: oklch(0.6 0.2 var(--h) / .12); color: oklch(0.55 0.18 var(--h)); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .feat .ico { color: oklch(0.8 0.13 var(--h)); } }
+:root[data-theme="dark"] .feat .ico { color: oklch(0.8 0.13 var(--h)); }
+.feat .ico svg { width: 18px; height: 18px; }
+.feat h3 { font-size: 16px; font-weight: 600; margin-top: 16px; letter-spacing: -0.01em; }
+.feat p { color: var(--fg2); font-size: 14px; margin-top: 6px; }
+
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 44px; counter-reset: s; }
+@media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
+.step { padding: 22px; border-radius: 16px; border: 1px dashed var(--line-2); }
+.step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); font-weight: 600; font-size: 12.5px; text-align: left; }
+.step h3 { font-size: 15px; font-weight: 600; margin-top: 14px; }
+.step p { color: var(--fg2); font-size: 14px; margin-top: 4px; }
+
+.agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 44px; }
+#agents .agents { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 1000px) { #agents .agents { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 760px) { .agents { grid-template-columns: 1fr; } }
+.agent { display: flex; gap: 14px; align-items: flex-start; padding: 20px; border-radius: 16px; background: var(--s1); box-shadow: var(--e1); }
+.mono { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-weight: 700; flex: none; }
+.agent h3 { font-size: 15px; font-weight: 600; }
+.agent p { color: var(--fg2); font-size: 13.5px; margin-top: 2px; }
+.agent.skill { transition: transform .4s var(--ease), box-shadow .4s; }
+.agent.skill:hover { transform: translateY(-3px); box-shadow: var(--e3); }
+.agent.skill h3 { font-family: var(--mono); font-size: 14px; }
+
+.rails { margin-top: 44px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); border-radius: 16px; background: var(--s1); box-shadow: var(--e1); overflow: hidden; }
+.rails div { padding: 22px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.rails b { display: block; font-size: 22px; letter-spacing: -0.02em; font-weight: 700; }
+.rails span { color: var(--fg3); font-size: 13.5px; }
+
+.stack { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 44px; }
+@media (max-width: 760px) { .stack { grid-template-columns: 1fr; } }
+.stack-group { padding: 22px; border-radius: 16px; background: var(--s1); box-shadow: var(--e1); }
+.stack-group h3 { font-size: 15px; font-weight: 600; }
+.stack-group p { color: var(--fg3); font-size: 13.5px; margin-top: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.chips a { font-size: 12.5px; font-weight: 500; padding: 4px 10px; border-radius: 8px; background: color-mix(in oklch, var(--fg1) 6%, transparent); color: var(--fg2); transition: background .2s, color .2s; }
+.chips a:hover { background: var(--accent-soft); color: var(--accent-text); }
+/* the fleet, drawn: the two that can be the main server, the sync between them, the workers, the lease above, the link below */
+.fleet { margin-top: 44px; padding: 28px; border-radius: 20px; background: var(--s2); box-shadow: var(--e3), 0 40px 120px -50px var(--glow); display: flex; flex-direction: column; align-items: center; gap: 18px; }
+@media (max-width: 640px) { .fleet { padding: 18px 14px; } }
+.lease, .link { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--s1); box-shadow: var(--e1); font-size: 12.5px; color: var(--fg2); }
+.lease b, .link b { color: var(--fg1); font-weight: 600; transition: opacity .3s; }
+.lease .pin { width: 8px; height: 8px; border-radius: 50%; background: var(--wait); box-shadow: 0 0 0 4px color-mix(in oklch, var(--wait) 22%, transparent); }
+.link svg { width: 14px; height: 14px; color: var(--accent-text); }
+.link .arrow { color: var(--fg4); }
+.fleet-row { display: grid; grid-template-columns: 1fr minmax(90px, 160px) 1fr; align-items: center; width: 100%; gap: 0; }
+@media (max-width: 640px) { .fleet-row { grid-template-columns: 1fr; gap: 10px; } .wire { height: 64px; } .wire .dots { transform: rotate(90deg); } }
+.mach { border-radius: 14px; background: var(--s1); box-shadow: var(--e1); padding: 12px; transition: opacity .6s var(--ease), box-shadow .6s, transform .6s var(--ease); }
+.mach-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.mach-head svg { width: 16px; height: 16px; color: var(--fg3); }
+.mach .st { margin-left: auto; font-style: normal; font-size: 10.5px; font-weight: 500; padding: 1px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; }
+.mach .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mach-foot { margin-top: 10px; font: 10.5px var(--mono); color: var(--fg4); }
+.mini { margin-top: 10px; height: 92px; border-radius: 9px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); display: grid; grid-template-columns: 18px 1fr 1.4fr; gap: 8px; padding: 8px; transition: filter .6s, opacity .6s; }
+.mini > i { border-radius: 5px; background: color-mix(in oklch, var(--fg1) 6%, transparent); }
+.mini > div { display: flex; flex-direction: column; gap: 6px; }
+.mini b { height: 10px; border-radius: 4px; background: color-mix(in oklch, var(--fg1) 9%, transparent); }
+.mini b.w { width: 60%; }
+.mini > div:first-of-type b:first-child { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 30%, transparent); }
+.wire { position: relative; height: 2px; margin: 0 10px; background: repeating-linear-gradient(90deg, var(--line-2) 0 6px, transparent 6px 11px); }
+.wire .dots { position: absolute; inset: -3px 0; display: block; }
+.wire .dots i { position: absolute; top: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--run); box-shadow: 0 0 10px var(--run); animation: flow 2.4s linear infinite; }
+.wire .dots i:nth-child(2) { animation-delay: .8s; } .wire .dots i:nth-child(3) { animation-delay: 1.6s; animation-direction: reverse; }
+@keyframes flow { from { left: 0; opacity: 0; } 15%, 85% { opacity: 1; } to { left: calc(100% - 8px); opacity: 0; } }
+.wire-label { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); text-align: center; font-size: 11.5px; font-weight: 600; color: var(--fg2); white-space: nowrap; }
+.wire-label small { display: block; font-weight: 400; color: var(--fg4); font-size: 10.5px; }
+@media (max-width: 640px) { .wire-label { top: 50%; left: calc(50% + 24px); transform: translateY(-50%); text-align: left; } }
+.workers { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
+.workers-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg4); margin-right: 4px; }
+.worker { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 10px; background: var(--s1); box-shadow: var(--e1); font-size: 12.5px; font-weight: 500; color: var(--fg1); }
+.worker i { width: 7px; height: 7px; border-radius: 50%; background: var(--run); animation: blink 1.6s steps(2) infinite; }
+.worker small { font-weight: 400; color: var(--fg3); font-size: 11.5px; }
+.worker.more { background: none; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--fg3); font-weight: 400; }
+.fleet-cap { min-height: 1.6em; font-size: 13.5px; color: var(--fg2); text-align: center; transition: opacity .3s; }
+/* who runs it: on, standing by, asleep, taking over, catching up */
+.mach.on { box-shadow: var(--e3), 0 0 0 1px color-mix(in oklch, var(--ok) 45%, transparent), 0 16px 50px -20px color-mix(in oklch, var(--ok) 55%, transparent); }
+.mach.on .st { color: var(--ok); background: color-mix(in oklch, var(--ok) 14%, transparent); }
+.mach.by .st { color: var(--fg3); background: color-mix(in oklch, var(--fg1) 6%, transparent); }
+.mach.by .mini { opacity: .55; }
+.mach.off { opacity: .45; transform: scale(.98); }
+.mach.off .st { color: var(--fg4); background: color-mix(in oklch, var(--fg1) 5%, transparent); }
+.mach.off .mini { filter: grayscale(1); opacity: .4; }
+.mach.go .st { color: var(--run); background: color-mix(in oklch, var(--run) 14%, transparent); }
+.mach.go .st::before { animation: blink 1s steps(2) infinite; }
+.fleet[data-s="1"] .wire .dots i, .fleet[data-s="2"] .wire .dots i { animation-play-state: paused; opacity: 0; }
+.fork { margin: 112px 0 0; padding: 48px; border-radius: 22px; background: var(--s1); box-shadow: var(--e3); position: relative; overflow: hidden; display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 640px) { .fork { padding: 28px 22px; } }
+.fork::after { content: ""; position: absolute; right: -80px; top: -80px; width: 320px; height: 320px; border-radius: 50%; background: var(--glow); filter: blur(60px); pointer-events: none; }
+.fork > div { flex: 1 1 360px; position: relative; z-index: 1; }
+.fork .cta { justify-content: flex-start; margin-top: 0; position: relative; z-index: 1; }
+
+footer { padding: 64px 0 48px; color: var(--fg4); font-size: 13px; }
+footer .wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 24px; }
+footer a:hover { color: var(--fg1); }
+footer .theme { margin-left: auto; display: inline-flex; background: color-mix(in oklch, var(--fg1) 6%, transparent); padding: 3px; border-radius: 10px; }
+footer .theme button { font: inherit; font-size: 12px; border: 0; background: none; color: var(--fg3); padding: 3px 10px; border-radius: 7px; cursor: pointer; }
+footer .theme button[aria-pressed="true"] { background: var(--s1); color: var(--fg1); box-shadow: var(--e1); }
+
+/* effects adapted from React Bits (reactbits.dev, MIT + Commons Clause, (c) David Haz): Aurora, Particles, Blur Text,
+   Shiny Text, Spotlight Card, Star Border; ported to plain CSS and JS since this page has no build */
+.particles { position: absolute; inset: -60px 0 auto; width: 100%; height: 720px; z-index: -1; pointer-events: none; -webkit-mask: linear-gradient(#000 60%, transparent); mask: linear-gradient(#000 60%, transparent); }
+.aurora canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.aurora.gl { background: none; filter: none; animation: none; height: 640px; inset: -60px 0 auto;
+  -webkit-mask: linear-gradient(#000 55%, transparent); mask: linear-gradient(#000 55%, transparent); }
+/* Blur Text: each word comes in out of a blur, one after another */
+.bt { display: inline-block; filter: blur(10px); opacity: 0; transform: translateY(-40px); will-change: transform, filter, opacity; }
+.bt.in { animation: bt 0.7s var(--ease) forwards; animation-delay: calc(var(--i) * 120ms); }
+@keyframes bt { 50% { filter: blur(5px); opacity: .5; transform: translateY(4px); } to { filter: blur(0); opacity: 1; transform: none; } }
+/* Shiny Text: a light sweeps across */
+.shiny { background: linear-gradient(110deg, var(--fg3) 40%, var(--fg1) 50%, var(--fg3) 60%) 0 0 / 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 3s linear infinite; }
+@keyframes shine { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+/* Spotlight Card: a soft light and a lit rim follow the pointer */
+.spot { position: relative; isolation: isolate; }
+.spot::after, .spot .rim { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .4s; }
+.spot::after { z-index: -1; background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklch, var(--accent) 16%, transparent), transparent 70%); }
+.spot .rim { z-index: 1; padding: 1px; background: radial-gradient(180px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklch, var(--accent) 70%, transparent), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.spot:hover::after, .spot:hover .rim { opacity: 1; }
+/* Star Border: two lights travel along the edge of the main button */
+.star { position: relative; display: inline-flex; padding: 1.5px; border-radius: 11px; overflow: hidden; }
+.star > .btn { position: relative; z-index: 1; }
+.star::before, .star::after { content: ""; position: absolute; width: 300%; height: 50%; border-radius: 50%; opacity: .8; background: radial-gradient(circle, oklch(0.85 0.12 var(--h)), transparent 12%); }
+.star::before { bottom: -12px; right: -250%; animation: star-b 5s linear infinite alternate; }
+.star::after { top: -12px; left: -250%; animation: star-t 5s linear infinite alternate; }
+@keyframes star-b { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-100%); opacity: 0; } }
+@keyframes star-t { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .bt { filter: none; opacity: 1; transform: none; } .bt.in { animation: none; } .shiny, .star::before, .star::after { animation: none; } .shiny { color: var(--fg2); background: none; } }
+
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .9s var(--ease), transform .9s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .reveal, .app { transition: none; opacity: 1; transform: none; } .aurora { animation: none; } }
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <div class="wrap">
+    <a class="brand" href="#"><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></svg></span>Concierge</a>
+    <div class="links">
+      <a class="hide-sm" href="#modes">Modes</a>
+      <a class="hide-sm" href="#features">Features</a>
+      <a class="hide-sm" href="#planning">Planning</a>
+      <a class="hide-sm" href="#vitals">Vitals</a>
+      <a class="hide-sm" href="#trust">Trust</a>
+      <a class="hide-sm" href="#skills">Skills</a>
+      <a class="hide-sm" href="#agents">Agents</a>
+      <a class="hide-sm" href="#fleet">Fleet</a>
+      <a class="hide-sm" href="#install">Install</a>
+      <a class="btn btn-quiet" href="https://github.com/ylkhayat/concierge">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="aurora"></div>
+  <canvas class="particles" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <span class="eyebrow"><b>Concierge</b><span class="shiny">A workspace for building with AI agents</span></span>
+    <h1>Reviews, tickets and plans, <em>prepared by agents.</em></h1>
+    <p class="lede">Concierge runs on your machine and drives AI agents for you. As a developer, they prepare your reviews, work through the feedback on your PRs and ship your Linear tickets. As a product manager, they break a brief down into a Linear project while you watch. You read the result and decide what goes out.</p>
+    <div class="cta">
+      <span class="star"><a class="btn btn-primary" href="#install">Get started
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></span>
+      <a class="btn btn-quiet" href="https://github.com/ylkhayat/concierge">View the code</a>
+    </div>
+
+    <div class="stage">
+      <div class="app" id="app" aria-hidden="true">
+        <div class="rail">
+          <i class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></svg></i>
+          <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></i>
+          <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></i>
+          <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></i>
+          <span class="gauge"></span>
+        </div>
+        <div class="list">
+          <h4>To review</h4>
+          <div class="row on"><span class="dot" style="background:var(--ok)"></span><div><div class="t">Retry webhooks with backoff</div><div class="m">payments · ready to read</div></div></div>
+          <div class="row"><span class="dot" style="background:var(--run)"></span><div><div class="t">Split the onboarding flow</div><div class="m">web · reviewing now</div></div></div>
+          <div class="row"><span class="dot" style="background:var(--wait)"></span><div><div class="t">Cache search results</div><div class="m">api · waits on you</div></div></div>
+          <h4 style="margin-top:10px">My PRs</h4>
+          <div class="row"><span class="dot" style="background:var(--run)"></span><div><div class="t">Move auth to the edge</div><div class="m">3 threads · fixing</div></div></div>
+          <div class="row"><span class="dot" style="background:var(--ok)"></span><div><div class="t">Typed config loader</div><div class="m">approved · green</div></div></div>
+        </div>
+        <div class="detail">
+          <div><div class="crumb">payments #482</div><h3>Retry webhooks with backoff</h3></div>
+          <div class="vitals">
+            <div class="vt busy"><div class="n">Shipping</div><div class="s">Writing the review</div><div class="m"><i class="on"></i><i class="on"></i><i></i><i></i></div></div>
+            <div class="vt i"><div class="n">Intent</div><div class="s">1 open question</div><div class="m"><i class="on"></i><i class="on"></i><i></i></div></div>
+            <div class="vt u idle"><div class="n">Understanding</div><div class="s">Not assessed yet</div><div class="m"><i></i><i></i><i></i></div></div>
+          </div>
+          <div class="chat">
+            <div>Found an unbounded retry on 4xx responses. Writing the review.</div>
+            <div class="lane i"><b>Intent · answered</b>The ticket asks for retries on timeouts only, so 4xx should fail at once. Agree?</div>
+            <div class="lane u"><b>Understanding · answered</b>Retries run in the queue worker; the backoff doubles up to 5 tries.</div>
+          </div>
+          <div class="card ask">
+            <div class="q">Retry a 4xx?</div>
+            <div class="opts"><span class="on">✓ Never: fail at once</span><span>Only on 429</span></div>
+            <div class="sugg"><span class="i">For the agent: stop retrying 4xx</span><span class="u">Take the tour</span></div>
+            <span class="chip go send">Send · 2 picked</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="modes" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Modes</p>
+      <h2>One workspace, for whoever you are today.</h2>
+      <p class="sub">Work as a developer, a product manager, or both. Each mode has its own workspaces, skills and setup, and switching takes one click.</p>
+    </div>
+    <div class="modes reveal" id="modes-demo" style="--h:276">
+      <div class="mswitch" role="tablist" aria-label="Modes">
+        <span class="mpill" aria-hidden="true"></span>
+        <button role="tab" aria-selected="true" data-m="0">Developer</button>
+        <button role="tab" aria-selected="false" data-m="1">Product</button>
+        <button role="tab" aria-selected="false" data-m="2">Design <small>Soon</small></button>
+      </div>
+      <div class="mstage" aria-live="polite">
+        <div class="mrail" id="mrail"></div>
+        <div class="mscene" id="mscene"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="wrap">
+    <div class="reveal">
+      <p class="kicker">What it does</p>
+      <h2>What Concierge does.</h2>
+      <p class="sub">Each workspace in the app has its own colour, used here too.</p>
+    </div>
+    <p class="group reveal">As a developer</p>
+    <div class="grid" style="margin-top:14px">
+      <div class="feat reveal" style="--h:293">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></svg></span>
+        <h3>Reviews</h3>
+        <p>When someone requests your review, an agent prepares it. You read the findings, then post or approve with one click.</p>
+      </div>
+      <div class="feat reveal" style="--h:268">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+        <h3>Your PRs</h3>
+        <p>On your own PRs, one click works through the review comments. Another pushes and replies to each thread.</p>
+      </div>
+      <div class="feat reveal" style="--h:235">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg></span>
+        <h3>Explain</h3>
+        <p>What changes for users, and which systems it touches, drawn on a living map of the whole codebase.</p>
+      </div>
+      <div class="feat reveal" style="--h:55">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
+        <h3>Ship</h3>
+        <p>A board of your Linear tickets. Pick a few, and agents ship them as stacked or parallel PRs.</p>
+      </div>
+      <div class="feat reveal" style="--h:185">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+        <h3>Standup</h3>
+        <p>What shipped, what's in review and what waits on you, gathered from the day's work.</p>
+      </div>
+      <div class="feat reveal" style="--h:155">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+        <h3>Live activity</h3>
+        <p>Every run shows what it's doing and what it costs. Answer all its questions in one go, and reach any tool with <code>/</code> in the box.</p>
+      </div>
+    </div>
+    <p class="group reveal">As a product manager</p>
+    <div class="grid" style="margin-top:14px">
+      <div class="feat reveal" style="--h:150">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.5 12h4l5-6M11.5 12l5 6"/></svg></span>
+        <h3>Plans</h3>
+        <p>Write a brief, and an agent breaks it down with you into epics and user stories, drawn live as one roadmap to the goal. Play with it: try moves and plays, see the date move, then apply to Linear.</p>
+      </div>
+      <div class="feat reveal" style="--h:150">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 13h3M8 16h6"/></svg></span>
+        <h3>Your projects</h3>
+        <p>Plan into a project you already have: its vision, tickets and timeline come in, with a forecast of when it lands. If you don't lead it, the plan only adds tickets.</p>
+      </div>
+      <div class="feat reveal" style="--h:150">
+        <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><path d="M13 7h4a2 2 0 0 1 2 2v2M11 17H7a2 2 0 0 1-2-2v-2"/></svg></span>
+        <h3>Domain</h3>
+        <p>Any PR or ticket in the business's own words: the parts it touches, its rules, and the user's journey before and after.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="planning" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Planning</p>
+      <h2>Make strategic moves, see what they change.</h2>
+      <p class="sub">The plan is a roadmap you play with. Drag a ticket earlier, onto another epic, or into Later to cut it; every move is a scenario first, with when it lands, whether it fits the appetite and what finishes later, until you apply it, to Linear too.</p>
+    </div>
+    <div class="strat reveal" aria-hidden="true">
+      <div class="bar"><b>Trying 1 move</b><span class="good">lands 9 days earlier</span><span>now fits the 6-week appetite</span><span>2 Linear changes</span><span class="apply">Apply</span></div>
+      <div class="plays"><span class="on">Fit the appetite</span><span>Risk first</span><span>Protect the date</span><span>Balance owners</span><span>MVP slice</span></div>
+      <div class="lane2" style="--h:200; margin-top:26px"><em>Admins can pause a seat</em><b style="left:3%;width:12%"></b><b class="crit" style="left:16%;width:8%"></b><b style="left:44%;width:10%"></b></div>
+      <div class="lane2" style="--h:253; margin-top:30px"><em>Billing follows the pause</em><b class="crit" style="left:6%;width:16%"></b><i style="left:66%;width:14%"></i><b class="mv crit" style="width:14%"></b></div>
+      <div class="lane2" style="--h:306; margin-top:30px"><em>Everyone knows what happened</em><b style="left:30%;width:9%"></b><b style="left:52%;width:6%"></b></div>
+      <div class="later">Later · cut from this plan — drag a ticket here</div>
+      <div class="ready">
+        <div class="vt" style="--l: oklch(0.66 0.14 150)"><div class="n">Compliance</div><div class="s">3 of 4 covered</div><div class="m"><i class="on" style="background:oklch(0.66 0.14 150)"></i><i class="on" style="background:oklch(0.66 0.14 150)"></i><i class="on" style="background:oklch(0.66 0.14 150)"></i><i></i></div></div>
+        <div class="vt" style="--l: oklch(0.66 0.14 25)"><div class="n">Security</div><div class="s">Security review open</div><div class="m"><i class="on" style="background:oklch(0.66 0.14 25)"></i><i></i></div></div>
+        <div class="vt" style="--l: oklch(0.66 0.14 70)"><div class="n">Resources</div><div class="s">31 of 36 pt</div><div class="m"><i class="on" style="background:oklch(0.66 0.14 70)"></i><i class="on" style="background:oklch(0.66 0.14 70)"></i><i class="on" style="background:oklch(0.66 0.14 70)"></i><i></i></div></div>
+        <div class="vt busy" style="--l: oklch(0.66 0.14 25)"><div class="n">Risks</div><div class="s">3 logged · 1 high</div><div class="m"><i class="on" style="background:oklch(0.64 0.2 25)"></i><i></i><i></i></div></div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:22px">
+      <div class="feat reveal" style="--h:150"><h3>Moves, tried first</h3><p>Order, epic, priority, owner, or cut. The map shows where each moved ticket was, the critical path that sets the date, and the impact, until Apply.</p></div>
+      <div class="feat reveal" style="--h:200"><h3>Strategic plays</h3><p>Fit the appetite, risk first, protect the date, balance owners: one click proposes the moves. Or ask the planner for an MVP slice, sequenced by value.</p></div>
+      <div class="feat reveal" style="--h:25"><h3>Ready for your company</h3><p>Your regions, certifications and data turn into what each plan must cover: a DPIA, consent, change and security reviews, rollout, tests. Gaps a click from a ticket.</p></div>
+      <div class="feat reveal" style="--h:70"><h3>Filled for you</h3><p>Your teams and everyone on them from Linear (people on several teams too), each one's pace, and what your code shows of GDPR, SOC 2 and the data you handle.</p></div>
+      <div class="feat reveal" style="--h:300"><h3>Best practices built in</h3><p>User stories with acceptance criteria, MoSCoW and RICE on every ticket, now, next and later, and a risk register: the planner fills them, you decide.</p></div>
+      <div class="feat reveal" style="--h:250"><h3>Linear stays the source</h3><p>Tickets live in Linear: the plan reads them, and writes back only what you apply. No second tracker.</p></div>
+    </div>
+  </section>
+
+  <section id="vitals" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Vitals</p>
+      <h2>Where it stands, at a glance.</h2>
+      <p class="sub">Every PR and ticket carries three vitals that follow the conversation as it goes. Point at one to see what it settled; tap one not assessed yet, and it starts from where the conversation stands. On your phone too.</p>
+    </div>
+    <div class="vbig reveal" id="vitalsDemo" aria-hidden="true">
+      <div class="vt"><div class="n">Shipping</div><div class="s"></div><div class="w"></div><div class="m"><i></i><i></i><i></i><i></i></div></div>
+      <div class="vt i"><div class="n">Intent</div><div class="s"></div><div class="w"></div><div class="m"><i></i><i></i><i></i></div></div>
+      <div class="vt u"><div class="n">Understanding</div><div class="s"></div><div class="w"></div><div class="m"><i></i><i></i><i></i></div></div>
+    </div>
+  </section>
+
+  <section id="trust" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Before you trust it</p>
+      <h2>Know what it does, and why.</h2>
+      <p class="sub">One chat for everything. Send your words, and it reads where they belong: an instruction to the agent, a question about what it should do (Intent), or about what it does (Understanding). Each answer comes back in its colour, and their suggestions sit over the box: pick any number, add your words, one Send.</p>
+    </div>
+    <div class="pillars">
+      <div class="pillar reveal" style="--h:70">
+        <h3>Intent</h3>
+        <p>Settled with an agent, until it is a decision you agree on.</p>
+        <div class="viz" aria-hidden="true">
+          <div class="rec">
+            <div class="rec-head"><b>Decision record</b><i class="adr"><em>proposed</em><em>accepted</em></i></div>
+            <span></span><span class="w"></span><span></span><span class="s"></span>
+          </div>
+        </div>
+      </div>
+      <div class="pillar reveal" style="--h:230">
+        <h3>Understanding</h3>
+        <p>Every angle of the change, asked until it is clear.</p>
+        <div class="viz" aria-hidden="true">
+          <div class="orbit">
+            <span class="core"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg></span>
+            <span class="ring"><b style="--a:0deg">Users</b><b style="--a:90deg">Code</b><b style="--a:180deg">Conventions</b><b style="--a:270deg">Tour</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="skills" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Skills</p>
+      <h2>Works with your skills.</h2>
+      <p class="sub">Reviews, revisions and tickets run as Claude Code slash commands. Use the ones your team already has (the setup suggests those it finds on your machine), or start from the author's three below.</p>
+    </div>
+    <div class="agents">
+      <a class="agent reveal skill" href="https://github.com/ylkhayat/concierge/tree/main/skills/concierge-review"><span class="mono" style="background:oklch(0.6 0.2 293 / .12);color:oklch(0.6 0.2 293)">/</span><div><h3>concierge-review</h3><p>Reviews someone else's PR in crit: findings first, posted only when you say.</p></div></a>
+      <a class="agent reveal skill" href="https://github.com/ylkhayat/concierge/tree/main/skills/concierge-revise"><span class="mono" style="background:oklch(0.6 0.2 268 / .12);color:oklch(0.6 0.2 268)">/</span><div><h3>concierge-revise</h3><p>Works through the feedback on your PR: fixes, commits and drafted replies, pushed on your word.</p></div></a>
+      <a class="agent reveal skill" href="https://github.com/ylkhayat/concierge/tree/main/skills/concierge-exec"><span class="mono" style="background:oklch(0.7 0.16 55 / .14);color:oklch(0.62 0.16 55)">/</span><div><h3>concierge-exec</h3><p>Ships a Linear ticket: root cause, the smallest fix that holds, checks, and a ready PR.</p></div></a>
+    </div>
+  </section>
+
+  <section id="agents" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Agents</p>
+      <h2>Works with Claude, OpenAI, Copilot and Llama.</h2>
+      <p class="sub">Each account signs in on its own. With several, Concierge spreads the work across them and moves to the next when one reaches its limit.</p>
+    </div>
+    <div class="agents">
+      <div class="agent reveal"><span class="mono" style="background:oklch(0.7 0.14 45 / .14);color:oklch(0.6 0.15 45)">C</span><div><h3>Claude</h3><p>Claude Code, with a claude.ai plan or an API key.</p></div></div>
+      <div class="agent reveal"><span class="mono" style="background:oklch(0.7 0.12 160 / .14);color:oklch(0.55 0.12 160)">O</span><div><h3>OpenAI</h3><p>Codex, with a ChatGPT plan or an API key.</p></div></div>
+      <div class="agent reveal"><span class="mono" style="background:oklch(0.7 0.02 270 / .16);color:oklch(0.55 0.03 270)">G</span><div><h3>Copilot</h3><p>GitHub Copilot, on your Copilot plan, through its CLI.</p></div></div>
+      <div class="agent reveal"><span class="mono" style="background:oklch(0.7 0.14 250 / .14);color:oklch(0.55 0.15 250)">L</span><div><h3>Llama</h3><p>Local models through Ollama. Nothing leaves your machine.</p></div></div>
+    </div>
+  </section>
+
+  <section id="fleet" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Fleet</p>
+      <h2>Any number of machines.</h2>
+      <p class="sub">Run it on as many machines as you have, all online at once: every one of them runs agents, and one is the main server your link opens. The standby follows the main server's state as it changes, over your tailnet: a run's update is a few kilobytes, never a file sync re-walking your disk. When the main server sleeps or goes offline, the standby takes over within minutes with every run, setting and review intact, and hands back once the first has caught up. A new machine joins with one command once it is on your tailnet: signed in as you, it is in at once. It is a private extension: ask the author for access.</p>
+    </div>
+    <div class="fleet reveal" id="fleetDemo" data-s="0" aria-hidden="true">
+      <div class="lease"><span class="pin"></span>Lease on GitHub · held by <b class="who">Desktop</b></div>
+      <div class="fleet-row">
+        <div class="mach" data-m="a">
+          <div class="mach-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Desktop</span><em class="st"></em></div>
+          <div class="mini"><i></i><div><b></b><b></b><b class="w"></b></div><div><b></b><b class="w"></b><b></b></div></div>
+          <div class="mach-foot"><span class="ver">v528 · up to date</span></div>
+        </div>
+        <div class="wire">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="wire-label">Changes, not files<small>a few KB per update</small></span>
+        </div>
+        <div class="mach" data-m="b">
+          <div class="mach-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10"/><path d="M2 20h20l-2-4H4z"/></svg><span>Laptop</span><em class="st"></em></div>
+          <div class="mini"><i></i><div><b></b><b></b><b class="w"></b></div><div><b></b><b class="w"></b><b></b></div></div>
+          <div class="mach-foot"><span class="ver">v528 · up to date</span></div>
+        </div>
+      </div>
+      <div class="workers"><span class="workers-label">Workers</span>
+        <span class="worker"><i></i>Old laptop<small>2 agents</small></span>
+        <span class="worker"><i></i>Mac mini<small>1 agent</small></span>
+        <span class="worker more">+ any number</span>
+      </div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>concierge.your-tailnet <span class="arrow">→</span> <b class="to">Desktop</b></div>
+      <p class="fleet-cap"></p>
+    </div>
+  </section>
+
+  <section id="install" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Install</p>
+      <h2>Getting started.</h2>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><h3>Clone and fill one file</h3><p>Copy <code>.env.example</code> to <code>.env</code>, and set the folder with your clones and a GitHub token.</p></div>
+      <div class="step reveal"><h3>Start it</h3><p><code>docker compose up -d</code>, then open <code>127.0.0.1:4747</code>. On Docker Desktop, turn on host networking first (Settings → Resources → Network).</p></div>
+      <div class="step reveal"><h3>Pick repos, sign in</h3><p>A short setup signs you in to an agent, finds your repos, and clones the ones you don't have yet.</p></div>
+    </div>
+    <div class="term reveal">
+      <div class="term-bar"><i></i><i></i><i></i><span>Terminal</span><button id="copy" type="button">Copy</button></div>
+<pre id="cmd"><span class="p">$ </span>gh repo clone ylkhayat/concierge &amp;&amp; cd concierge
+<span class="p">$ </span>cp .env.example .env   <span class="c"># CODE_DIR and GITHUB_TOKEN</span>
+<span class="p">$ </span>docker compose up -d</pre>
+    </div>
+    <p class="sub reveal" style="margin:16px auto 0;text-align:center;font-size:14px">No Docker? Run <code>./install.sh</code> instead.</p>
+  </section>
+
+  <section id="stack" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Built on</p>
+      <h2>What it uses.</h2>
+      <p class="sub">The tools Concierge runs and the libraries it is built with.</p>
+    </div>
+    <div class="stack">
+      <div class="stack-group reveal"><h3>Agents</h3><p>What does the work</p><div class="chips"><a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a><a href="https://github.com/openai/codex" target="_blank" rel="noreferrer">Codex</a><a href="https://github.com/github/copilot-cli" target="_blank" rel="noreferrer">Copilot CLI</a><a href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a></div></div>
+      <div class="stack-group reveal"><h3>Work</h3><p>Where the work comes from and goes</p><div class="chips"><a href="https://github.com" target="_blank" rel="noreferrer">GitHub</a><a href="https://cli.github.com" target="_blank" rel="noreferrer">GitHub CLI</a><a href="https://linear.app" target="_blank" rel="noreferrer">Linear</a><a href="https://crit.md" target="_blank" rel="noreferrer">crit</a><a href="https://git-scm.com/docs/git-worktree" target="_blank" rel="noreferrer">git worktrees</a></div></div>
+      <div class="stack-group reveal"><h3>Fleet</h3><p>Many machines as one</p><div class="chips"><a href="https://nodejs.org/api/sqlite.html" target="_blank" rel="noreferrer">SQLite</a><a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a><a href="https://www.docker.com" target="_blank" rel="noreferrer">Docker</a><a href="https://docs.github.com/rest/repos/contents" target="_blank" rel="noreferrer">A lease on GitHub</a></div></div>
+      <div class="stack-group reveal"><h3>App</h3><p>What it is made of</p><div class="chips"><a href="https://nodejs.org" target="_blank" rel="noreferrer">Node.js</a><a href="https://www.typescriptlang.org" target="_blank" rel="noreferrer">TypeScript</a><a href="https://hono.dev" target="_blank" rel="noreferrer">Hono</a><a href="https://react.dev" target="_blank" rel="noreferrer">React</a><a href="https://tanstack.com/query" target="_blank" rel="noreferrer">TanStack Query</a><a href="https://tailwindcss.com" target="_blank" rel="noreferrer">Tailwind CSS</a><a href="https://reactflow.dev" target="_blank" rel="noreferrer">React Flow</a><a href="https://eclipse.dev/elk/" target="_blank" rel="noreferrer">ELK</a><a href="https://mermaid.js.org" target="_blank" rel="noreferrer">Mermaid</a><a href="https://vite.dev" target="_blank" rel="noreferrer">Vite</a><a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a></div></div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="fork reveal">
+      <div>
+        <p class="kicker">Contributing</p>
+        <h2 style="font-size:clamp(24px,3vw,32px)">Contributing.</h2>
+        <p class="sub" style="font-size:15px">To make it work differently, fork it: swap in your own skills, change the prompts, or add a workspace. Its whole look lives in one file, <code>src/design/tokens.css</code>. Issues and pull requests are welcome.</p>
+      </div>
+      <div class="cta">
+        <span class="star"><a class="btn btn-primary" href="https://github.com/ylkhayat/concierge/fork">Fork on GitHub</a></span>
+        <a class="btn btn-quiet" href="https://github.com/ylkhayat/concierge/blob/main/docs/reference.md">Read the reference</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Concierge</span>
+    <a href="https://github.com/ylkhayat/concierge">GitHub</a>
+    <a href="https://github.com/ylkhayat/concierge/blob/main/docs/reference.md">Reference</a>
+    <a href="https://reactbits.dev" target="_blank" rel="noreferrer">Effects from React Bits</a>
+    <div class="theme" role="group" aria-label="Theme">
+      <button type="button" data-t="system">Auto</button><button type="button" data-t="light">Light</button><button type="button" data-t="dark">Dark</button>
+    </div>
+  </div>
+</footer>
+
+<script>
+  const root = document.documentElement
+  const setTheme = (t) => {
+    if (t === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t)
+    document.querySelectorAll('.theme button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.t === t)))
+    try { localStorage.setItem('theme', t) } catch {}
+  }
+  let saved = 'system'
+  try { saved = localStorage.getItem('theme') || 'system' } catch {}
+  setTheme(saved)
+  document.querySelectorAll('.theme button').forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.t)))
+
+  const nav = document.getElementById('nav')
+  addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 8), { passive: true })
+
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) } }), { threshold: 0.12 })
+  document.querySelectorAll('.reveal, #app').forEach((el) => io.observe(el))
+
+  document.getElementById('copy').addEventListener('click', async (e) => {
+    const text = document.getElementById('cmd').innerText.split('\n').map((l) => l.replace(/^\$ /, '').replace(/\s+#.*$/, '')).join('\n')
+    try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied' } catch { e.target.textContent = 'Select and copy' }
+    setTimeout(() => (e.target.textContent = 'Copy'), 1600)
+  })
+  // the fleet, playing a hand-over on a loop: the desktop sleeps, the laptop takes the lease and the link follows; the
+  // desktop wakes, catches up, and takes it back
+  const fleet = document.getElementById('fleetDemo')
+  if (fleet) {
+    const STEPS = [
+      { a: ['on', 'Main server'], b: ['by', 'Standby'], who: 'Desktop', to: 'Desktop', va: 'v528 · up to date', vb: 'v528 · up to date', cap: 'The desktop is the main server; the laptop stands by. Every machine, workers too, runs agents.' },
+      { a: ['off', 'Asleep'], b: ['go', 'Taking over'], who: 'Desktop', to: 'Desktop', va: 'last seen 3 min ago', vb: 'v528 · up to date', cap: 'The desktop goes to sleep. Its renewals stop.' },
+      { a: ['off', 'Asleep'], b: ['on', 'Main server'], who: 'Laptop', to: 'Laptop', va: 'last seen 9 min ago', vb: 'v528 · up to date', cap: 'The laptop takes the lease and becomes the main server; the link follows it. Runs continue where they left off.' },
+      { a: ['go', 'Updating'], b: ['on', 'Main server'], who: 'Laptop', to: 'Laptop', va: 'v527 → v528', vb: 'v528 · up to date', cap: 'The desktop wakes and updates to the latest before taking anything back.' },
+      { a: ['on', 'Main server'], b: ['by', 'Standby'], who: 'Desktop', to: 'Desktop', va: 'v528 · up to date', vb: 'v528 · up to date', cap: 'Ready again: once the desktop has every change from the laptop, the laptop hands the main server back.' },
+    ]
+    const m = { a: fleet.querySelector('[data-m=a]'), b: fleet.querySelector('[data-m=b]') }
+    let i = 0
+    const show = () => {
+      const x = STEPS[i]
+      fleet.dataset.s = String(i)
+      for (const k of ['a', 'b']) { m[k].className = 'mach ' + x[k][0]; m[k].querySelector('.st').textContent = x[k][1]; m[k].querySelector('.ver').textContent = x['v' + k] }
+      fleet.querySelector('.who').textContent = x.who
+      fleet.querySelector('.to').textContent = x.to
+      fleet.querySelector('.fleet-cap').textContent = x.cap
+    }
+    show()
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => { i = (i + 1) % STEPS.length; show() }, 3200)
+  }
+
+  // ---- React Bits, adapted (MIT + Commons Clause, Copyright (c) 2026 David Haz, https://reactbits.dev) ----
+  {
+  const MAX_STOPS = 5;
+  const MAX_LAYERS = 3;
+  const INTRO_SECONDS = 2.4;
+
+  const VERTEX = `#version 300 es
+  in vec2 aPosition;
+  void main() {
+    gl_Position = vec4(aPosition, 0.0, 1.0);
+  }`;
+
+  const FRAGMENT = `#version 300 es
+  precision highp float;
+  precision highp int;
+  uniform vec2 uResolution;
+  uniform float uTime;
+  uniform vec3 uStops[${MAX_STOPS}];
+  uniform int uStopCount;
+  uniform float uAmplitude;
+  uniform float uBlend;
+  uniform float uHeight;
+  uniform float uScale;
+  uniform float uGlow;
+  uniform float uBrightness;
+  uniform int uLayers;
+  uniform float uFlip;
+  uniform vec3 uPointer;
+  uniform float uReveal;
+  uniform float uOpacity;
+  uniform float uLightMode;
+  out vec4 outColor;
+
+  vec3 permute(vec3 x) {
+    return mod(((x * 34.0) + 1.0) * x, 289.0);
+  }
+
+  float snoise(vec2 v) {
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
+    vec2 i = floor(v + dot(v, C.yy));
+    vec2 x0 = v - i + dot(i, C.xx);
+    vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    i = mod(i, 289.0);
+    vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+    vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)), 0.0);
+    m = m * m;
+    m = m * m;
+    vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    vec3 h = abs(x) - 0.5;
+    vec3 ox = floor(x + 0.5);
+    vec3 a0 = x - ox;
+    m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+    vec3 g;
+    g.x = a0.x * x0.x + h.x * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+    return 130.0 * dot(m, g);
+  }
+
+  float smootherstep(float edge0, float edge1, float x) {
+    float t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+  }
+
+  vec3 oklabToLinear(vec3 c) {
+    float l = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
+    float m = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
+    float s = c.x - 0.0894841775 * c.y - 1.2914855480 * c.z;
+    l = l * l * l;
+    m = m * m * m;
+    s = s * s * s;
+    return vec3(
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    );
+  }
+
+  vec3 toSrgb(vec3 c) {
+    c = clamp(c, 0.0, 1.0);
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+  }
+
+  vec3 ramp(float t) {
+    float x = clamp(t, 0.0, 1.0) * float(uStopCount - 1);
+    int i = int(min(floor(x), float(uStopCount - 2)));
+    float f = x - float(i);
+    f = f * f * (3.0 - 2.0 * f);
+    vec3 lch = mix(uStops[i], uStops[i + 1], f);
+    lch.x = mix(lch.x, min(lch.x, 0.7), uLightMode);
+    return toSrgb(oklabToLinear(vec3(lch.x, lch.y * cos(lch.z), lch.y * sin(lch.z))));
+  }
+
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  void main() {
+    vec2 frag = gl_FragCoord.xy;
+    float y = 1.0 - frag.y / uResolution.y;
+    y = mix(y, 1.0 - y, uFlip);
+    float u = frag.x / uResolution.x;
+    float X = (frag.x - uResolution.x * 0.5) / uResolution.y;
+    float t = uTime;
+    float reach = uPointer.z * exp(-pow((X - uPointer.x) / 0.38, 2.0));
+
+    vec3 glow = vec3(0.0);
+    float cover = 0.0;
+    for (int k = 0; k < ${MAX_LAYERS}; k++) {
+      if (k >= uLayers) break;
+      float layer = float(k);
+      float seed = layer * 13.7;
+      float pace = t * (1.0 - layer * 0.18);
+      float warp = snoise(vec2(X * 0.45 * uScale + pace * 0.02 + seed, pace * 0.05 + seed));
+      float wave = snoise(vec2(X * 0.75 * uScale + warp * 0.35 - pace * 0.03 + seed, pace * 0.07 - seed)) * 0.72
+        + snoise(vec2(X * 1.6 * uScale + warp * 0.5 + pace * 0.04 - seed, pace * 0.1 + seed * 0.5)) * 0.28;
+      float hem = uHeight + layer * 0.07 + wave * 0.15 * uAmplitude;
+      hem += reach * 0.08 * (layer < 0.5 ? 1.0 : 0.4);
+      hem = mix(-0.25, hem, uReveal);
+
+      float soft = (0.04 + uBlend * 0.16) * (1.0 + layer * 0.9);
+      float rise = hem - y;
+      float low = -soft - uGlow * 0.14;
+      float high = 0.26 + soft * 0.6;
+      float body = pow(smootherstep(low, high, rise), 1.5 + uGlow * 0.6);
+      float lobes = 0.86 + 0.14 * snoise(vec2(X * 0.9 * uScale - pace * 0.025 + seed, y * 0.3 + pace * 0.04));
+      float alpha = body * lobes * (layer < 0.5 ? 1.0 : 0.32 / layer);
+      alpha = clamp(alpha * (1.0 + reach * 0.25 * smootherstep(0.9, 0.0, abs(y - hem))), 0.0, 1.0);
+
+      vec3 tint = ramp(u + 0.05 * sin(pace * 0.08 + layer * 2.3) + layer * 0.1 + max(rise, 0.0) * 0.05);
+      glow = 1.0 - (1.0 - glow) * (1.0 - tint * alpha);
+      cover = 1.0 - (1.0 - cover) * (1.0 - alpha);
+    }
+
+    float fade = smootherstep(0.0, 0.7, uReveal) * uOpacity;
+    float strength = clamp(uBrightness, 0.0, 2.0);
+    glow *= fade * min(strength, 1.0);
+    cover *= fade * min(strength, 1.0);
+    glow = 1.0 - pow(1.0 - glow, vec3(max(strength, 1.0)));
+    float dither = (hash(frag) - 0.5) / 255.0;
+
+    if (uLightMode > 0.5) {
+      vec3 tint = cover > 0.0001 ? glow / cover : vec3(0.0);
+      cover *= smootherstep(0.0, 0.25, cover);
+      float alpha = cover * 0.7;
+      outColor = vec4(tint * alpha + dither, clamp(alpha + dither, 0.0, 1.0));
+      return;
+    }
+    outColor = vec4(glow + dither, clamp(cover + dither, 0.0, 1.0));
+  }`;
+
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  const toOklch = rgb => {
+    const [r, g, b] = rgb.map(c => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    const lab = [
+      0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+      1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+      0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+    ];
+    return [lab[0], Math.hypot(lab[1], lab[2]), Math.atan2(lab[2], lab[1])];
+  };
+
+  const unwrapHues = stops => {
+    const known = stops.findIndex(stop => stop[1] > 0.02);
+    const anchor = known === -1 ? 0 : stops[known][2];
+    let previous = anchor;
+    return stops.map(stop => {
+      let hue = stop[1] > 0.02 ? stop[2] : previous;
+      while (hue - previous > Math.PI) hue -= Math.PI * 2;
+      while (hue - previous < -Math.PI) hue += Math.PI * 2;
+      previous = hue;
+      return [stop[0], stop[1], hue];
+    });
+  };
+
+  const compile = (gl, type, source) => {
+    const shader = gl.createShader(type);
+    if (!shader) return null;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
+    gl.deleteShader(shader);
+    return null;
+  };
+
+  const link = gl => {
+    const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX);
+    const fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
+    const program = gl.createProgram();
+    if (!vertex || !fragment || !program) return null;
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.bindAttribLocation(program, 0, 'aPosition');
+    gl.linkProgram(program);
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
+      return null;
+    }
+    const uniforms = {};
+    const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < count; i++) {
+      const info = gl.getActiveUniform(program, i);
+      if (info) uniforms[info.name.replace('[0]', '')] = gl.getUniformLocation(program, info.name);
+    }
+    return { program, uniforms };
+  };
+
+  // Aurora, as the component does it: one full-screen triangle, the shader draws the curtain; the CSS gradient stays
+  // as the fallback without WebGL2
+  const host = document.querySelector('.aurora')
+  const canvas = document.createElement('canvas')
+  const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false })
+  const prog = gl && link(gl)
+  if (prog) {
+    host.classList.add('gl'); host.append(canvas)
+    const u = prog.uniforms
+    gl.bindVertexArray(gl.createVertexArray())
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW)
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    const STOPS = [[0.6, 0.2, 293], [0.64, 0.15, 250], [0.62, 0.18, 320], [0.6, 0.2, 293]].map(([l, c, h]) => [l, c, h * Math.PI / 180])
+    const palette = new Float32Array(MAX_STOPS * 3); unwrapHues(STOPS).forEach((s, i) => palette.set(s, i * 3))
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const dark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+    let clock = 0, reveal = reduce ? 1 : 0, last = 0, raf = 0, seen = true
+    const draw = () => {
+      gl.viewport(0, 0, canvas.width, canvas.height); gl.useProgram(prog.program)
+      gl.uniform2f(u.uResolution, canvas.width, canvas.height); gl.uniform1f(u.uTime, clock)
+      gl.uniform3fv(u.uStops, palette); gl.uniform1i(u.uStopCount, STOPS.length)
+      gl.uniform1f(u.uAmplitude, 1); gl.uniform1f(u.uBlend, 0.6); gl.uniform1f(u.uHeight, 0.38); gl.uniform1f(u.uScale, 1)
+      gl.uniform1f(u.uGlow, 0.6); gl.uniform1f(u.uBrightness, dark() ? 0.9 : 1); gl.uniform1i(u.uLayers, 2); gl.uniform1f(u.uFlip, 0)
+      gl.uniform3f(u.uPointer, 0, 0.5, 0); gl.uniform1f(u.uReveal, 1 - Math.pow(1 - reveal, 3))
+      gl.uniform1f(u.uOpacity, dark() ? 0.42 : 0.35); gl.uniform1f(u.uLightMode, dark() ? 0 : 1)
+      gl.drawArrays(gl.TRIANGLES, 0, 3)
+    }
+    const frame = (now) => {
+      raf = 0
+      if (!seen || document.hidden) return
+      const dt = last ? clamp((now - last) / 1000, 0.0005, 0.05) : 1 / 60
+      last = now; clock += dt * 0.6; reveal = Math.min(1, reveal + dt / INTRO_SECONDS)
+      draw(); if (!reduce) raf = requestAnimationFrame(frame)
+    }
+    const wake = () => { if (!raf) { last = 0; raf = requestAnimationFrame(frame) } }
+    new ResizeObserver(() => {
+      const r = Math.min(devicePixelRatio || 1, 1.5)
+      canvas.width = Math.round(host.clientWidth * r); canvas.height = Math.round(host.clientHeight * r); draw(); wake()
+    }).observe(host)
+    new IntersectionObserver((es) => { seen = es.some((e) => e.isIntersecting); if (seen) wake() }).observe(host)
+    document.addEventListener('visibilitychange', wake)
+    document.querySelectorAll('.theme button').forEach((b) => b.addEventListener('click', () => { draw(); wake() }))
+  }
+
+  // Particles: a slow field of dots in the workspace hues that twinkle and lean toward the pointer
+  const pc = document.querySelector('.particles'), px = pc.getContext('2d')
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const HUES = [293, 250, 320, 55]
+  const dots = Array.from({ length: innerWidth < 640 ? 60 : 140 }, () => ({ x: Math.random(), y: Math.random(), z: Math.random(), r: 0.6 + Math.random() * 1.4, h: HUES[Math.random() * HUES.length | 0], t: Math.random() * 6.3, vx: (Math.random() - 0.5) * 0.00012, vy: -0.00004 - Math.random() * 0.00012 }))
+  let mx = 0, my = 0, tx = 0, ty = 0, pr = 0, pseen = true
+  addEventListener('pointermove', (e) => { tx = e.clientX / innerWidth - 0.5; ty = e.clientY / innerHeight - 0.5 }, { passive: true })
+  const size = () => { const r = Math.min(devicePixelRatio || 1, 2); pc.width = pc.clientWidth * r; pc.height = pc.clientHeight * r; px.setTransform(r, 0, 0, r, 0, 0) }
+  const paint = () => {
+    pr = 0
+    if (!pseen || document.hidden) return
+    const w = pc.clientWidth, h = pc.clientHeight, dk = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+    mx += (tx - mx) * 0.04; my += (ty - my) * 0.04
+    px.clearRect(0, 0, w, h)
+    for (const d of dots) {
+      if (!still) { d.x = (d.x + d.vx + 1) % 1; d.y = (d.y + d.vy + 1) % 1; d.t += 0.02 }
+      const a = (0.35 + 0.45 * Math.sin(d.t)) * (0.4 + d.z * 0.6)
+      px.fillStyle = `oklch(${dk ? 0.85 : 0.6} 0.14 ${d.h} / ${a.toFixed(3)})`
+      px.beginPath(); px.arc(d.x * w + mx * 40 * d.z, d.y * h + my * 30 * d.z, d.r * (0.6 + d.z * 0.7), 0, 6.3); px.fill()
+    }
+    if (!still) pr = requestAnimationFrame(paint)
+  }
+  new ResizeObserver(() => { size(); if (!pr) paint() }).observe(pc)
+  new IntersectionObserver((es) => { pseen = es.some((e) => e.isIntersecting); if (pseen && !pr) paint() }).observe(pc)
+  document.addEventListener('visibilitychange', () => { if (!pr) paint() })
+
+  // Blur Text: the headline's words, then its highlighted half as one piece so the gradient stays whole
+  const h1 = document.querySelector('h1')
+  let n = 0
+  for (const node of [...h1.childNodes]) {
+    if (node.nodeType === 3) {
+      const frag = document.createDocumentFragment()
+      for (const part of node.textContent.split(/(\s+)/)) {
+        if (!part.trim()) { frag.append(part); continue }
+        const s = document.createElement('span'); s.className = 'bt'; s.style.setProperty('--i', n++); s.textContent = part; frag.append(s)
+      }
+      node.replaceWith(frag)
+    } else { node.classList.add('bt'); node.style.setProperty('--i', n++) }
+  }
+  requestAnimationFrame(() => h1.querySelectorAll('.bt').forEach((s) => s.classList.add('in')))
+
+  // Spotlight Card: the light follows the pointer over each card
+  document.querySelectorAll('.feat, .agent, .stack-group, .step').forEach((c) => {
+    c.classList.add('spot'); c.append(Object.assign(document.createElement('span'), { className: 'rim' }))
+    c.addEventListener('pointermove', (e) => { const r = c.getBoundingClientRect(); c.style.setProperty('--mx', `${e.clientX - r.left}px`); c.style.setProperty('--my', `${e.clientY - r.top}px`) })
+  })
+  }
+
+// modes: the switch, its scenes, and the colour; it plays by itself until you pick one
+;(() => {
+  const host = document.getElementById('modes-demo'); if (!host) return
+  const rail = document.getElementById('mrail'), scene = document.getElementById('mscene'), pill = host.querySelector('.mpill')
+  const tabs = [...host.querySelectorAll('.mswitch button')]
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const MODES = [
+    { h: 276, who: 'Developer', rail: ['Desk', 'Review', 'Ship', 'Standup', 'Skills'] },
+    { h: 150, who: 'Product', rail: ['Plans', 'Skills'] },
+    { h: 335, who: 'Design', rail: ['Review', 'Skills'] },
+  ]
+  const LANES = [['Build', 276], ['Intent', 70], ['Understanding', 230]]
+  const SAID = [['Add a test for the retry', 0, 'an instruction: the agent acts on it'], ['Is this supposed to cover archived users?', 1, 'what it is meant to do'], ['Why does it retry three times?', 2, 'what it does: read-only']]
+  let timers = [], at = 0, auto = true
+  const later = (f, ms) => timers.push(setTimeout(f, ms))
+  const clear = () => { timers.forEach(clearTimeout); timers = [] }
+  const developer = () => {
+    scene.innerHTML = `<div class="turns">
+        <div class="turn" style="--th:276"><i>Build</i>Fixed the pagination and pushed.</div>
+        <div class="turn" style="--th:70"><i>Intent</i>Agreed: archived users stay out of the export.</div>
+      </div>
+      <div class="box" id="mbox"><span class="lanes" id="mlanes"><span class="lp"></span>${LANES.map(([l]) => `<b>${l}</b>`).join('')}</span>
+      <div class="typed" id="mtyped"></div><div class="sounds" id="msounds">One box. Send, and it reads where your words belong.</div></div>`
+    const lanes = scene.querySelector('#mlanes'), lp = lanes.querySelector('.lp'), bs = [...lanes.querySelectorAll('b')], typed = scene.querySelector('#mtyped'), sounds = scene.querySelector('#msounds'), box = scene.querySelector('#mbox')
+    const lane = (k) => { const b = bs[k]; lp.style.left = b.offsetLeft + 'px'; lp.style.width = b.offsetWidth + 'px'; box.style.setProperty('--lh', LANES[k][1]); lanes.style.setProperty('--lh', LANES[k][1]); bs.forEach((x, i) => x.classList.toggle('on', i === k)) }
+    requestAnimationFrame(() => lane(0))
+    let t = 0
+    const say = (i) => {
+      const [text, k, why] = SAID[i % SAID.length]
+      typed.textContent = ''
+      for (let c = 1; c <= text.length; c++) later(() => { typed.textContent = text.slice(0, c); if (c === text.length) later(() => { lane(k); sounds.textContent = `Sent to ${LANES[k][0]}: ${why}` }, 500) }, c * (still ? 0 : 38))
+      later(() => say(i + 1), text.length * 38 + 1800)
+    }
+    say(t)
+  }
+  const product = () => {
+    const N = [['g', 'Seat pausing', 0, 92], ['e', 'Admins pause seats', 34, 30], ['e', 'Billing follows', 34, 150], ['t', 'Pause from team page', 66, 4], ['t', 'Resume a seat', 66, 56], ['t', 'Not billed next cycle', 66, 124], ['t', 'Prorate on resume', 66, 176]]
+    const P = [[0, 1], [0, 2], [1, 3], [1, 4], [2, 5], [2, 6]]
+    scene.innerHTML = `<div class="pmap" id="pmap"><svg aria-hidden="true"></svg></div><div class="notes" id="pnotes"></div>`
+    const map = scene.querySelector('#pmap'), svg = map.querySelector('svg'), notes = scene.querySelector('#pnotes')
+    const W = () => map.clientWidth
+    const xy = (i) => [N[i][2] / 100 * W(), N[i][3]]
+    N.forEach(([k, label], i) => later(() => {
+      const el = document.createElement('span'); el.className = `n ${k}`; el.textContent = label
+      el.style.left = xy(i)[0] + 'px'; el.style.top = xy(i)[1] + 'px'; map.appendChild(el)
+      P.filter(([, b]) => b === i).forEach(([a, b]) => { const [x1, y1] = xy(a), [x2, y2] = xy(b), w = map.children[a + 1]?.offsetWidth ?? 120; svg.insertAdjacentHTML('beforeend', `<path d="M${x1 + w} ${y1 + 15} C ${x1 + w + 30} ${y1 + 15}, ${x2 - 30} ${y2 + 15}, ${x2} ${y2 + 15}"/>`) })
+    }, still ? 0 : 250 + i * 420))
+    later(() => { const [x1, y1] = xy(5), [x2, y2] = xy(6), a = map.children[6]?.offsetWidth ?? 130, b = map.children[7]?.offsetWidth ?? 130; svg.insertAdjacentHTML('beforeend', `<path class="dep" d="M${x1 + a} ${y1 + 15} C ${x1 + a + 46} ${y1 + 15}, ${x2 + b + 46} ${y2 + 15}, ${x2 + b + 4} ${y2 + 15}"/>`) }, still ? 0 : 250 + N.length * 420)
+    ;[['ev', 'Seat paused'], ['en', 'Seat'], ['ru', 'A paused seat isn’t billed'], ['st', 'Admin resumes it']].forEach(([c, t], i) => later(() => notes.insertAdjacentHTML('beforeend', `<span class="${c}">${t}</span>`), still ? 0 : 3400 + i * 300))
+  }
+  const design = () => { scene.innerHTML = `<div class="soon"><div><div class="blur"><span></span><span></span><span></span></div><b>Design is coming</b><p>The journey, the screens and their states, and the words people see, for every change.</p></div></div>` }
+  const SCENES = [developer, product, design]
+  const show = (m) => {
+    clear(); at = m
+    const M = MODES[m]
+    host.style.setProperty('--h', M.h)
+    tabs.forEach((b, i) => b.setAttribute('aria-selected', String(i === m)))
+    pill.style.transform = `translateX(${m * 100}%)`
+    rail.innerHTML = `<div class="who"><i></i><div><em>Working as</em><b>${M.who}</b></div></div>` + M.rail.map((w, i) => `<span style="animation-delay:${i * 60}ms">${w}</span>`).join('')
+    scene.style.animation = 'none'; void scene.offsetWidth; scene.style.animation = ''
+    SCENES[m]()
+    if (auto && !still) later(() => show((m + 1) % 3), m === 2 ? 4000 : 9000)
+  }
+  tabs.forEach((b, i) => b.addEventListener('click', () => { auto = false; show(i) }))
+  let started = false
+  new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && !started) { started = true; show(0) } }).observe(host)
+})()
+
+  // the vitals section: the three cards go through a PR's life, one step every few seconds
+  ;(() => {
+    const el = document.getElementById('vitalsDemo'); if (!el) return
+    const cards = [...el.querySelectorAll('.vt')]
+    const STEPS = [
+      [['The agent is reviewing', 'Reading the diff and the retry policy', 1, 1], ['Not assessed yet', 'Tap it: it starts from the conversation', 0, 0], ['Not assessed yet', 'Tap it: it starts from the conversation', 0, 0]],
+      [['The review is ready', '1 blocking finding, 3 suggestions', 2, 0], ['1 open question', 'Should a 4xx ever be retried?', 1, 1], ['Not assessed yet', 'Tap it: it starts from the conversation', 0, 0]],
+      [['The review is ready', '1 blocking finding, 3 suggestions', 2, 0], ['Decision proposed', 'Retry timeouts only; fail a 4xx at once', 2, 0], ['Knows the flow', 'Not yet: why the backoff doubles', 1, 1]],
+      [['Post the review', 'Your findings, as inline comments', 3, 0], ['Intent agreed', 'Its steer went to the agent', 3, 0], ['Understood', 'Ready to approve', 3, 0]],
+    ]
+    let at = 0
+    const show = () => {
+      STEPS[at].forEach(([s, w, on, busy], k) => {
+        const c = cards[k], S = c.querySelector('.s'), W = c.querySelector('.w')
+        S.style.opacity = W.style.opacity = 0
+        setTimeout(() => { S.textContent = s; W.textContent = w; S.style.opacity = W.style.opacity = 1 }, 250)
+        c.querySelectorAll('.m i').forEach((x, j) => x.classList.toggle('on', j < on))
+        c.classList.toggle('busy', !!busy); c.classList.toggle('idle', s === 'Not assessed yet')
+      })
+      at = (at + 1) % STEPS.length
+    }
+    show()
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(show, 3200)
+  })()
+</script>
+</body>
+</html>

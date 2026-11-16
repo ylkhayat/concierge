@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Join this machine to the Concierge you already run on another one: one command, once you are signed in to Tailscale.
+
+  bin/join                 find Concierge on your tailnet, ask to join, and set this machine up
+  bin/join --name laptop   this machine's name among them (default: its hostname)
+  bin/join --yes           don't ask before joining
+  bin/join --check         check everything a join needs, change nothing, and say how to fix what is missing
+
+It asks the machine running Concierge's main server to let this one join. Signed in to Tailscale as the same person,
+it does at once; someone else waits for your approval there (Settings → Machines), with a code this screen shows.
+Then it sets this machine up as the standby (or as a worker, when there is one already): .env, the machine key, the
+fleet extension, the boot service. Your state, settings and Claude sessions come over on their own within a minute;
+sign-ins stay per machine (the dashboard's Settings → Accounts signs this one in).
+Needs: Docker, this checkout, and Tailscale signed in.
+"""
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+HOME = os.path.expanduser('~')
+PORT = os.environ.get('DECK_WORKER_PORT', '4748')
+
+
+def say(msg):
+    print(f'join: {msg}', flush=True)
+
+
+def tailscale():
+    """The tailnet as this machine's Tailscale sees it: (this device, the other devices online)."""
+    cli = tailscale_cli()
+    if not cli:
+        sys.exit('join: Tailscale is not installed here (https://tailscale.com/download), or not on PATH')
+    r = subprocess.run([cli, 'status', '--json'], capture_output=True, text=True, timeout=20)
+    if r.returncode:
+        sys.exit(f'join: Tailscale is not signed in here ({r.stderr.strip() or r.stdout.strip()[:200]}): sign in, then run this again')
+    st = json.loads(r.stdout)
+    if st.get('BackendState') != 'Running':
+        sys.exit(f"join: Tailscale is {st.get('BackendState', 'not running')}: sign in, then run this again")
+    peers = [p for p in (st.get('Peer') or {}).values() if p.get('Online') and p.get('TailscaleIPs')]
+    return st.get('Self') or {}, peers
+
+
+TAILSCALE_PATHS = ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', r'C:\Program Files\Tailscale\tailscale.exe', r'C:\Program Files (x86)\Tailscale\tailscale.exe']
+
+
+def tailscale_cli():
+    """Tailscale's command: on PATH, else where its app installs it (a Mac, Windows)."""
+    return shutil.which('tailscale') or next((p for p in TAILSCALE_PATHS if os.path.exists(p)), None)
+
+
+def reach(ip, port=PORT, timeout=3):
+    """How a machine answers on Concierge's port: 'concierge' (it is one), 'refused' (up, nothing listening there),
+    'timeout' (no answer: Tailscale's policy drops what it blocks, so this is almost always the policy), 'other'."""
+    try:
+        h = get(f'http://{ip}:{port}/hello', timeout=timeout)
+        return 'concierge' if h.get('concierge') else 'other'
+    except urllib.error.URLError as e:
+        why = getattr(e, 'reason', e)
+        if isinstance(why, ConnectionRefusedError) or 'refused' in str(why).lower():
+            return 'refused'
+        if isinstance(why, (socket.timeout, TimeoutError)) or 'timed out' in str(why).lower():
+            return 'timeout'
+        return 'other'
+    except (socket.timeout, TimeoutError):
+        return 'timeout'
+    except Exception:
+        return 'other'
+
+
+POLICY = '{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:concierge:%s"]}' % PORT
+
+
+def explain_tailnet(peers, answers):
+    """What the tailnet says about reaching Concierge, as (ok, what, fix) lines: from the online peers (Tailscale's own
+    view, with their tags) and how each tagged one answered on the port. Pure, so it is tested (join_test.py)."""
+    tagged = [p for p in peers if 'tag:concierge' in (p.get('Tags') or [])]
+    found = [p for p in peers if answers.get(p['HostName']) == 'concierge']
+    if found:
+        return [(True, f"Concierge answers on {', '.join(p['HostName'] for p in found)}", None)]
+    if not tagged:
+        return [(False, 'no machine online on your tailnet is tagged tag:concierge',
+                 "Concierge's main machine is offline, or its link (the concierge-link container) is not up: start it there with bin/update --force")]
+    out = []
+    for p in tagged:
+        a = answers.get(p['HostName'])
+        if a == 'timeout':
+            out.append((False, f"{p['HostName']} is tagged tag:concierge but drops this machine's connection on port {PORT}",
+                        f"your Tailscale policy blocks it: in the admin console (Access controls) add to \"acls\" (or \"grants\"): {POLICY}"))
+        elif a == 'refused':
+            out.append((False, f"{p['HostName']} is reachable but nothing listens on port {PORT}", 'Concierge is not running there: on that machine, bin/update --force'))
+        else:
+            out.append((False, f"{p['HostName']} answers on port {PORT}, but not as Concierge", 'is something else using that port there?'))
+    return out
+
+
+def check():
+    """Everything a join needs, checked without changing anything; each problem with how to fix it. Exit 1 if any."""
+    lines = []
+    def add(ok, what, fix=None):
+        lines.append((ok, what, fix))
+        print(f"  {'ok ' if ok else 'NO '} {what}" + ('' if ok or not fix else f'\n        fix: {fix}'), flush=True)
+    say('checking what a join needs (nothing is changed)')
+    add(sys.version_info >= (3, 8), f'Python {sys.version.split()[0]}', 'install Python 3.8 or newer')
+    add(bool(shutil.which('git')), 'git', 'install git (https://git-scm.com/downloads)')
+    if os.name == 'nt':
+        add(bool(shutil.which('bash')), 'bash (bin/update is a bash script)', 'run this from Git Bash or WSL, or install Git for Windows')
+    docker = shutil.which('docker')
+    add(bool(docker), 'Docker installed', 'install Docker Desktop (or Docker Engine)')
+    if docker:
+        up = subprocess.run(['docker', 'info'], capture_output=True, text=True, timeout=30).returncode == 0
+        add(up, 'Docker running', 'start Docker Desktop, and wait until it says it is running')
+        add(subprocess.run(['docker', 'compose', 'version'], capture_output=True, text=True, timeout=30).returncode == 0, 'Docker Compose v2', 'update Docker: it needs "docker compose"')
+    free = shutil.disk_usage(HOME).free / 1e9
+    add(free >= 10, f'{free:.0f} GB free', 'free up space: the first build needs about 10 GB')
+    add(os.path.exists(os.path.join(ROOT, '.env.example')), 'this Concierge checkout', 'run bin/join from a clone of the repository')
+    cli = tailscale_cli()
+    add(bool(cli), 'Tailscale installed', 'install it: https://tailscale.com/download')
+    if cli:
+        st = subprocess.run([cli, 'status', '--json'], capture_output=True, text=True, timeout=20)
+        state = json.loads(st.stdout).get('BackendState') if st.returncode == 0 and st.stdout.strip().startswith('{') else None
+        add(state == 'Running', f"Tailscale signed in ({state or 'not running'})", f'sign in: {cli} up (or the Tailscale app)')
+        if state == 'Running':
+            data = json.loads(st.stdout)
+            me = data.get('Self') or {}
+            peers = [p for p in (data.get('Peer') or {}).values() if p.get('Online') and p.get('TailscaleIPs')]
+            add(bool(peers), f'{len(peers)} other machine(s) online on your tailnet', 'turn on the machine that runs Concierge, signed in to the same tailnet')
+            ip = lambda p: next((a for a in p['TailscaleIPs'] if '.' in a), p['TailscaleIPs'][0])
+            with concurrent.futures.ThreadPoolExecutor(16) as pool:
+                answers = dict(zip([p['HostName'] for p in peers], pool.map(lambda p: reach(ip(p)), peers)))
+            for ok, what, fix in explain_tailnet(peers, answers):
+                add(ok, what, fix)
+            # tagged machines that are offline: not a problem for the join (another one stands in), but worth knowing
+            for p in (data.get('Peer') or {}).values():
+                if 'tag:concierge' in (p.get('Tags') or []) and not p.get('Online'):
+                    print(f"  ··· {p.get('HostName')} is offline on your tailnet (the machines that are online stand in for it)", flush=True)
+            found = [p for p in peers if answers.get(p['HostName']) == 'concierge']
+            if found:
+                hellos = [get(f'http://{ip(p)}:{PORT}/hello', timeout=5) for p in found]
+                main_name = next((h.get('main') for h in hellos if h.get('main')), None)
+                name = re.sub(r'[^a-z0-9-]', '-', (me.get('HostName') or socket.gethostname()).lower().split('.')[0]).strip('-')[:31]
+                add(bool(main_name), f"the main server is {main_name or 'unknown'}", 'is the main server up? Its dashboard shows it in Settings → Machines')
+                add(name not in [h.get('name') for h in hellos], f'"{name}" is free as this machine\'s name', 'pick another: bin/join --name <name>')
+    bad = [l for l in lines if not l[0]]
+    say('ready: run bin/join' if not bad else f'{len(bad)} thing(s) to fix first (above); then bin/join --check again')
+    return 0 if not bad else 1
+
+
+def get(url, timeout=3):
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return json.load(r)
+
+
+def post(url, body, timeout=30):
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method='POST', headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.load(e).get('error')
+        except Exception:
+            msg = None
+        sys.exit(f'join: {msg or e}')
+
+
+def find(peers):
+    """The machines on the tailnet that answer as Concierge (GET /hello on the worker port), each with its address."""
+    def knock(p):
+        ip = next((a for a in p['TailscaleIPs'] if '.' in a), p['TailscaleIPs'][0])
+        try:
+            h = get(f'http://{ip}:{PORT}/hello', timeout=2)
+            return {**h, 'ip': ip} if h.get('concierge') else None
+        except Exception:
+            return None
+    with concurrent.futures.ThreadPoolExecutor(16) as pool:
+        found = [h for h in pool.map(knock, peers) if h]
+    # a machine and its link container both answer as it: one each
+    return list({h['name']: h for h in found if h.get('name')}.values())
+
+
+def env_set(updates):
+    """Set keys in .env (made from .env.example if there is none yet), keeping everything else."""
+    path = os.path.join(ROOT, '.env')
+    if not os.path.exists(path):
+        shutil.copy(os.path.join(ROOT, '.env.example'), path)
+    lines = open(path).read().splitlines()
+    out = [l for l in lines if not ('=' in l and l.split('=', 1)[0].strip() in updates)]
+    out += [f'{k}={v}' for k, v in updates.items()]
+    with open(path, 'w') as f:
+        f.write('\n'.join(out) + '\n')
+    os.chmod(path, 0o600)
+
+
+def env_get(key):
+    try:
+        for l in open(os.path.join(ROOT, '.env')):
+            if l.startswith(f'{key}='):
+                return l.split('=', 1)[1].strip()
+    except OSError:
+        pass
+    return None
+
+
+def clone_fleet(repo, token):
+    """The fleet extension (private) into fleet/, with the shared GitHub token: given to git through a helper that reads
+    .env, so it never sits in a remote URL or a command line, and later pulls (bin/update) work the same way."""
+    dest = os.path.join(ROOT, 'fleet')
+    helper = f'!f() {{ echo username=x-access-token; echo "password=$(grep ^GITHUB_TOKEN= {os.path.join(ROOT, ".env")} | cut -d= -f2-)"; }}; f'
+    if not os.path.isdir(os.path.join(dest, '.git')):
+        say(f'fetching the fleet extension ({repo})')
+        subprocess.run(['git', '-c', 'credential.helper=', '-c', f'credential.helper={helper}', 'clone', '-q', f'https://github.com/{repo}.git', dest], check=True)
+    subprocess.run(['git', '-C', dest, 'config', 'credential.helper', helper], check=True)
+
+
+def main():
+    a = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    a.add_argument('--name', help="this machine's name among them (default: its hostname)")
+    a.add_argument('--yes', action='store_true', help="don't ask before joining")
+    a.add_argument('--check', action='store_true', help='check everything a join needs, change nothing')
+    o = a.parse_args()
+    if o.check:
+        sys.exit(check())
+    if not shutil.which('docker'):
+        sys.exit('join: Docker is not installed here')
+
+    me, peers = tailscale()
+    say(f"signed in to Tailscale as {me.get('HostName', '?')}; looking for Concierge on {len(peers)} machine(s) online")
+    found = find(peers)
+    if not found:
+        answers = {p['HostName']: reach(next((a for a in p['TailscaleIPs'] if '.' in a), p['TailscaleIPs'][0])) for p in peers if 'tag:concierge' in (p.get('Tags') or [])}
+        for _, what, fix in explain_tailnet(peers, answers):
+            say(f'{what}' + (f'\n      fix: {fix}' if fix else ''))
+        sys.exit('join: no Concierge answered on your tailnet: bin/join --check checks everything else too')
+    main_name = next((h['main'] for h in found if h.get('main')), None)
+    main_server = next((h for h in found if h['name'] == main_name), None) or found[0]
+    others = ', '.join(h['name'] for h in found if h is not main_server)
+    say(f"found Concierge: {main_server['name']} runs the main server" + (f' ({others} too)' if others else ''))
+
+    name = (o.name or re.sub(r'[^a-z0-9-]', '-', (me.get('HostName') or socket.gethostname()).lower().split('.')[0])).strip('-')[:31]
+    if any(h['name'] == name for h in found):
+        sys.exit(f'join: {name} is already one of them: pass --name <another name>')
+    if not o.yes and input(f"join {main_server['name']}'s Concierge as {name}? [Y/n] ").strip().lower() not in ('', 'y', 'yes'):
+        sys.exit('join: not joined')
+
+    base = f"http://{main_server['ip']}:{PORT}"
+    r = post(f'{base}/join', {'name': name})
+    if r.get('state') == 'waiting':
+        say(f"waiting for approval on {main_server['name']}: open the dashboard, Settings → Machines, and approve {name} "
+            f"if it shows the code {r['code']}")
+        end = time.time() + 30 * 60
+        while r.get('state') == 'waiting' and time.time() < end:
+            time.sleep(3)
+            try:
+                r = get(f"{base}/join/{r['id']}", timeout=10) | {'id': r['id']}
+            except Exception:
+                pass
+    if r.get('state') != 'approved' or not r.get('setup'):
+        sys.exit('join: not approved' if r.get('state') == 'denied' else 'join: no answer in 30 minutes: run it again')
+    s = r['setup']
+    say(f"approved: setting {name} up as the {s['role']} beside {s['main']}")
+
+    # .env: what this machine needs to run it, and the keys every machine shares
+    code = env_get('CODE_DIR')
+    if not code or '/you/' in code:  # unset, or .env.example's placeholder
+        code = os.path.join(HOME, 'code')
+    os.makedirs(code, exist_ok=True)
+    env_set({'CODE_DIR': code, 'CONCIERGE_DIRNAME': s['dirName'], **s.get('env', {})})
+    # the machine key, where the app and bin/standby read it
+    state = os.path.join(HOME, '.local/state', s['dirName'])
+    os.makedirs(os.path.join(state, 'hosts'), exist_ok=True)
+    if s.get('fleetRepo'):
+        clone_fleet(s['fleetRepo'], s.get('env', {}).get('GITHUB_TOKEN'))
+    if not os.path.exists(os.path.join(ROOT, 'fleet', 'bin', 'sync-setup')):
+        sys.exit('join: the fleet extension is missing (fleet/): ask for access to it, clone it into fleet/, and run this again')
+    # the rest is the fleet's own setup: .env's roles and paths, the boot service; the standby, or a worker beside one
+    cmd = [os.path.join(ROOT, 'fleet', 'bin', 'sync-setup'), 'standby', '--name', name, '--peer', s['main'], '--peer-ip', main_server['ip'],
+           '--key', s['key'], *(['--deck-home', s['deckHome']] if s.get('deckHome') else []), *(['--deck-code', s['deckCode']] if s.get('deckCode') else [])]
+    subprocess.run(cmd, cwd=ROOT, check=True)
+    if s['role'] == 'worker':
+        env_set({'DECK_ROLE': 'worker'})  # bin/standby restarts with it
+    say('building Concierge here (a few minutes the first time)')
+    subprocess.run([os.path.join(ROOT, 'bin', 'update'), '--force'], cwd=ROOT)
+    say(f"done: {name} is the {s['role']}. Its state, settings and sessions come over from {s['main']} within a minute.\n"
+        f"      Sign in this machine's accounts (Claude, OpenAI, Azure): the dashboard, Settings → Accounts, {name}.")
+
+
+if __name__ == '__main__':
+    main()
