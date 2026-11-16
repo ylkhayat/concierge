@@ -150,11 +150,13 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
 /** What the stack-wide reading says about one item: a copy of another PR's step, or a conflict with others. */
 function Flags({ id, copyOf, clashes, label }: { id: string; copyOf: Map<string, { of: string; why: string }>; clashes: Map<string, { with: string[]; why: string }>; label: (id: string) => string }) {
   const c = copyOf.get(id), x = clashes.get(id)
+  // the reading names items by their ids ("5201:2"): said as the PR they belong to
+  const tidy = (w: string) => w.replace(/\b(\d{2,6}):\d+\b/g, '#$1')
   if (!c && !x) return null
   return (
     <div className="mb-0.5 flex flex-wrap gap-1.5 pl-1">
-      {c && <span title={c.why} className="inline-flex items-center gap-1 rounded-full bg-fill px-1.5 text-micro font-medium text-fg-3"><CopyMinus className="size-3" />same as {label(c.of)}: unticked</span>}
-      {x && <span title={x.why} className="inline-flex items-center gap-1 rounded-full bg-wait/14 px-1.5 text-micro font-medium text-wait-text"><TriangleAlert className="size-3" />conflicts with {x.with.map(label).join(', ')}: {x.why}</span>}
+      {c && <span title={tidy(c.why)} className="inline-flex items-center gap-1 rounded-full bg-fill px-1.5 text-micro font-medium text-fg-3"><CopyMinus className="size-3" />same as {label(c.of)}: unticked</span>}
+      {x && <span title={tidy(x.why)} className="inline-flex items-center gap-1 rounded-full bg-wait/14 px-1.5 text-micro font-medium text-wait-text"><TriangleAlert className="size-3" />conflicts with {x.with.map(label).join(', ')}: {tidy(x.why)}</span>}
     </div>
   )
 }

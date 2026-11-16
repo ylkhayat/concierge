@@ -2,7 +2,7 @@
 // its next step, and beside it what to check before trusting the work.
 import { useStackNext } from './StackNext.tsx'
 import { queuedText } from '../time.ts'
-import { ArrowLeft, ArrowRight, CheckCheck, LoaderCircle, MessageCircleQuestion, Send, Upload, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCheck, LoaderCircle, MessageCircleQuestion, Send, Upload, type LucideIcon, Layers } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { FlowAction } from '../../server/flow.ts'
 import { ActivityFeed, FeedMode } from '../components/ActivityFeed.tsx'
@@ -21,10 +21,10 @@ import { DomainView } from './DomainView.tsx'
 
 const Explain = lazy(() => import('../components/Explain.tsx'))
 
-type Pane = 'explain' | 'description' | 'turns' | 'ticket' | 'domain'
+type Pane = 'explain' | 'description' | 'turns' | 'ticket' | 'domain' | 'stack'
 // the panel's tab carries over to the next PR, per role (each role keeps its place), and sits in the URL
 const lastPane: Partial<Record<Role, Pane>> = {}
-const PANES: Pane[] = ['explain', 'description', 'turns', 'ticket', 'domain']
+const PANES: Pane[] = ['explain', 'description', 'turns', 'ticket', 'domain', 'stack']
 // what each role's panel has: the code's views for a developer; the domain first for product and design, and of
 // Explain only what isn't technical
 // (the vitals sit over the panel, always; how it changed direction opens from Explain; the tools are the box's / commands)
@@ -50,7 +50,7 @@ const TITLE: Partial<Record<FlowAction, (mine: boolean) => string>> = {
   'retry-op': () => 'Run the tool again',
   'dismiss-op': () => 'Put the failure away',
 }
-const TAB: Record<Pane, string> = { explain: 'Explain', description: 'Description', turns: 'Turns', ticket: 'Ticket', domain: 'Domain' }
+const TAB: Record<Pane, string> = { explain: 'Explain', description: 'Description', turns: 'Turns', ticket: 'Ticket', domain: 'Domain', stack: 'Stack' }
 const ICON: Partial<Record<FlowAction, LucideIcon>> = { post: Send, publish: Upload, merge: CheckCheck, answer: MessageCircleQuestion }
 
 export function PrThread(props: PrThreadProps) {
@@ -59,7 +59,7 @@ export function PrThread(props: PrThreadProps) {
   const role = useRole(), panes = ROLE_PANES[role]
   const [paneState, setPaneState] = useState<Pane>(() => (PANES.find((p) => p === param('pane')) ?? (props.ticket ? 'ticket' : lastPane[role] ?? panes[0])))
   // a tab this role doesn't have: its own last one, or its first
-  const pane: Pane = paneState === 'ticket' || paneState === 'turns' || panes.includes(paneState) ? paneState : lastPane[role] ?? panes[0]
+  const pane: Pane = paneState === 'ticket' || paneState === 'turns' || paneState === 'stack' || panes.includes(paneState) ? paneState : lastPane[role] ?? panes[0]
   const setPane = (p: Pane) => { lastPane[role] = p; setPaneState(p); setParam('pane', p === panes[0] ? null : p) }
   // another role: back where that role was
   const was = useRef(role)
@@ -71,7 +71,6 @@ export function PrThread(props: PrThreadProps) {
   const stackTarget = stack && `stack:${stack[0].repo}#${stack[0].number}`
   // every next step the stack's agents wait on, answered at once (two or more of its PRs waiting)
   const { card: stackNext, covers } = useStackNext({ stack: stack ?? [], prs, toast })
-  const inStack = covers.includes(pr.id) // the stack card already holds this PR's own steps
   const [wholeState, setWhole] = useState(() => lastWhole)
   const whole = !!stack && wholeState
   const prTalks = useDiscussions(`pr:${pr.id}`), stackTalks = useDiscussions(stackTarget)
@@ -141,6 +140,13 @@ export function PrThread(props: PrThreadProps) {
   const shipTitle = busy && !pr.waiting ? (pr.status === 'queued' ? 'Queued' : pr.status === 'posting' ? 'Posting' : 'The agent is working') : pr.waiting ? 'Waiting for an account'
     : askFirst ? 'The agent asks you' : next ? TITLE[next]?.(!!pr.mine) ?? 'Next' : 'All clear'
   const shipTone = busy ? 'run' as const : askFirst || next === 'answer' ? 'wait' as const : next === 'retry' || next === 'retry-op' ? 'fail' as const : next ? 'run' as const : 'ok' as const
+  // the stack's waiting steps live in the panel (its Stack tab); here only one line that opens it, so the chat stays the chat
+  const stackLine = stackNext && pane !== 'stack' ? (
+    <button onClick={() => setPane('stack')} className="mb-2 flex w-full items-center gap-2 rounded-xl bg-accent/6 px-3 py-2 text-left text-small ring-1 ring-accent/20 transition-colors hover:bg-accent/10">
+      <Layers className="size-4 shrink-0 text-accent-text" /><span className="font-semibold text-fg-1">The stack waits on you</span>
+      <span className="min-w-0 flex-1 truncate text-fg-3">{covers.length} PRs, answered at once</span><span className="shrink-0 font-medium text-accent-text">Open</span>
+    </button>
+  ) : null
   const nextCard = busy && !pr.waiting ? (
     // working: one line (its background runs and Stop), the details folded; the conversation shows the work itself
     <WorkingBar title={pr.status === 'queued' ? 'Queued' : pr.status === 'posting' ? 'Posting' : 'The agent is working'} sub={pr.status === 'queued' ? queuedText(pr.queued) : pr.background ? `${pr.background} running in the background` : undefined}
@@ -164,9 +170,9 @@ export function PrThread(props: PrThreadProps) {
         follow={`${pr.id}:${count}:${pr.status}:${next}`}
         header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions}
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
-        next={(inStack ? !askFirst && nextCard : nextCard) || (asking && !askFirst && !inStack) || stackNext ? <>{stackNext}{inStack && askFirst ? null : nextCard}{asking && !askFirst && !inStack && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined}
+        next={nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined}
         composer={!asking && <Composer>{steer}</Composer>}
-        tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain' }))]}
+        tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain' })), ...(stackNext ? [{ id: 'stack' as const, label: `Stack · ${covers.length} waiting` }] : [])]}
         tab={pane === 'turns' ? 'explain' : pane} onTab={setPane}
         onAsk={(q) => appendDraft(`pr:${pr.id}`, q)}
         vitals={(
@@ -174,7 +180,7 @@ export function PrThread(props: PrThreadProps) {
                     shipping={<ShippingVital title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
                     topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number }} />
         )}
-        pane={pane === 'explain' ? (
+        pane={pane === 'stack' && stackNext ? <div className="flex h-full min-h-0 flex-col p-4">{stackNext}</div> : pane === 'explain' ? (
             <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>}>
               <Explain key={`${explainKey}:${role}`} pr={pr} toast={toast} prs={prs} onSelect={props.onSelect} lenses={role === 'developer' ? undefined : ['tour', 'business']} onTurns={role === 'developer' ? () => setPane('turns') : undefined} />
             </Suspense>
