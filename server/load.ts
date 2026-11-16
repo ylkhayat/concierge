@@ -4,7 +4,7 @@ import { availableParallelism, freemem, homedir, totalmem } from 'node:os'
 import { promisify } from 'node:util'
 import { basename, join } from 'node:path'
 import { CRIT_DIR } from './crit.ts'
-import { stopAt, usageOf, cancel, cancelBase, cancelExec, cancelExplain, children, waitReason } from './runner.ts'
+import { stopAt, usageOf, cancel, cancelBase, cancelExec, cancelExplain, children, waitReason, STOPPED } from './runner.ts'
 import { state } from './store.ts'
 import { capped, hosted, machines } from './machines.ts'
 import { fleet } from './fleet.ts'
@@ -92,6 +92,20 @@ async function machine() {
 /** What this process's agents use (on a worker: the ones it runs for the control plane). */
 export const ownUsage = async () => { const all = await ps(); return sum(treeOf(process.pid, all).filter((p) => p.pid !== process.pid)) }
 
+/**
+ * Runs that stopped without finishing in the last week (failed, killed by restarts, cancelled) and that nothing has
+ * run for since: kept in one place so each can go again (runner.ts runAgain).
+ */
+export function stoppedRuns() {
+  const since = Date.now() - 7 * 86_400_000, execs = Object.values(state.execs)
+  const row = (key: string, t: { state: string; error?: string; endedAt?: string; startedAt?: string; queuedAt: string }) =>
+    ({ key, label: label(key), target: targetOf(key), state: t.state, why: t.error?.slice(0, 200), at: t.endedAt ?? t.startedAt ?? t.queuedAt })
+  return [
+    ...execs.filter((r) => STOPPED.has(r.state) && !execs.some((o) => o.id !== r.id && o.queuedAt > r.queuedAt && o.ids.some((id) => r.ids.includes(id)))).map((r) => row(`exec:${r.id}`, r)),
+    ...Object.values(state.prs).filter((p) => p.job && !p.closed && STOPPED.has(p.job.state)).map((p) => row(p.id, p.job!)),
+  ].filter((r) => Date.parse(r.at) > since).sort((a, b) => b.at.localeCompare(a.at))
+}
+
 export async function load() {
   const { crit, ours, strays, strayTrees, queued } = await snapshot()
   // several machines: the totals are all of them together (the per-machine line under Agents splits them)
@@ -109,6 +123,7 @@ export async function load() {
     ] : [],
     queued,
     waiting: waitReason(), // why the queued ones aren't starting
+    stopped: stoppedRuns(),
 
     strays: strays.length,
     crit: crit.map(({ tree: _, ...c }) => c),

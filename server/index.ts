@@ -40,10 +40,10 @@ import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
+import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { git } from './atlas.ts'
-import { load, ownUsage, stop } from './load.ts'
+import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
 import { claudeAuth, claudeLoginState, finishClaudeLogin, keepClaudeAuth, startClaudeLogin, stopUsingLogin } from './claudeLogin.ts'
 import { rereadSecrets, saveSecrets, scrub } from './scrub.ts'
@@ -1371,6 +1371,14 @@ const sweep = () => {
 setTimeout(sweep, 2 * 60_000) // after boot, once restarted work has settled
 setInterval(sweep, 10 * 60_000)
 setTimeout(() => void worktrees().catch(() => {}), 30_000) // size them in the background before anyone opens the list
+// stopped runs go again: one (its key), or every one in the list
+app.post('/load/again', async (c) => {
+  const { key } = await c.req.json() as { key?: unknown }
+  const keys = typeof key === 'string' ? [key] : stoppedRuns().map((r) => r.key)
+  const failed = keys.map((k) => runAgain(k)).filter(Boolean) as string[]
+  if (failed.length === keys.length && keys.length) return c.json({ error: failed[0] }, 409)
+  return c.json({ started: keys.length - failed.length, failed })
+})
 app.post('/load/stop', async (c) => {
   const { what } = await c.req.json<{ what: 'crit' | 'runs' | 'all' }>()
   if (!['crit', 'runs', 'all'].includes(what)) return c.json({ error: 'what: crit | runs | all' }, 400)

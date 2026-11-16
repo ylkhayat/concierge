@@ -1097,6 +1097,29 @@ async function readDevlogs() {
 void readDevlogs(); setInterval(() => void readDevlogs(), 60_000).unref()
 const devlogArgs = () => (devlogs ? ['--add-dir', DEVLOGS] : [])
 
+/**
+ * Put a run that stopped without finishing (failed, killed by restarts, cancelled) back in the queue: the same run, so a
+ * prep still hands over to its tickets and a batch still submits. One that had started continues its own session
+ * (sending its command again could re-post or re-push what it already did); one that never started starts as it was.
+ */
+export function runAgain(key: string): string | undefined {
+  const again = { continued: 0, error: undefined, alerted: undefined, endedAt: undefined, pausedAt: undefined, notBefore: undefined }
+  if (key.startsWith('exec:')) {
+    const r = state.execs[key.slice(5)]
+    if (!r || !STOPPED.has(r.state)) return 'That run is not stopped'
+    if (r.ids.some(ticketBusy)) return `${r.ids.find(ticketBusy)} already has a run going`
+    transition('exec', r.ids.join(' → '), r.id, r, 'queued', 'you ran it again', { ...again, continuing: !!r.startedAt }, { kind: r.label ?? 'exec' })
+    note(key, { at: new Date().toISOString(), kind: 'event', text: 'You ran it again.' })
+    save(); bus.emit('exec'); pump(); return
+  }
+  const pr = state.prs[key], job = pr?.job
+  if (!pr || !job || !STOPPED.has(job.state)) return 'That run is not stopped'
+  transition('job', pr.id, job.queuedAt, job, 'queued', 'you ran it again', { ...again, continuing: !!job.startedAt }, { kind: job.kind })
+  note(pr.id, { at: new Date().toISOString(), kind: 'event', text: 'You ran it again.' })
+  save(); bus.emit('change'); pump()
+}
+export const STOPPED = new Set<string>(['failed', 'interrupted', 'cancelled'])
+
 export function cancelExec(id: string) {
   const run = state.execs[id]
   if (!run) return

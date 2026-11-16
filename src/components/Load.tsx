@@ -1,4 +1,4 @@
-import { Bot, FolderGit2, Gauge, LoaderCircle, MessagesSquare, Power } from 'lucide-react'
+import { Bot, FolderGit2, Gauge, LoaderCircle, MessagesSquare, Power, RotateCcw } from 'lucide-react'
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Load as LoadT, Target } from '../../server/load.ts'
 import type { Worktree } from '../../server/worktrees.ts'
@@ -50,6 +50,11 @@ export function Load({ toast, onOpen }: { toast: (m: string, tone?: 'ok' | 'erro
   const stop = (what: 'crit' | 'runs' | 'all') => arm(what, () =>
     api('/load/stop', { what }).then((r: { stopped: number }) => { toast(r.stopped ? `Stopped ${r.stopped}` : 'Nothing was running'); setTimeout(read, 1500) }, (e: Error) => toast(e.message, 'error')))
 
+  // stopped runs (failed, killed by restarts, cancelled) go again: one, or all of them
+  const again = (key?: string) => api('/load/again', key ? { key } : {}).then((r: { started: number; failed: string[] }) => {
+    toast(`${r.started} back in the queue${r.failed.length ? ` · ${r.failed[0]}` : ''}`); void read()
+  }, (e: Error) => toast(e.message, 'error'))
+  const stopped = load?.stopped ?? []
   const go = (t: Target) => { document.getElementById('load')?.hidePopover(); onOpen(t) }
   const agents = (load?.runs.length ?? 0) + (load?.strays ?? 0)
   const count = agents + (load?.crit.length ?? 0)
@@ -67,6 +72,7 @@ export function Load({ toast, onOpen }: { toast: (m: string, tone?: 'ok' | 'erro
               title={load ? `${agents} agent${agents === 1 ? '' : 's'} · ${load.crit.length} crit · ${load.total.cpu}% CPU · ${fmt(load.total.mb)}` : 'What is running'} aria-label="What is running"
               className={`group relative rounded-lg p-2 transition-all hover:bg-hover active:scale-95 ${hot ? 'text-fail' : count ? 'text-fg-2 ' : 'text-fg-3'}`}>
         <Gauge className="size-4" />
+        {!count && stopped.length > 0 && <span title={`${stopped.length} stopped`} className="absolute -right-0.5 -top-0.5 rounded-full bg-wait px-1 text-micro font-semibold tabular-nums leading-[14px] text-white">{stopped.length}</span>}
         {count > 0 && <span className={`absolute -right-0.5 -top-0.5 rounded-full px-1 text-micro font-semibold tabular-nums leading-[14px] text-white ${hot ? 'bg-fail' : 'bg-fg-3'}`}>{count}</span>}
       </button>
       <div id="load" popover="auto" onToggle={(e) => (e as unknown as ToggleEvent).newState === 'open' && readWts()}
@@ -102,6 +108,21 @@ export function Load({ toast, onOpen }: { toast: (m: string, tone?: 'ok' | 'erro
                 </p>
               )}
             </Card>
+            {stopped.length > 0 && (
+              <Card icon={RotateCcw} title="Stopped" meta={String(stopped.length)} action={stopped.length > 1 && <button onClick={() => again()} className="btn-outline btn-sm">Run all again</button>}>
+                <ul className="space-y-1.5">
+                  {stopped.map((r) => (
+                    <li key={r.key} className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Item target={r.target} go={go} dot={r.state === 'cancelled' ? 'bg-fg-4' : 'bg-fail'}>{r.label}</Item>
+                        <p className="truncate pl-3.5 text-meta text-fg-3" title={r.why}>{r.state === 'cancelled' ? 'Cancelled' : r.state === 'interrupted' ? 'Killed' : 'Failed'} {ago(r.at)}{r.why ? ` · ${r.why}` : ''}</p>
+                      </div>
+                      <button onClick={() => again(r.key)} className="btn-ghost btn-sm shrink-0">Run again</button>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
             <Card icon={MessagesSquare} title="crit servers" meta={String(load.crit.length)} action={btn('crit', 'Stop', load.crit.length)}>
               {load.crit.length ? (
                 <ul className="space-y-1">{load.crit.slice(0, 3).map((c) => (
