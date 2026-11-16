@@ -11,7 +11,11 @@ type Owner = Role | 'shared'
 
 type Row = SkillRow & { before: number; source: Source; tokens?: number; mode?: string }
 type View = { days: number; runs: number; withSkill: number; skills: Row[]; installed: Installed[]; perDay: Record<string, number>; advice: Advice[] }
-type Improve = { verdict: 'keep' | 'change' | 'remove'; why: string; changes: { title: string; why: string; edit: string }[]; tokens: { after: number; how: string }; rewrite: string; tokensNow?: number; tokensNew?: number; file?: string; costUsd: number; from: number }
+type Improve = import('../../server/skills.ts').Improvement
+type Suggest = { suggestions: (Advice & { change: string })[]; costUsd: number; from: number; at: string; days: number }
+/** A proposal as the server keeps it: the last one written, whether one is being written now, and why the last try failed. */
+type Kept<T> = { result?: T; busy: boolean; error?: string }
+const ago = (at: string) => { const m = Math.round((Date.now() - Date.parse(at)) / 60_000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) }
 type Toast = (m: string, tone?: 'ok' | 'error') => void
 type Scope = 'all' | 'mine' | 'company' | 'others'
 type Sort = 'used' | 'trending' | 'work' | 'tokens'
@@ -294,9 +298,11 @@ function Overview({ v, rows, feature, onPick, toast }: { v: View; rows: Row[]; f
   const moving = [...v.skills].filter((s) => s.runs >= 3).sort((a, b) => (half(b)[1] - half(b)[0]) - (half(a)[1] - half(a)[0]))
   const unused = rows.filter((r) => !r.runs && !feature.has(r.name))
   const [showUnused, setShowUnused] = useState(false)
-  const [ai, setAi] = useState<{ suggestions: (Advice & { change: string })[]; costUsd: number; from: number }>()
-  const [asking, setAsking] = useState(false)
-  const suggest = () => { setAsking(true); api('/skills/suggest', { days: v.days }).then(setAi, (e: Error) => toast(e.message, 'error')).finally(() => setAsking(false)) }
+  // kept on the server: written in the background, there when you come back
+  const kept = useApi<Kept<Suggest>>('/skills/advice', { refetchInterval: (q) => (q.state.data?.busy ? 3000 : false) })
+  const ai = kept.data?.result, asking = !!kept.data?.busy
+  useEffect(() => { if (kept.data?.error) toast(kept.data.error, 'error') }, [kept.data?.error])
+  const suggest = () => api('/skills/suggest', { days: v.days }).then(() => refresh('/skills/advice'), (e: Error) => toast(e.message, 'error'))
   const advice = v.advice.filter((a) => a.kind !== 'remove' || a.skill) // the unused have their own row below
   const counts = (['good', 'watch', 'fix'] as const).map((k) => [k, judged.filter((s) => s.verdict === k).length] as const)
   return <>
@@ -349,10 +355,10 @@ function Overview({ v, rows, feature, onPick, toast }: { v: View; rows: Row[]; f
       <div className="card p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1"><p className="text-body font-medium text-fg-1">Proposals from what you told the agents</p><p className="text-small text-fg-3">A small model reads your messages to the agents and the scores, and drafts new skills or changes. A few cents.</p></div>
-          <button onClick={suggest} disabled={asking} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-60">{asking ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}{ai ? 'Draft again' : 'Draft proposals'}</button>
+          <button onClick={suggest} disabled={asking} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-60">{asking ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}{asking ? 'Drafting… you can leave' : ai ? 'Draft again' : 'Draft proposals'}</button>
         </div>
         {ai && <div className="mt-3 space-y-3 border-t border-line pt-3">
-          <p className="text-meta text-fg-4">From {ai.from} of your messages · ${ai.costUsd.toFixed(3)}</p>
+          <p className="text-meta text-fg-4">Written {ago(ai.at)} over {ai.days} days · from {ai.from} of your messages · ${ai.costUsd.toFixed(3)}</p>
           {ai.suggestions.map((s, i) => <div key={i}><div className="flex items-center gap-2"><span className={`rounded-full px-2 py-px text-meta font-medium ${ADVICE[s.kind].cls}`}>{ADVICE[s.kind].label}</span><span className="text-body font-medium text-fg-1">{s.title}</span></div><p className="mt-0.5 text-small text-fg-2">{s.why}</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-hover px-3 py-2 text-small text-fg-1">{s.change}</p></div>)}
         </div>}
       </div>
@@ -365,10 +371,12 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
   // another role's skill: used as it is, changed only from that role
   const mine = owner === 'shared' || owner === role
   const own = (o: Owner) => api('/roles/skill', { name: r.name, owner: o }).then(() => { refresh('/roles'); toast(o === 'shared' ? 'Shared with every role' : `Now only ${ROLES[o].label}'s`) }, (e: Error) => toast(e.message, 'error'))
-  const [imp, setImp] = useState<Improve>()
-  const [asking, setAsking] = useState(false)
+  // kept on the server: written in the background (a minute or two), there when you come back
+  const kept = useApi<Kept<Improve>>(`/skills/advice?name=${encodeURIComponent(r.name)}`, { refetchInterval: (q) => (q.state.data?.busy ? 3000 : false) })
+  const imp = kept.data?.result, asking = !!kept.data?.busy
+  useEffect(() => { if (kept.data?.error) toast(kept.data.error, 'error') }, [kept.data?.error])
   const [armed, setArmed] = useState(false)
-  const improve = () => { setAsking(true); api('/skills/improve', { name: r.name, days }).then(setImp, (e: Error) => toast(e.message, 'error')).finally(() => setAsking(false)) }
+  const improve = () => api('/skills/improve', { name: r.name, days }).then(() => refresh('/skills/advice'), (e: Error) => toast(e.message, 'error'))
   const remove = () => {
     if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 4000); return }
     api('/skills/remove', { name: r.name }).then((x: { said: string }) => { toast(x.said); onRemoved() }, (e: Error) => toast(e.message, 'error'))
@@ -417,7 +425,7 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
     <div className="card p-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1"><p className="text-body font-medium text-fg-1">What to change</p><p className="text-small text-fg-3">Sonnet reads the skill, how its runs went and what you told the agents in them: edits for the goal, and how to spend fewer tokens.</p></div>
-        <button onClick={improve} disabled={asking || !mine} title={mine ? undefined : `Switch to ${OWNER_LABEL(owner)} to change it`} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-60">{asking ? <LoaderCircle className="size-3.5 animate-spin" /> : <Wand className="size-3.5" />}{imp ? 'Again' : 'Suggest improvements'}</button>
+        <button onClick={improve} disabled={asking || !mine} title={mine ? undefined : `Switch to ${OWNER_LABEL(owner)} to change it`} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-60">{asking ? <LoaderCircle className="size-3.5 animate-spin" /> : <Wand className="size-3.5" />}{asking ? 'Reading… you can leave' : imp ? 'Again' : 'Suggest improvements'}</button>
       </div>
       {imp && <div className="mt-3 space-y-3 border-t border-line pt-3">
         <p className="text-small text-fg-1"><b className="font-semibold">{imp.verdict === 'keep' ? 'Keep it' : imp.verdict === 'change' ? 'Change it' : 'Remove it'}.</b> {imp.why}</p>
@@ -440,7 +448,18 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
             </details>
           </div>
         )}
-        <p className="text-meta text-fg-4">From {imp.from} of your messages · ${imp.costUsd.toFixed(3)}</p>
+        {imp.newSkills?.map((n) => (
+          // a part the rewrite moves out: its whole file, to save next to the others before using the rewrite
+          <div key={n.name} className="rounded-xl ring-1 ring-line">
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <span className="min-w-0 flex-1 text-small"><b className="font-semibold text-fg-1">New skill <span className="font-mono">{n.name}</span></b> <span className="text-fg-3">· {tok(Math.round(n.content.length / 4))} tokens · save it as ~/.claude/skills/{n.name}/SKILL.md</span><span className="block text-fg-3">{n.why}</span></span>
+              <button onClick={() => navigator.clipboard.writeText(n.content).then(() => toast(`Copied: save it as ~/.claude/skills/${n.name}/SKILL.md`))} className="inline-flex items-center gap-1.5 btn-quiet btn-sm"><Copy className="size-3.5" />Copy {n.name}</button>
+            </div>
+            <details className="border-t border-line"><summary className="cursor-pointer list-none px-3 py-2 text-small text-fg-3 hover:text-fg-1">Show it</summary>
+              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap px-3 pb-3 font-mono text-meta text-fg-2">{n.content}</pre></details>
+          </div>
+        ))}
+        <p className="text-meta text-fg-4">Written {ago(imp.at)} over {imp.days} days · from {imp.from} of your messages · ${imp.costUsd.toFixed(3)}</p>
       </div>}
     </div>
   </>

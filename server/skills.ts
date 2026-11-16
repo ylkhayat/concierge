@@ -167,7 +167,11 @@ const IMPROVE = { type: 'object', properties: {
   changes: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, why: { type: 'string' }, edit: { type: 'string' } }, required: ['title', 'why', 'edit'] } },
   tokens: { type: 'object', properties: { after: { type: 'number' }, how: { type: 'string' } }, required: ['after', 'how'] },
   rewrite: { type: 'string' },
-}, required: ['verdict', 'why', 'changes', 'tokens', 'rewrite'] }
+  // a part moved out into a skill of its own: that skill's whole file, so nothing points at a skill nobody wrote
+  newSkills: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, why: { type: 'string' }, content: { type: 'string' } }, required: ['name', 'why', 'content'] } },
+}, required: ['verdict', 'why', 'changes', 'tokens', 'rewrite', 'newSkills'] }
+export type Improvement = { verdict: 'keep' | 'change' | 'remove'; why: string; changes: { title: string; why: string; edit: string }[]; tokens: { after: number; how: string }; rewrite: string
+  newSkills: { name: string; why: string; content: string }[]; costUsd: number; tokensNow?: number; tokensNew?: number; file?: string; from: number; at: string; days: number }
 
 /**
  * What to change in one skill, read from the skill itself, how its runs went, and what you told the agents in them:
@@ -185,14 +189,17 @@ export async function improveSkill(name: string, days: number) {
     if (said.length >= 40) break
   }
   const errors = list.filter((r) => r.error).map((r) => r.error!.slice(0, 160)).slice(0, 8)
-  const prompt = `The skill "${name}" (${meta?.source ?? 'unknown'} skill, about ${meta?.tokens ?? '?'} tokens, loaded on each run that uses it):\n\n${text.slice(0, 24000) || '(its file could not be read)'}\n\n`
+  const prompt = `The skill "${name}" (${meta?.source ?? 'unknown'} skill, about ${meta?.tokens ?? '?'} tokens, loaded on each run that uses it):\n\n${text.slice(0, 160_000) || '(its file could not be read)'}\n\n`
     + (row ? `Over ${days} days: ${row.runs} runs, ${row.done} finished, ${row.followed} run again within two hours, ${(row.steers / row.runs).toFixed(1)} messages from the developer a run, ${row.refusedRuns} with a tool refused, $${row.costUsd.toFixed(2)} in all. Score ${row.score}/100${row.reasons.length ? `: ${row.reasons.join('; ')}` : ''}.` : `No run used it in ${days} days.`)
     + `\n\nWhat the developer told the agents while they used it:\n${said.join('\n') || '(nothing)'}\n\nErrors its runs ended with:\n${errors.join('\n') || '(none)'}`
-    + '\n\nJudge this one skill: verdict, why, changes, tokens, and rewrite (the whole file, an empty string when the verdict is remove).'
+    + `\n\nSkills installed here: ${v.installed.map((i) => i.name).join(', ')}`
+    + '\n\nJudge this one skill: verdict, why, changes, tokens, and rewrite: the whole file, every part of it written out (never "keep this part unchanged"), an empty string when the verdict is remove.'
+    + ' newSkills: when an edit moves a part into a skill of its own, that skill\'s whole file (frontmatter with name and description, then every moved line, verbatim), its name, and why; the rewrite loads it by that name. The rewrite never names a skill that is neither installed here nor in newSkills. Empty when nothing moves out.'
   // the rewrite is the whole file: the budget allows for writing it out
-  const { out, costUsd } = await haiku<{ verdict: 'keep' | 'change' | 'remove'; why: string; changes: { title: string; why: string; edit: string }[]; tokens: { after: number; how: string }; rewrite: string }>(
-    prompt, IMPROVE, await method('skills', 'Return only the structured output.'), 1.5, 'sonnet')
-  return { ...out, costUsd, tokensNow: meta?.tokens, tokensNew: out.rewrite ? Math.round(out.rewrite.length / 4) : undefined, file: file?.replace(homedir(), '~'), from: said.length }
+  // the rewrite is the whole file, and any skill split out of it: the budget allows for writing them out
+  const { out, costUsd } = await haiku<Omit<Improvement, 'costUsd' | 'tokensNow' | 'tokensNew' | 'file' | 'from' | 'at' | 'days'>>(
+    prompt, IMPROVE, await method('skills', 'Return only the structured output.'), 3, 'sonnet')
+  return { ...out, newSkills: out.newSkills ?? [], costUsd, tokensNow: meta?.tokens, tokensNew: out.rewrite ? Math.round(out.rewrite.length / 4) : undefined, file: file?.replace(homedir(), '~'), from: said.length, at: new Date().toISOString(), days } satisfies Improvement
 }
 
 /**

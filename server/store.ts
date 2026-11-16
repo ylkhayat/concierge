@@ -237,6 +237,7 @@ type State = {
   releaseLog: ReleaseMove[] // newest first
   releaseError?: string // why the last pass failed; it retries every sync from the same mark
   usage?: import('./usage.ts').Usage // the Claude plan's windows, as the agents last reported them
+  skillAdvice?: { improve: Record<string, import('./skills.ts').Improvement>; suggest?: { suggestions: unknown[]; costUsd: number; from: number; at: string; days: number } } // the last proposals, kept until asked again
   briefs?: Record<string, { key: string; text: string; at: string }> // the Desk's written brief per topic, with the facts it was written from
   standups?: Record<string, Written> // written standups, by "<day>|<teams>": what the model made of the facts, and from which
   // tickets that left your Linear list (handed over, closed) but are still named here (a run, a standup, a PR title):
