@@ -231,10 +231,8 @@ export function App() {
   })
 
   const refresh = () => { setRefreshing(true); api('/poll', {}).finally(() => setRefreshing(false)) }
-  const toggleAuto = () => mode === 'exec'
-    ? api('/exec/auto', { on: !exec?.auto }).then(() => toast(!exec?.auto ? 'Auto-exec on: newly assigned Todo tickets start on their own' : 'Auto-exec off'))
-    : health && api('/auto-start', { on: !health.autoStart }).then((h) => toast(h.autoStart ? 'Auto-review on: new requests start on their own' : 'Auto-review off'))
-  const autoOn = mode === 'exec' ? !!exec?.auto : !!health?.autoStart
+  const toggleAuto = () => health && api('/auto-start', { on: !health.autoStart }).then((h) => toast(h.autoStart ? 'Auto-review on: new requests start on their own' : 'Auto-review off'))
+  const autoOn = !!health?.autoStart
 
   const openSettings = () => setSettingsOpen(mode === 'exec' ? 'exec' : 'general')
   const goCodebase = (repo = (focus && repos.includes(focus) ? focus : undefined) ?? codebaseRepo ?? repos[0]) => {
@@ -267,10 +265,10 @@ export function App() {
   )
   const autoToggle = (
     <label className="flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-hover"
-           title={mode === 'exec' ? (autoOn ? 'Newly assigned Todo tickets start on their own' : 'Auto-exec is off: run tickets by hand') : autoOn ? 'New review requests start your review command automatically' : 'Auto-review is off: run reviews by hand'}>
+           title={autoOn ? 'New review requests start your review command automatically' : 'Auto-review is off: run reviews by hand'}>
       <Zap className={`size-3.5 transition-colors ${autoOn ? 'fill-accent text-accent' : 'text-fg-3'}`} />
-      <span className="font-medium text-fg-2 ">{mode === 'exec' ? 'Auto-exec' : 'Auto-review'}</span>
-      <Toggle label={mode === 'exec' ? 'Auto-exec' : 'Auto-review'} on={autoOn} onChange={() => toggleAuto()} />
+      <span className="font-medium text-fg-2 ">Auto-review</span>
+      <Toggle label="Auto-review" on={autoOn} onChange={() => toggleAuto()} />
     </label>
   )
 

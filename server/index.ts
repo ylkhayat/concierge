@@ -251,9 +251,9 @@ const asked = (n?: NextSteps) => {
   return n?.actions.length ? `next: ${n.actions.map((a) => a.label).join(' · ')}` : ''
 }
 whenAlerts(() => bus.emit('alerts'))
-// Linear releases by merge is gone (Linear's own release integration does that, from CI): its saved state and its alert
-// go with it, once
-{ const s = state as unknown as Record<string, unknown>; for (const k of ['autoRelease', 'releaseSeen', 'releaseLog', 'releaseError']) delete s[k]; delete state.alerts?.['system:releases'] }
+// gone features leave no state: Linear releases by merge (Linear's own release integration does that, from CI) with its
+// alert, and auto-exec (tickets start when you run them)
+{ const s = state as unknown as Record<string, unknown>; for (const k of ['autoRelease', 'releaseSeen', 'releaseLog', 'releaseError', 'execAuto', 'execSeen']) delete s[k]; delete state.alerts?.['system:releases'] }
 // what a run couldn't do: N commands refused reads as "finished" otherwise
 const refusedNote = (r: { refused?: string[] }) =>
   r.refused?.length ? `${r.refused.length} command${r.refused.length > 1 ? 's' : ''} refused (${r.refused[0].slice(0, 90)}${r.refused.length > 1 ? ', …' : ''})` : ''
@@ -932,7 +932,7 @@ const execView = () => ({
   actions: config.exec.actions.map(({ id, label, hint, icon, confirm, env, prompt }) => ({ id, label, hint, icon, confirm, env, missing: missingFor(prompt) })),
   missing: missingFor(slot('exec')), // skills the exec command needs that this machine lacks
   tickets: ticketViews(), at: execBoard.at, error: execBoard.error, polling: execBoard.polling,
-  auto: state.execAuto, configured: !!config.exec.command && Object.keys(config.exec.repoByPrefix).length > 0, hasKey: hasKey(),
+  configured: !!config.exec.command && Object.keys(config.exec.repoByPrefix).length > 0, hasKey: hasKey(),
 })
 export type ExecView = ReturnType<typeof execView>
 
@@ -987,18 +987,6 @@ async function pollTickets() {
         if (h) { execBoard.health[key] = h; healthAt.set(key, Date.now()) }
       }))
     }))
-    // auto-exec: newly assigned Todo tickets, a few per run, grouped by repo
-    const fresh = tickets.filter((t) => !state.execSeen.includes(t.id))
-    if (state.execAuto && state.execSeen.length) {
-      const byRepo = new Map<string, string[]>()
-      for (const t of fresh) {
-        const repo = repoFor(t.id, config.exec.repoByPrefix)
-        if (!repo || t.stateType !== 'unstarted' || ticketBusy(t.id)) continue
-        byRepo.set(repo, [...(byRepo.get(repo) ?? []), t.id])
-      }
-      for (const [repo, ids] of byRepo) for (const id of ids.slice(0, config.exec.autoTodoCap)) enqueueExec([id], repo, true) // each its own run, side by side
-    }
-    state.execSeen = [...new Set([...state.execSeen, ...tickets.map((t) => t.id)])]
     execBoard.tickets = [...tickets, ...await offList(tickets)]
     execBoard.error = undefined
     save()
@@ -1024,11 +1012,6 @@ app.post('/exec/:run/steer', async (c) => {
 app.get('/exec/:run/activity', async (c) => c.json(await loadActivity(`exec:${c.req.param('run')}`)))
 app.get('/exec/tickets/:id/activity', async (c) => c.json(await ticketActivity(c.req.param('id'))))
 app.post('/exec/poll', async (c) => { await pollTickets(); return c.json(execView()) })
-app.post('/exec/auto', async (c) => {
-  state.execAuto = !!(await c.req.json()).on
-  save(); bus.emit('exec')
-  return c.json({ ok: true })
-})
 // picked tickets, checked: every id well-formed, mapped to a repo with a checkout, none already running
 function pickedTickets(ids: unknown): { error: string; code: 400 | 409 } | { id: string; title: string; description: string; repo: string }[] {
   if (!Array.isArray(ids) || !ids.length || ids.some((i) => typeof i !== 'string' || !/^[A-Z][A-Z0-9]*-\d+$/.test(i))) return { error: 'Pick one or more tickets', code: 400 }
@@ -1496,7 +1479,6 @@ app.post('/config', async (c) => {
     if (x.teams !== undefined && (!Array.isArray(x.teams) || x.teams.some((t) => !/^[A-Z][A-Z0-9]*$/.test(t)))) errors.push('Teams are Linear team keys like BLI')
     if (x.repoByPrefix !== undefined && (typeof x.repoByPrefix !== 'object' || Object.entries(x.repoByPrefix).some(([k, v]) => !/^[A-Z][A-Z0-9]*$/.test(k) || !(v in (b.repos ?? config.repos))))) errors.push('Each prefix must map to a watched repository')
     if (x.allowedTools !== undefined && (!Array.isArray(x.allowedTools) || x.allowedTools.some((t) => typeof t !== 'string' || !t.trim() || t.length > 200))) errors.push('Allowed tools must be a list of tool rules')
-    if (x.autoTodoCap !== undefined && !(Number.isInteger(x.autoTodoCap) && x.autoTodoCap >= 1 && x.autoTodoCap <= 5)) errors.push('Auto-exec picks 1 to 5 tickets per run')
   }
   // which skill each feature uses (method.ts): a skill name, or empty for its default
   if (b.skills !== undefined && (typeof b.skills !== 'object' || Object.entries(b.skills).some(([k, v]) => !(k in FEATURES) || typeof v !== 'string' || !/^[\w:./-]{0,120}$/.test(v)))) errors.push('Each feature takes a skill name')

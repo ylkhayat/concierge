@@ -46,7 +46,6 @@ export type Config = {
     teams: string[] // Linear team keys to show; empty means all
     repoByPrefix: Record<string, string> // ticket prefix ("BLI") → owner/repo in `repos`
     allowedTools: string[]
-    autoTodoCap: number // auto-exec picks at most this many Todo tickets per run
     // One-click ways past a ticket that waits on you. {id} {title} {url} {slug} {note} are filled in;
     // {note} is what you typed (empty when you typed nothing).
     actions: ExecAction[]
@@ -105,7 +104,6 @@ export const DEFAULTS: Config = {
       ...SHELL_READS, 'Bash(jq:*)', 'Bash(python3:*)', 'Bash(mkdir:*)', 'Bash(rm -rf /tmp:*)',
       'mcp__plugin_productivity_linear', 'mcp__claude_ai_Linear', 'mcp__claude_ai_Sentry',
     ],
-    autoTodoCap: 3,
     actions: [
       {
         id: 'proceed', label: 'Proceed with implementation', icon: 'play',

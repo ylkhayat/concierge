@@ -10,7 +10,7 @@ export const emptyMeta = (): Meta => ({ at: {}, gone: {} })
 
 const isMap = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
-/** Every entry of a state, by key: "execs/ab12cd34", "prs/owner/repo#12" (split at the first /), "execAuto". */
+/** Every entry of a state, by key: "execs/ab12cd34", "prs/owner/repo#12" (split at the first /), "autoStart". */
 export function entriesOf(s: Record<string, unknown>): Map<string, unknown> {
   const out = new Map<string, unknown>()
   for (const [k, v] of Object.entries(s)) {
@@ -76,7 +76,7 @@ export function stamp(s: Record<string, unknown>, meta: Meta, last: Map<string, 
   const old = new Date(Date.parse(now) - 30 * 86400_000).toISOString()
   for (const [k, at] of Object.entries(meta.gone)) if (at < old) delete meta.gone[k]
   last.clear(); for (const [k, j] of cur) last.set(k, j)
-  // assembled by hand from the entries' JSON: {"_meta":…,"prs":{"a":…},"execAuto":false}
+  // assembled by hand from the entries' JSON: {"_meta":…,"prs":{"a":…},"autoStart":false}
   const top = new Map<string, string[] | string>()
   for (const [k, j] of cur) {
     const [t, id] = split(k)

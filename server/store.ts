@@ -208,8 +208,6 @@ type State = {
   base: Record<string, BaseTask> // "owner/repo" → the codebase-map job
   execs: Record<string, ExecRun>
   batches: Record<string, import('./exec.ts').Batch>
-  execAuto: boolean
-  execSeen: string[] // ticket ids already seen, so auto-exec only picks newly assigned ones
   envs: Record<string, Env & { at: string }> // ticket id → the environment it is about, once read from Sentry
   sessions: Record<string, { id: string; total: number; provider?: import('./providers.ts').ProviderId }> // PR id or ticket id → its one agent session, and that session's cost so far
   autoClean: boolean // remove a PR's worktrees when it merges or closes, and sweep every night
@@ -270,7 +268,7 @@ function loadState(): State | null {
 }
 const loaded = loadState()
 export const state: State = {
-  prs: {}, seeded: false, autoStart: config.autoStart, spend: {}, base: {}, execs: {}, batches: {}, execAuto: false, execSeen: [], envs: {}, sessions: {}, autoClean: true,
+  prs: {}, seeded: false, autoStart: config.autoStart, spend: {}, base: {}, execs: {}, batches: {}, envs: {}, sessions: {}, autoClean: true,
   ...loaded,
   settings: { maxJobs: config.maxJobs, dailyBudgetUsd: 20, ...loaded?.settings }, // a fresh install starts capped at $20 a day
 }
