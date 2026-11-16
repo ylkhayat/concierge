@@ -113,6 +113,8 @@ fi
 rev() { git rev-parse HEAD; [[ -d fleet/.git ]] && git -C fleet rev-parse HEAD; true; }
 if [[ $(rev) == "$(cat "$deployed" 2>/dev/null)" && $force == 0 ]]; then echo "$(date -u): up to date ($(git rev-parse --short HEAD))"; exit 0; fi
 echo "$(date -u): building $(git log -1 --format='%h %s')"
+# what this build is: a pull while it waits for agents moves HEAD, and the swap must not note that as deployed
+built=$(rev) built_short=$(git rev-parse --short HEAD)
 # what the image runs, for Settings → Machines to compare with the latest on GitHub: the commits, and their repos
 repo_of() { git -C "$1" remote get-url origin 2>/dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##'; }
 DECK_VERSION="$(git rev-list --count HEAD)-$(git rev-parse --short HEAD)" \
@@ -133,8 +135,8 @@ swap() {
   # something else decides where it runs (DECK_RESTART=no, an extension in fleet/): where it isn't running, only the
   # build is new, and it starts with it when it is started here
   if grep -q '^DECK_RESTART=no' .env 2>/dev/null && [[ -z $(docker compose ps --status running -q review-deck) ]]; then
-    rev > "$deployed"
-    echo "$(date -u): built $(git rev-parse --short HEAD); not running here, it starts with it when it is started here"; return
+    echo "$built" > "$deployed"
+    echo "$(date -u): built $built_short; not running here, it starts with it when it is started here"; return
   fi
   # recreating stops it for a few seconds: whatever starts it (fleet/) leaves it alone while this file is fresh
   touch .swapping
@@ -155,8 +157,8 @@ swap() {
     fi
   fi
   rm -f .swapping
-  rev > "$deployed"
-  echo "$(date -u): running $(git rev-parse --short HEAD)"
+  echo "$built" > "$deployed"
+  echo "$(date -u): running $built_short"
 }
 now_asked() { local a; a=$(cat "$state/update-asked" 2>/dev/null) || return 1; [[ $a =~ ^now\ ([0-9]+) ]] && (( $(date +%s) - BASH_REMATCH[1] < 600 )); }
 [[ $force == 1 ]] || now_asked && { swap; exit 0; }
