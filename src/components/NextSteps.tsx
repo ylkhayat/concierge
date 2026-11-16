@@ -7,7 +7,7 @@ import { api } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
 import { useSlash, type Command } from '../ui/Slash.tsx'
-import { useApi } from '../query.ts'
+import { refresh, useApi } from '../query.ts'
 
 /**
  * What the agent hands back, as a checklist: each next step on its own line (ticked when the agent recommends it),
@@ -38,7 +38,6 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   const box = useRef<HTMLTextAreaElement>(null)
   const [sending, setSending] = useState(false)
   const [open, setOpen] = useState(false)
-  const [reread, setReread] = useState(0) // a handover took steps away: read the list again
   const { armed, arm } = useArm()
   const slash = useSlash(commands, text, () => setText(''))
   const [sentTo, setSentTo] = useState<{ lane: Lane; text: string; at: number }>() // where your last words went, to send them elsewhere
@@ -46,7 +45,10 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
 
   // what the agent asks, cached per run (its version): reading it takes a model call the first time, so coming back to
   // the PR or ticket shows it at once
-  const q = useApi<{ steps: Steps | null }>(nextUrl ? `${nextUrl}?v=${encodeURIComponent(version)}&r=${reread}` : undefined, { staleTime: Infinity })
+  const q = useApi<{ steps: Steps | null }>(nextUrl ? `${nextUrl}?v=${encodeURIComponent(version)}` : undefined, { staleTime: Infinity })
+  // a handover took steps away: the remembered list is forgotten everywhere (not a counter that a redraw resets), so they
+  // never come back
+  const forget = () => { if (nextUrl) refresh(nextUrl) }
   const steps: Steps | null | undefined = !nextUrl ? null : q.data ? q.data.steps : q.isError ? null : undefined
   const error = q.error ? (q.error as Error).message : undefined
   // the agent's own picks start chosen: you change only what you disagree with
@@ -89,7 +91,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
       if (armed) arm(armed, () => {})
       setSending(true)
       try {
-        if (msg) await api(replyUrl, { text: msg })
+        if (msg) { const r = await api(replyUrl, { text: msg }) as { handedOver?: number[] }; if (r?.handedOver?.length) forget() }
         await attach!.run(); attach!.done(); setText('')
         toast(msg ? `Sent to the agent${extra > 1 ? `, with ${extra} suggestions` : ''}` : 'Done')
       } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }
@@ -111,7 +113,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
     if (armed) arm(armed, () => {})
     setSending(true)
     api(replyUrl, { text: msg }).then(
-      (r: { sent?: string; handedOver?: number[]; askAuthor?: number[]; passedTo?: string[] }) => { toast((r.passedTo?.length ? `${r.passedTo.join(', ')} ${r.passedTo.length === 1 ? 'is' : 'are'} in another run: it got your answer too. ` : '') + (r.handedOver?.length ? `Handed over to ${r.handedOver.map((n) => `#${n}`).join(', ')}'s agent. ` : '') + (r.askAuthor?.length ? `${r.askAuthor.map((n) => `#${n}`).join(', ')} isn't yours: the agent drafts a comment to its author instead. ` : '') + (r.handedOver?.length && !r.sent ? '' : r.sent === 'now' ? 'Sent: the agent reads it between steps' : r.sent === 'after' ? 'Sent: the agent takes it up as this turn ends' : r.sent === 'queued' ? 'Sent: it waits in the queue, and the agent reads it the moment it starts' : 'Sent to the agent')); setText(''); setPicks({}); setChecked({}); setOpen(false); if (r.handedOver?.length) setReread((x) => x + 1) },
+      (r: { sent?: string; handedOver?: number[]; askAuthor?: number[]; passedTo?: string[] }) => { toast((r.passedTo?.length ? `${r.passedTo.join(', ')} ${r.passedTo.length === 1 ? 'is' : 'are'} in another run: it got your answer too. ` : '') + (r.handedOver?.length ? `Handed over to ${r.handedOver.map((n) => `#${n}`).join(', ')}'s agent. ` : '') + (r.askAuthor?.length ? `${r.askAuthor.map((n) => `#${n}`).join(', ')} isn't yours: the agent drafts a comment to its author instead. ` : '') + (r.handedOver?.length && !r.sent ? '' : r.sent === 'now' ? 'Sent: the agent reads it between steps' : r.sent === 'after' ? 'Sent: the agent takes it up as this turn ends' : r.sent === 'queued' ? 'Sent: it waits in the queue, and the agent reads it the moment it starts' : 'Sent to the agent')); setText(''); setPicks({}); setChecked({}); setOpen(false); if (r.handedOver?.length) forget() },
       (e: Error) => toast(e.message, 'error')).finally(() => setSending(false))
   }
 

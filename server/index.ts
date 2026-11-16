@@ -2002,9 +2002,13 @@ app.get('/prs/:id/next', async (c) => {
   const p = pr(c.req.param('id'))
   try {
     const n = await stepsFor(p?.job, p?.id ?? '')
-    // a step already handed over (the same words, to the same PR) isn't offered again
+    // a step already handed over isn't offered again: the same words, or any step for a PR that was handed work after
+    // this agent last spoke (it was all dealt with then, however the agent words it next)
     const gone = new Set((p?.handoffs ?? []).map((h) => h.text.toLowerCase()))
-    return c.json({ steps: n && gone.size ? { ...n, steps: (n.steps ?? []).filter((x) => !gone.has(x.text.toLowerCase())) } : n })
+    const spoke = p?.job?.endedAt ?? ''
+    const since = new Set((p?.handoffs ?? []).filter((h) => h.at > spoke).map((h) => h.to))
+    const handed = (text: string) => gone.has(text.toLowerCase()) || [...text.matchAll(/#(\d+)/g)].some((m) => since.has(Number(m[1])) && Number(m[1]) !== p?.number)
+    return c.json({ steps: n && (gone.size || since.size) ? { ...n, steps: (n.steps ?? []).filter((x) => !handed(x.text)) } : n })
   } catch (e) { return c.json({ error: (e as Error).message }, 502) }
 })
 // hand linked work from one agent to the other: the source's latest word goes to the target's own session, which
