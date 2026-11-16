@@ -321,6 +321,9 @@ const paused = new Set<string>()
 // as a file in their folder: copied across, a run continues the same conversation on the new one. Codex's can't move,
 // so work on OpenAI moves only before it has started.
 const moving = new Map<string, ProviderId>() // stopped to move: where to
+// Claude Code itself (a Claude account, or Llama through Ollama): takes its prompt on stdin and keeps a conversation as
+// a file that can be carried to another such account. Codex and Copilot take the prompt once, as an argument
+const isClaudeCode = (p: ProviderId) => kindOf(p) === 'claude' || kindOf(p) === 'llama'
 const rank = (p: ProviderId, work: Work) => { const order = [config.providers?.use?.[work] ?? 'claude', ...(config.providers?.fallback ?? [])]; const i = order.indexOf(p); return i < 0 ? order.length : i }
 const folderOf = (p: ProviderId) => accountOf(p).home ?? join(homedir(), '.claude')
 /** Copy a Claude Code conversation into another account's folder (its projects/<dir>/<id>.jsonl), so it resumes there. */
@@ -345,9 +348,9 @@ async function rebalance() {
   for (const { key, t, work, label } of items) {
     const now = t.provider ?? 'claude', lead = providerFor(work)
     if (lead === now || !available(lead) || rank(lead, work) >= rank(now, work) || moving.has(key)) continue
-    const claudeCode = kindOf(now) !== 'openai' && kindOf(lead) !== 'openai'
+    const claudeCode = isClaudeCode(now) && isClaudeCode(lead)
     const started = !fresh(t) || t.state === 'running'
-    if (started && !claudeCode) continue // a Codex conversation can't move: it finishes where it is
+    if (started && !claudeCode) continue // a Codex or Copilot conversation can't move, and Claude's can't move to them: it finishes where it is
     if (started && !(await carry(t.sessionId, now, lead))) continue // its conversation isn't on disk yet: next time
     if (t.state === 'running') {
       moving.set(key, lead)
@@ -695,7 +698,7 @@ export function runAgent(o: {
     ? remoteAgent(m.name, m.base, token(), { provider, args, cwd: o.cwd, stdin, label: o.label })
     : spawnAgent(provider, o.untrusted ? [...args, ...UNTRUSTED_ARGS] : args, { cwd: o.cwd, stdin, ...(o.untrusted && { env: untrustedEnv() }) })
   let child
-  if (kindOf(provider) !== 'openai') { // Claude Code, on a Claude account or on Ollama
+  if (isClaudeCode(provider)) { // Claude Code, on a Claude account or on Ollama
     const at = o.args.indexOf('-p'), prompt = o.args[at + 1]
     const args = [...o.args.slice(0, at + 1), ...o.args.slice(at + 2), '--input-format', 'stream-json']
     child = start(args, true)
@@ -776,7 +779,7 @@ export function runAgent(o: {
               note(o.key, { at: new Date().toISOString(), kind: 'event', text: `Still running after ${WAIT_MS / 60_000} minutes: stopped.` })
               child.kill('SIGTERM')
             }, WAIT_MS)
-          } else { child.stdin!.end(); resultIn.add(o.key); stopTimer = setTimeout(() => child.kill('SIGTERM'), 5000) }
+          } else { child.stdin?.end(); resultIn.add(o.key); stopTimer = setTimeout(() => child.kill('SIGTERM'), 5000) }
         }
       }
       for (const a of parseLine(line)) note(o.key, a, false)
