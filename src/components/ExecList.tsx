@@ -13,6 +13,7 @@ import { short } from '../time.ts'
 import { useDragPick } from '../pick.ts'
 import { recent, takeRecent, useTouch } from '../recent.ts'
 import { useFlip } from '../flip.ts'
+import { move, noStacks, oneStack, shapeOf, shift, stacksOf, type Shape } from '../stackEdit.ts'
 
 export type Group = { id: string; title: string; hint: string; icon: LucideIcon; tone: string; card: string; match: (t: TicketView) => boolean; dot?: string; badge?: string }
 
@@ -288,6 +289,74 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
 }
 
 /**
+ * The stacks before a run, yours to shape: lanes of tickets submitted together (bottom first), and the ones on their
+ * own. Click a ticket, then where it goes (or drag it); its arrows move it within its lane. A lane takes one repository.
+ * Whatever the shape, every ticket is built by its own agent at once: only how the PRs are opened changes.
+ */
+export function StackEditor({ shape, onShape, planned, picked, repoOf, oneRepo, why, prep, prepOn, onPrep }: {
+  shape: Shape; onShape: (s: Shape) => void; planned: Shape; picked: string[]; repoOf: (id: string) => string | undefined; oneRepo: boolean
+  why: string; prep?: Prep; prepOn: boolean; onPrep: (on: boolean) => void
+}) {
+  const [sel, setSel] = useState<string>()
+  const same = (a: Shape, b: Shape) => JSON.stringify(stacksOf(a)) === JSON.stringify(stacksOf(b))
+  const fits = (id: string, lane: string[]) => !lane.length || lane.includes(id) || repoOf(lane[0]) === repoOf(id)
+  const go = (to: number | 'new' | 'alone', id = sel) => { if (!id) return; if (typeof to === 'number' && !fits(id, shape.lanes[to])) return; onShape(move(shape, id, to)); setSel(undefined) }
+  const drop = (to: number | 'new' | 'alone') => ({
+    onDragOver: (e: React.DragEvent) => e.preventDefault(),
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); go(to, e.dataTransfer.getData('text/plain')) },
+  })
+  const chip = (id: string, lane?: number) => {
+    const at = lane == null ? -1 : shape.lanes[lane].indexOf(id), on = sel === id
+    return (
+      <span key={id} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', id)} onClick={(e) => { e.stopPropagation(); setSel(on ? undefined : id) }}
+            className={`inline-flex cursor-grab items-center gap-0.5 rounded-md px-1.5 py-px font-mono text-meta transition-shadow active:cursor-grabbing ${on ? 'bg-accent-soft text-accent-text ring-2 ring-accent/60' : 'bg-surface-1 text-fg-1 ring-1 ring-line-strong hover:ring-accent/40'}`}>
+        {on && lane != null && at > 0 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, -1)) }} aria-label={`${id} one place down`} className="px-0.5 text-fg-3 hover:text-fg-1">‹</button>}
+        {id}
+        {on && lane != null && at < shape.lanes[lane].length - 1 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, 1)) }} aria-label={`${id} one place up`} className="px-0.5 text-fg-3 hover:text-fg-1">›</button>}
+      </span>
+    )
+  }
+  // a lane is a target while a ticket is picked (and it fits there)
+  const target = (ok: boolean) => (sel && ok ? 'cursor-pointer ring-1 ring-dashed ring-accent/50 hover:bg-accent/10' : '')
+  const preset = (label: string, s: Shape, show = true) => show && (
+    <button key={label} onClick={() => onShape(s)} className={`rounded-md px-2 py-0.5 text-meta font-medium ${same(shape, s) ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{label}</button>
+  )
+  const lanes = shape.lanes.length
+  return (
+    <div className="mb-2 space-y-2 rounded-xl bg-accent/6 p-2.5 ring-1 ring-accent/15" onClick={() => setSel(undefined)}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-small font-semibold text-accent-text">{lanes ? `${lanes} stack${lanes === 1 ? '' : 's'}` : 'No stacks'}{shape.alone.length > 0 && lanes > 0 && <span className="font-normal text-fg-3"> · {shape.alone.length} on their own</span>}</p>
+        <div className="ml-auto inline-flex rounded-lg bg-hover p-0.5">
+          {preset('As planned', planned)}{preset('One stack', oneStack(picked), oneRepo)}{preset('No stacks', noStacks(picked))}
+        </div>
+      </div>
+      <p className="text-meta leading-snug text-fg-3">Every ticket is built by its own agent, all at once. A stack only opens its PRs together, bottom first, once all of it is ready.</p>
+      {shape.lanes.map((l, i) => (
+        <div key={i} onClick={(e) => { e.stopPropagation(); go(i) }} {...drop(i)} className={`rounded-lg px-2 py-1.5 ${target(!!sel && fits(sel, l) && !l.includes(sel))}`}>
+          <p className="mb-1 flex items-center gap-1.5 text-micro font-semibold uppercase tracking-label text-fg-4">Stack {i + 1}<span className="font-normal normal-case tracking-normal">· {repoOf(l[0])?.split('/').pop()} · bottom first</span></p>
+          <div className="flex flex-wrap items-center gap-1">{l.map((id, j) => <span key={id} className="flex items-center gap-1">{j > 0 && <span className="text-fg-4">→</span>}{chip(id, i)}</span>)}</div>
+        </div>
+      ))}
+      <div onClick={(e) => { e.stopPropagation(); go('alone') }} {...drop('alone')} className={`rounded-lg px-2 py-1.5 ${target(!!sel && shape.lanes.some((l) => l.includes(sel)))}`}>
+        <p className="mb-1 text-micro font-semibold uppercase tracking-label text-fg-4">On their own</p>
+        <div className="flex flex-wrap gap-1">{shape.alone.map((id) => chip(id))}{!shape.alone.length && <span className="text-meta text-fg-4">None: every ticket is in a stack</span>}</div>
+      </div>
+      <button onClick={(e) => { e.stopPropagation(); go('new') }} {...drop('new')} disabled={!sel}
+              className="w-full rounded-lg border border-dashed border-line-strong px-2 py-1 text-meta text-fg-3 transition-colors enabled:hover:border-accent/50 enabled:hover:text-accent-text disabled:opacity-60">
+        {sel ? `New stack with ${sel}` : 'Pick a ticket, then a stack, a new one, or "on their own"'}
+      </button>
+      {prep && (
+        <div className="flex items-start gap-2 text-meta leading-snug" onClick={(e) => e.stopPropagation()}>
+          <button role="switch" aria-checked={prepOn} onClick={() => onPrep(!prepOn)} className={`shrink-0 rounded-full px-2 py-px font-medium transition-colors ${prepOn ? 'bg-accent text-white' : 'bg-hover text-fg-3 hover:text-fg-1'}`}>{prepOn ? 'Prep on' : 'Prep off'}</button>
+          <span className={prepOn ? 'text-fg-2' : 'text-fg-4 line-through decoration-fg-4/50'}><span className="font-medium">A short shared prep first</span> for {prep.ids.join(', ')}: {prep.task}</span>
+        </div>
+      )}
+      {why && same(shape, planned) && <p className="text-meta leading-snug text-fg-3">{why}</p>}
+    </div>
+  )
+}
+
+/**
  * Run what you ticked. Several are planned first and the plan is shown before anything starts: tickets that build
  * on each other stack, the rest run side by side. Run it as planned, as one stack, or all in parallel.
  */
@@ -295,12 +364,16 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
   const [busy, setBusy] = useState<'plan' | 'run'>()
   const [plan, setPlan] = useState<{ for: string; stacks: string[][]; why: string; prep?: Prep; error?: string }>()
   const [note, setNote] = useState('') // your direction for these tickets: shapes the plan, and each run gets it
+  // the stacks as you shape them, from the plan's: which PRs are submitted together (each ticket is built on its own anyway)
+  const [shape, setShape] = useState<Shape>()
+  const [prepOn, setPrepOn] = useState(true)
+  useEffect(() => { setShape(plan && !plan.error ? shapeOf(plan.stacks) : undefined); setPrepOn(true) }, [plan])
   if (!picked.length) return null
   const key = picked.join()
   const shown = plan?.for === key ? plan : undefined // a plan is for the picks it was made from
   const repoOf = (id: string) => tickets.find((t) => t.id === id)?.repo
   const oneRepo = new Set(picked.map(repoOf)).size === 1
-  const run = (stacks?: string[][]) => { setBusy('run'); onRun(stacks, note.trim() || undefined, shown?.prep).then(() => { setPlan(undefined); setNote('') }).finally(() => setBusy(undefined)) }
+  const run = (stacks?: string[][]) => { setBusy('run'); onRun(stacks, note.trim() || undefined, prepOn ? shown?.prep : undefined).then(() => { setPlan(undefined); setNote('') }).finally(() => setBusy(undefined)) }
   const makePlan = () => {
     setBusy('plan')
     api('/exec/plan', { ids: picked, note: note.trim() || undefined }).then((r: { stacks: string[][]; why: string; prep?: Prep }) => setPlan({ for: key, ...r }), (e: Error) => setPlan({ for: key, stacks: [], why: '', error: e.message }))
@@ -310,23 +383,9 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
   const quiet = 'rounded-lg px-2 py-1 text-meta font-medium text-fg-3 ring-1 ring-line-strong transition-colors hover:text-accent-text hover:ring-accent/30 disabled:opacity-40'
   return (
         <div className="shrink-0 animate-[toast-in_200ms_var(--ease-snappy)] border-t border-line bg-white/80 p-2.5 backdrop-blur dark:bg-zinc-900/80">
-          {shown && !shown.error && (
-            <div className="mb-2 space-y-1.5 rounded-xl bg-accent/6 p-2.5 ring-1 ring-accent/15">
-              <p className="text-small font-semibold text-accent-text">
-                {shown.stacks.length === 1 ? 'One stack' : `${shown.stacks.length} stacks in parallel`}<span className="font-normal text-fg-3"> · every ticket built at once, each stack submitted in order once all of it is ready</span>
-              </p>
-              {shown.prep && <p className="text-meta leading-snug text-fg-2"><span className="font-medium text-accent-text">First a short prep</span> for {shown.prep.ids.join(', ')}: {shown.prep.task}</p>}
-              <ol className="space-y-1">{shown.stacks.map((s) => (
-                <li key={s.join()} className="flex flex-wrap items-center gap-1 font-mono text-meta">
-                  {s.map((id, i) => <span key={id} className="flex items-center gap-1">{i > 0 && <span className="text-fg-3">→</span>}<span className="rounded-md bg-surface-1 px-1.5 py-px ring-1 ring-line-strong">{id}</span></span>)}
-                </li>
-              ))}</ol>
-              {shown.why && <p className="text-meta leading-snug text-fg-2 ">{shown.why}</p>}
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {oneRepo && shown.stacks.length > 1 && <button disabled={!!busy} onClick={() => run([picked])} className={quiet}>One stack instead</button>}
-                {shown.stacks.some((s) => s.length > 1) && <button disabled={!!busy} onClick={() => run(picked.map((id) => [id]))} className={quiet}>All in parallel instead</button>}
-              </div>
-            </div>
+          {shown && !shown.error && shape && (
+            <StackEditor shape={shape} onShape={setShape} planned={shapeOf(shown.stacks)} picked={picked} repoOf={repoOf} oneRepo={oneRepo}
+                         why={shown.why} prep={shown.prep} prepOn={prepOn} onPrep={setPrepOn} />
           )}
           {shown?.error && <p className="mb-2 text-meta text-fail-text">{shown.error}</p>}
           <Missing names={missing} className="mb-2" />
@@ -337,7 +396,7 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
             {picked.length === 1
               ? <button onClick={() => run()} disabled={!!busy} className={primaryCls}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}Run {picked[0]}</button>
               : shown && !shown.error
-                ? <button onClick={() => run(shown.stacks)} disabled={!!busy} className={primaryCls}>{busy === 'run' ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}Run the plan</button>
+                ? <button onClick={() => run(shape ? stacksOf(shape) : shown.stacks)} disabled={!!busy} className={primaryCls}>{busy === 'run' ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}Run the plan</button>
                 : <button onClick={makePlan} disabled={!!busy} className={primaryCls}>{busy === 'plan' ? <><LoaderCircle className="size-4 animate-spin" />Planning…</> : <><Layers className="size-4" />Plan {picked.length} tickets</>}</button>}
             <button onClick={() => { onPick([]); setPlan(undefined) }} className="rounded-xl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
           </div>
