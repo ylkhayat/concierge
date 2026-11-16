@@ -1,4 +1,5 @@
 import { ArrowRight, ChevronLeft, ChevronRight, CircleCheck, Clock, Layers, GitPullRequest, Play, Sparkles, Ticket as TicketIcon, Timer, Undo2 } from 'lucide-react'
+import { askLine } from '../../server/reply.ts'
 import { StackNav } from './StackNav.tsx'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Unit } from '../desk.ts'
@@ -167,6 +168,9 @@ function Card({ u, n, on, onOpen }: { u: Unit; n: number; on: boolean; onOpen: (
   const K = KIND[u.kind]
   const dots = [...(u.ticket ? [ticketState(u.ticket)] : []), ...u.members.map(prState)]
   const tone = u.needs ? 'text-wait-text' : u.working ? 'text-run-text' : 'text-fg-3'
+  // what it waits on you for, by name: the queue says it, so you know before you open it
+  const idle = (j?: { state: string }) => !!j && j.state !== 'running' && j.state !== 'queued'
+  const asks = (u.ticket && !u.ticket.busy && idle(u.ticket.run) ? askLine(u.ticket.run?.next) : undefined) ?? u.members.map((p) => (idle(p.job) ? askLine(p.job?.next) : undefined)).find(Boolean)
   return (
     <button onClick={onOpen} title={u.title} aria-current={on}
             className={`group relative w-full shrink-0 origin-left rounded-2xl bg-surface-1 p-3 text-left ring-1 transition-all duration-300 ease-[var(--ease-snappy)] ${on
@@ -179,7 +183,7 @@ function Card({ u, n, on, onOpen }: { u: Unit; n: number; on: boolean; onOpen: (
       <span className="mt-1 line-clamp-2 text-small font-medium leading-snug text-fg-1 ">{u.title}</span>
       <span className="mt-2 flex flex-wrap gap-1">{dots.slice(0, 14).map((d, i) => <span key={i} title={d.label} className={`h-1.5 w-3 rounded-full ${d.dot}`} />)}</span>
       <span className={`mt-1.5 block text-meta font-medium ${tone}`}>
-        {u.needs ? `${u.needs} wait${u.needs === 1 ? 's' : ''} on you` : u.working ? 'Agent at work' : u.fresh.length ? `${u.fresh.length} to start` : 'Done'}
+        {u.needs && asks ? <span className="line-clamp-2" title={asks}>Asks: {asks}</span> : u.needs ? `${u.needs} wait${u.needs === 1 ? 's' : ''} on you` : u.working ? 'Agent at work' : u.fresh.length ? `${u.fresh.length} to start` : 'Done'}
       </span>
     </button>
   )
