@@ -211,7 +211,7 @@ function parse(args: string[]): Parsed {
     }
     else if (a === '--allowedTools') { while (args[i + 1] && !args[i + 1].startsWith('--')) i++ }
     else if (a === '--session-id') { o.session = v; i++ }
-    else if (['--max-budget-usd', '--input-format', '--setting-sources', '--permission-mode', '--mcp-config'].includes(a)) i++
+    else if (['--max-budget-usd', '--input-format', '--setting-sources', '--settings', '--permission-mode', '--mcp-config'].includes(a)) i++
   }
   return o
 }

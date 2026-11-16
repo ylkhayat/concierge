@@ -136,3 +136,12 @@ test('the prep says its branch on its last line, and the ticket runs get its bri
   assert.match(workNote(b, 'AI-2'), /Branch off `prep\/x`[\s\S]*use Foo[\s\S]*AI-2 <branch> <sha> ready/)
   assert.equal(workNote(b, 'AI-3'), '') // alone and not in the prep: it ships itself, as always
 })
+
+test("a Ship run's goal is a prompt Stop hook naming every ticket, or the prep line for a prep", async () => {
+  const { goalSettings } = await import('./exec.ts')
+  const h = JSON.parse(goalSettings(['AC-1', 'AC-2'])).hooks.Stop[0].hooks[0]
+  assert.equal(h.type, 'prompt')
+  assert.match(h.prompt, /\$ARGUMENTS/)
+  assert.match(h.prompt, /AC-1, AC-2/)
+  assert.match(JSON.parse(goalSettings(['AC-1'], 'prep')).hooks.Stop[0].hooks[0].prompt, /PREP <branch>/)
+})

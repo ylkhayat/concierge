@@ -9,7 +9,7 @@ import { appendFile, open, readdir, stat } from 'node:fs/promises'
 import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { explain, loadOverlay, mapBase } from './explain.ts'
-import { execCommand, furthest, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
+import { execCommand, furthest, goalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
 import { defaultBranch } from './github.ts'
 import { fill } from './config.ts'
 import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend } from './store.ts'
@@ -1142,6 +1142,8 @@ function startExec(run: ExecRun, on?: string) {
       // the exec command keeps its worktrees next to the repo (<clones>/worktrees/<repo>/<ticket>): outside the working
       // directory, so without this every read in the agent's own worktree is refused
       ...(existsSync(execWorktrees(run.repo)) ? ['--add-dir', execWorktrees(run.repo)] : []),
+      // its goal: keep going until every ticket has its outcome, or it needs you (claude only: the others have no hooks)
+      ...(accountOf(run.provider ?? 'claude').kind === 'claude' ? ['--settings', goalSettings(run.ids, run.role)] : []),
       '--append-system-prompt', linkNote({ ticketIds: run.ids }) + handoverNote(run.ids) + (run.ids.length > 1 && !run.role ? MULTI_NOTE : '') + DECIDE_NOTE + keptMethod('everyRun') + devlogs + skillsNote() + accountNote(run.provider, key) + planNote(run.plan), ...devlogArgs(),
     ],
     onMessage: (m) => {

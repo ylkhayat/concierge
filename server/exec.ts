@@ -180,3 +180,24 @@ export function stackOrder<T extends { base?: string; head?: string }>(prs: T[])
   prs.filter((p) => !p.base || !heads.has(p.base)).forEach(walk)
   return [...out, ...prs.filter((p) => !out.includes(p))]
 }
+
+/**
+ * The goal of an unattended Ship run, checked after each turn by a small model: a prompt Stop hook, which is what
+ * Claude Code's /goal is, passed with --settings so the run keeps its own command. It may stop once every ticket has
+ * its outcome line and nothing it started still runs, or when it can't go on without the person; otherwise it is sent
+ * back with what is missing. (Claude Code ends it anyway after 8 sends back with no tool used in between.)
+ */
+export function goalSettings(ids: string[], role?: string): string {
+  const done = role === 'prep' ? 'a line `PREP <branch>` or `PREP none`'
+    : `for every ticket (${ids.join(', ')}) its outcome line: \`<ID> <branch> <sha> shipped\`, \`<ID> <branch> <sha> ready\` (inside a stack), \`<ID> refined\` (it asked on the ticket) or \`<ID> failed: <reason>\``
+  const prompt = [
+    'An unattended coding agent wants to end its turn. Decide whether it may. The hook input, as JSON: $ARGUMENTS',
+    'It may stop (ok true) when any of these holds:',
+    `1. Its last message (last_assistant_message) has ${done}, and background_tasks is empty.`,
+    '2. Its last message asks the person a decision it cannot go on without (in a deck-next block, or on the ticket).',
+    'If stop_hook_active is true and its last message says what blocks it, answer impossible with that as the reason.',
+    'Otherwise answer ok false, and in reason name exactly what is missing: which ticket has no outcome line, which background task still runs (wait for it, then finish), or that its checks have not run.',
+    'Reply with JSON only: {"ok": true}, {"ok": false, "reason": "..."} or {"ok": false, "reason": "...", "impossible": true}.',
+  ].join('\n')
+  return JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'prompt', prompt, timeout: 60 }] }] } })
+}

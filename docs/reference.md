@@ -70,6 +70,7 @@ laptop), is a separate private extension cloned into `fleet/`; ask for access if
 - **They never merge** and never edit your main checkout. Each run gets its own worktree.
 - **Headless runs can only use the tools in the allowlist** (`agent.allowedTools`, `exec.allowedTools`, Settings). A denied tool is listed on the run, so you can add it or not.
 - **Spend is capped.** A fresh install stops starting runs at $20 a day; change it in Settings → Usage. The Today view shows the average cost per review and per ticket.
+- **A Ship run keeps going until it's done.** Each one carries a goal, the way Claude Code's `/goal` works: after every turn a small model checks that every ticket has its outcome line (`shipped`, `ready`, `refined` or `failed`) and nothing it started still runs, or that it's waiting on a decision of yours. Otherwise the run is sent back with what is missing, instead of stopping halfway. Runs on Claude accounts only.
 - **Ship is the one you opt into.** Its skill opens ready PRs and comments on its Linear tickets. `ship-tickets` never merges, never pushes to the default branch and never moves a ticket to Done.
 - **One button stops everything.** The gauge in the left rail lists every running agent and crit server, with their CPU and memory, and stops them.
 
