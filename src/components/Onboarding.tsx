@@ -65,7 +65,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     setSetup(s)
     setSpaces(s.config.workspaces)
     setCommands({ review: s.config.review, revise: s.config.revise })
-    setMode(s.config.review.startsWith('/concierge-review') && s.config.revise.startsWith('/concierge-revise') ? 'starter' : 'own')
+    setMode(s.config.review.startsWith('/review-pr') && s.config.revise.startsWith('/revise') ? 'starter' : 'own')
     setPrefs((p) => ({ ...p, terminal: s.config.terminal }))
   })
   useEffect(() => { load() }, [])
@@ -115,7 +115,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     setExtra({ repo: '', path: '' })
   }
 
-  const installSkills = () => api('/setup/skills', {}).then(() => { toast('Starter skills installed in ~/.claude/skills'); load() }, (e: Error) => toast(e.message, 'error'))
+  const installSkills = () => api('/setup/skills', {}).then(() => { toast('Skills installed in ~/.claude/skills'); load() }, (e: Error) => toast(e.message, 'error'))
 
   const finish = async () => {
     setSaving(true)
@@ -124,8 +124,8 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
       await api('/config', {
         repos: Object.fromEntries(chosen.map(([r, p]) => [r, p.path])),
         workspaces: spaces,
-        review: starter ? '/concierge-review {number}' : commands.review,
-        revise: starter ? '/concierge-revise {repo}#{number}' : commands.revise,
+        review: starter ? '/review-pr {number}' : commands.review,
+        revise: starter ? '/revise {repo}#{number}' : commands.revise,
         terminal: prefs.terminal,
       })
       const budget = prefs.budget.trim() === '' ? null : Number(prefs.budget)
@@ -206,7 +206,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                 <div className="space-y-2">
                   <ToolRow name="GitHub" required c={c!.github} />
                   {!c!.github.ok && <KeyField name="GITHUB_TOKEN" placeholder="ghp_… or github_pat_…" hint={<>A token with <b>repo</b> access. With the GitHub CLI: <code className="font-mono">gh auth token</code>. Or create one at github.com/settings/tokens.</>} onSaved={load} toast={toast} />}
-                  <ToolRow name="crit" c={c!.crit} note="Used by the starter review skills" />
+                  <ToolRow name="crit" c={c!.crit} note="Used by the review and revise skills" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-baseline justify-between">
@@ -292,7 +292,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
             ) : id === 'skills' ? (
               <Step title="Choose the skills that do the work" lead="A review request runs a review skill; your own PRs run a revise skill. Both are Claude Code slash commands you can change any time.">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Choice on={mode === 'starter'} onClick={() => { picked.current = true; setMode('starter') }} icon={Sparkles} title="Starter skills" body="concierge-review and concierge-revise, built on crit, and concierge-exec for Linear tickets. Installed into ~/.claude/skills, yours to edit." />
+                  <Choice on={mode === 'starter'} onClick={() => { picked.current = true; setMode('starter') }} icon={Sparkles} title="From the skill source" body={`review-pr, revise, ship-tickets and the skills behind explain, briefs, plans and the standup, from ${setup.skillSource.replace(/^https:\/\/(www\.)?github\.com\//, '')}. Installed into ~/.claude/skills, yours to edit; change the source in Settings.`} />
                   <Choice on={mode === 'own'} onClick={() => { picked.current = true; setMode('own') }} icon={SquareTerminal} title="My own commands" body="Point Concierge at slash commands you already use." />
                 </div>
                 {mode === 'starter' ? (
@@ -300,12 +300,12 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                     {setup.skills.map((s) => (
                       <div key={s.name} className="flex items-center gap-3 rounded-xl px-3 py-2 ring-1 ring-line ">
                         <Wand className="size-4 text-accent" />
-                        <span className="flex-1 font-mono text-body">/{s.name}</span>
+                        <span className="flex-1 font-mono text-body">{s.name}</span>
                         {s.installed ? <span className="flex items-center gap-1 text-small text-ok-text"><CircleCheck className="size-4" />Installed</span>
                           : <span className="text-small text-fg-3">Not installed</span>}
                       </div>
                     ))}
-                    {!setup.skills.every((s) => s.installed) && <button onClick={installSkills} className={`${primaryBtn} mt-2`}><Sparkles className="size-4" />Install starter skills</button>}
+                    {!setup.skills.every((s) => s.installed) && <button onClick={installSkills} className={`${primaryBtn} mt-2`}><Sparkles className="size-4" />Install them</button>}
                   </div>
                 ) : (
                   <div className="mt-4 space-y-3">

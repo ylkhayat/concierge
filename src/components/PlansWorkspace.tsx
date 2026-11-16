@@ -522,14 +522,14 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const settings = (
     <div className="border-b border-line px-4 py-2 text-meta text-fg-3">
       <button onClick={() => setCfg(cfg ? undefined : 'open')} className="flex w-full items-center gap-1.5 text-left hover:text-fg-1">
-        <span className="min-w-0 flex-1 truncate"><span className="capitalize">{p.method}</span> · {p.skill || 'Concierge planning'} · {p.project ? p.project.name : teamName ?? 'no Linear team yet'}</span>
+        <span className="min-w-0 flex-1 truncate"><span className="capitalize">{p.method}</span> · {p.skill || 'Your planning skill'} · {p.project ? p.project.name : teamName ?? 'no Linear team yet'}</span>
         <span className="text-accent-text">{cfg ? 'Done' : 'Change'}</span>
       </button>
       {cfg && (
         <div className="space-y-2.5 pb-1 pt-2.5">
           <Chips label="Method" value={p.method} options={[['agile', 'Agile: epics of thin slices'], ['waterfall', 'Waterfall: phases in order']]} onChange={(m) => void set({ method: m })} />
           <div><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Planning skill</p>
-            <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'Concierge planning', hint: 'Ours: concierge-plan, yours to edit' }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
+            <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'The one in Settings', hint: 'Settings → Workflows → What each feature runs' }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
           {!p.project && <div onFocus={() => setTeamsOn(true)} onMouseEnter={() => setTeamsOn(true)}><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Linear team</p>
             <InlineList value={p.team} empty={teams.isLoading || !teams.data ? 'Reading your Linear teams…' : 'No teams'} options={(teams.data?.teams ?? []).map((t) => ({ value: t.id, label: t.name, hint: t.key }))} onPick={(v) => { void set({ team: v }); if (cfg === 'team') setCfg(undefined) }} /></div>}
         </div>

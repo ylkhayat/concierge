@@ -1,10 +1,11 @@
 // How the skills are used, and how well they work: counted from the lifecycle log (events.jsonl), where every run's
 // last event names the skills it used and how often you steered it. Runs from before that was recorded get their
 // skills read back from their activity logs, once, and kept here.
+import { method } from './method.ts'
 import { runs } from './lifecycle.ts'
 import { activityBetween, commandSkill } from './runner.ts'
 import { config } from './store.ts'
-import { mySkills, skillFile, starterSkills } from './setup.ts'
+import { mySkills, skillFile, sourceSkills } from './setup.ts'
 import { orgSkills, setMode } from './orgSkills.ts'
 import { mkdir, rename, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -122,15 +123,15 @@ async function withSkills(list: Run[]): Promise<Run[]> {
   return out
 }
 
-export type Source = 'mine' | 'company' | 'starter' | 'plugin'
+export type Source = 'mine' | 'company' | 'source' | 'plugin' // source: from the skill source (setup.ts)
 export type Installed = { name: string; source: Source; tokens?: number; mode?: string } // tokens: its SKILL.md, loaded each time
 
 async function installed(): Promise<Installed[]> {
   const org = new Map(orgSkills().map((s) => [s.name, s]))
-  const starters = new Set(starterSkills().map((s) => s.name))
+  const starters = new Set((await sourceSkills().catch(() => [])).map((s) => s.name))
   const names = [...new Set([...(await mySkills().catch(() => [])), ...starters, ...org.keys()])]
   return Promise.all(names.sort().map(async (name): Promise<Installed> => {
-    const source: Source = org.has(name) ? 'company' : starters.has(name) ? 'starter' : name.includes(':') ? 'plugin' : 'mine'
+    const source: Source = org.has(name) ? 'company' : starters.has(name) ? 'source' : name.includes(':') ? 'plugin' : 'mine'
     const file = org.get(name)?.file ?? await skillFile(name)
     const bytes = file ? (await stat(file).catch(() => undefined))?.size : undefined
     return { name, source, tokens: bytes ? Math.round(bytes / 4) : undefined, mode: org.get(name)?.mode }
@@ -187,11 +188,10 @@ export async function improveSkill(name: string, days: number) {
   const prompt = `The skill "${name}" (${meta?.source ?? 'unknown'} skill, about ${meta?.tokens ?? '?'} tokens, loaded on each run that uses it):\n\n${text.slice(0, 24000) || '(its file could not be read)'}\n\n`
     + (row ? `Over ${days} days: ${row.runs} runs, ${row.done} finished, ${row.followed} run again within two hours, ${(row.steers / row.runs).toFixed(1)} messages from the developer a run, ${row.refusedRuns} with a tool refused, $${row.costUsd.toFixed(2)} in all. Score ${row.score}/100${row.reasons.length ? `: ${row.reasons.join('; ')}` : ''}.` : `No run used it in ${days} days.`)
     + `\n\nWhat the developer told the agents while they used it:\n${said.join('\n') || '(nothing)'}\n\nErrors its runs ended with:\n${errors.join('\n') || '(none)'}`
-    + '\n\nSay whether to keep, change or remove it. Propose at most 5 concrete edits that would make its runs reach the goal with less of the developer\'s help (quote what to add, cut or rewrite), and how its token cost could drop (what to cut or move out, and the size it would have after).'
-    + ' Then give rewrite: the whole skill file with every edit applied and the cuts made, ready to paste over the old one: keep its frontmatter (name, description) and everything that still earns its place, in its own voice. When the verdict is remove, rewrite is an empty string.'
+    + '\n\nJudge this one skill: verdict, why, changes, tokens, and rewrite (the whole file, an empty string when the verdict is remove).'
   // the rewrite is the whole file: the budget allows for writing it out
   const { out, costUsd } = await haiku<{ verdict: 'keep' | 'change' | 'remove'; why: string; changes: { title: string; why: string; edit: string }[]; tokens: { after: number; how: string }; rewrite: string }>(
-    prompt, IMPROVE, 'You review an AI coding agent\'s skill file for usefulness and token cost, from evidence, and rewrite it. Return only the structured output.', 1.5, 'sonnet')
+    prompt, IMPROVE, await method('skills', 'Return only the structured output.'), 1.5, 'sonnet')
   return { ...out, costUsd, tokensNow: meta?.tokens, tokensNew: out.rewrite ? Math.round(out.rewrite.length / 4) : undefined, file: file?.replace(homedir(), '~'), from: said.length }
 }
 
@@ -234,7 +234,7 @@ export async function suggestSkills(days: number) {
     + v.skills.map((s) => `- ${s.name}: ${s.runs} runs, score ${s.score}${s.reasons.length ? ` (${s.reasons.join('; ')})` : ''}`).join('\n')
     + `\n\nInstalled but unused: ${v.installed.filter((i) => !v.skills.some((s) => s.name === i.name)).map((i) => i.name).join(', ') || 'none'}\n\n`
     + `What the person told the agents while they worked, each with the skills that run used:\n${said.join('\n') || '(nothing)'}\n\n`
-    + 'Suggest at most 6 changes: a new skill where the same correction keeps coming back, a change to a skill that scores low (say what to add or change in it), or removing one. Be concrete: name the instruction to write. Only what the evidence supports.'
-  const { out, costUsd } = await haiku<{ suggestions: (Advice & { change: string })[] }>(prompt, SCHEMA, 'You review how well a team\'s agent skills work and propose concrete changes. Return only the structured output.', 0.3)
+    + 'Suggest changes to the whole set.'
+  const { out, costUsd } = await haiku<{ suggestions: (Advice & { change: string })[] }>(prompt, SCHEMA, await method('skills', 'Return only the structured output.'), 0.3)
   return { suggestions: out.suggestions ?? [], costUsd, from: said.length }
 }

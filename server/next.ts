@@ -24,19 +24,6 @@ export type NextSteps = {
 }
 
 /** Appended to every run's system prompt: end with the decisions as data, not only as prose. */
-/** Agents run in Concierge's own checkout; the person runs and tests code elsewhere (their own computer). */
-export const LOCAL_NOTE = `
-
-The person you work for runs and tests the code on their own computer, not in this environment. Your checkout (its
-branch, its files, its services, its database) is Concierge's, and says nothing about what they run: never infer their
-local setup from it. When it matters which code or data they ran, ask, or give the one check they can run themselves
-(git branch --show-current, the request in their browser's network tab, a log line).
-
-Never merge the base branch (develop, main, or the PR below in a stack) into a branch, and never suggest it: when a branch
-is behind or conflicts with its base, rebase it onto the base instead (a stacked branch onto the PR below it, keeping only
-its own commits), resolving conflicts in the rebase. A rebased branch needs a force push (--force-with-lease): that is a
-push like any other, so do it only when told to push, and otherwise name it as the next step.`
-
 export const DECIDE_NOTE = `
 
 When you end your turn, close your final message with one fenced block tagged deck-next holding JSON. Concierge

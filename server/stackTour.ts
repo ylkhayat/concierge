@@ -1,5 +1,6 @@
 // A tour of a whole stack: how its PRs play together, bottom to top. Built from each PR's own explanation
 // (or its title and description when it has none) by one lean Haiku call, cached until a PR in the stack moves.
+import { method } from './method.ts'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { providerFor, spawnAgent, tokensOf } from './providers.ts'
@@ -48,7 +49,7 @@ export function makeStackTour(chain: StackRef[]) {
   return inflight.get(key)!
 }
 
-function write(chain: StackRef[]): Promise<StackTour> {
+async function write(chain: StackRef[]): Promise<StackTour> {
   const sig = signature(chain)
   const prs = chain.map((s, i) => {
     const p = tracked(s), o = p && loadOverlay(p)
@@ -56,18 +57,15 @@ function write(chain: StackRef[]): Promise<StackTour> {
       o ? `Headline: ${o.business.headline}\nWhat: ${o.business.what}\nWhy: ${o.business.why}${o.tour?.focus ? `\nRead first: ${o.tour.focus}` : ''}\nFiles: ${o.facts.changes.length}`
         : `(not explained yet) ${(p?.body ?? '').slice(0, 600)}`].join('\n')
   })
+  const system = await method('stackTour', 'Return only the structured output.')
   const prompt = ['These pull requests form one stack, bottom (merges first) to top. Explain how they play together, for a reviewer about to read them.',
-    'Be brief: every sentence at most 20 words, no filler, no repeating the titles. Each slide must fit a laptop screen without scrolling and text is never shrunk to fit, so these limits are hard limits: cut, never squeeze.',
-    '- story: two sentences: what the whole stack achieves, and how the work is split.',
-    '- order: one sentence: why this order, or how to review it.',
-    '- parts: one per PR, by number: role (what this PR adds to the stack, at most 12 words: it is listed for every PR on one slide) and buildsOn (what it relies on from the PRs below; "the base branch" for the bottom one).',
-    '- watch: 1 or 2 things, at most 15 words each, to keep an eye on across PRs (a contract that changes between them, something split awkwardly); empty if nothing.',
+    'Fields: story, order, parts (one per PR, by number: role and buildsOn), watch (an empty array if nothing).',
     '', ...prs].join('\n')
   const p = providerFor('small')
   return new Promise((resolve, reject) => {
     const child = spawnAgent(p, ['-p', prompt, '--json-schema', JSON.stringify(schema), '--output-format', 'json', '--model', 'haiku', '--max-budget-usd', '0.2',
       '--tools', '', '--strict-mcp-config', '--disable-slash-commands', '--setting-sources', '', '--no-session-persistence',
-      '--system-prompt', 'You explain how a stack of pull requests fits together. Return only the structured output.'], { cwd: tmpdir() })
+      '--system-prompt', system], { cwd: tmpdir() })
     let out = ''
     child.stdout.on('data', (c: Buffer) => { out += c })
     child.on('error', reject)

@@ -4,6 +4,7 @@
 // Each is a resumed agent session in the repository, read-only. Every turn it says where you stand (a few words), keeps
 // a running summary, and, when the conclusion should change the work, the steer for the main agent; sending it is
 // yours to do. Kept in the state, so a discussion survives a restart and shows on both machines.
+import { keptBody, missing } from './method.ts'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { providerFor, spawnAgent } from './providers.ts'
@@ -57,21 +58,15 @@ const schemaOf = (topic: Topic, multi: boolean) => ({ type: 'object', properties
 // a discussion over several PRs: one decision for all of them, mapped to each
 const MULTI = 'This covers several pull requests together (a stack, bottom first, or the PRs one ticket ships as). Settle it for all of them, then map it: perPr has one entry per PR, by its number, saying what the decision (or what was understood) means for that PR, and steer (an instruction for that PR\'s own coding agent, if it has to change, else null). The top-level steer is null; the steers go per PR.'
 
-const SYSTEM: Record<Topic, string> = {
+// how to discuss is the user's skill (method.ts); what each answer holds is this view's format
+const FORMAT: Record<Topic, string> = {
   intent: [
-    'You help a developer settle the intent of AI-built work (a PR, or a ticket being shipped), before they trust it.',
-    'The goal is a decision record, like an ADR: the context, the decision (what it is meant to do, and not do), its consequences, and the alternatives set aside. Each of them one or two short sentences.',
-    'Compare what was asked (the ticket, the PR description, the conversation) with what is built. Find the gaps, the ambiguities and the decisions nobody made. Read the code when it settles a question.',
-    'Ask one sharp question at a time, with your recommended answer. Draft the record early as proposed, and refine it as you go. Be brief.',
-    'When the developer agrees with the record, set its status to accepted and the stage to concluded.',
+    'Draft the decision record early with status proposed; when the developer agrees with it, set its status to accepted and the stage to concluded.',
     'actions: what to do next, when it helps: ask-author (text: the question for the PR author or ticket reporter), ask-community (text: the question for the team), steer (text: what the coding agent should change). Empty when nothing fits.',
     'Return: reply (markdown, at most 60 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage; status (at most 6 words on where the developer stands, e.g. "2 open questions", "record agreed"); summary (1 or 2 plain sentences); steer (the instruction for the coding agent if the decision changes the work, else null); actions; adr.',
   ].join('\n'),
   understanding: [
-    'You help a developer understand a code change made or reviewed by an AI agent, from every angle the Explain view shows: the business view (what changes for users and the company), the technical view (which parts of the code, how they connect), the norms (where it departs from conventions), and the guided tour.',
-    'Answer precisely, citing files and lines. Read the diff and the code; do not guess. Use the explanation you are given.',
-    'Point to the part of Explain that answers best: actions tour (take the guided tour), business, technical or norms (open that view; label says what to look at there). Now and then check their grasp with one short question about what matters most.',
-    'Other actions when they help: ask-author or ask-community (text: the question to ask), steer (text: a change for the coding agent, such as a missing test).',
+    'actions: tour (take the guided tour), business, technical or norms (open that view of Explain; label says what to look at there), ask-author or ask-community (text: the question to ask), steer (text: a change for the coding agent, such as a missing test).',
     'Return: reply (markdown, at most 60 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage (concluded once they understand what matters); status (at most 6 words on their grasp, e.g. "knows the flow, not the retries"); summary (what they understand and what is still unclear, 1 to 3 sentences); steer (the changes collected for the coding agent, as one instruction, else null); actions.',
   ].join('\n'),
 }
@@ -100,12 +95,14 @@ export function say(target: string, topic: Topic, text: string, context: string,
   if (echo) d.messages.push({ who: 'you', text, at: new Date().toISOString() })
   Object.assign(d, { busy: true, error: undefined, stage: d.stage === 'new' ? 'open' : d.stage })
   all()[k] = d; save()
+  const how = keptBody(topic)
+  if (!how) { d.busy = false; d.error = missing(topic); save(); return }
   // what the other discussion settled goes with every message: it may have moved since
   const prompt = `${first ? `${context}\n\n---\n\n` : ''}${shared ? `Settled in the other discussion:\n${shared}\n\n---\n\n` : ''}${text}`
   const sessionId = d.sessionId ?? randomUUID()
   const child = spawnAgent(providerFor('review'), [
     '-p', prompt, '--output-format', 'json', '--json-schema', JSON.stringify(schemaOf(topic, multi)),
-    '--append-system-prompt', multi ? `${SYSTEM[topic]}\n${MULTI}` : SYSTEM[topic],
+    '--append-system-prompt', `${how}\n\n${FORMAT[topic]}${multi ? `\n${MULTI}` : ''}`,
     '--allowedTools', 'Read', 'Grep', 'Glob', 'Bash(git diff:*)', 'Bash(git log:*)', 'Bash(git show:*)', 'Bash(git fetch:*)',
     // Sonnet: a discussion is many short turns, and the default (largest) model spends a turn's budget before answering
     '--model', 'sonnet', '--max-budget-usd', '1',

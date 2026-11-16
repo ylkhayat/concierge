@@ -11,7 +11,7 @@ Everything the [README](../README.md) leaves out: requirements, Docker, configur
 | pnpm | Installs dependencies. |
 | [GitHub CLI](https://cli.github.com) (`gh`), logged in | Concierge reads your token from `gh auth token` (or `GITHUB_TOKEN`). |
 | [Claude Code](https://claude.com/claude-code) (`claude`), logged in | Runs the review, revise and explain agents. |
-| [crit](https://crit.md/) (`brew install crit`) | The review surface the starter skills use. |
+| [crit](https://crit.md/) (`brew install crit`) | The review surface `review-pr` and `revise` use. |
 
 ## Quick start
 
@@ -27,7 +27,7 @@ The first time you open it, a short onboarding sets everything up:
 
 1. **Tools.** Checks that `gh` is signed in and that `claude` and `crit` are installed. Anything missing shows the command to fix it.
 2. **Repositories.** Suggests repos from your recent PR activity and matches each one to a clone it finds on your machine (in `~/code`, `~/src`, `~/dev`, `~/projects` and similar). Pick the ones to watch, or add another by hand.
-3. **Skills.** Install the starter skills with one click, or point Concierge at slash commands you already use. Your organization's skills from claude.ai come along by themselves (Settings → Skills).
+3. **Skills.** Install the skills from your skill source with one click ([ylkhayat/skills](https://github.com/ylkhayat/skills) unless you pick another), or point Concierge at slash commands you already use. Your organization's skills from claude.ai come along by themselves (Settings → Skills).
 4. **Preferences.** Auto-review, parallel runs, daily budget, which terminal *Resume* opens, and the theme.
 
 To change any of this later, open Settings → *Repositories & skills*. Changes apply immediately, with no restart.
@@ -70,7 +70,7 @@ laptop), is a separate private extension cloned into `fleet/`; ask for access if
 - **They never merge** and never edit your main checkout. Each run gets its own worktree.
 - **Headless runs can only use the tools in the allowlist** (`agent.allowedTools`, `exec.allowedTools`, Settings). A denied tool is listed on the run, so you can add it or not.
 - **Spend is capped.** A fresh install stops starting runs at $20 a day; change it in Settings → Usage. The Today view shows the average cost per review and per ticket.
-- **Ship is the one you opt into.** Its skill opens ready PRs and comments on its Linear tickets. The starter `concierge-exec` never merges, never pushes to the default branch and never moves a ticket to Done.
+- **Ship is the one you opt into.** Its skill opens ready PRs and comments on its Linear tickets. `ship-tickets` never merges, never pushes to the default branch and never moves a ticket to Done.
 - **One button stops everything.** The gauge in the left rail lists every running agent and crit server, with their CPU and memory, and stops them.
 
 ## Commands
@@ -83,7 +83,7 @@ Concierge status
 Concierge open             start if needed, then open the browser
 Concierge exec             same, straight into Ship
 Concierge logs
-Concierge install-skills   copy skills/* into ~/.claude/skills (never overwrites)
+Concierge install-skills   copy the skill source's skills into ~/.claude/skills (never overwrites)
 ```
 
 The server listens on `127.0.0.1` only, because it can launch agents.
@@ -101,20 +101,22 @@ The onboarding and Settings write `~/.config/concierge/config.json` (or `$XDG_CO
 | `autoStart` | `true` | Start a review as soon as one is requested. Also a toggle in the header. |
 | `explainBudgetUsd` | `1.5` | Spending cap for each Explain run. |
 | `terminal` | `"Terminal"` | `"Terminal"` or `"iTerm"`, used by *Resume*. |
-| `agent.review.command` | `/concierge-review {number}` | What runs when your review is requested. |
+| `agent.review.command` | `/review-pr {number}` | What runs when your review is requested. |
 | `agent.review.instructions` | see `server/config.ts` | Appended to the system prompt of headless review runs. |
-| `agent.revise.command` | `/concierge-revise {repo}#{number}` | What *Run revise* runs on your own PR. |
+| `agent.revise.command` | `/revise {repo}#{number}` | What *Run revise* runs on your own PR. |
 | `agent.revise.instructions` | see `server/config.ts` | Appended to headless revise runs. |
 | `agent.post` | see `server/config.ts` | Prompt sent to the review session when you click *Post review* or *Approve*. Placeholders: `{event}`, `{note}`, `{gif}`. |
 | `agent.publish` | see `server/config.ts` | Prompt sent to the revise session when you click *Push & reply*. |
 | `agent.allowedTools` | read, edit, git, gh, crit, package managers, shell glue | Passed as `--allowedTools`. Anything else an agent tries is refused and shown in the side panel. |
 | `agent.worktree` | unset | Where your review skill checks out PRs, such as `{repoPath}/.claude/worktrees/review-pr-{number}`. When set, a review you started by hand shows up as well, and Explain reuses that checkout. |
 | `areas` | `{}` | The areas of your code and the words that point to each, e.g. `{"web-app": ["frontend", "settings page"]}`. Labels a PR whose title has no conventional scope, and tells which linked PR a ticket's next step is about. |
+| `skillSource` | `https://github.com/ylkhayat/skills` | The git repository a new setup installs its skills from (never over one you have). |
+| `skills` | `{}` | Which skill each feature uses, by feature: `everyRun`, `explainChange`, `explainCodebase`, `explainDomain`, `stackTour`, `turns`, `intent`, `understanding`, `brief`, `standup`, `stacks`, `plan`, `skills`. Unset: the default of the same purpose in the skill source (Settings → Workflows → What each feature runs). Concierge brings the facts and the output format its pages read; the skill brings the method. |
 | `exec.rules` | `[]` | Skills a ticket run loads first, by rule: `{ "skill", "why", "match"?, "unless"?, "bug"?, "env"? }`. `match`/`unless` are regular expressions over the ticket's title and description; `bug` limits it to bug reports, `env` to tickets about `prod` or `dev`. Tickets no rule covers go to a small model that picks from your skills. |
 
 ## Bring your own skills
 
-The starter skills (`skills/concierge-review`, `skills/concierge-revise`) are a working baseline. Edit them, or point `agent.review.command` and `agent.revise.command` at your own. Concierge works with any skill that follows five rules:
+Concierge ships no skills of its own. The skill source ([ylkhayat/skills](https://github.com/ylkhayat/skills) unless `skillSource` names another) gives a working set: `review-pr`, `revise`, `ship-tickets`, and one skill per feature for how Concierge explains, briefs, plans and writes (`skills`, below). Edit them, or point `agent.review.command` and `agent.revise.command` at your own. Concierge works with any skill that follows five rules:
 
 1. **Print the crit link** as `crit is at http://localhost:<port>` (or `Crit is open at …`). Concierge reads the port from this line to link the session and count comments.
 2. **End the turn once prepared.** A headless run is finished when the agent's turn ends. Don't block waiting for *Finish Review*. Anything left running in the background is stopped a few seconds after the turn ends.

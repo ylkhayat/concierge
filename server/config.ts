@@ -40,6 +40,8 @@ export type Config = {
   areas?: Record<string, string[]>
   access?: { logins: string[] } // who may open it through the tailnet link (access.ts), by their Tailscale login
   company?: import('./readiness.ts').Company // where its customers are, its certifications, data, reviews and team: what every plan is checked against
+  skills?: Partial<Record<import('./method.ts').Feature, string>> // which skill each feature uses (method.ts); unset: its default
+  skillSource?: string // the git repo a new setup's skills come from (Settings → Skills); unset: github.com/ylkhayat/skills
   // Exec mode: ship your Linear tickets with a command such as /my-exec
   exec: {
     command: string // {ids} becomes the ticket ids in order, space separated; '' turns exec mode off
@@ -119,13 +121,13 @@ export const DEFAULTS: Config = {
   },
   agent: {
     review: {
-      command: '/concierge-review {number}',
+      command: '/review-pr {number}',
       instructions: 'Launched headless by Concierge. Prepare the review: start crit, print the line "crit is at http://localhost:<port>", '
         + 'and author your findings as crit comments. Then end your turn with a short summary. Do not wait for Finish Review '
         + 'and post nothing to GitHub unless the prompt says the reviewer asked. The reviewer will resume this session to finalize.',
     },
     revise: {
-      command: '/concierge-revise {repo}#{number}',
+      command: '/revise {repo}#{number}',
       instructions: 'Launched headless by Concierge for the PR author. Bring the reviewers\' open threads into crit, print the line '
         + '"crit is at http://localhost:<port>", then end your turn with a short summary. Do not edit code, push, or post to GitHub '
         + 'unless the prompt says the author asked to publish. The author will resume this session to fix and finalize.',
@@ -140,7 +142,7 @@ export const DEFAULTS: Config = {
     allowedTools: [
       'Read', 'Grep', 'Glob', 'Agent', 'Write', 'Edit', 'Skill', 'ToolSearch', 'TodoWrite',
       'Bash(gh:*)', 'Bash(git:*)', 'Bash(crit:*)', 'Bash(nohup crit:*)', 'Bash(jq:*)', 'Bash(python3:*)',
-      // shell glue the starter skills use; nothing here can delete or publish
+      // shell glue the review skills use; nothing here can delete or publish
       'Bash(mkdir:*)', 'Bash(export:*)', 'Bash(curl -s:*)', 'Bash(sleep:*)', 'Bash(seq:*)', 'Bash(tr:*)', ...SHELL_READS,
       'Bash(npm:*)', 'Bash(pnpm:*)', 'Bash(yarn:*)', 'Bash(bun:*)',
     ],

@@ -1,16 +1,16 @@
-// First-run onboarding: check the tools, find local checkouts, suggest repos, install the starter skills.
+// First-run onboarding: check the tools, find local checkouts, suggest repos, install the skills from the skill source.
 import { execFile } from 'node:child_process'
-import { cpSync, existsSync, readdirSync } from 'node:fs'
-import { access, readdir, readFile, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { access, cp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 import { config } from './config.ts'
+import { STATE_DIR } from './paths.ts'
 import { getMe, searchRepos } from './github.ts'
 
 const run = promisify(execFile)
 const SKILLS_DIR = join(homedir(), '.claude', 'skills')
-const STARTERS = new URL('../skills', import.meta.url).pathname
 
 export type Check = { ok: boolean; detail: string; fix?: string }
 
@@ -112,15 +112,40 @@ export async function cloneRepo(repo: string): Promise<{ path: string }> {
 
 // --- skills --------------------------------------------------------------------------------
 
-export const starterSkills = () => readdirSync(STARTERS, { withFileTypes: true }).filter((e) => e.isDirectory())
-  .map((e) => ({ name: e.name, installed: existsSync(join(SKILLS_DIR, e.name, 'SKILL.md')) }))
-
-/** Copy the starter skills into ~/.claude/skills. Never overwrites one that is already there. */
-export function installStarterSkills() {
-  return starterSkills().map((s) => {
-    if (!s.installed) cpSync(join(STARTERS, s.name), join(SKILLS_DIR, s.name), { recursive: true })
+// the skill source: a git repo of skills (Settings → Skills; github.com/ylkhayat/skills unless you pick another). A new
+// setup copies its skills into ~/.claude/skills; Concierge itself ships none.
+export const DEFAULT_SOURCE = 'https://github.com/ylkhayat/skills'
+const SOURCE_DIR = join(STATE_DIR, 'skill-source')
+let fetched: { url: string; at: number } | undefined
+/** The source's clone, fetched again when it is older than 10 minutes or the source changed. */
+async function sourceClone() {
+  const url = config.skillSource?.trim() || DEFAULT_SOURCE
+  if (fetched?.url === url && Date.now() - fetched.at < 600_000) return SOURCE_DIR
+  const had = (await run('git', ['-C', SOURCE_DIR, 'remote', 'get-url', 'origin'], { timeout: 5000 }).catch(() => ({ stdout: '' }))).stdout.trim()
+  if (had === url) {
+    // fetched and reset, not pulled: a source whose history was rewritten still updates
+    await run('git', ['-C', SOURCE_DIR, 'fetch', '-q', '--depth', '1', 'origin', 'HEAD'], { timeout: 60_000 })
+    await run('git', ['-C', SOURCE_DIR, 'reset', '-q', '--hard', 'FETCH_HEAD'], { timeout: 10_000 })
+  } else {
+    await rm(SOURCE_DIR, { recursive: true, force: true })
+    await run('git', ['clone', '-q', '--depth', '1', url, SOURCE_DIR], { timeout: 120_000 })
+  }
+  fetched = { url, at: Date.now() }
+  return SOURCE_DIR
+}
+/** The source's skills, and whether each is installed here. */
+export async function sourceSkills() {
+  const dir = join(await sourceClone(), 'skills')
+  const names = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name)
+  return Promise.all(names.map(async (name) => ({ name, installed: !!(await stat(join(SKILLS_DIR, name, 'SKILL.md')).catch(() => undefined)) })))
+}
+/** Copy the source's skills into ~/.claude/skills. Never overwrites one that is already there. */
+export async function installSourceSkills() {
+  const dir = join(await sourceClone(), 'skills')
+  return Promise.all((await sourceSkills()).map(async (s) => {
+    if (!s.installed) await cp(join(dir, s.name), join(SKILLS_DIR, s.name), { recursive: true })
     return { ...s, installed: true }
-  })
+  }))
 }
 
 /** The skills and commands already on this machine (~/.claude), to suggest instead of typing a name. */
@@ -133,7 +158,7 @@ export async function mySkills(): Promise<string[]> {
     return (await Promise.all(inner.map(async (n) => (await exists(join(SKILLS_DIR, e.name, n, 'SKILL.md')) ? [n] : [])))).flat()
   }))).flat()
   const commands = (await dirs(join(homedir(), '.claude', 'commands'))).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3))
-  return [...new Set([...skills, ...commands])].filter((n) => !n.startsWith('concierge-')).sort()
+  return [...new Set([...skills, ...commands])].sort()
 }
 
 /** Does a slash command resolve to a skill we can see? (Plugins and built-ins can't be checked; that's fine.) */
@@ -158,7 +183,7 @@ export const skillExists = async (command: string) => {
 }
 
 /** A plugin skill (`plugin:name`): somewhere under ~/.claude/plugins as skills/<name>/SKILL.md or commands/<name>.md. */
-async function pluginSkill(name: string): Promise<string | undefined> {
+export async function pluginSkill(name: string): Promise<string | undefined> {
   const root = join(homedir(), '.claude', 'plugins')
   // ponytail: a bounded walk; plugins are a few hundred files at most
   const want = [join('skills', name, 'SKILL.md'), join('commands', `${name}.md`)]

@@ -2,7 +2,8 @@
 // while the agent works, edited by hand, then created in Linear with its parents, dependencies and priorities.
 // The agent changes the map with op lines in its reply ("@op {json}", one per line); each is applied the moment its
 // line is complete, so the map grows while it writes. What it says between them is its reply, streamed too.
-// How it breaks a brief down is a skill: ours (the starter skill concierge-plan, yours to edit), or one of the team's own.
+// How it breaks a brief down is a skill: the one picked in Settings → Skills (plan-project by default), or another per plan.
+import { skillBody } from './method.ts'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -121,15 +122,6 @@ const PROTOCOL = [
   'The product manager may be trying a scenario of moves (it comes with the map as "scenario"): answer about it when asked, and never apply it yourself.',
   'Items already in Linear have their identifier as id (e.g. ENG-12) and a state: never remove or rewrite them; add new work under them or beside them instead.',
 ].join('\n')
-// the method: the planning skill (ours is a starter skill, skills/concierge-plan, edited like any other)
-const OURS = new URL('../skills/concierge-plan/SKILL.md', import.meta.url).pathname
-
-/** The planning skill's text: the one picked, else ours (your installed copy, else the one shipped). */
-async function skillText(name = 'concierge-plan') {
-  const f = await skillFile(name).catch(() => undefined) ?? (name === 'concierge-plan' ? OURS : undefined)
-  return f ? (await readFile(f, 'utf8').catch(() => '')).replace(/^---[\s\S]*?---\s*/, '').slice(0, 20_000) : ''
-}
-
 /** Your message to the planner; it answers in the background, the map changing as it writes (the page polls). */
 export async function talk(id: string, text: string) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
@@ -138,7 +130,8 @@ export async function talk(id: string, text: string) {
   p.messages.push({ who: 'you', text, at: new Date().toISOString() })
   // its last questions and suggestions are answered by this message: the reply brings new ones
   Object.assign(p, { busy: true, live: '', error: undefined, asks: [], suggest: [], gaps: [], at: new Date().toISOString() }); save()
-  const skill = await skillText(p.skill || slot('plan'))
+  // the method is the planning skill picked for this plan, else the one in Settings → Skills (method.ts)
+  const skill = await skillBody(p.skill || slot('plan')).catch((e: Error) => { Object.assign(p, { busy: false, error: e.message }); save(); throw e })
   // a big project's map: each item short (its description cut), and Linear's own marked by its state
   const map = JSON.stringify({ nodes: p.nodes.map(({ created: _, by: __, description, state, assigneeId: ___, ...n }) => ({ ...n, ...(description && { description: description.slice(0, 200) }), ...(state && { state: state.name }) })), links: p.links, ...(p.scenario && { scenario: p.scenario.ops }) })
   const proj = p.project && `This plan contributes to the existing Linear project "${p.project.name}"${p.project.targetDate ? `, due ${p.project.targetDate}` : ''}. Its goal node (g) is the project.\nIts vision:\n${p.project.vision.slice(0, 6000) || '(none written)'}\n`

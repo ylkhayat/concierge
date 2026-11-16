@@ -28,7 +28,8 @@ import { draining, machines, place, slotsHere, token } from './machines.ts'
 import { remoteAgent } from './worker.ts'
 import { STOP_AT, limitHit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
-import { DECIDE_NOTE, LOCAL_NOTE, fromAgent, hashOf, proseOf, type NextSteps } from './next.ts'
+import { keptMethod } from './method.ts'
+import { DECIDE_NOTE, fromAgent, hashOf, proseOf, type NextSteps } from './next.ts'
 
 /** A run's final words: the prose kept as its summary, and the decisions block it ended with as its next steps. */
 function finalWords(result: string): { summary: string; next?: NextSteps } {
@@ -217,7 +218,7 @@ export function activity(id: string): Activity[] {
 // Read once when it ends, into the lifecycle log, where the Skills views count them.
 const used = new Map<string, { skills: Set<string>; steers: number }>()
 const skillName = (s: string) => s.trim().replace(/^\//, '').split(/\s/)[0]
-/** The skill a command starts with (`/concierge-review {number}` → concierge-review), if it starts with one. */
+/** The skill a command starts with (`/review-pr {number}` → review-pr), if it starts with one. */
 export const commandSkill = (cmd?: string) => (cmd?.trim().startsWith('/') ? skillName(cmd) : undefined)
 /** A run starting: what it uses is counted from here. */
 const useFrom = (key: string) => used.delete(key)
@@ -896,7 +897,7 @@ function start(pr: Pr) {
         : ['-p', asked, ...(job.resumed ? ['--resume', job.sessionId] : ['--session-id', job.sessionId])]),
       '--output-format', 'stream-json', '--verbose',
       '--allowedTools', ...config.agent.allowedTools, ...(pr.mine ? RUN_TESTS : []),
-      '--append-system-prompt', config.agent[pr.mine ? 'revise' : 'review'].instructions + linkNote({ pr }) + normsNote(pr.repo) + DECIDE_NOTE + LOCAL_NOTE + devlogs + skillsNote() + accountNote(job.provider, pr.id) + (pr.mine ? '' : UNTRUSTED_NOTE), ...devlogArgs(),
+      '--append-system-prompt', config.agent[pr.mine ? 'revise' : 'review'].instructions + linkNote({ pr }) + normsNote(pr.repo) + DECIDE_NOTE + keptMethod('everyRun') + devlogs + skillsNote() + accountNote(job.provider, pr.id) + (pr.mine ? '' : UNTRUSTED_NOTE), ...devlogArgs(),
     ],
     untrusted: !pr.mine,
     onMessage: (_m, line) => {
@@ -1141,7 +1142,7 @@ function startExec(run: ExecRun, on?: string) {
       // the exec command keeps its worktrees next to the repo (<clones>/worktrees/<repo>/<ticket>): outside the working
       // directory, so without this every read in the agent's own worktree is refused
       ...(existsSync(execWorktrees(run.repo)) ? ['--add-dir', execWorktrees(run.repo)] : []),
-      '--append-system-prompt', linkNote({ ticketIds: run.ids }) + handoverNote(run.ids) + (run.ids.length > 1 && !run.role ? MULTI_NOTE : '') + DECIDE_NOTE + LOCAL_NOTE + devlogs + skillsNote() + accountNote(run.provider, key) + planNote(run.plan), ...devlogArgs(),
+      '--append-system-prompt', linkNote({ ticketIds: run.ids }) + handoverNote(run.ids) + (run.ids.length > 1 && !run.role ? MULTI_NOTE : '') + DECIDE_NOTE + keptMethod('everyRun') + devlogs + skillsNote() + accountNote(run.provider, key) + planNote(run.plan), ...devlogArgs(),
     ],
     onMessage: (m) => {
       if (m.type === 'assistant') for (const c of m.message?.content ?? []) {

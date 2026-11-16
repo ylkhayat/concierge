@@ -2,6 +2,7 @@
 // answered since the push before, plus the commits that are new, go to one lean Haiku call that names at most three
 // changes of direction in a few words each: changed, held (a reviewer's point kept as it was, and why) or dropped.
 // For your PRs and the ones you review. Nothing new to go on (a rebase, a push nobody asked for): no call.
+import { method } from './method.ts'
 import { tmpdir } from 'node:os'
 import { providerFor, spawnAgent, tokensOf, type ProviderId } from './providers.ts'
 import { graphql } from './github.ts'
@@ -38,12 +39,12 @@ async function read(pr: Pr) {
   }
 }
 
-function ask(prompt: string): Promise<{ lines: TurnLine[]; costUsd: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
+function ask(prompt: string, system: string): Promise<{ lines: TurnLine[]; costUsd: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
   const p = providerFor('small')
   return new Promise((resolve, reject) => {
     const child = spawnAgent(p, ['-p', prompt, '--json-schema', JSON.stringify(schema), '--output-format', 'json', '--model', 'haiku', '--max-budget-usd', '0.1',
       '--tools', '', '--strict-mcp-config', '--disable-slash-commands', '--setting-sources', '', '--no-session-persistence',
-      '--system-prompt', 'You name how a pull request changed direction. Return only the structured output.'], { cwd: tmpdir() })
+      '--system-prompt', system], { cwd: tmpdir() })
     let out = ''
     child.stdout.on('data', (c: Buffer) => { out += c })
     child.on('error', reject)
@@ -67,13 +68,11 @@ export async function turn(pr: Pr, was: Turns) {
   const now: Turns = { ...was, sha: pr.headSha, at: new Date().toISOString(), seen: commits.map((c: { head: string }) => c.head) }
   if (was.seen && (fresh.length || asks.length || answers.length)) {
     const list = (xs: Said[]) => xs.map((s) => `- ${s.who} (${s.url}): ${s.body}`).join('\n') || '(none)'
-    const prompt = [`Pull request "${pr.title}" by ${pr.author.login} got a new push. Name how it changed direction with this push, because of a review or some other consideration.`,
-      'At most 3 lines; none when nothing changed direction (a rebase, formatting, renames, tests alone). Each line at most 12 words, plain, no filler: what it does now, not how.',
-      '- kind: changed (it now does something differently), held (the author kept something a reviewer questioned; say what was kept and why), dropped (a part was removed).',
-      '- who and url: the reviewer and the comment the line answers, copied from below; leave both out when it answers no one.',
+    const prompt = [`Pull request "${pr.title}" by ${pr.author.login} got a new push. Name how it changed direction with this push.`,
+      '- kind: changed, held or dropped. who and url: the reviewer and the comment the line answers, copied from below; leave both out when it answers no one.',
       '', 'New commits:', fresh.map((c: { head: string; body: string }) => `- ${c.head}${c.body ? `: ${c.body}` : ''}`).join('\n') || '(none)',
       '', 'Reviewers since the push before:', list(asks), '', `${pr.author.login}'s replies since then:`, list(answers)].join('\n')
-    const r = await ask(prompt)
+    const r = await ask(prompt, await method('turns', 'Return only the structured output.'))
     addSpend(r.costUsd, r.provider, r.tokens)
     const urls = new Set(since.map((s) => s.url))
     // ponytail: a link the model made up is dropped, not checked further

@@ -47,6 +47,7 @@ const PAGES = NAV.flatMap((g) => g.pages)
 const INDEX: [string, SettingsTab][] = [
   ['Company: GDPR, SOC 2, HIPAA, PCI, regions, data, team', 'company'], ['Compliance and security checks for plans', 'company'],
   ['Roles: developer, product, design', 'roles'], ['Join a role', 'roles'], ['Execute command per role', 'roles'],
+  ['Skill source', 'workflows'], ['Which skill each feature uses: explain, brief, standup, plans', 'workflows'],
   ['Auto-review', 'workflows'], ['Parallel runs', 'workflows'], ['Suggested verdict for a finished review', 'workflows'], ['Workspaces: Review and Ship', 'workflows'],
   ['Review skill or command', 'workflows'], ['Revise skill or command', 'workflows'], ['Stack command', 'workflows'], ['Starter skills', 'workflows'],
   ['Org skills', 'workflows'], ['Skills this setup runs', 'workflows'], ['Ship command', 'workflows'], ['Linear teams', 'workflows'],
@@ -428,32 +429,81 @@ function RepoCard({ repo, path, meta, task, toast, onRemove }: {
   )
 }
 
+/** What each thing Concierge writes for you runs: a skill you pick (method.ts), shown with whether it is installed. */
+function FeatureSkills({ saveConfig }: { saveConfig: SaveConfig }) {
+  const q = useApi<{ features: { key: string; label: string; hint: string; default: string; skill: string; found: boolean }[] }>('/method')
+  const [open, setOpen] = useState<string>()
+  const [all, setAll] = useState<FoundSkill[]>()
+  const [filter, setFilter] = useState('')
+  useEffect(() => { if (open && !all) void skillsFor('review').then(setAll) }, [open, all])
+  const set = (key: string, name: string, label: string) => saveConfig({ skills: { [key]: name } }, `${label}: ${name || 'default'}`).then(() => { setOpen(undefined); refresh('/method') })
+  const shown = (all ?? []).filter((x) => !filter || x.name.toLowerCase().includes(filter.toLowerCase()) || x.description?.toLowerCase().includes(filter.toLowerCase())).slice(0, 40)
+  return (
+    <Group title="What each feature runs" hint="How Concierge explains, briefs, plans and writes is a skill of yours. It brings the facts and the format its pages read; the skill brings the method.">
+      {!q.data && <div className="px-4 py-3"><Skeleton rows={3} /></div>}
+      {q.data?.features.map((f) => (
+        <div key={f.key} className="border-t border-line first:border-t-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5">
+            <div className="min-w-0 flex-1 basis-48"><div className="text-body font-medium text-fg-1">{f.label}</div><div className="text-meta text-fg-3">{f.hint}</div></div>
+            <span title={f.found ? 'Installed' : 'Not installed: this feature fails until it is, or you pick another'} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-meta ${f.found ? 'bg-fill text-fg-1' : 'bg-fail/10 text-fail-text ring-1 ring-fail/30'}`}>
+              {f.found ? <CircleCheck className="size-3 text-ok" /> : <CircleAlert className="size-3" />}{f.skill}
+            </span>
+            {f.skill !== f.default && <button onClick={() => void set(f.key, '', f.label)} className={quiet} title={`Back to ${f.default}`}>Default</button>}
+            <button onClick={() => { setOpen(open === f.key ? undefined : f.key); setFilter('') }} className={quiet}>{open === f.key ? 'Close' : 'Change'}</button>
+          </div>
+          {open === f.key && (
+            <div className="border-t border-line bg-fill/30 px-3.5 py-2.5">
+              <span className="mb-1.5 inline-flex items-center gap-1.5 rounded-lg bg-fill px-2 py-1"><Search className="size-3.5 text-fg-4" />
+                <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter" aria-label="Filter skills" className="w-40 bg-transparent text-small outline-none placeholder:text-fg-4" /></span>
+              <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+                {!all && <li className="px-2 py-1.5 text-small text-fg-3">Reading the skills on this setup…</li>}
+                {shown.map((x) => (
+                  <li key={x.invoke}>
+                    <button onClick={() => void set(f.key, x.name, f.label)} className={`flex w-full items-start gap-3 rounded-ctl px-2.5 py-1.5 text-left transition-colors ${x.name === f.skill ? 'sel' : 'hover:bg-hover'}`}>
+                      <span className="shrink-0 font-mono text-small text-fg-1">{x.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-meta text-fg-3">{x.description}</span>
+                      <span className="shrink-0 text-micro text-fg-4">{x.source}</span>
+                    </button>
+                  </li>
+                ))}
+                {all && !shown.length && <li className="px-2 py-1.5 text-small text-fg-3">No skill matches.</li>}
+              </ul>
+            </div>
+          )}
+        </div>
+      ))}
+    </Group>
+  )
+}
+
 // --- Skills ----------------------------------------------------------------------------------------
 
-const isStarter = (s?: SetupView) => !!s && s.config.review.startsWith('/concierge-review') && s.config.revise.startsWith('/concierge-revise')
-
 function Skills({ setup, toast, saveConfig, reload }: { setup?: SetupView; toast: Toast; saveConfig: SaveConfig; reload: () => void }) {
+  const [source, setSource] = useState('')
+  useEffect(() => setSource(setup?.skillSource ?? ''), [setup?.skillSource])
   if (!setup) return <Skeleton rows={4} />
-  const useStarter = () => saveConfig({ review: '/concierge-review {number}', revise: '/concierge-revise {repo}#{number}' }, 'Using the starter skills')
-  const install = () => api('/setup/skills', {}).then(() => { toast('Starter skills installed in ~/.claude/skills'); reload() }, (e: Error) => toast(e.message, 'error'))
+  const install = () => api('/setup/skills', {}).then(() => { toast('Installed in ~/.claude/skills'); reload(); refresh('/method') }, (e: Error) => toast(e.message, 'error'))
+  const missing = setup.skills.filter((s) => !s.installed)
 
   return (
     <>
       <OrgSkills toast={toast} />
-      {(
-        <Group title="Starter skills" hint="Review, revise and exec skills built on crit, installed into ~/.claude/skills for you to edit.">
+      <Group title="Skill source" hint="A git repository of skills. A new setup installs its skills into ~/.claude/skills, never over one you have; Concierge ships none of its own.">
+        <div className="flex flex-wrap items-center gap-2 px-3.5 py-3">
+          <input value={source} onChange={(e) => setSource(e.target.value)} spellCheck={false} aria-label="Skill source" className={`${input} min-w-0 flex-1 basis-64 font-mono`} />
+          <button onClick={() => saveConfig({ skillSource: source.trim() }, 'Skill source saved')} disabled={source.trim() === setup.skillSource} className={primary}><Check className="size-3.5" />Save</button>
+          {missing.length > 0 && <button onClick={install} className={quiet}><Sparkles className="size-3.5" />Install {missing.length} missing</button>}
+        </div>
+        <div className="flex flex-wrap gap-1.5 px-3.5 pb-3">
           {setup.skills.map((s) => (
-            <Row key={s.name} icon={Wand} title={`/${s.name}`} hint={s.name === 'concierge-review' ? 'Reviews someone else’s PR' : s.name === 'concierge-exec' ? 'Ships Linear tickets as PRs' : 'Works through feedback on your PR'}>
-              {s.installed ? <span className="flex items-center gap-1 text-small text-ok-text"><CircleCheck className="size-4" />Installed</span>
-                : <span className="text-small text-fg-3">Not installed</span>}
-            </Row>
+            <span key={s.name} title={s.installed ? 'Installed' : 'Not installed here'} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-meta ${s.installed ? 'bg-fill text-fg-2' : 'bg-wait/10 text-wait-text ring-1 ring-wait/30'}`}>
+              {s.installed ? <CircleCheck className="size-3 text-ok" /> : <CircleAlert className="size-3" />}{s.name}
+            </span>
           ))}
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-            {!setup.skills.every((s) => s.installed) && <button onClick={install} className={primary}><Sparkles className="size-3.5" />Install</button>}
-            {!isStarter(setup) && <button onClick={useStarter} disabled={!setup.skills.every((s) => s.installed)} className={quiet}>Use the starter skills</button>}
-          </div>
-        </Group>
-      )}
+          {!setup.skills.length && <span className="text-small text-fg-3">Can't read this source right now.</span>}
+        </div>
+      </Group>
+      <FeatureSkills saveConfig={saveConfig} />
       <Group title="Skills this setup runs" hint="Every skill your settings name, and the ones they use. Each must exist on every machine.">
         {setup.needed.filter((s) => s.from === 'settings').map((top) => {
           const uses = setup.needed.filter((s) => s.from === top.name)
@@ -1742,7 +1792,7 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
     ] },
     { name: 'Plan a project', icon: Layers, on: role === 'product', steps: [
       { k: 'When', v: 'you write a brief, or pick a Linear project, in Plans', at: 'roles', tip: 'A new project, or one that exists: its vision, tickets and timeline come in.' },
-      { k: 'Runs', v: slot('plan', 'concierge-plan'), at: 'roles', mono: true, tip: 'The planning skill: ours (concierge-plan, edit it freely) or your own, picked per plan.' },
+      { k: 'Runs', v: slot('plan', roles.data?.base.plan ?? '…'), at: 'workflows', mono: true, tip: 'The planning skill: the one in Settings → Workflows → What each feature runs, or another picked per plan.' },
       { k: 'On', v: `${who('review')} (Sonnet)`, at: 'accounts', tip: 'The planner streams its reply; each change to the map lands as it writes.' },
       { k: 'Then', v: 'a live map you edit; Create in Linear when you say so. Not its lead: tickets only', at: 'roles', tip: 'If you lead the project, the agent may propose a new vision, applied only when you accept it.' },
     ] },

@@ -20,7 +20,7 @@ test('each role runs its own slot, else the developer\'s; skills change only in 
   assert.equal(slot('review', 'product'), config.agent.review.command) // not set: the developer's, shared as-is
   withRole('product', () => assert.equal(slot('exec'), '/pm-exec {ids}'))
   // owners: a starter by its role, a slot's skill by the role naming it, anything else by who you signed up as
-  assert.equal(ownerOf('concierge-plan'), 'product')
+  assert.equal(ownerOf('plan-project'), 'product')
   assert.equal(ownerOf('pm-exec'), 'product')
   assert.equal(ownerOf('junior-comments'), 'developer')
   withRole('product', () => {

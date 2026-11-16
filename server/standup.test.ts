@@ -69,8 +69,8 @@ test('a written standup gets its ticket ids linked, as Markdown and as lists', (
 })
 
 test('product work comes first, side quests apart; one kind alone needs no headings', () => {
-  const did = [{ id: 'DA-1', title: 'Fix a crash', lead: 'Merged' }, { id: 'AI-2', title: 'Agent state', lead: 'Progress on', project: 'Agent Refinement' }]
-  const next = [{ kind: 'continue' as const, id: 'AI-2', title: 'Agent state', project: 'Agent Refinement' }]
-  assert.deepEqual(asText(did, next).split('\n'), ['What I did:', 'Product:', '- Progress on AI-2', 'Side quests:', '- Merged DA-1', '', 'What I will do:', '- Continue the remaining work on AI-2'])
-  assert.match(asHtml(did, next), /<p><i>Product<\/i><\/p><ul><li>Progress on AI-2<\/li><\/ul><p><i>Side quests<\/i><\/p>/)
+  const did = [{ id: 'AC-1', title: 'Fix a crash', lead: 'Merged' }, { id: 'AC-2', title: 'Agent state', lead: 'Progress on', project: 'Checkout redesign' }]
+  const next = [{ kind: 'continue' as const, id: 'AC-2', title: 'Agent state', project: 'Checkout redesign' }]
+  assert.deepEqual(asText(did, next).split('\n'), ['What I did:', 'Product:', '- Progress on AC-2', 'Side quests:', '- Merged AC-1', '', 'What I will do:', '- Continue the remaining work on AC-2'])
+  assert.match(asHtml(did, next), /<p><i>Product<\/i><\/p><ul><li>Progress on AC-2<\/li><\/ul><p><i>Side quests<\/i><\/p>/)
 })

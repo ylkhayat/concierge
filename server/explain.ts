@@ -2,6 +2,7 @@
 // Two caches keep work from being redone:
 //   atlas/<repo>/nodes.json     what a folder is, keyed by path and the git tree sha it was written for
 //   explain/<repo>-<n>/<head>   the PR overlay; a new push only re-explains files changed since the last head
+import { method } from './method.ts'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -285,9 +286,8 @@ const SCHEMA = {
 }
 type Result = { skeleton?: Omit<Skeleton, 'signature'>; nodes: (Omit<NodeSummary, 'sha' | 'children' | 'at'> & { path: string })[]; overlay: Pick<Overlay, 'business' | 'touched' | 'impact' | 'flows'> & { tour: Tour } }
 
-const SYSTEM = 'You explain code changes for a visual, zoomable architecture map. You read code with the tools you have '
-  + 'and never modify anything. Be concrete and specific to this codebase; no filler, no marketing tone. '
-  + 'Return only the structured output.'
+// how to explain is the user's skill (method.ts); the format below is what this view reads back
+const FORMAT = 'Return only the structured output.'
 
 export function buildPrompt(o: {
   pr: Pr; base: string; head: string; facts: Facts; skeleton?: Skeleton; needSkeleton: boolean; sig: string
@@ -326,27 +326,7 @@ export function buildPrompt(o: {
   lines.push(`${n++}. \`overlay.business\`: headline (12 words max), what, why, who is affected, risk (low, medium, high) and riskWhy (one sentence, at most 20 words: it shares a slide with the quick answers).`)
   lines.push(`${n++}. \`overlay.impact\`: up to 12 of the most significant dependents above (or other affected code you find), each with a concrete reason.`)
   lines.push(`${n++}. \`overlay.flows\`: 1 to 3 logic flows this PR changes, as Mermaid code (\`flowchart TD\` or \`sequenceDiagram\`), \`before\` (omit if the flow is new) and \`after\`, \`scope\` is the folder or file the flow lives in. At most 12 nodes, short labels, and no parentheses, quotes or semicolons inside labels.`)
-  lines.push(`${n++}. \`overlay.tour\`: a guided tour for a busy reviewer who has never seen this PR. Follow this playbook exactly. Each slide is read in seconds: short, concrete, no filler, no detail that does not change how the reader reviews.`,
-    '   - `story`: the opening slides, so anyone understands in under a minute why this PR exists. Plain words a product person follows; no file names, no jargon.',
-    '     Every slide must fit a laptop screen without scrolling, and text is never shrunk to fit: the word limits here are hard limits, not targets. Cut, never squeeze.',
-    '     `push`: at most 3 short sentences and 45 words in all: what pushes this work forward, from the Linear ticket and its discussion when there is one (the problem, who hit it, what the analysis found), else from the PR description. `ticket`: its identifier, when there is one.',
-    '     `dimension`: the one that matters most: users, business, reliability, security, cost or developers.',
-    '     `solution`: at most 3 short sentences and 45 words in all: what was done about it, as behaviour, not code.',
-    '     `before` and `after`: the same flow drawn as 2 to 5 shapes each, in order, each `label` at most 4 words (a step, an actor or an outcome). `tone`: bad for the step that went wrong or the bad outcome, ok for what now works, neutral otherwise. The shapes line up so the difference jumps out; `caption` one line, at most 12 words. For a brand-new feature, `before` is what people had to do without it.',
-    '     `questions`: 2 or 3 questions a reader would ask next, each answered in at most 12 words: pick from who notices, what could break, how we know it works, what is left for later; skip any whose answer is obvious.',
-    '   - `overview`: the start slide, one line each: `what` the PR does (at most 15 words), `why` it exists (at most 15), `who` it affects (at most 10). Plain, no backstory.',
-    '   - Markdown is allowed in every field for `code` names, **bold** for the one key word, and links; no lists, no headings.',
-    '   - `focus`: one sentence, at most 20 words. If the reviewer reads only one thing in this PR, which change, and why it is the one that matters.',
-    '   - `steps`: 3 to 5, in reading order: context (only when the problem is not obvious from the PR title), then the core change, then supporting changes, then tests, then cleanup. Merge small or related parts into one step.',
-    '   - each step answers the same three questions, in plain words:',
-    '     `title`: verb-first, at most 7 words, saying what happens ("Hang-up now waits for the save"), never a file or folder name.',
-    '     `what`: one sentence, at most 20 words: what this part changes, as behaviour a reader can picture, not as code edits.',
-    '     `why`: one sentence, at most 20 words: why it is done this way, or what would break without it.',
-    '     `check`: 1 or 2 questions the reviewer should answer while reading, each at most 12 words and specific: name the function, the branch or the edge case ("Does finish() still save when the call ends mid-turn?").',
-    '     `paths`: the changed files to read for it, from the list above; a context step may have none. Every in-scope changed file appears in exactly one step.',
-    '     `kind`: context, core, supporting, tests or cleanup.',
-    '   - never restate the title in `what`, never start with "This PR" or "This step", no hedging words.',
-    '   - `outOfScope`: changed files that do not serve the PR\'s stated purpose (a drive-by refactor, an unrelated fix, formatting or generated churn, a stray debug change), each with a one-sentence reason; an empty array when everything belongs.')
+  lines.push(`${n++}. \`overlay.tour\`: the guided tour, written as your instructions say: \`story\` (\`push\`, \`ticket\` when there is one, \`dimension\`, \`solution\`, \`before\` and \`after\` as shapes with \`label\` and \`tone\`, \`caption\`, \`questions\`), \`overview\` (\`what\`, \`why\`, \`who\`), \`focus\`, \`steps\` (each with \`title\`, \`what\`, \`why\`, \`check\`, \`paths\` from the changed files above, \`kind\`: context, core, supporting, tests or cleanup; every in-scope changed file in exactly one step) and \`outOfScope\` (an empty array when everything belongs).`)
   return lines.join('\n')
 }
 
@@ -426,7 +406,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   })
   const prompt = buildPrompt({ pr, base, head: pr.headSha, facts, skeleton, needSkeleton, sig, nodes, asks, askTouched, prev, interdiff, tickets, builds })
   writeJson(join(OVERLAYS(pr), 'last-prompt.json'), { prompt }) // for debugging what was (not) asked
-  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress)
+  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress, SCHEMA, config.explainBudgetUsd ?? 1.5, await method('explainChange', FORMAT))
 
   // persist the shared knowledge first, so even a later failure leaves the atlas richer
   const now = new Date().toISOString()
@@ -451,7 +431,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   return overlay
 }
 
-export function callClaude<T = Result>(prompt: string, cwd: string, signal: AbortSignal | undefined, progress: Progress, schema: object = SCHEMA, budget = config.explainBudgetUsd ?? 1.5, system = SYSTEM, model?: string): Promise<{ result: T; cost: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
+export function callClaude<T = Result>(prompt: string, cwd: string, signal: AbortSignal | undefined, progress: Progress, schema: object = SCHEMA, budget = config.explainBudgetUsd ?? 1.5, system = FORMAT, model?: string): Promise<{ result: T; cost: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
   // reading code is the review provider's; a small-model call goes to the one for quick calls
   const provider = providerFor(model === 'haiku' ? 'small' : 'review')
   return new Promise((resolve, reject) => {
@@ -529,8 +509,6 @@ export async function basePlan(repoName: string, repoPath: string, branch: strin
   }
 }
 
-const BASE_SYSTEM = 'You write a map of a codebase: one short entry per folder, for a zoomable architecture view. '
-  + 'You read code with the tools you have and never modify anything. Be concrete and specific; no filler.'
 const BASE_SCHEMA = { type: 'object', additionalProperties: false, required: ['nodes'], properties: { skeleton: SCHEMA.properties.skeleton, nodes: SCHEMA.properties.nodes } }
 
 export async function mapBase(repoName: string, repoPath: string, branch: string, opts: {
@@ -578,7 +556,7 @@ export async function mapBase(repoName: string, repoPath: string, branch: string
     const label = `Mapping ${areas.slice(0, 2).join(', ')}${areas.length > 2 ? ` and ${areas.length - 2} more` : ''}`
     opts.progress(label, done, asks.length, cost)
     const { result, cost: c } = await callClaude<{ nodes: Result['nodes'] }>(
-      lines.join('\n'), wt, opts.signal, () => opts.progress(label, done, asks.length, cost), BASE_SCHEMA, 2, BASE_SYSTEM)
+      lines.join('\n'), wt, opts.signal, () => opts.progress(label, done, asks.length, cost), BASE_SCHEMA, 2, await method('explainCodebase', FORMAT))
     cost += c
     const fresh = loadNodes(repoName), now = new Date().toISOString()
     for (const n of result.nodes) {
@@ -617,19 +595,14 @@ export async function mapSystems(repoName: string, tree: Map<string, Entry>, cwd
     '## Its units, as the folder map describes them',
     ...(units.length ? units : sig.split(',').filter((p) => p && !p.includes('/'))).map(line),
     '',
-    '## Rules',
-    '- One system per deployable application or service (a backend, a web app, a worker, an API, an AI service), named for what it does for the business, not its folder. Its -e2e or test folder belongs to it.',
-    '- Libraries are not one system each: group them by domain into at most 6 library systems (for example the integrations with outside services, data access and storage, shared UI, platform utilities). Each lists every library folder it holds.',
-    '- Configuration-only folders for an outside service (identity, database, cloud) are one infra system per service.',
-    '- Outside services the code talks to (identity providers, databases, CRMs, speech or LLM providers, cloud) are systems of kind external, with no paths.',
-    '- Never one system that owns a whole top-level folder like "apps" or "libs": list the folders it really owns.',
-    `- Every unit above belongs to exactly one system. At most 16 systems in all, so the map stays readable.`,
+    '## Format',
+    `- Group them into systems as your instructions say. Every unit above belongs to exactly one system; at most 16 systems in all, so the map stays readable.`,
     '- Edges are runtime relationships between systems (http, websocket, queue, db, sdk, import), each with a short label. Actors are the people and companies using it.',
-    '- Short kebab-case ids. Read a manifest or entry point only when a summary leaves a unit unclear.',
+    '- Short kebab-case ids.',
   ].join('\n')
   let cost = 0
   for (let tries = 0; tries < 2; tries++) {
-    const { result, cost: c } = await callClaude<{ skeleton: Omit<Skeleton, 'signature'> }>(prompt, cwd, signal, progress, SYSTEMS_SCHEMA, 1.5, BASE_SYSTEM)
+    const { result, cost: c } = await callClaude<{ skeleton: Omit<Skeleton, 'signature'> }>(prompt, cwd, signal, progress, SYSTEMS_SCHEMA, 1.5, await method('explainCodebase', FORMAT))
     cost += c
     if (goodSkeleton(result.skeleton, sig)) { writeJson(join(ATLAS(repoName), 'skeleton.json'), { signature: sig, ...result.skeleton }); return cost }
   }

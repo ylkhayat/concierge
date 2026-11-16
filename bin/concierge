@@ -46,8 +46,13 @@ case "${1:-status}" in
   exec) running || start; browse "$URL/exec" ;;
   logs) tail -f "$LOG" ;;
   install-skills)
+    # from the skill source (Settings → Skills; github.com/ylkhayat/skills unless config.json names another)
+    src=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("skillSource") or "")' "$CONFIG" 2>/dev/null)
+    src=${src:-https://github.com/ylkhayat/skills}
+    tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+    git clone -q --depth 1 "$src" "$tmp" || { echo "can't clone $src" >&2; exit 1; }
     dest="$HOME/.claude/skills"; mkdir -p "$dest"
-    for d in "$APP"/skills/*/; do
+    for d in "$tmp"/skills/*/; do
       name=$(basename "$d")
       if [[ -e $dest/$name ]]; then echo "skip $name (already in $dest)"; else cp -R "$d" "$dest/$name"; echo "installed $name"; fi
     done ;;

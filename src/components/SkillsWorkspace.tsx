@@ -16,7 +16,7 @@ type Toast = (m: string, tone?: 'ok' | 'error') => void
 type Scope = 'all' | 'mine' | 'company' | 'others'
 type Sort = 'used' | 'trending' | 'work' | 'tokens'
 
-const SOURCE: Record<Source, string> = { mine: 'Yours', company: 'Company', starter: 'Starter', plugin: 'Plugin' }
+const SOURCE: Record<Source, string> = { mine: 'Yours', company: 'Company', source: 'From your skill source', plugin: 'Plugin' }
 const VERDICT: Record<Verdict, { label: string; cls: string }> = {
   good: { label: 'Working well', cls: 'bg-ok/12 text-ok' }, watch: { label: 'Watch', cls: 'bg-wait/14 text-wait' },
   fix: { label: 'Needs changes', cls: 'bg-fail/12 text-fail' }, few: { label: 'Too few runs', cls: 'bg-hover text-fg-3' },

@@ -5,6 +5,7 @@
 // or shared ones.
 // The role a request was made in comes with it (the page's x-concierge-role header): a run you start remembers it;
 // a run nothing started (an automatic review) is the developer's.
+import { skillFor } from './method.ts'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { config } from './config.ts'
 import { save, state } from './store.ts'
@@ -23,20 +24,19 @@ export const withRole = <T,>(header: string | undefined, f: () => T) => asRole.r
 export const currentRole = (): Role => asRole.getStore() ?? roles().joined[0] ?? 'developer'
 
 const BASE: Record<Slot, () => string> = {
-  review: () => config.agent.review.command, revise: () => config.agent.revise.command, exec: () => config.exec.command, plan: () => 'concierge-plan',
+  review: () => config.agent.review.command, revise: () => config.agent.revise.command, exec: () => config.exec.command, plan: () => skillFor('plan'),
 }
 /** What a role runs for a slot: its own, else the developer's. */
 export const slot = (s: Slot, role: Role = currentRole()) => (role !== 'developer' && roles().setups[role]?.slots?.[s]) || BASE[s]()
 export const baseSlots = () => Object.fromEntries(Object.entries(BASE).map(([k, f]) => [k, f()])) as Record<Slot, string>
 
-// starters belong to the role they were made for; any other skill, to the role you signed up as, until you say otherwise
-const STARTER: Record<string, Owner> = { 'concierge-plan': 'product', 'concierge-review': 'developer', 'concierge-revise': 'developer', 'concierge-exec': 'developer' }
+// the planning skill belongs to product; any other skill, to the role you signed up as, until you say otherwise
 /** Who a skill belongs to; a skill a role's slot names is that role's. */
 export function ownerOf(name: string): Owner {
   const r = roles()
   if (r.skills[name]) return r.skills[name]
   const used = ROLE_IDS.filter((x) => x !== 'developer' && Object.values(r.setups[x]?.slots ?? {}).some((c) => c && new RegExp(`(^|[/\\s:])${name}\\b`).test(c)))
-  return used.length === 1 ? used[0] : STARTER[name] ?? r.joined[0] ?? 'developer'
+  return used.length === 1 ? used[0] : name === skillFor('plan') ? 'product' : r.joined[0] ?? 'developer'
 }
 export const canChange = (name: string, role: Role = currentRole()) => { const o = ownerOf(name); return o === 'shared' || o === role }
 export function mustChange(name: string) {

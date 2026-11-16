@@ -1,4 +1,5 @@
 // first: the keys every machine shares go into the environment before any module reads it
+import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.ts'
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { readFile, stat, writeFile } from 'node:fs/promises'
@@ -37,7 +38,7 @@ import { capped, machines, serve as serveMachine, slotsHere, token as machineTok
 import { updateStatus } from './updateStatus.ts'
 import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey } from './sharedEnv.ts'
 import { call } from './worker.ts'
-import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, WRITE_SYSTEM, writeInput } from './standup.ts'
+import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
 import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
@@ -66,7 +67,7 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Company } from './r
 import { suggestCompany } from './companyScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, type Op as PlanOp } from './plans.ts'
-import { checks, cloneRepo, installStarterSkills, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, starterSkills, suggestions, validate } from './setup.ts'
+import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
@@ -625,7 +626,7 @@ function writeStandup(day: string, since: Date, teams: string[]) {
     const did = forTeams(s.did, teams), next = forTeams(s.next, teams)
     if (!did.length && !next.length) return undefined
     const { result, cost, provider, tokens } = await callClaude<{ text: string }>(writeInput(did, next), tmpdir(), undefined, () => {},
-      { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, 0.3, WRITE_SYSTEM, 'haiku')
+      { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, 0.3, await method('standup', 'Keep the ticket IDs exactly as given, so they can be linked. The text field holds the update.'), 'haiku')
     addSpend(cost, provider, tokens)
     const w: Written = { day, teams, since: since.toISOString(), key: factsKey(did, next), text: result.text.trim(), at: new Date().toISOString(), costUsd: cost, tickets: new Set([...did, ...next].map((x) => x.id)).size }
     // the newest 30 stay: a month of mornings
@@ -639,9 +640,6 @@ function writeStandup(day: string, since: Date, teams: string[]) {
 // the facts, live, and the written version for that day and those teams, saying whether the facts moved since
 // --- the Desk's brief: a topic (a ticket and its PRs, a stack, a PR) in two or three sentences, written by a small model
 // from the facts here, kept until those facts change (then written again on the next look)
-const BRIEF_SYSTEM = `You brief a developer on one topic of their work: a Linear ticket and its pull requests. From the facts given, write 2 or 3 short sentences:
-what the topic is about in plain words, where it stands now (approved, waiting on reviewers, threads to answer, CI red, an agent working), and the one next step for the developer.
-Name PRs as #number. Never invent facts. Plain words, no em dashes, no hype, no bold, no lists.`
 const briefing = new Map<string, Promise<string | undefined>>()
 function briefFacts(ticketId: string | undefined, prIds: string[]) {
   const t = ticketId ? ticketViews().find((x) => x.id === ticketId) : undefined
@@ -666,7 +664,7 @@ app.post('/desk/brief', async (c) => {
   // one write per topic at a time; an old brief shows meanwhile, marked as catching up
   if (!briefing.has(key)) briefing.set(key, (async () => {
     const { result, cost, provider, tokens } = await callClaude<{ text: string }>(input, tmpdir(), undefined, () => {},
-      { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, 0.1, BRIEF_SYSTEM, 'haiku')
+      { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, 0.1, await method('brief', 'The text field holds the brief.'), 'haiku')
     addSpend(cost, provider, tokens)
     // the newest 100 stay
     state.briefs = Object.fromEntries([...Object.entries(state.briefs ?? {}), [key, { key: fp, text: result.text.trim(), at: new Date().toISOString() }] as const].sort((a, b) => a[1].at.localeCompare(b[1].at)).slice(-100))
@@ -1444,7 +1442,7 @@ app.post('/base', async (c) => {
 
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async () => ({
-  configured: configured(), configFile: CONFIG_FILE, checks: await checks(), skills: starterSkills(),
+  configured: configured(), configFile: CONFIG_FILE, checks: await checks(), skills: await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
   config: { repos: config.repos, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, company: config.company ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
@@ -1463,7 +1461,14 @@ app.post('/setup/validate', async (c) => {
   const { repo, path } = await c.req.json() as { repo: string; path: string }
   return c.json(await validate(String(repo), String(path)))
 })
-app.post('/setup/skills', (c) => c.json(installStarterSkills()))
+app.post('/setup/skills', async (c) => c.json(await installSourceSkills()))
+// Settings → Skills: which skill each feature uses (method.ts), its default, and whether it is installed here
+app.get('/method', async (c) => c.json({
+  source: config.skillSource?.trim() || DEFAULT_SOURCE,
+  features: await Promise.all((Object.keys(FEATURES) as (keyof typeof FEATURES)[]).map(async (k) => ({
+    key: k, label: FEATURES[k].label, hint: FEATURES[k].hint, default: FEATURES[k].skill, skill: skillFor(k), found: !!(await skillPath(skillFor(k))),
+  }))),
+}))
 // the company profile, filled for you: from Linear and your code, as suggestions to take (companyScan.ts)
 app.get('/company/suggest', async (c) => c.json(await suggestCompany(c.req.query('fresh') === '1')))
 // who may open it through the tailnet link: the list, and changes to it (never empty while someone is on it: the last
@@ -1478,7 +1483,7 @@ app.post('/access', async (c) => {
   return c.json({ logins: allowedLogins(), you })
 })
 app.post('/config', async (c) => {
-  const b = await c.req.json() as { repos?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; company?: Company }
+  const b = await c.req.json() as { repos?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; company?: Company; skills?: Record<string, string>; skillSource?: string }
   const errors: string[] = []
   if (b.repos) {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
@@ -1503,6 +1508,9 @@ app.post('/config', async (c) => {
     if (x.allowedTools !== undefined && (!Array.isArray(x.allowedTools) || x.allowedTools.some((t) => typeof t !== 'string' || !t.trim() || t.length > 200))) errors.push('Allowed tools must be a list of tool rules')
     if (x.autoTodoCap !== undefined && !(Number.isInteger(x.autoTodoCap) && x.autoTodoCap >= 1 && x.autoTodoCap <= 5)) errors.push('Auto-exec picks 1 to 5 tickets per run')
   }
+  // which skill each feature uses (method.ts): a skill name, or empty for its default
+  if (b.skills !== undefined && (typeof b.skills !== 'object' || Object.entries(b.skills).some(([k, v]) => !(k in FEATURES) || typeof v !== 'string' || !/^[\w:./-]{0,120}$/.test(v)))) errors.push('Each feature takes a skill name')
+  if (b.skillSource !== undefined && (typeof b.skillSource !== 'string' || (b.skillSource.trim() && !/^(https:\/\/|git@)[\w.@:/~-]+$/.test(b.skillSource.trim())))) errors.push('The skill source is a git repository URL (https:// or git@)')
   if (b.company !== undefined) {
     const k = b.company, known: Record<string, [string, string][]> = { regions: REGIONS, certifications: CERTIFICATIONS, data: DATA, reviews: REVIEWS }
     for (const [f, list] of Object.entries(known)) { const v = (k as Record<string, unknown>)[f]; if (v !== undefined && (!Array.isArray(v) || v.some((x) => !list.some(([id]) => id === x)))) errors.push(`Unknown ${f}`) }
@@ -1520,12 +1528,15 @@ app.post('/config', async (c) => {
     ...(b.explainBudgetUsd !== undefined && { explainBudgetUsd: b.explainBudgetUsd }),
     ...(b.exec && { exec: b.exec }),
     ...(b.company && { company: { ...config.company, ...b.company } }),
+    ...(b.skills && { skills: Object.fromEntries(Object.entries({ ...config.skills, ...b.skills }).filter(([, v]) => v?.trim())) }),
+    ...(b.skillSource !== undefined && { skillSource: b.skillSource.trim() || undefined }),
     ...((b.review || b.revise || b.stack !== undefined) && { agent: {
       ...(b.stack !== undefined && { stack: b.stack.trim() }),
       ...(b.review && { review: { ...prev?.review, command: b.review.trim() } }),
       ...(b.revise && { revise: { ...prev?.revise, command: b.revise.trim() } }),
     } }),
   })
+  if (b.skills) void rereadMethods()
   doPoll() // pick up the newly watched repos right away
   if (b.exec) pollTickets()
   bus.emit('change')
