@@ -43,7 +43,7 @@ When you end your turn, close your final message with one fenced block tagged de
 hides it from the message and shows it as a checklist the user ticks, so keep the prose complete on its own too:
 \`\`\`deck-next
 {"steps":[
-  {"text":"Fix the null check Mingxi flagged in loader.ts","kind":"do","checked":true},
+  {"text":"Fix the null check Lee flagged in loader.ts","kind":"do","checked":true},
   {"text":"Push the 2 fix commits","kind":"publish","checked":true},
   {"text":"Post the 3 drafted replies","kind":"publish","checked":false,"why":"the reviewer's thread may change after the push"},
   {"text":"Lookup timeout","kind":"decide","blocking":true,"options":[{"label":"Keep 30 s","recommended":true},{"label":"Lower to 10 s"}]}]}
