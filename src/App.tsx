@@ -1,7 +1,6 @@
-import { ClipboardList, Coins, Crosshair, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Sparkles, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap } from 'lucide-react'
+import { ClipboardList, Coins, Crosshair, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
-import { PrDetail } from './components/PrDetail.tsx'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
 import { VpnChip } from './components/VpnChip.tsx'
@@ -19,10 +18,8 @@ import { label, sha, VERSION } from './version.ts'
 import { SettingsDialog, ThemeButton, Toggle, UpdateChip, type SettingsTab } from './components/Settings.tsx'
 import { Onboarding } from './components/Onboarding.tsx'
 import { ExecList, groupOf, orderedTickets } from './components/ExecList.tsx'
-import { ExecDetail } from './components/ExecDetail.tsx'
 import { PrThread } from './thread/PrThread.tsx'
 import { TicketThread } from './thread/TicketThread.tsx'
-import { setDesign, useDesign } from './design.ts'
 import { ROLES, useRole } from './role.ts'
 import { RoleSwitch } from './components/RoleSwitch.tsx'
 import { RepoList } from './components/RepoList.tsx'
@@ -72,8 +69,6 @@ export function App() {
   const { me, prs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : feedKey ?? selected)
   const now = useNow()
   const [theme, setTheme] = useTheme()
-  // the PR and ticket pages: the classic design, or the new one while it is being built (the rail switches)
-  const design = useDesign()
   const role = useRole()
   // another role: its own workspaces, back where you were in them
   const roleWas = useRef(role)
@@ -84,8 +79,7 @@ export function App() {
     const rail = ROLES[role].rail
     setMode((last && rail.includes(last) ? last : rail[0]) as Mode)
   }, [role]) // eslint-disable-line react-hooks/exhaustive-deps
-  const PrPage = design === 'thread' ? PrThread : PrDetail
-  const TicketPage = design === 'thread' ? TicketThread : ExecDetail
+  const PrPage = PrThread, TicketPage = TicketThread
   // first run (nothing configured) shows onboarding; Settings can reopen it later
   // set up before: draw the app at once instead of waiting on /setup (it is checked again right after)
   const [configured, setConfigured] = useState<boolean | undefined>(() => { try { return localStorage.getItem('configured') === '1' || undefined } catch { return undefined } })
@@ -357,14 +351,11 @@ export function App() {
         </span>
       )}
       <span className="hidden md:block md:flex-1" />
-      {/* the foot: every tool in one group, one size each (the machine's load, the theme, the design, Settings, and
+      {/* the foot: every tool in one group, one size each (the machine's load, the theme, Settings, and
           the rail's own toggle last); then you. On a phone the ribbon has the load and Settings the theme */}
       <span className={`hidden md:flex md:items-center md:gap-0.5 ${W('md:flex-col', 'md:flex-row md:px-0.5')} [&>button]:flex [&>button]:size-9 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-ctl [&>button]:p-0`}>
         <Load toast={toast} onOpen={(t) => (t.kind === 'pr' ? goPr(t.id) : t.kind === 'ticket' ? goTicket(t.id) : goCodebase(t.id))} />
         <ThemeButton theme={theme} onTheme={setTheme} />
-        <button onClick={() => setDesign(design === 'thread' ? 'classic' : 'thread')} aria-pressed={design === 'thread'}
-                title={design === 'thread' ? 'New design, being built: switch back to the classic one' : 'Try the new design (a conversation, and what to check before trusting it)'}
-                className={`transition-colors hov ${design === 'thread' ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}><Sparkles className="size-4" /></button>
         <button onClick={openSettings} title={`Settings · ${mode === 'exec' ? 'Ship' : 'Review'}`} aria-label="Settings" className="group text-fg-3 transition-colors hov hover:text-fg-1">
           <Settings2 className="size-4 transition-transform duration-500 group-hover:rotate-90" />
         </button>
@@ -422,7 +413,7 @@ export function App() {
   const deskFrame = (
     <main className="@container relative min-h-0 min-w-0 flex-1 overflow-hidden">
       {unit && selected ? (
-        <Desk unit={unit} all={deskUnits} later={deskLater} selected={selected} onSelect={select} onUnit={(u) => goUnit(u)} toast={toast} threaded={design === 'thread'}>
+        <Desk unit={unit} all={deskUnits} later={deskLater} selected={selected} onSelect={select} onUnit={(u) => goUnit(u)} toast={toast}>
           {pr ? (
             <div key={pr.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
               <PrPage compact ticket={unit.ticket} pr={pr} feed={feed} now={now} onBack={() => setMode('review')} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => select(l.id)} sync={syncPr} />

@@ -1,11 +1,10 @@
-import { ArrowRight, ChevronLeft, ChevronRight, CircleCheck, Clock, ExternalLink, Layers, GitPullRequest, PanelLeftClose, PanelLeftOpen, Play, Sparkles, Ticket as TicketIcon, Timer, Undo2 } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, CircleCheck, Clock, Layers, GitPullRequest, Play, Sparkles, Ticket as TicketIcon, Timer, Undo2 } from 'lucide-react'
 import { StackNav } from './StackNav.tsx'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Unit } from '../desk.ts'
 import { api, enc, isTyping, type PrView, type TicketView } from '../lib.ts'
 import { statusMeta } from './StatusBadge.tsx'
-import { groupOf, IdBadge } from './ExecList.tsx'
-import { Md } from './Md.tsx'
+import { groupOf } from './ExecList.tsx'
 import { bringBack, focusBlock, laterToday, offUntil, putOff, startFocus, stopFocus, tomorrowMorning, useDeskTime } from '../deskTime.ts'
 
 const KIND = { stack: { icon: Layers, label: 'Stack' }, ticket: { icon: TicketIcon, label: 'Task' }, pr: { icon: GitPullRequest, label: 'PR' } }
@@ -27,8 +26,7 @@ const loadOrder = (): string[] => { try { return JSON.parse(sessionStorage.getIt
  * On stage: the unit's parts, bottom to top, and the PR or ticket you stand on. Nothing runs on opening;
  * "Review bottom up" goes through its new PRs.
  */
-export function Desk({ unit, all, later = [], selected, onSelect, onUnit, toast, children, threaded }: {
-  threaded?: boolean // the new design: the thread brings its own panel (the ticket is a tab there), so the stage stays lean
+export function Desk({ unit, all, later = [], selected, onSelect, onUnit, toast, children }: {
   unit: Unit; all: Unit[]; selected: string
   later?: Unit[] // put off for now: out of the order until their time comes
   onSelect: (id: string) => void; onUnit: (u: Unit) => void
@@ -119,7 +117,7 @@ export function Desk({ unit, all, later = [], selected, onSelect, onUnit, toast,
 
       <section className="flex min-w-0 flex-1 flex-col p-1.5 sm:py-2 sm:pl-0 sm:pr-2 lg:py-3 lg:pr-3">
         {/* the stage itself: one raised surface holding the unit */}
-        <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${threaded ? 'rounded-2xl bg-bg-app ring-1 ring-line' : 'rounded-panel bg-white/70 ring-1 ring-line dark:bg-zinc-900/50'}`}>
+        <div className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-bg-app ring-1 ring-line`}>
           {/* one slim row: what the unit is, the way through its parts (the ticket, then its PRs bottom to top), where you are
               in the order and the way on */}
           <div className="flex shrink-0 items-center gap-3 px-3 pt-2.5 sm:px-5 lg:px-7">
@@ -154,11 +152,6 @@ export function Desk({ unit, all, later = [], selected, onSelect, onUnit, toast,
           <Brief unit={unit} block={block} onFocus={() => { startFocus(unit.key); toast('Focus: 25 minutes on this topic. The other topics and alerts stay quiet until then') }}
                  onLater={(until, label) => { putOff(unit.key, until); toast(`${label}: it leaves the desk until then`); if (next ?? prev) onUnit((next ?? prev)!) }} />
           <div className="flex min-h-0 flex-1">
-            {/* the ticket beside its PR, so the why and the how sit side by side; [ folds it */}
-            {!threaded && unit.ticket && unit.members.length > 0 && selected !== unit.ticket.id && (
-              paneOpen ? <TicketPane t={unit.ticket} onOpen={() => onSelect(unit.ticket!.id)} onFold={() => setPane(false)} />
-                : <button onClick={() => setPane(true)} title="Show the ticket ([)" aria-label="Show the ticket" className="ml-2 mt-2 self-start rounded-lg p-1.5 text-fg-3 ring-1 ring-line hover:text-fg-1"><PanelLeftOpen className="size-4" /></button>
-            )}
             <div className="min-h-0 min-w-0 flex-1">{children}</div>
           </div>
           <NextBar unit={unit} selected={selected} onSelect={onSelect}
@@ -253,31 +246,6 @@ function LaterMenu({ onLater, quiet }: { onLater: (until: number, label: string)
   )
 }
 
-/** The ticket beside its PR: what it asks for, in its own words, and the latest comment. */
-function TicketPane({ t, onOpen, onFold }: { t: TicketView; onOpen: () => void; onFold: () => void }) {
-  return (
-    <aside className="ml-3 mt-2 hidden w-[300px] shrink-0 flex-col overflow-hidden rounded-xl bg-white/60 ring-1 ring-line md:flex xl:w-[360px] dark:bg-zinc-900/40">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <IdBadge id={t.id} team={t.team} />
-        <span className="truncate text-meta text-fg-3">{t.state}{t.project ? ` · ${t.project}` : ''}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-0.5">
-          <a href={t.url} target="_blank" rel="noreferrer" title="Open in Linear" className="rounded p-1 text-fg-3 hover:text-fg-1"><ExternalLink className="size-3.5" /></a>
-          <button onClick={onFold} title="Fold the ticket ([)" aria-label="Fold the ticket" className="rounded p-1 text-fg-3 hover:text-fg-1"><PanelLeftClose className="size-3.5" /></button>
-        </span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
-        <button onClick={onOpen} title="Open the ticket here (its runs, steering)" className="text-left text-body font-semibold leading-snug text-fg-1 hover:text-accent-text">{t.title}</button>
-        {t.description.trim() ? <Md text={t.description} className="mt-2 text-small" /> : <p className="mt-2 text-small text-fg-3">No description.</p>}
-        {t.lastComment && (
-          <div className="mt-3 rounded-lg bg-fg-3/6 px-2.5 py-2 text-small">
-            <p className="text-meta font-medium text-fg-3">{t.lastComment.by}, latest comment</p>
-            <p className="mt-0.5 line-clamp-6 whitespace-pre-wrap text-fg-2">{t.lastComment.body}</p>
-          </div>
-        )}
-      </div>
-    </aside>
-  )
-}
 
 /**
  * The topic's next steps in one bar, most pressing first, across the ticket and every PR: each goes to the part it is

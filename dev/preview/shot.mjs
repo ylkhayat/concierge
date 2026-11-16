@@ -1,5 +1,5 @@
 // A screenshot of the preview in headless Chrome: node dev/preview/shot.mjs <url> <out.png> [wait ms] [role] [width] [height] [hover x,y]; SHOT_CLICK=x,y clicks there and prints the API calls it caused
-// Sets the role and the new design first (SHOT_LS / SHOT_SS: more localStorage / sessionStorage, as JSON); prints the page's errors. CHROME: the
+// Sets the role first (SHOT_LS / SHOT_SS: more localStorage / sessionStorage, as JSON); prints the page's errors. CHROME: the
 // browser (default: Chrome on a Mac).
 import { spawn } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
@@ -15,7 +15,7 @@ let id = 0; const wait4 = new Map(), logs = []
 ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id && wait4.has(m.id)) { wait4.get(m.id)(m.result); wait4.delete(m.id) } else if (m.method === 'Runtime.exceptionThrown') logs.push('EXC ' + m.params.exceptionDetails.exception?.description?.slice(0, 300)) })
 const send = (method, params = {}) => new Promise((r) => { const i = ++id; wait4.set(i, r); ws.send(JSON.stringify({ id: i, method, params })) })
 await send('Runtime.enable'); await send('Page.enable')
-await send('Page.addScriptToEvaluateOnNewDocument', { source: `try { localStorage.setItem('role', ${JSON.stringify(role)}); localStorage.setItem('design', 'thread'); for (const [k, v] of Object.entries(${process.env.SHOT_LS ?? '{}'})) localStorage.setItem(k, v); for (const [k, v] of Object.entries(${process.env.SHOT_SS ?? '{}'})) sessionStorage.setItem(k, v) } catch {}` })
+await send('Page.addScriptToEvaluateOnNewDocument', { source: `try { localStorage.setItem('role', ${JSON.stringify(role)}); for (const [k, v] of Object.entries(${process.env.SHOT_LS ?? '{}'})) localStorage.setItem(k, v); for (const [k, v] of Object.entries(${process.env.SHOT_SS ?? '{}'})) sessionStorage.setItem(k, v) } catch {}` })
 await send('Page.navigate', { url })
 await sleep(Number(wait))
 if (hover) { const [x, y] = hover.split(',').map(Number); await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(900) }

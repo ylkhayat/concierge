@@ -1,26 +1,20 @@
-import { pendingOf } from '../../server/reply.ts'
 import {
-  ArrowLeft, ArrowRight, ArrowUpRight, Bot, Check, CircleAlert, Copy, Layers, DollarSign, EyeOff, FileDiff, GitPullRequest,
+  ArrowUpRight, Bot, Check, CircleAlert, Copy, Layers, DollarSign, EyeOff, FileDiff, GitPullRequest,
   Hourglass, LoaderCircle, MessageSquare, MessagesSquare, Play, Radio, RotateCcw, ShieldAlert, Square, SquareTerminal, Timer,
-  TriangleAlert, Send, CheckCheck, X, Upload, Wand, Focus, Sparkles, type LucideIcon, Scale,
-} from 'lucide-react'
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+  TriangleAlert, Send, CheckCheck, X, Upload, Wand, Sparkles, type LucideIcon, Scale } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PinButton } from './PinButton.tsx'
 import { ago, api, critUrl, duration, enc, focusWanted, isTyping, param, setParam, setReading, wantFocus, type Activity, type PrView, resumed } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { useApi } from '../query.ts'
-import { ActivityFeed, FeedMode } from './ActivityFeed.tsx'
 import { Chip } from './Chip.tsx'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
-import { Tools } from './Tools.tsx'
-import { NextSteps } from './NextSteps.tsx'
 import { Working } from './Working.tsx'
-import { NextPanel, PanelSection, type Sync } from './NextPanel.tsx'
+import { type Sync } from './NextPanel.tsx'
 
 // the graph libraries (React Flow, ELK, Mermaid) load only when the tab opens
-const Explain = lazy(() => import('./Explain.tsx'))
 import { Avatar } from './PrList.tsx'
-import { DetailHeader, StatusField, type StatusTone } from './DetailHeader.tsx'
+import { StatusField, type StatusTone } from './DetailHeader.tsx'
 import { LinkedPills } from './Linked.tsx'
 import { StackNav, type NavItem } from './StackNav.tsx'
 import type { Linked } from '../../server/index.ts'
@@ -344,85 +338,6 @@ export function usePrThread({ pr, feed, now, onBack, toast, prs, onSelect, sync,
   return { statusField, parentLinks, stackNav, headerActions, people, pr, feed, now, onBack, toast, prs, onSelect, sync, onOpenLinked, compact, act, copied, setCopied, url, job, crit, busy, critDown, restarting, setRestarting, restartCrit, submit, setSubmit, flow, next, asks, askFirst, waiting, fixThreads, resumeCmd, tab, setTabState, setTab, focus, setFocus, toggleFocus, tabBtn, KIND, below, smartRebase, chips, runFinalize, armed, arm, publish, publishRebased, big, linkCls, retryOp, markRead, dismissOp, rerequest, retry, BIG, LINK, also, alsoLine, doNext }
 }
 
-export function PrDetail(props: PrThreadProps) {
-  const t = usePrThread(props)
-  const { statusField, parentLinks, stackNav, headerActions, people, pr, feed, onBack, toast, prs, onSelect, sync, compact, job, busy, submit, setSubmit, next, asks, askFirst, tab, focus, toggleFocus, tabBtn, chips, alsoLine, doNext } = t
-
-  return (
-    <div className="flex h-full min-h-0">
-      <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className={`shrink-0 space-y-2 px-3 sm:px-5 lg:px-7 ${compact ? 'pt-2' : 'pt-3 sm:pt-4 2xl:px-10 2xl:pt-5'}`}>
-          <button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>
-          <DetailHeader compact={compact}
-            status={statusField}
-            parent={parentLinks}
-            // on the desk its own row steps through the unit; elsewhere the stack is stepped here
-            nav={stackNav}
-            actions={headerActions}
-            title={pr.title}
-            chips={chips}
-            people={people}
-          />
-        </div>
-
-        {/* tabbed body: fills the remaining height and scrolls inside */}
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3 pt-3 sm:px-5 sm:pb-4 lg:px-7 2xl:px-10 2xl:pb-6">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.04)] ring-1 ring-line ">
-            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-3 py-2.5">
-              <span role="tablist" className="flex gap-0.5 rounded-ctl bg-hover p-[3px]">
-              {tabBtn('explain', 'Explain')}
-              {tabBtn('turns', 'Turns')}
-              {tabBtn('activity', 'Activity', feed.filter((a) => a.kind !== 'section').length)}
-              {tabBtn('description', 'Description')}
-              </span>
-              <span className="ml-auto flex items-center gap-3">
-                {(pr.status === 'preparing' || pr.status === 'posting') && <span className="flex items-center gap-1.5 text-meta text-run-text"><span className="size-1.5 animate-pulse rounded-full bg-run" />live</span>}
-                {tab === 'activity' && <FeedMode />}
-                {tab === 'explain' && (
-                  <button onClick={toggleFocus} aria-pressed={focus} title={focus ? 'Focus mode: the sidebars step back while you read (f)' : 'Let the sidebars step back while you read (f)'}
-                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium transition-colors ${focus ? 'bg-accent/10 text-accent-text' : 'text-fg-3 hov hover:text-fg-1'}`}>
-                    <Focus className="size-3.5" />Focus<Kbd k="f" />
-                  </button>
-                )}
-              </span>
-            </div>
-            <div className={`min-h-0 flex-1 ${tab === 'explain' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-              {tab === 'explain' ? (
-                <Suspense fallback={<div className="flex h-full items-center justify-center"><Timer className="size-5 animate-spin text-fg-3" /></div>}>
-                  <Explain pr={pr} toast={toast} prs={prs} onSelect={onSelect} />
-                </Suspense>
-              ) : tab === 'turns' ? <Turns pr={pr} />
-                : tab === 'activity'
-                ? <ActivityFeed feed={feed} live={pr.status === 'preparing' || pr.status === 'posting'} bg={{ base: `/prs/${enc(pr.id)}`, count: pr.background }} toast={toast} />
-                : <Description pr={pr} />}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* while the agent works there is nothing to decide: what it is doing and Stop, nothing else, until it hands back */}
-      <NextPanel sync={sync} count={busy ? 0 : (next ? 1 : 0) + (asks ? pendingOf(job!.next) : 0)}
-                 footer={busy ? undefined : <Tools inline base={`/prs/${enc(pr.id)}`} version={`${pr.headSha}:${pr.status}:${job?.state}`} toast={toast} allOf={pr.mine ? 'all your PRs' : 'all PRs to review'} />}>
-        {!askFirst && <PanelSection title={pr.waiting ? 'Waiting for an account' : busy ? 'The agent is working' : 'Do next'} icon={busy ? LoaderCircle : ArrowRight} tone={busy ? 'text-run' : 'text-accent'}>{doNext}</PanelSection>}
-        {job ? (
-          // what it handed back: its decisions (its picks already chosen) and next moves, answered in one message;
-          // while it works, just your words, which it reads between steps without stopping
-          <PanelSection title={askFirst ? 'The agent asks you' : asks && !busy ? 'Decide' : 'Tell the agent'} icon={MessageSquare} tone={asks && !busy ? 'text-accent' : undefined}>
-            <NextSteps inline nextUrl={busy ? undefined : `/prs/${enc(pr.id)}/next`} replyUrl={`/prs/${enc(pr.id)}/reply`} self={pr.number} others={prs.filter((x) => x.repo === pr.repo && !x.closed && x.id !== pr.id).map((x) => x.number)} draft={`pr:${pr.id}`} version={job.endedAt ?? ''} toast={toast}
-                       placeholder={busy ? 'Tell it something while it works: it reads it between steps, without stopping' : 'Tell the agent what to change, answer, or do next…'} />
-            {askFirst && alsoLine}
-          </PanelSection>
-        ) : (
-          <PanelSection title="Tell the agent" icon={MessageSquare}>
-            <NextSteps inline replyUrl={`/prs/${enc(pr.id)}/reply`} draft={`pr:${pr.id}`} version="" toast={toast} placeholder="Ask an agent to do something on this PR: it starts a run with your words" />
-          </PanelSection>
-        )}
-      </NextPanel>
-
-      {submit && <SubmitDialog pr={pr} event={submit.event} drop={submit.drop} onClose={() => setSubmit(undefined)} toast={toast} />}
-    </div>
-  )
-}
 
 export const Meta = ({ label, children }: { label: string; children: ReactNode }) => (
   <div className="flex items-center justify-between gap-3">

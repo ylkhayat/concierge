@@ -7,14 +7,12 @@ import { useEffect, useState } from 'react'
 import { PinButton } from './PinButton.tsx'
 import { api, duration, param, setParam, type Activity, type ExecView, type TicketView, resumed } from '../lib.ts'
 import { useDraft } from '../draft.ts'
-import { ActivityFeed, FeedMode } from './ActivityFeed.tsx'
 import { Md } from './Md.tsx'
 import { Chip } from './Chip.tsx'
-import { Tools } from './Tools.tsx'
 import { NextSteps } from './NextSteps.tsx'
 import { Working } from './Working.tsx'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
-import { NextPanel, PanelSection, type Sync } from './NextPanel.tsx'
+import { PanelSection, type Sync } from './NextPanel.tsx'
 import { groupOf, PHASE_LABEL, PRIORITY } from './ExecList.tsx'
 import { Meta, mini, primary, secondary } from './PrDetail.tsx'
 import { Missing, missingTitle } from './Missing.tsx'
@@ -23,7 +21,7 @@ import { StackNav, type NavItem } from './StackNav.tsx'
 import { stamp } from '../time.ts'
 import { ConnectCard } from './ConnectCard.tsx'
 import { VpnCard } from './VpnCard.tsx'
-import { DetailHeader, StatusField, type StatusTone } from './DetailHeader.tsx'
+import { StatusField, type StatusTone } from './DetailHeader.tsx'
 import type { Linked } from '../../server/index.ts'
 
 const STEPS = ['picked', 'evidence', 'implementing', 'checking', 'self-review', 'opening-pr', 'done'] as const
@@ -285,60 +283,6 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   return { panelBody, steerSection, ticketBody, statusField, parentLinks, stackNav, headerActions, t, actions, missing, feed, onSelect, toast, sync, onOpenLinked, compact, pr, run, tab, setTabState, setTab, copied, setCopied, g, P, prs, ci, threads, dot, resumeCmd, lastAction, runIt, act, siblings, prItems, newer, asking, shipped, runAsks, tending, next, openPr, tabBtn, chips }
 }
 
-export function ExecDetail(props: TicketThreadProps) {
-  const { panelBody, steerSection, ticketBody, statusField, parentLinks, stackNav, headerActions, t, feed, toast, sync, onOpenLinked, compact, run, tab, siblings, prItems, asking, runAsks, next, tabBtn, chips } = useTicketThread(props)
-
-  return (
-    <div className="flex h-full min-h-0">
-      <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="shrink-0 px-3 pt-3 sm:px-5 sm:pt-4 @3xl:px-7 @6xl:px-10">
-          <DetailHeader compact={compact}
-            status={statusField}
-            parent={parentLinks}
-            // the way through: a multi-ticket run's tickets, else this ticket's PRs (the list behind "8 PRs ▾")
-            nav={stackNav}
-            actions={headerActions}
-            title={t.title}
-            chips={<>{chips}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>}
-          />
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3 pt-3 sm:px-5 sm:pb-4 @3xl:px-7 @6xl:px-10">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.04)] ring-1 ring-line ">
-            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-3 py-2.5">
-              <span role="tablist" className="flex gap-0.5 rounded-ctl bg-hover p-[3px]">
-              {tabBtn('activity', 'Activity', feed.filter((a) => a.kind !== 'section').length)}
-              {tabBtn('ticket', 'Ticket')}
-              </span>
-              <span className="ml-auto flex items-center gap-3">
-                {t.busy && <span className="flex items-center gap-1.5 text-meta text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />live</span>}
-                {tab === 'activity' && <FeedMode />}
-              </span>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {tab === 'activity' ? (
-                run ? <>
-                  {siblings && <p className="border-b border-line bg-fg-3/4 px-5 py-2 text-small text-fg-3">One run works {siblings.join(' → ')} together, so their activity is the same. A reply here goes to that run too.</p>}
-                  <ActivityFeed feed={feed} live={t.busy} bg={run ? { base: `/exec/${run.id}`, count: t.background } : undefined} toast={toast} />
-                </> : <p className="px-5 py-10 text-center text-sm text-fg-3">No run yet. <span className="font-mono">Run</span> starts the exec command on {t.id}, unattended.</p>
-              ) : (
-                ticketBody
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* while the agent works there is nothing to decide: what it is doing and Stop, until it hands back */}
-      <NextPanel sync={sync} count={t.busy ? 0 : (next ? 1 : 0) + (asking ? 1 : 0) + (runAsks ? pendingOf(run!.next) : 0)}
-                 footer={t.busy ? undefined : <Tools inline steer base={`/exec/tickets/${t.id}`} version={`${t.busy}:${run?.id}:${run?.state}`} toast={toast} noun="Ticket" allOf={`every ${groupOf(t).title} ticket`} />}>
-        {panelBody}
-        {steerSection}
-      </NextPanel>
-    </div>
-  )
-
-}
 
 /** Linear markdown, lightly: headings become headings, everything else keeps its lines with inline links, code and bold. */
 const ACTION_ICON = { play: Play, file: FileText, reply: Reply, wand: Wand, search: SearchCheck }
