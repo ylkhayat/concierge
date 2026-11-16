@@ -1457,6 +1457,8 @@ app.get('/method', async (c) => c.json({
     key: k, label: FEATURES[k].label, hint: FEATURES[k].hint, default: FEATURES[k].skill, skill: skillFor(k), found: !!(await skillPath(skillFor(k))),
   }))),
 }))
+// the profile once had the company's name: it isn't kept
+const withoutName = (c?: Compliance) => { const { name: _, ...rest } = (c ?? {}) as Compliance & { name?: string }; return rest }
 // the compliance profile, filled for you: from Linear and your code, as suggestions to take (complianceScan.ts)
 app.get('/compliance/suggest', async (c) => c.json(await suggestCompliance(c.req.query('fresh') === '1')))
 // who may open it through the tailnet link: the list, and changes to it (never empty while someone is on it: the last
@@ -1515,7 +1517,7 @@ app.post('/config', async (c) => {
     ...(b.explainBudgetUsd !== undefined && { explainBudgetUsd: b.explainBudgetUsd }),
     ...(b.exec && { exec: b.exec }),
     // the profile moves off its old key (company) on the first save
-    ...(b.compliance && { compliance: { ...config.compliance, ...b.compliance }, company: undefined }),
+    ...(b.compliance && { compliance: { ...withoutName(config.compliance), ...b.compliance }, company: undefined }),
     ...(b.skills && { skills: Object.fromEntries(Object.entries({ ...config.skills, ...b.skills }).filter(([, v]) => v?.trim())) }),
     ...(b.skillSource !== undefined && { skillSource: b.skillSource.trim() || undefined }),
     ...((b.review || b.revise || b.stack !== undefined) && { agent: {
