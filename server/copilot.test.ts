@@ -31,7 +31,7 @@ test("Copilot's events read as Claude Code's stream", () => {
 test('a structured call asks for JSON in words, and reads it back from a fenced answer', () => {
   const a = copilotArgs('copilot', ['-p', 'Decide', '--json-schema', '{"type":"object"}', '--tools', '', '--output-format', 'json'])
   assert.match(a.args[a.args.indexOf('-p') + 1], /matching this JSON schema/)
-  assert.ok(a.args.includes('--allow-tool=read') && !a.args.includes('--allow-all-tools'))
+  assert.ok(a.args.includes('--allow-tool=read') && !a.args.includes('--allow-all'))
   const t = copilotTranslator('copilot', 'auto', true)
   t.line(JSON.stringify({ type: 'assistant.message', data: { content: 'Here:\n```json\n{"ok": true}\n```' } }))
   assert.deepEqual(JSON.parse(t.end()[0]).structured_output, { ok: true })

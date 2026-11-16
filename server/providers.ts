@@ -144,6 +144,8 @@ export function envOf(p: ProviderId, base: NodeJS.ProcessEnv = process.env): Nod
   const a = accountOf(p)
   if (a.kind === 'claude' && a.home) { const env: NodeJS.ProcessEnv = { ...base, CLAUDE_CONFIG_DIR: a.home }; delete env.CLAUDE_CODE_OAUTH_TOKEN; return env }
   if (a.kind === 'openai' && a.home) return { ...base, CODEX_HOME: a.home }
+  // Copilot finds the person's skills where Claude keeps them, so a skill that loads another one works there too
+  if (a.kind === 'copilot') return { ...base, COPILOT_SKILLS_DIRS: [base.COPILOT_SKILLS_DIRS, join(homedir(), '.claude', 'skills')].filter(Boolean).join(',') }
   return base
 }
 
@@ -327,7 +329,9 @@ export function copilotArgs(p: ProviderId, claudeArgs: string[]): { args: string
     // quick call (no tools to speak of) no built-in GitHub servers to connect to, no instruction files (a reasoning effort fails with the auto model)
     '--no-auto-update', '--disable-client-telemetry',
     ...(small ? ['--disable-builtin-mcps', '--no-custom-instructions'] : []),
-    ...(o.readOnly ? ['--allow-tool=read'] : ['--allow-all-tools']),
+    // a run works like Claude's (no one is there to approve): every tool, and files outside its folder too (the skill
+    // it is told to read lives in ~/.claude). Read-only: reading only, anywhere
+    ...(o.readOnly ? ['--allow-tool=read', '--allow-all-paths'] : ['--allow-all']),
     ...o.addDirs.flatMap((d) => ['--add-dir', d]),
     ...(o.resume ? ['--resume', o.resume] : o.session ? ['--session-id', o.session] : [])]
   return { args, json: o.json, model, session: o.resume ?? o.session }
