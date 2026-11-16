@@ -81,7 +81,7 @@ Concierge stop
 Concierge restart          interrupted agent runs are picked up again on start
 Concierge status
 Concierge open             start if needed, then open the browser
-Concierge exec             same, straight into Ship
+Concierge ship             same, straight into Ship (/ship)
 Concierge logs
 Concierge install-skills   copy the skill source's skills into ~/.claude/skills (never overwrites)
 ```

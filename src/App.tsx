@@ -50,10 +50,12 @@ type Mode = 'review' | 'exec' | 'desk' | 'read' | 'focus' | 'standup' | 'skills'
 const phone = () => matchMedia('(max-width: 767px)').matches
 const modeOf = (): Mode => {
   const p = location.pathname
-  return p.startsWith('/exec') ? 'exec' : p.startsWith('/desk') ? 'desk' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans'
+  return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/desk') ? 'desk' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans'
     : p === '/' && !location.hash && phone() ? 'focus' : 'review'
 }
-const PATH: Record<Mode, string> = { review: '/review', exec: '/exec', desk: '/desk', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans' }
+// links from before Ship was named (/exec) still open it, and the address bar says /ship
+if (location.pathname.startsWith('/exec')) history.replaceState(history.state, '', `/ship${location.pathname.slice(5)}${location.search}${location.hash}`)
+const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', desk: '/desk', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans' }
 // the list's own rules, for the desk's units
 const RULES: Rules = { waiting, ticketGroup: (t) => groupOf(t).id }
 
@@ -246,7 +248,7 @@ export function App() {
     if (mode !== 'review') { history.pushState(null, '', '/' + location.search); setModeState('review') }
     setSelected(`codebase:${repo}`); history.replaceState(null, '', `#${enc(`codebase:${repo}`)}`)
   }
-  const goTicket = (id: string) => { history.pushState(null, '', `/exec${location.search}#${enc(id)}`); setModeState('exec'); setSelected(id) }
+  const goTicket = (id: string) => { history.pushState(null, '', `/ship${location.search}#${enc(id)}`); setModeState('exec'); setSelected(id) }
   const goPr = (id: string) => { history.pushState(null, '', `/${location.search}#${enc(id)}`); setModeState('review'); setSelected(id) }
   const openAlert = (a: Alert) => (a.kind === 'pr' ? goPr(a.target) : a.kind === 'ticket' ? goTicket(a.target) : undefined)
   usePinNotifications(alerts, openAlert)
@@ -445,7 +447,7 @@ export function App() {
     <div className="relative flex min-h-0 flex-1">
       <aside className={`w-full shrink-0 flex-col border-r border-line lg:flex lg:w-[320px] 2xl:w-[360px] ${ticket ? 'hidden' : 'flex'}`}>
         <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-1 pt-4">
-          <a href="/exec" onClick={(e) => { e.preventDefault(); select(undefined) }} className="text-title font-semibold tracking-tight">Ship</a>
+          <a href="/ship" onClick={(e) => { e.preventDefault(); select(undefined) }} className="text-title font-semibold tracking-tight">Ship</a>
           {waitingBadge(execWaiting)}
         </div>
         <div className="min-h-0 flex-1">

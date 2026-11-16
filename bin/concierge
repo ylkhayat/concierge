@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# concierge start|stop|restart|status|open|exec|logs|install-skills — run the dashboard in the background.
+# concierge start|stop|restart|status|open|ship|logs|install-skills — run the dashboard in the background.
 set -euo pipefail
 APP="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 base="${XDG_STATE_HOME:-$HOME/.local/state}"; STATE="$base/concierge"; [[ -d $base/review-deck ]] && STATE="$base/review-deck" # (an install from before the rename)
@@ -43,7 +43,7 @@ case "${1:-status}" in
   stop) stop ;;
   restart) stop; start ;;
   open) running || start; browse "$URL" ;;
-  exec) running || start; browse "$URL/exec" ;;
+  ship|exec) running || start; browse "$URL/ship" ;;
   logs) tail -f "$LOG" ;;
   install-skills)
     # from the skill source (Settings → Skills; github.com/ylkhayat/skills unless config.json names another)
@@ -57,5 +57,5 @@ case "${1:-status}" in
       if [[ -e $dest/$name ]]; then echo "skip $name (already in $dest)"; else cp -R "$d" "$dest/$name"; echo "installed $name"; fi
     done ;;
   status) running && echo "running at $URL (pid $(cat "$PID"))" || { echo "stopped"; exit 1; } ;;
-  *) echo "usage: concierge start|stop|restart|status|open|exec|logs|install-skills" >&2; exit 2 ;;
+  *) echo "usage: concierge start|stop|restart|status|open|ship|logs|install-skills" >&2; exit 2 ;;
 esac
