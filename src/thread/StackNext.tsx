@@ -14,8 +14,11 @@ import { refresh } from '../query.ts'
 type Member = { pr: PrView; url: string; steps: Step[] }
 const enc = encodeURIComponent
 
-/** The card, or null when fewer than two of the stack's PRs wait on you (the page then keeps its layout as it was). */
-export function useStackNext({ stack, prs, toast }: { stack: { repo: string; number: number }[]; prs: PrView[]; toast: (m: string, tone?: 'ok' | 'error') => void }): ReactNode {
+/**
+ * The card, or null when fewer than two of the stack's PRs wait on you (the page then keeps its layout as it was), and
+ * which PRs it answers for (the page leaves out its own "asks you" card when this PR is one of them).
+ */
+export function useStackNext({ stack, prs, toast }: { stack: { repo: string; number: number }[]; prs: PrView[]; toast: (m: string, tone?: 'ok' | 'error') => void }): { card: ReactNode; covers: string[] } {
   // the stack's PRs with an agent that finished (one still working asks nothing yet), bottom first
   const members = stack.map((s) => prs.find((p) => p.repo === s.repo && p.number === s.number))
     .filter((p): p is PrView => !!p && !!p.job && p.job.state !== 'running' && p.job.state !== 'queued')
@@ -48,7 +51,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const [note, setNote] = useState('')
   const [sending, setSending] = useState(false)
   const { armed, arm } = useArm()
-  if (waiting.length < 2) return null
+  if (waiting.length < 2) return { card: null, covers: [] }
 
   const key = (m: Member, i: number) => `${m.pr.id}:${i}`
   const idOf = (m: Member, i: number) => `${m.pr.number}:${i}`
@@ -84,9 +87,11 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }
   }
 
-  return (
-    <section className="space-y-3">
+  return { covers: waiting.map((m) => m.pr.id), card: (
+    // the list scrolls inside the space under the chat; the note and Send stay in view
+    <section className="flex min-h-0 flex-1 flex-col gap-3">
       <p className="flex items-center gap-2 text-small font-semibold text-fg-1"><Layers className="size-4 text-accent-text" />The stack waits on you<span className="font-normal text-fg-3">· {waiting.length} PRs, {all.length} item{all.length === 1 ? '' : 's'}, answered at once</span></p>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
       {waiting.map((m) => (
         <div key={m.pr.id} className="rounded-xl bg-fill/40 p-2.5 ring-1 ring-line">
           <p className="mb-1.5 truncate text-meta text-fg-3"><span className="font-mono font-semibold text-fg-2">#{m.pr.number}</span> {m.pr.title}</p>
@@ -123,6 +128,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
           </ul>
         </div>
       ))}
+      </div>
       <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000} placeholder="A note to every agent of the stack (optional)…"
                 className="w-full resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60" />
       <div className="flex items-center gap-2">
@@ -138,7 +144,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         </button>
       </div>
     </section>
-  )
+  ) }
 }
 
 /** What the stack-wide reading says about one item: a copy of another PR's step, or a conflict with others. */
