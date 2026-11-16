@@ -173,7 +173,7 @@ export function PrThread(props: PrThreadProps) {
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
         next={nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined}
         composer={!asking && <Composer>{steer}</Composer>}
-        tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain', rail: p === 'overview' })), ...(stackNext ? [{ id: 'stack' as const, label: `Stack · ${covers.length} waiting` }] : [])]}
+        tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain', rail: p === 'overview' })), ...(stackNext ? [{ id: 'stack' as const, label: 'Stack', badge: <span className="rounded-full bg-wait/15 px-1.5 text-micro font-semibold tabular-nums text-wait-text" title={`${covers.length} PRs of the stack wait on you`}>{covers.length}</span> }] : [])]}
         tab={pane === 'turns' ? 'explain' : pane} onTab={setPane}
         onAsk={(q) => appendDraft(`pr:${pr.id}`, q)}
         vitals={(

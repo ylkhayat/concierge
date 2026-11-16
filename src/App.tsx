@@ -48,10 +48,13 @@ const phone = () => matchMedia('(max-width: 767px)').matches
 const modeOf = (): Mode => {
   const p = location.pathname
   return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/desk') ? 'desk' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans'
-    : p === '/' && !location.hash && phone() ? 'focus' : 'review'
+    // opened with nothing in the link: the queue of what needs you (the Desk; on a phone, Focus). A link to a PR is Review
+    : p === '/' && !location.hash ? (phone() ? 'focus' : 'desk') : 'review'
 }
 // links from before Ship was named (/exec) still open it, and the address bar says /ship
 if (location.pathname.startsWith('/exec')) history.replaceState(history.state, '', `/ship${location.pathname.slice(5)}${location.search}${location.hash}`)
+// opened on the queue: the address says so, so a reload (or a copied link) comes back to it
+if (location.pathname === '/' && !location.hash && !matchMedia('(max-width: 767px)').matches) history.replaceState(history.state, '', `/desk${location.search}`)
 const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', desk: '/desk', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans' }
 // the list's own rules, for the desk's units
 const RULES: Rules = { waiting, ticketGroup: (t) => groupOf(t).id }

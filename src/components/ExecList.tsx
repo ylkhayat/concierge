@@ -199,7 +199,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
             : <>
                 <span className={`flex size-full items-center justify-center rounded-full bg-gradient-to-br text-micro font-bold tracking-tight text-white ring-1 ring-black/5 transition-opacity dark:ring-white/10 ${TEAM_MARK[t.team] ?? 'from-zinc-400 to-zinc-600'} ${pickable ? (picked.length ? 'opacity-0' : 'group-hover:opacity-0') : ''}`}>{t.team.slice(0, 3)}</span>
                 {pickable && <span className={`absolute inset-0 flex items-center justify-center rounded-full ring-1 ring-accent/70 transition-opacity ${picked.length ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}><Plus className="size-3.5 text-accent-text" /></span>}
-                <span className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-line ${g.dot ?? 'bg-fg-4'} ${t.busy ? 'animate-pulse' : ''}`} />
+                <span role="img" aria-label={g.title} title={g.title} className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-line ${g.dot ?? 'bg-fg-4'} ${t.busy ? 'animate-pulse' : ''}`} />
               </>}
         </button>
         <span className={`min-w-0 flex-1 transition-opacity ${(t.dimmed || done) && !active ? 'opacity-45 group-hover:opacity-100' : quiet && !active ? 'opacity-60 group-hover:opacity-100' : ''}`}>

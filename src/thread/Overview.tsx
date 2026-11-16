@@ -20,7 +20,7 @@ const Panel = ({ title, aside, children }: { title: string; aside?: ReactNode; c
 const Fact = ({ k, tone, children }: { k: string; tone: 'ok' | 'wait' | 'fail' | 'idle'; children: ReactNode }) => (
   <p className="flex items-baseline gap-2.5 py-1 text-small">
     <span className="w-20 shrink-0 text-fg-3">{k}</span>
-    <span className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${tone === 'ok' ? 'bg-ok' : tone === 'wait' ? 'bg-wait' : tone === 'fail' ? 'bg-fail' : 'bg-fg-4'}`} />
+    <span aria-hidden className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${tone === 'ok' ? 'bg-ok' : tone === 'wait' ? 'bg-wait' : tone === 'fail' ? 'bg-fail' : 'bg-fg-4'}`} />
     <span className="min-w-0 flex-1 text-fg-1">{children}</span>
   </p>
 )
@@ -124,7 +124,7 @@ export function TicketOverview({ t, why, onPr, onOpen }: {
                   <span className="shrink-0 font-mono text-meta text-fg-3">#{p.number}</span>
                   <span className="min-w-0 flex-1 truncate text-fg-1">{p.title ?? `${p.repo.split('/').pop()}#${p.number}`}</span>
                   {!!p.openThreads && <span className="shrink-0 text-meta text-wait-text">{p.openThreads} thread{p.openThreads === 1 ? '' : 's'}</span>}
-                  <span title={ciLabel(p)} className={`size-2 shrink-0 rounded-full ring-2 ${ciTone(p)}`} />
+                  <span role="img" aria-label={ciLabel(p)} title={ciLabel(p)} className={`size-2 shrink-0 rounded-full ring-2 ${ciTone(p)}`} />
                 </button>
               </li>
             ))}

@@ -235,7 +235,7 @@ function Row({ p, seen, active, onSelect, now, activeRef, pick, act }: RowProps)
       <PickMark p={p} pick={pick}>
         <span className="relative shrink-0 transition-all duration-200 group-hover:scale-105">
           <Avatar src={p.author.avatar} className="size-6" />
-          <span className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-line transition-colors duration-300 ${statusMeta(p.status, p.mine).dot} ${working ? 'animate-pulse' : ''}`} />
+          <span role="img" aria-label={statusMeta(p.status, p.mine).label} title={statusMeta(p.status, p.mine).label} className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-line transition-colors duration-300 ${statusMeta(p.status, p.mine).dot} ${working ? 'animate-pulse' : ''}`} />
         </span>
       </PickMark>
       <Num p={p} active={active} />
