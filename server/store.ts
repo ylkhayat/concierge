@@ -41,6 +41,7 @@ export type Job = {
   next?: import('./next.ts').NextSteps // what that message waits on, read once
   sessionCostBefore?: number // for resumed runs: the session's total before it
   said?: string // what you asked for, in your words, shown in Activity
+  heldWords?: string[] // your words sent while it waited in the queue: told to it the moment it starts
   resumed?: boolean // a review/revise run that continues the PR's existing session
   critPort?: number // read from the agent's output ("crit is at http://localhost:<port>")
   critKey?: string
@@ -106,6 +107,7 @@ export type ExecRun = {
   prompt?: string // the action's filled prompt; absent means the configured exec command
   allowedTools?: string[] // the action's own tools, when it has them
   said?: string // what you asked for, in your words, shown in Activity
+  heldWords?: string[] // your words sent while it waited in the queue: told to it the moment it starts
   batch?: string // the batch it works for (state.batches): picked together, built in parallel, submitted per stack
   role?: 'prep' | 'submit' // a batch's shared prep, or the run that stacks and submits a ready stack; absent: a ticket's own work
   brief?: string // added to the exec command: the batch's prep brief and, in a stack, how to end at the submit gate

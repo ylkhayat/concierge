@@ -1842,7 +1842,7 @@ app.post('/prs/:id/publish', async (c) => {
   const first = rebaseFirst && p.behindBase
     ? `\n\nBefore pushing: this PR is stacked on \`${p.base}\`, which moved past this branch (the PR below was pushed or rebased). The author chose to rebase first. `
       + `Fetch, then rebase only this PR's own commits (the ones that are not in the PR below) onto origin/${p.base}, resolve any conflict keeping the intent of both sides, `
-      + 'run the checks that cover the touched code, and push with --force-with-lease. That one rewrite of this branch is approved for this push; nothing else may be rewritten. '
+      + 'push with --force-with-lease (CI runs the checks on the push: no typecheck, lint or test suites here). That one rewrite of this branch is approved for this push; nothing else may be rewritten. '
       + 'Do not touch the PRs above: they will show as outdated and get their own smart rebase.'
     : ''
   enqueue(p, 'publish', config.agent.publish + first, first ? 'Rebase onto the PR below, push the fixes and post the drafted replies' : 'Push the fixes and post the drafted replies')
@@ -2078,6 +2078,25 @@ app.post('/prs/:id/reply', async (c) => {
   const handedOver = [...there.keys()]
   return c.json({ ok: true, handedOver, askAuthor: [...foreign.there.keys()], sent: here ? sendReply(p, here + handedNote(p)) : undefined })
 })
+/**
+ * Your words for work still in the queue: kept on it (they survive a restart) and shown in its feed now, then told to
+ * it between its first steps once it starts; one that is already done by then gets them as a reply, like any run.
+ */
+function holdWords(holder: { heldWords?: string[] }, key: string, text: string) {
+  (holder.heldWords ??= []).push(text)
+  note(key, { at: new Date().toISOString(), kind: 'you', text })
+  note(key, { at: new Date().toISOString(), kind: 'event', text: 'It waits in the queue: it reads this the moment it starts.' })
+  save(); bus.emit('change'); bus.emit('exec')
+}
+function sayHeld(holder: { heldWords?: string[] }, key: string, then: (t: string) => void) {
+  const words = holder.heldWords
+  if (!words?.length) return
+  delete holder.heldWords; save()
+  // the started signal comes just before its agent does: give it a moment to be there to tell
+  setTimeout(() => { for (const w of words) tell(key, w, then, true) }, 1500)
+}
+bus.on('started', (id: string, job: Job) => { const p = state.prs[id]; if (p) sayHeld(job, id, (t) => enqueue(p, 'reply', t + REPLY_NOTE, t)) })
+bus.on('exec-started', (run: ExecRun) => sayHeld(run, `exec:${run.id}`, continueExec(run)))
 /** What this PR's agent already sent elsewhere, so it doesn't suggest it again. */
 const handedNote = (p: Pr) => p.handoffs?.length
   ? `\n\n(Already handed over, so don't suggest these again: ${p.handoffs.slice(-8).map((h) => `#${h.to}: ${h.text}`).join('; ')})` : ''
@@ -2091,8 +2110,8 @@ function sendReply(p: Pr, msg: string): string | undefined {
   }
   // a running agent is never stopped: it reads your words between steps, or gets them the moment it ends
   if (p.job.state === 'running') { const sent = tell(p.id, msg, (t) => enqueue(p, 'reply', t + REPLY_NOTE, t)); if (sent !== 'idle') return sent }
-  // not started yet: it starts with your words instead
-  if (p.job.state === 'queued') cancel(p)
+  // not started yet: your words wait with it, and it reads them the moment it starts
+  if (p.job.state === 'queued') { holdWords(p.job, p.id, msg); return 'queued' }
   enqueue(p, 'reply', msg + REPLY_NOTE, msg)
   return 'started'
 }
@@ -2106,7 +2125,9 @@ app.post('/exec/:run/reply', async (c) => {
   const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
   if (!run) return c.json({ error: 'Unknown run' }, 404)
   if (!msg) return c.json({ error: 'Pick something or write your answer' }, 400)
-  if (run.state === 'running' || run.state === 'queued') return c.json({ error: 'The agent is still working' }, 409)
+  // still at it: a running one reads your words between steps; a queued one, the moment it starts
+  if (run.state === 'queued') { holdWords(run, `exec:${run.id}`, msg); return c.json({ ok: true, sent: 'queued' }) }
+  if (run.state === 'running') { const sent = tell(`exec:${run.id}`, msg, continueExec(run)); if (sent !== 'idle') return c.json({ ok: true, sent }) }
   // a ticket of this run that another run works on now: your words reach that run between its steps, and this one
   // leaves it alone, instead of the whole reply being refused
   const busy = run.ids.filter(ticketBusy), free = run.ids.filter((id) => !busy.includes(id))
@@ -2133,10 +2154,10 @@ app.post('/exec/tickets/:id/steer', async (c) => {
   if (!t.repo) return c.json({ error: `No repository mapped for ${t.team}` }, 400)
   if (ticketBusy(t.id) && t.run) { // a parked ticket still lives in its run: your words go there
     const run = state.execs[t.run.id]
+    // queued, not started: your direction waits with it, and it reads it the moment it starts
+    if (run?.state === 'queued') { holdWords(run, `exec:${run.id}`, msg); return c.json({ ok: true, sent: 'queued' }) }
     const sent = run ? tell(`exec:${run.id}`, msg, continueExec(run)) : 'idle'
     if (sent !== 'idle') return c.json({ ok: true, sent })
-    // queued, not started: it starts with your direction instead
-    cancelExec(t.run.id)
     for (let i = 0; i < 40 && ticketBusy(t.id); i++) await new Promise((r) => setTimeout(r, 250))
     if (ticketBusy(t.id)) return c.json({ error: 'The agent is busy; try again in a moment' }, 409)
   }

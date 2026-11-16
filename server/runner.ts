@@ -652,9 +652,10 @@ export const cancelExplain = (pr: Pr) => {
 const LABEL: Record<JobKind, string> = {
   review: 'Review', revise: 'Revise', post: 'Posting review to GitHub', approve: 'Approving on GitHub', publish: 'Pushing fixes and posting replies', reply: 'Your reply',
 }
-// Running a PR's tests runs its code, in a container that holds your tokens: only on your own PRs (revise). A review
-// of someone else's PR reads the code and its CI results instead.
-const RUN_TESTS = ['Bash(uv run:*)', 'Bash(uv sync:*)', 'Bash(timeout:*)', 'Bash(pnpm test:*)', 'Bash(pnpm exec vitest:*)', 'Bash(make test-unit:*)',
+// Running a PR's tests runs its code, in a container that holds your tokens: only on your own PRs (revise), and only
+// one targeted repro at a time; whole suites, typecheck and lint are the PR's CI. A review of someone else's PR reads
+// the code and its CI results instead.
+const RUN_TESTS = ['Bash(uv run:*)', 'Bash(uv sync:*)', 'Bash(timeout:*)', 'Bash(pnpm exec vitest:*)',
   'Bash(*/.venv/bin/pytest:*)']
 const CRIT_URL =/(?:crit daemon at|[Cc]rit is (?:open |up )?at) \*{0,2}https?:\/\/[\w.-]+:(\d{4,5})/
 
@@ -808,13 +809,13 @@ const afterward = new Map<string, { texts: string[]; then: (text: string) => voi
  * Tell a running agent something without ever stopping it: it reads your words between its steps ('now'). One already
  * wrapping up gets them the moment it ends, through `then` ('after'). 'idle' when nothing runs under that key.
  */
-export function tell(key: string, text: string, then: (text: string) => void): 'now' | 'after' | 'idle' {
+export function tell(key: string, text: string, then: (text: string) => void, shown = false): 'now' | 'after' | 'idle' {
   const child = children.get(key)
   if (!child) return 'idle'
   const at = new Date().toISOString()
   if (child.stdin?.writable && !resultIn.has(key)) {
     child.stdin.write(userLine(text + NUDGE_NOTE))
-    note(key, { at, kind: 'you', text })
+    if (!shown) note(key, { at, kind: 'you', text }) // shown: already in the feed (sent while it was queued)
   } else {
     const w = afterward.get(key)
     if (w) w.texts.push(text); else afterward.set(key, { texts: [text], then })

@@ -64,7 +64,7 @@ export function workNote(b: Batch, id: string): string {
   let out = ''
   if (b.prep?.brief && b.prep.ids.includes(id)) out += `\n\nShared ground was prepared for ${b.prep.ids.join(', ')} before you.${b.prep.branch ? ` Branch off \`${b.prep.branch}\`, not the base branch: its commits come along in the stack.` : ''} The brief:\n<brief>\n${b.prep.brief}\n</brief>`
   if (stack.length > 1) out += `\n\n${id} ships in one stack with ${stack.filter((x) => x !== id).join(', ')} (bottom to top: ${stack.join(' → ')}), each built by its own agent right now. `
-    + `Don't open a PR and don't run gh stack submit. Do everything else (fix, checks, self-review, commit), push your branch, and end with \`${id} <branch> <sha> ready\` instead of shipped. `
+    + `Don't open a PR and don't run gh stack submit. Do everything else (fix, self-review, commit; no typecheck, lint or test suites: CI runs them on the PR), push your branch, and end with \`${id} <branch> <sha> ready\` instead of shipped. `
     + 'Concierge stacks the branches in order and opens the PRs once all of them are ready. Never wait for the others.'
   return out
 }
@@ -211,7 +211,7 @@ function stopHook(done: string, settled: boolean): string {
     `1. Its last message (last_assistant_message) has ${done}${settled ? ', and background_tasks is empty' : ''}.`,
     '2. Its last message asks the person a decision it cannot go on without (in a deck-next block, or on the ticket).',
     'If stop_hook_active is true and its last message says what blocks it, answer impossible with that as the reason.',
-    `Otherwise answer ok false, and in reason name exactly what is missing from 1${settled ? ' (and which background task still runs: wait for it, then finish; or that its checks have not run)' : ''}.`,
+    `Otherwise answer ok false, and in reason name exactly what is missing from 1${settled ? ' (and which background task still runs: wait for it, then finish)' : ''}.`,
     'Reply with JSON only: {"ok": true}, {"ok": false, "reason": "..."} or {"ok": false, "reason": "...", "impossible": true}.',
   ].join('\n')
   return JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'prompt', prompt, timeout: 60 }] }] } })

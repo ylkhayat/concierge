@@ -83,7 +83,8 @@ export function PrThread(props: PrThreadProps) {
   // a view the discussion points to: Explain opens on it beside the chat (Explain reads its view as it opens)
   const [explainKey, setExplainKey] = useState(0)
   const openView = (v: View) => { setParam('view', v === 'tour' ? null : v); setExplainKey((k) => k + 1); setPane('explain') }
-  const steerMain = (text: string) => api(`/prs/${enc(pr.id)}/${busy ? 'steer' : 'reply'}`, { text })
+  // one way in, whatever it is doing: a running agent reads your words between steps, a queued one when it starts
+  const steerMain = (text: string) => api(`/prs/${enc(pr.id)}/reply`, { text })
   // the discussions' suggestions: picked over the box, sent with your words in one go
   const lane = useLaneActions({ d: talks.d, target, onChange: talks.set, onSteer: steerMain, onView: openView, toast })
   // one conversation: the agent's work, and the discussions' turns in their lane's colour

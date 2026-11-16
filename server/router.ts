@@ -40,7 +40,7 @@ export async function catalog(): Promise<Skill[]> {
   return [...org, ...(await ownSkills()).filter((s) => !org.some((o) => o.name === s.name))]
 }
 
-const STEPS = ['Gather the evidence', 'Find the root cause', 'Make the smallest fix that holds', 'Run the checks and review it', 'Open the PR']
+const STEPS = ['Gather the evidence', 'Find the root cause', 'Make the smallest fix that holds', 'Review it', 'Open the PR']
 const bugLike = (f: Facts) => /\b(bug|user feedback|broken|crash|error|fails?|regression|incident)\b/i.test(`${f.title} ${(f.labels ?? []).join(' ')}`)
   || /sentry\.io\/(organizations\/[\w-]+\/)?issues\//i.test(f.description ?? '')
 
