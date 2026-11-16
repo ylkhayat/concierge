@@ -3,7 +3,7 @@ import { pendingOf } from './reply.ts'
 // first that matches wins, so the same facts always give the same answer, and the page, the pipeline and the Next
 // panel all read this one answer.
 import type { Crit, Status } from './crit.ts'
-import { isFollowUp, state, VERDICT_DEFAULT, type Job, type Pr, type Verdict } from './store.ts'
+import { isFollowUp, state, type Job, type Pr } from './store.ts'
 
 export type FlowState =
   | 'closed' | 'no-checkout' | 'working' | 'failed' | 'asks'
@@ -27,7 +27,6 @@ export type Flow = {
   next?: FlowAction
   also: FlowAction[] // other moves that make sense here, quieter
   of?: FlowState // while a tool run shows (tool-running, tool-failed): where the PR itself is
-  suggest?: Verdict // a ready review: the verdict to take (Settings → General decides it, by whether a finding blocks)
 }
 
 export type FlowIn = {
@@ -44,7 +43,6 @@ export type FlowIn = {
   job?: Pick<Job, 'kind' | 'state' | 'headSha' | 'reviewDone' | 'roundAt'> & { asks: boolean }
   crit?: { live: boolean; finishes: number; known: boolean; findings?: number; open?: number; blocking?: number } // known: there is a crit session to open or restart; findings: the AI review's comments, open: unresolved
   op?: { label: string; state: 'running' | 'done' | 'failed'; result?: string } // the latest tool run
-  verdict?: { blocking: Verdict; clean: Verdict } // what to suggest for a ready review (Settings)
 }
 
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`
@@ -75,7 +73,7 @@ export function flowInOf(p: Pr, crit: Pick<Crit, 'live' | 'finishes' | 'port' | 
     reviewed: !p.mine && !!p.myReview && p.myReview.commitId === p.headSha,
     job: p.job && { ...p.job, asks: pendingOf(p.job.next) > 0 },
     crit: crit && { live: crit.live, finishes: crit.finishes, known: !!crit.port && !!crit.sessionKey, findings: crit.aiComments, open: crit.unresolved, blocking: crit.blocking },
-    op, verdict: state.settings.verdict,
+    op,
   }
 }
 
@@ -145,12 +143,9 @@ function theirs(f: FlowIn): Flow {
   const current = !!j?.reviewDone && j.headSha === f.headSha
   if (!current) return { state: 'to-review', step: 0, why: j ? 'The author pushed since your review. A review of the new head, in the same session.' : 'Your review was requested.', next: 'run', also: [] }
   // the review is ready: what to do with its findings is the decision, so it is the next move whether or not crit is
-  // open; one verdict is suggested (by default: a blocking finding goes up as comments, else approve), the rest offered
+  // open; which verdict is yours (or the review skill's next steps propose one)
   const k = f.crit?.findings ?? 0, open = f.crit?.open ?? 0, b = f.crit?.blocking ?? 0
-  const rule = f.verdict ?? VERDICT_DEFAULT
-  const suggest: Verdict = !k ? (rule.clean === 'comment' ? 'comment' : 'approve') : b ? rule.blocking : rule.clean
   const found = k ? `The AI review left ${n(k, 'finding')}${b ? `, ${b} blocking` : ', none blocking'}${open > b ? ` (${open} unresolved in crit)` : ''}.` : 'The AI review found nothing to flag.'
-  const take = { comment: k ? 'Post them as comments' : 'Post a note', approve: k ? 'Approve, with them as comments for the author' : 'Approve', 'approve-quiet': 'Approve without them' }[suggest]
-  const why = `${finished ? 'You finished the review in crit. ' : ''}${found} Suggested: ${take.charAt(0).toLowerCase() + take.slice(1)}.`
-  return { state: 'ready-to-post', step: critUp && !finished ? 3 : 2, why, next: 'post', suggest, also: k ? [] : critUp ? ['crit'] : f.crit?.known ? ['restart-crit'] : [] } // with findings, crit is one of the choices
+  const why = `${finished ? 'You finished the review in crit. ' : ''}${found} Post them as comments, approve, or approve without them.`
+  return { state: 'ready-to-post', step: critUp && !finished ? 3 : 2, why, next: 'post', also: k ? [] : critUp ? ['crit'] : f.crit?.known ? ['restart-crit'] : [] } // with findings, crit is one of the choices
 }

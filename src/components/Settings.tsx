@@ -48,7 +48,7 @@ const INDEX: [string, SettingsTab][] = [
   ['Compliance: GDPR, SOC 2, HIPAA, PCI, regions, data, reviews', 'compliance'], ['Compliance and security checks for plans', 'compliance'], ['Capacity: the people who build it, roles and pace', 'compliance'],
   ['Roles: developer, product, design', 'roles'], ['Join a role', 'roles'], ['Execute command per role', 'roles'],
   ['Skill source', 'workflows'], ['Which skill each feature uses: explain, brief, standup, plans', 'workflows'],
-  ['Auto-review', 'workflows'], ['Parallel runs', 'workflows'], ['Suggested verdict for a finished review', 'workflows'], ['Workspaces: Review and Ship', 'workflows'],
+  ['Auto-review', 'workflows'], ['Parallel runs', 'workflows'], ['Workspaces: Review and Ship', 'workflows'],
   ['Review skill or command', 'workflows'], ['Revise skill or command', 'workflows'], ['Stack command', 'workflows'], ['Starter skills', 'workflows'],
   ['Org skills', 'workflows'], ['Skills this setup runs', 'workflows'], ['Ship command', 'workflows'], ['Linear teams', 'workflows'],
   ['Repository by ticket prefix', 'workflows'], ['Allowed tools for Ship', 'workflows'], ['Auto-release', 'workflows'], ['LINEAR_API_KEY', 'workflows'],
@@ -267,17 +267,6 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
             <button className={step} disabled={maxJobs >= 8} onClick={() => save('/settings', { maxJobs: maxJobs + 1 }, `Up to ${maxJobs + 1} at once`).catch(() => {})} aria-label="More"><Plus className="size-3.5" /></button>
           </div>
         </Row>
-        {/* what a finished review suggests; the Next panel always offers the others too */}
-        {(['blocking', 'clean'] as const).map((k) => {
-          const v = health?.settings?.verdict ?? { blocking: 'comment', clean: 'approve' }
-          return (
-            <Row key={k} icon={k === 'blocking' ? ShieldAlert : CheckCheck} title={k === 'blocking' ? 'Suggest, when a finding blocks' : 'Suggest, when none blocks'}
-                 hint={k === 'blocking' ? 'A finding badged blocking: the author should change it before merge.' : 'Only non-blocking findings, or none at all.'}>
-              <Segmented value={v[k]} options={[{ id: 'comment', label: 'Comments' }, { id: 'approve', label: 'Approve' }, { id: 'approve-quiet', label: 'Approve, drop them' }]}
-                         onChange={(x) => save('/settings', { verdict: { ...v, [k]: x } }, `${k === 'blocking' ? 'Blocking findings' : 'Non-blocking findings'}: suggest ${x === 'comment' ? 'posting them as comments' : x === 'approve' ? 'approving with them' : 'approving without them'}`).catch(() => {})} />
-            </Row>
-          )
-        })}
       </Group>
     </>
   )
@@ -1704,15 +1693,13 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
   const slot = (k: 'review' | 'revise' | 'exec' | 'plan', base: string) => (role !== 'developer' && own[k]) || base
   const owned = Object.values(roles.data?.owners ?? {}), mine = owned.filter((o) => o === role).length, shared = owned.filter((o) => o === 'shared').length
   const who = (w: string) => routing.find((r) => r.work === w)?.label ?? '…'
-  const verdict = health?.settings?.verdict ?? { blocking: 'comment', clean: 'approve' }
-  const say = { comment: 'post as comments', approve: 'approve', 'approve-quiet': 'approve, drop them' } as const
   type Step = { k: string; v: string; at: SettingsTab; mono?: boolean; tip: string }
   const flows: { name: string; icon: LucideIcon; on: boolean; steps: Step[] }[] = [
     { name: 'Review someone’s PR', icon: GitPullRequestArrow, on: setup.config.workspaces.includes('review'), steps: [
       { k: 'When', v: health?.autoStart ? 'your review is requested' : 'you press Run review', at: 'workflows', tip: 'Auto-review starts it as soon as your review is requested; off, it waits for you.' },
       { k: 'Runs', v: slot('review', setup.config.review) || 'no command', at: role === 'developer' ? 'workflows' : 'roles', mono: true, tip: 'The slash command the agent runs. {number} becomes the PR number.' },
       { k: 'On', v: who('review'), at: 'accounts', tip: 'The account that takes reviews; when it is limited the next in the fallback order does.' },
-      { k: 'Then', v: `findings in crit; suggests ${say[verdict.blocking as keyof typeof say]} when one blocks, else ${say[verdict.clean as keyof typeof say]}`, at: 'workflows', tip: 'Nothing reaches GitHub until you pick in the Next panel.' },
+      { k: 'Then', v: 'findings in crit; you post them, or approve, as the skill proposes', at: 'workflows', tip: 'Nothing reaches GitHub until you pick in the Next panel.' },
     ] },
     { name: 'Revise your PR', icon: Wand, on: setup.config.workspaces.includes('review'), steps: [
       { k: 'When', v: 'you press Revise, after new feedback', at: 'workflows', tip: 'Your own PR got review threads; Revise brings them into crit.' },

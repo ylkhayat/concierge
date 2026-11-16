@@ -196,11 +196,9 @@ export type Written = { day: string; teams: string[]; since: string; key: string
 export type Verdict = 'comment' | 'approve' | 'approve-quiet' // post as comments; approve with the findings; approve without them
 export type Settings = {
   maxJobs: number; dailyBudgetUsd: number | null; timezone?: string // timezone: your browser's, for the standup's 07:00
-  verdict?: { blocking: Verdict; clean: Verdict } // what a ready review suggests: with blocking findings, and without
   workMachine?: string // the machine you work on (several machines): it takes at most workSlots agents, so it stays quick
   workSlots?: number // 0: it takes none
 }
-export const VERDICT_DEFAULT: NonNullable<Settings['verdict']> = { blocking: 'comment', clean: 'approve' }
 type State = {
   prs: Record<string, Pr>
   seeded: boolean

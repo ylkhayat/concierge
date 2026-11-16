@@ -42,17 +42,10 @@ test('a PR you review', () => {
   // with crit open the findings are still the decision: post them, approve with or without them, or crit first
   assert.equal(t({ job: job('review'), crit: { live: true, finishes: 0, known: true } }), 'ready-to-post:post')
   const why = (f: Partial<FlowIn>) => flowOf({ ...base, mine: false, job: job('review'), ...f }).why
-  assert.match(why({ crit: { live: true, finishes: 0, known: true, findings: 2, open: 3, blocking: 1 } }), /left 2 findings, 1 blocking \(3 unresolved in crit\)\. Suggested: post them as comments\./)
-  assert.match(why({ crit: { live: true, finishes: 0, known: true, findings: 0 } }), /found nothing to flag\. Suggested: approve\./)
-  // one verdict suggested: a blocking finding goes up as comments, none blocking approves; Settings can change both
-  const pick = (f: Partial<FlowIn>) => flowOf({ ...base, mine: false, job: job('review'), ...f }).suggest
-  const crit = (findings: number, blocking: number) => ({ live: true, finishes: 0, known: true, findings, open: findings, blocking })
-  assert.equal(pick({ crit: crit(3, 1) }), 'comment')
-  assert.equal(pick({ crit: crit(3, 0) }), 'approve')
-  assert.equal(pick({ crit: crit(0, 0) }), 'approve')
-  assert.equal(pick({ crit: crit(3, 0), verdict: { blocking: 'comment', clean: 'approve-quiet' } }), 'approve-quiet')
-  assert.equal(pick({ crit: crit(3, 2), verdict: { blocking: 'approve', clean: 'approve' } }), 'approve')
-  assert.equal(pick({ crit: crit(0, 0), verdict: { blocking: 'comment', clean: 'approve-quiet' } }), 'approve') // nothing to leave out
+  // the findings and the three ways to post them; which one is yours (or the review skill's next steps), never Concierge's
+  assert.match(why({ crit: { live: true, finishes: 0, known: true, findings: 2, open: 3, blocking: 1 } }), /left 2 findings, 1 blocking \(3 unresolved in crit\)\. Post them as comments, approve, or approve without them\./)
+  assert.match(why({ crit: { live: true, finishes: 0, known: true, findings: 0 } }), /found nothing to flag\./)
+  assert.equal('suggest' in flowOf({ ...base, mine: false, job: job('review'), crit: { live: true, finishes: 0, known: true, findings: 3, open: 3, blocking: 1 } }), false)
   assert.deepEqual(flowOf({ ...base, mine: false, job: job('review'), crit: { live: true, finishes: 0, known: true } }).also, ['crit'])
   assert.equal(t({ job: job('review') }), 'ready-to-post:post')
   assert.equal(t({ job: job('review'), reviewed: true }), 'reviewed:-')

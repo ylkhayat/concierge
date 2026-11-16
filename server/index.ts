@@ -256,8 +256,8 @@ const asked = (n?: NextSteps) => {
 }
 whenAlerts(() => bus.emit('alerts'))
 // gone features leave no state: Linear releases by merge (Linear's own release integration does that, from CI) with its
-// alert, and auto-exec (tickets start when you run them)
-{ const s = state as unknown as Record<string, unknown>; for (const k of ['autoRelease', 'releaseSeen', 'releaseLog', 'releaseError', 'execAuto', 'execSeen']) delete s[k]; delete state.alerts?.['system:releases'] }
+// alert, auto-exec (tickets start when you run them), and a suggested verdict (the review skill proposes one)
+{ const s = state as unknown as Record<string, unknown>; for (const k of ['autoRelease', 'releaseSeen', 'releaseLog', 'releaseError', 'execAuto', 'execSeen']) delete s[k]; delete (state.settings as { verdict?: unknown }).verdict; delete state.alerts?.['system:releases'] }
 // what a run couldn't do: N commands refused reads as "finished" otherwise
 const refusedNote = (r: { refused?: string[] }) =>
   r.refused?.length ? `${r.refused.length} command${r.refused.length > 1 ? 's' : ''} refused (${r.refused[0].slice(0, 90)}${r.refused.length > 1 ? ', …' : ''})` : ''
@@ -1724,11 +1724,6 @@ app.post('/settings', async (c) => {
   if (b.timezone !== undefined) {
     try { new Intl.DateTimeFormat('en', { timeZone: b.timezone }) } catch { return c.json({ error: 'Unknown time zone' }, 400) }
     state.settings.timezone = b.timezone
-  }
-  if (b.verdict !== undefined) {
-    const ok = (v: unknown) => v === 'comment' || v === 'approve' || v === 'approve-quiet'
-    if (!ok(b.verdict?.blocking) || !ok(b.verdict?.clean)) return c.json({ error: 'verdict must say what to suggest with and without blocking findings' }, 400)
-    state.settings.verdict = { blocking: b.verdict.blocking, clean: b.verdict.clean }
   }
   if (b.maxJobs !== undefined) {
     if (!Number.isInteger(b.maxJobs) || b.maxJobs < 1 || b.maxJobs > 8) return c.json({ error: 'parallel reviews must be 1 to 8' }, 400)

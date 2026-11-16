@@ -355,29 +355,20 @@ function Findings({ pr, critUrl, onSubmit, onRestartCrit }: {
   pr: PrView; critUrl?: string; onSubmit: (event: 'COMMENT' | 'APPROVE', drop?: boolean) => void; onRestartCrit?: () => void
 }) {
   const k = pr.crit?.aiComments ?? 0, b = pr.crit?.blocking ?? 0
-  const suggest = pr.flow.suggest ?? (b ? 'comment' : 'approve')
   type Pick = { id: 'comment' | 'approve' | 'approve-quiet'; icon: LucideIcon; title: string; sub: string; go: () => void; tone: string }
   const picks: Pick[] = [
     { id: 'comment', icon: Send, title: k ? `Post ${k === 1 ? 'it' : `the ${k}`} as comments` : 'Post a note', sub: k ? 'A comment review: your note first, each finding on its line. No verdict.' : 'A comment review with your note, no verdict.', go: () => onSubmit('COMMENT', !k), tone: 'text-accent-text' },
     { id: 'approve', icon: CheckCheck, title: k ? 'Approve, with the findings' : 'Approve', sub: k ? 'Approves and posts the findings as comments for the author.' : 'Nothing to flag: approve, with a note if you like.', go: () => onSubmit('APPROVE'), tone: 'text-ok' },
     ...(k ? [{ id: 'approve-quiet' as const, icon: Check, title: 'Approve without them', sub: 'Approves with only your note. The findings stay in crit, unposted.', go: () => onSubmit('APPROVE', true), tone: 'text-fg-3' }] : []),
   ]
-  const top = picks.find((x) => x.id === suggest) ?? picks[0], rest = picks.filter((x) => x !== top)
   const reason = !k ? 'The review found nothing to flag.' : b ? `${b} of the ${k} ${b === 1 ? 'is' : 'are'} blocking: the author should change ${b === 1 ? 'it' : 'them'} before merge.` : `None of the ${k} is blocking.`
   const row = 'group flex w-full items-center gap-3 rounded-ctl px-3 py-1.5 text-left transition-colors duration-150 hov'
   return (
     <div className="space-y-2">
-      {/* the suggestion: one button, and why it is the one */}
-      <button onClick={top.go} className={`group flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left shadow-e1 transition-[filter] duration-150 hover:brightness-110 ${top.id === 'comment' ? 'bg-accent text-on-accent' : 'bg-ok text-white'}`}>
-        <top.icon className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1"><span className="block text-body font-semibold">{top.title}</span><span className="block text-meta opacity-80">{reason}</span></span>
-        <span className="shrink-0 rounded-full px-2 py-0.5 text-micro font-semibold ring-1 ring-current/35">Suggested</span>
-      </button>
-      <p className="flex items-center gap-2 px-1 pt-0.5 text-meta text-fg-4">Or
-        <button onClick={() => dispatchEvent(new CustomEvent('concierge:settings', { detail: 'general' }))} className="ml-auto underline decoration-dotted underline-offset-2 transition-colors hover:text-fg-2">Change what’s suggested</button>
-      </p>
+      {/* what the review found; which of these to take is yours, or the review skill's next steps say */}
+      <p className="px-1 text-meta text-fg-3">{reason}</p>
       <div>
-        {rest.map((x) => (
+        {picks.map((x) => (
           <button key={x.id} onClick={x.go} title={x.sub} className={row}>
             <x.icon className={`size-4 shrink-0 ${x.tone}`} />
             <span className="min-w-0 flex-1 truncate text-body font-medium text-fg-1">{x.title}</span>
