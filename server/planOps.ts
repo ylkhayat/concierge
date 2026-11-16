@@ -20,7 +20,7 @@ export type PlanNode = {
   rice?: { reach: number; impact: number; confidence: number }
   moscow?: 'must' | 'should' | 'could' | 'wont'
   horizon?: 'now' | 'next' | 'later'
-  covers?: string[] // the company obligations it covers (readiness.ts: dpia, security-review…)
+  covers?: string[] // the obligations it covers (readiness.ts: dpia, security-review…)
   risk?: { likelihood: 1 | 2 | 3; impact: 1 | 2 | 3; note: string } // a risk it carries or mitigates, for the register
 }
 // an angle the plan hasn't covered yet (compliance, security, constraints, the clients it touches…): drawn faint on the

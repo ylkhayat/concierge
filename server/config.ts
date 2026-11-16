@@ -37,7 +37,7 @@ export type Config = {
   // when its title has no conventional scope, and which PR a ticket's next step is about
   areas?: Record<string, string[]>
   access?: { logins: string[] } // who may open it through the tailnet link (access.ts), by their Tailscale login
-  company?: import('./readiness.ts').Company // where its customers are, its certifications, data, reviews and team: what every plan is checked against
+  compliance?: import('./readiness.ts').Compliance // where its users are, its certifications, data, required reviews, and the people who build it: what every plan is checked against
   skills?: Partial<Record<import('./method.ts').Feature, string>> // which skill each feature uses (method.ts); unset: its default
   skillSource?: string // the git repo a new setup's skills come from (Settings → Skills); unset: github.com/ylkhayat/skills
   // Exec mode: ship your Linear tickets with a command such as /my-exec
@@ -171,6 +171,8 @@ const expand = (p: string) => p.replace(/^~(?=\/|$)/, homedir())
 function resolve(u: UserConfig): Config {
   return {
     ...DEFAULTS, ...u,
+    // was `company` before it was the compliance profile: read from there until the next save moves it
+    compliance: u.compliance ?? (u as { company?: Config['compliance'] }).company,
     exec: { ...DEFAULTS.exec, ...u.exec },
     agent: {
       ...DEFAULTS.agent, ...u.agent,

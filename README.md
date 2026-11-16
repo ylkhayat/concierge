@@ -36,8 +36,8 @@ Without Docker, run `./install.sh` instead.
   acceptance criteria), drawn as one roadmap. Drag tickets earlier, onto another epic or into Later: every move is a
   scenario first, with when it lands, the appetite, the critical path and what finishes later, until Apply writes it,
   Linear included. One-click plays (fit the appetite, risk first, protect the date, balance owners), and readiness
-  against your company (Settings → Company, filled from Linear and your code): what each plan must cover for GDPR,
-  SOC 2 and the data you handle, whether the team holds the work, and its risks.
+  against your compliance profile (Settings → Compliance, filled from Linear and your code): what each plan must cover
+  for GDPR, SOC 2 and the data you handle, whether the people building it can hold the work, and its risks.
 - **Intent and Understanding.** Beside every PR and ticket, two discussions with an agent: one settles what the work is meant to do and ends in a decision record you agree on, the other walks you through the change from every angle Explain shows. What they settle reaches the agent when you send it.
 - **Guard rails.** There is a limit on how many agents run at once and a daily budget ($20 by default). Agents only use the tools you allow. They never merge.
 

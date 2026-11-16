@@ -1,13 +1,13 @@
 import {
   ArrowLeft, ArrowRight, ChevronRight, BookOpen, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
-  CheckCheck, Download, RefreshCw, Building2, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon,
+  CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon,
 } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
 import { label, sha, VERSION } from '../version.ts'
 import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
-import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Company, type Member } from '../../server/readiness.ts'
-import type { CompanySuggestion } from '../../server/companyScan.ts'
+import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
+import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
 import type { InfraView } from '../../server/infra.ts'
 import { api, type Health, type Theme } from '../lib.ts'
 import { refresh, remember, useApi } from '../query.ts'
@@ -18,10 +18,10 @@ import { ClaudeAccount, Connections, Skeleton } from './Connections.tsx'
 import { MachinesSettings } from './MachinesSettings.tsx'
 import type { Mode, OrgSkill } from '../../server/orgSkills.ts'
 
-export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spend' | 'company' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
+export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
   // older names, still used by links around the app
-  | 'general' | 'skills' | 'exec' | 'agents' | 'usage'
-const ALIAS: Partial<Record<SettingsTab, SettingsTab>> = { general: 'workflows', skills: 'workflows', exec: 'workflows', agents: 'accounts', usage: 'spend' }
+  | 'general' | 'skills' | 'exec' | 'agents' | 'usage' | 'company'
+const ALIAS: Partial<Record<SettingsTab, SettingsTab>> = { general: 'workflows', skills: 'workflows', exec: 'workflows', agents: 'accounts', usage: 'spend', company: 'compliance' }
 type Page = { id: SettingsTab; label: string; hint: string; icon: LucideIcon }
 const NAV: { group: string; pages: Page[] }[] = [
   { group: 'Start', pages: [{ id: 'overview', label: 'How it works', hint: 'What runs when, with which skill, on which account', icon: Workflow }] },
@@ -30,7 +30,7 @@ const NAV: { group: string; pages: Page[] }[] = [
     { id: 'workflows', label: 'Workflows', hint: 'Triggers, skills and commands for reviews, your PRs and tickets', icon: Wand },
     { id: 'accounts', label: 'Accounts', hint: 'Claude, OpenAI or Llama, and which one takes what', icon: Bot },
     { id: 'spend', label: 'Spend', hint: 'Budgets, limits and what the runs cost', icon: Coins },
-    { id: 'company', label: 'Company', hint: 'Where your customers are, certifications, data, reviews and team: what every plan is checked against', icon: Building2 },
+    { id: 'compliance', label: 'Compliance', hint: 'What every plan is checked against: where your users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
   ] },
   { group: 'Sources', pages: [
     { id: 'repos', label: 'Repositories', hint: 'What to watch, where it lives, its codebase map', icon: FolderGit2 },
@@ -45,7 +45,7 @@ const NAV: { group: string; pages: Page[] }[] = [
 const PAGES = NAV.flatMap((g) => g.pages)
 // every setting by name, for the search box: what you'd type, and the page it lives on
 const INDEX: [string, SettingsTab][] = [
-  ['Company: GDPR, SOC 2, HIPAA, PCI, regions, data, team', 'company'], ['Compliance and security checks for plans', 'company'],
+  ['Compliance: GDPR, SOC 2, HIPAA, PCI, regions, data, reviews', 'compliance'], ['Compliance and security checks for plans', 'compliance'], ['Capacity: the people who build it, roles and pace', 'compliance'],
   ['Roles: developer, product, design', 'roles'], ['Join a role', 'roles'], ['Execute command per role', 'roles'],
   ['Skill source', 'workflows'], ['Which skill each feature uses: explain, brief, standup, plans', 'workflows'],
   ['Auto-review', 'workflows'], ['Parallel runs', 'workflows'], ['Suggested verdict for a finished review', 'workflows'], ['Workspaces: Review and Ship', 'workflows'],
@@ -208,7 +208,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
             </>}
             {tab === 'roles' && <RolesSettings />}
             {tab === 'accounts' && <Agents toast={toast} onConnections={() => go('connections')} />}
-            {tab === 'company' && <CompanySettings setup={setup} saveConfig={saveConfig} />}
+            {tab === 'compliance' && <ComplianceSettings setup={setup} saveConfig={saveConfig} />}
             {tab === 'spend' && <Usage health={health} setup={setup} save={save} saveConfig={saveConfig} />}
             {tab === 'repos' && <Repositories setup={setup} health={health} toast={toast} saveConfig={saveConfig} />}
             {tab === 'connections' && <Connections toast={toast} />}
@@ -1021,7 +1021,7 @@ function OrgSkills({ toast }: { toast: Toast }) {
     </div>
   )
   return (
-    <Group title="Company skills" hint={`From your organization on claude.ai, kept in sync on every machine that runs Concierge. ${on} of ${skills.length} reach the agents${runs ? `; runs loaded them ${runs} time${runs === 1 ? '' : 's'}` : ''}.`}>
+    <Group title="Organization skills" hint={`From your organization on claude.ai, kept in sync on every machine that runs Concierge. ${on} of ${skills.length} reach the agents${runs ? `; runs loaded them ${runs} time${runs === 1 ? '' : 's'}` : ''}.`}>
       {ours.map(card)}
       {theirs.length > 0 && (more ? theirs.map(card)
         : <button onClick={() => setMore(true)} className="w-full px-4 py-2.5 text-left text-small font-medium text-accent-text hover:underline">+{theirs.length} from Anthropic ({theirs.filter((s) => s.mode !== 'off').length} on)</button>)}
@@ -1032,18 +1032,18 @@ function OrgSkills({ toast }: { toast: Toast }) {
 // --- Exec ------------------------------------------------------------------------------------------
 
 /**
- * The company every plan is checked against (readiness.ts): where its customers are, what it is certified for, what
- * data it handles, which reviews it requires, and its team. Each click saves. Plans turn it into the obligations they
+ * What every plan is checked against (readiness.ts): where its users are, what it is certified for, what data it
+ * handles, which reviews it requires, and the people who build it. Each click saves. Plans turn it into the obligations they
  * must cover (a DPIA, change review, a security review…) and compare their scope with the team's capacity.
  */
 /**
- * Fill the profile for you: Linear (the company's name, its teams and everyone on them, a role from their teams and a
+ * Fill the profile for you: Linear (its teams and everyone on them, a role from their teams and a
  * pace from the points they finished in six weeks) and your code (what it shows of regions, certifications, data and
  * reviews, with the files it was read from). Shown as suggestions: take them all, or one by one.
  */
-function FillCompany({ c, saveConfig }: { c: Company; saveConfig: SaveConfig }) {
+function FillCompliance({ c, saveConfig }: { c: Compliance; saveConfig: SaveConfig }) {
   const [on, setOn] = useState(false), [fresh, setFresh] = useState(0)
-  const q = useApi<CompanySuggestion>(on ? `/company/suggest${fresh ? '?fresh=1' : ''}` : undefined, { staleTime: 10 * 60_000 })
+  const q = useApi<ComplianceSuggestion>(on ? `/compliance/suggest${fresh ? '?fresh=1' : ''}` : undefined, { staleTime: 10 * 60_000 })
   const v = q.data
   const label = (k: 'regions' | 'certifications' | 'data' | 'reviews', id: string) => ({ regions: REGIONS, certifications: CERTIFICATIONS, data: DATA, reviews: REVIEWS }[k].find(([x]) => x === id)?.[1] ?? id)
   const newIds = (k: 'regions' | 'certifications' | 'data' | 'reviews') => (v?.[k] ?? []).filter((e) => !(c[k] ?? []).includes(e.id))
@@ -1052,13 +1052,13 @@ function FillCompany({ c, saveConfig }: { c: Company; saveConfig: SaveConfig }) 
   const newPeople = (v?.team ?? []).filter((m) => !known(m))
   // people already here, with what Linear knows that they lack: their teams, their Linear id, a pace
   const updates = (v?.team ?? []).filter((m) => { const x = known(m); return x && (!x.linearId || JSON.stringify([...(x.teams ?? [])].sort()) !== JSON.stringify([...(m.teams ?? [])].sort()) || (!x.pace && m.pace)) })
-  const merged = (): Company => ({
-    ...c, ...(v?.name && !c.name && { name: v.name }),
+  const merged = (): Compliance => ({
+    ...c,
     ...Object.fromEntries((['regions', 'certifications', 'data', 'reviews'] as const).map((k) => [k, [...new Set([...(c[k] ?? []), ...newIds(k).map((e) => e.id)])]])),
     team: [...team.map((x) => { const m = (v?.team ?? []).find((y) => (x.linearId && y.linearId === x.linearId) || y.name === x.name); return m ? { ...x, teams: m.teams, linearId: m.linearId, pace: x.pace ?? m.pace } : x }),
       ...newPeople.map(({ done6w: _, ...m }) => m)],
   })
-  const total = (['regions', 'certifications', 'data', 'reviews'] as const).reduce((a, k) => a + newIds(k).length, 0) + newPeople.length + updates.length + (v?.name && !c.name ? 1 : 0)
+  const total = (['regions', 'certifications', 'data', 'reviews'] as const).reduce((a, k) => a + newIds(k).length, 0) + newPeople.length + updates.length
   if (!on) return (
     <button onClick={() => setOn(true)} className="flex w-full items-center gap-3 rounded-card border border-dashed border-accent/40 bg-accent-soft/40 px-4 py-3 text-left transition-colors hover:bg-accent-soft">
       <Sparkles className="size-5 shrink-0 text-accent-text" />
@@ -1070,7 +1070,7 @@ function FillCompany({ c, saveConfig }: { c: Company; saveConfig: SaveConfig }) 
     <section className="card space-y-3 p-4">
       <div className="flex items-center gap-2">
         <Sparkles className="size-4 text-accent-text" /><h3 className="text-small font-semibold text-fg-1">From Linear and your code</h3>
-        {v && <span className="text-meta text-fg-4">· read {v.scanned.length} repositor{v.scanned.length === 1 ? 'y' : 'ies'}{v.name ? ` and ${v.name} in Linear` : ''}</span>}
+        {v && <span className="text-meta text-fg-4">· read {v.scanned.length} repositor{v.scanned.length === 1 ? 'y' : 'ies'}{v.teams.length ? ` and ${v.teams.length} Linear team${v.teams.length === 1 ? '' : 's'}` : ''}</span>}
         <span className="ml-auto inline-flex items-center gap-1.5">
           {v && <button onClick={() => setFresh((n) => n + 1)} disabled={q.isFetching} className={quiet} title="Read them again"><RotateCcw className={`size-3.5 ${q.isFetching ? 'animate-spin' : ''}`} /></button>}
           <button onClick={() => setOn(false)} className={quiet}>Close</button>
@@ -1078,12 +1078,11 @@ function FillCompany({ c, saveConfig }: { c: Company; saveConfig: SaveConfig }) 
       </div>
       {!v ? <p className="flex items-center gap-2 text-small text-fg-3"><LoaderCircle className="size-4 animate-spin" />Reading Linear and your repositories… (a big codebase takes a little while)</p> : <>
         {v.error && <p className="rounded-ctl bg-wait/10 px-3 py-2 text-small text-wait-text">{v.error}</p>}
-        {v.name && !c.name && <p className="text-small text-fg-2">Company: <b className="text-fg-1">{v.name}</b></p>}
         {(['regions', 'certifications', 'data', 'reviews'] as const).map((k) => newIds(k).length > 0 && (
           <div key={k} className="flex flex-wrap items-center gap-1.5">
             <span className="label w-28 shrink-0 text-fg-4">{k}</span>
             {newIds(k).map((e) => (
-              <button key={e.id} onClick={() => saveConfig({ company: { ...c, [k]: [...(c[k] ?? []), e.id] } }, `${label(k, e.id)}: on`)} title={`Found in ${e.hits} file${e.hits === 1 ? '' : 's'}:\n${e.files.join('\n')}`}
+              <button key={e.id} onClick={() => saveConfig({ compliance: { ...c, [k]: [...(c[k] ?? []), e.id] } }, `${label(k, e.id)}: on`)} title={`Found in ${e.hits} file${e.hits === 1 ? '' : 's'}:\n${e.files.join('\n')}`}
                       className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-accent/50 px-2.5 py-1 text-small text-fg-1 transition-colors hover:bg-accent-soft">
                 <Plus className="size-3 text-accent-text" />{label(k, e.id)}<span className="text-micro text-fg-4">{e.hits} file{e.hits === 1 ? '' : 's'}</span>
               </button>
@@ -1106,7 +1105,7 @@ function FillCompany({ c, saveConfig }: { c: Company; saveConfig: SaveConfig }) 
         )}
         {total ? (
           <div className="flex items-center gap-2 border-t border-line pt-3">
-            <button onClick={() => saveConfig({ company: merged() }, `Filled from Linear and your code`)} className={primary}><Check className="size-3.5" />Use all {total}</button>
+            <button onClick={() => saveConfig({ compliance: merged() }, `Filled from Linear and your code`)} className={primary}><Check className="size-3.5" />Use all {total}</button>
             <span className="text-meta text-fg-3">Or take them one by one above. Each suggestion shows where it was read on hover.</span>
           </div>
         ) : <p className="text-small text-fg-3">Nothing new: your profile already has all of it.</p>}
@@ -1115,17 +1114,17 @@ function FillCompany({ c, saveConfig }: { c: Company; saveConfig: SaveConfig }) 
   )
 }
 
-function CompanySettings({ setup, saveConfig }: { setup?: SetupView; saveConfig: SaveConfig }) {
+function ComplianceSettings({ setup, saveConfig }: { setup?: SetupView; saveConfig: SaveConfig }) {
   const [name, setName] = useState(''), [role, setRole] = useState('engineer')
   const teamsQ = useApi<{ teams: { key: string; name: string }[] }>(setup?.linearKey ? '/plans/teams' : undefined, { staleTime: 10 * 60_000 })
   if (!setup) return <Skeleton rows={4} />
-  const c: Company = setup.config.company ?? {}
+  const c: Compliance = setup.config.compliance ?? {}
   const toggle = (k: 'regions' | 'certifications' | 'data' | 'reviews', id: string, label: string) => {
     const on = (c[k] ?? []).includes(id)
-    saveConfig({ company: { ...c, [k]: on ? (c[k] ?? []).filter((x) => x !== id) : [...(c[k] ?? []), id] } }, `${label}: ${on ? 'off' : 'on'}`)
+    saveConfig({ compliance: { ...c, [k]: on ? (c[k] ?? []).filter((x) => x !== id) : [...(c[k] ?? []), id] } }, `${label}: ${on ? 'off' : 'on'}`)
   }
   const team = c.team ?? []
-  const setTeam = (t: NonNullable<Company['team']>, msg: string) => saveConfig({ company: { ...c, team: t } }, msg)
+  const setTeam = (t: NonNullable<Compliance['team']>, msg: string) => saveConfig({ compliance: { ...c, team: t } }, msg)
   const add = () => { const n = name.trim(); if (!n || team.some((m) => m.name === n)) return; setTeam([...team, { name: n, role }], `${n} added`); setName('') }
   const group = (k: 'regions' | 'certifications' | 'data' | 'reviews', title: string, hint: string, list: [string, string][]) => (
     <Group title={title} hint={hint}>
@@ -1135,12 +1134,12 @@ function CompanySettings({ setup, saveConfig }: { setup?: SetupView; saveConfig:
   const teamKeys = teamsQ.data?.teams.map((t) => t.key) ?? [...new Set(team.flatMap((m) => m.teams ?? []))]
   return (
     <>
-      <FillCompany c={c} saveConfig={saveConfig} />
-      {group('regions', 'Where your customers are', 'Each brings its privacy law: a plan that handles their data owes what it requires.', REGIONS)}
+      <FillCompliance c={c} saveConfig={saveConfig} />
+      {group('regions', 'Where your users are', 'Each brings its privacy law: a plan that handles their data owes what it requires.', REGIONS)}
       {group('certifications', 'Certifications', 'What you are certified for, or working toward: each adds controls every plan must keep.', CERTIFICATIONS)}
       {group('data', 'Data you handle', 'What your product processes. A plan that touches it is checked for consent, retention and safeguards.', DATA)}
       {group('reviews', 'Reviews you require', 'Sign-offs a change needs before it ships. Counted as covered roles on the team.', REVIEWS)}
-      <Group title="Team" hint="Who does the work, and in which role: plans compare their scope with what the team finishes inside the appetite.">
+      <Group title="Capacity" hint="Who builds it, and in which role: plans compare their scope with what these people finish inside the appetite.">
         {team.map((m) => (
           <div key={m.name} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5">
             <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fill text-micro font-semibold text-fg-2">{m.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</span>

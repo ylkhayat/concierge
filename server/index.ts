@@ -62,8 +62,8 @@ import { peers as replicaPeers, replicaExtras, replicaStatus } from './replica.t
 import { laneByModel } from './laneModel.ts'
 import { ask as joinAsk, decide as joinDecide, hello as joinHello, status as joinStatus, waiting as joinsWaiting } from './join.ts'
 import { baseSlots, canChange, mustChange, ownerOf, roles, setOwner, setRoles, slot, withRole, type Owner, type Role } from './roles.ts'
-import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Company } from './readiness.ts'
-import { suggestCompany } from './companyScan.ts'
+import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from './readiness.ts'
+import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, type Op as PlanOp } from './plans.ts'
 import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
@@ -1431,7 +1431,7 @@ app.post('/base', async (c) => {
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async () => ({
   configured: configured(), configFile: CONFIG_FILE, checks: await checks(), skills: await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
-  config: { repos: config.repos, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, company: config.company ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
+  config: { repos: config.repos, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
   needed: await skillsNeeded([config.agent.review.command, config.agent.revise.command, config.agent.stack ?? '', config.exec.command, ...config.exec.actions.map((x) => x.prompt)]),
@@ -1457,8 +1457,8 @@ app.get('/method', async (c) => c.json({
     key: k, label: FEATURES[k].label, hint: FEATURES[k].hint, default: FEATURES[k].skill, skill: skillFor(k), found: !!(await skillPath(skillFor(k))),
   }))),
 }))
-// the company profile, filled for you: from Linear and your code, as suggestions to take (companyScan.ts)
-app.get('/company/suggest', async (c) => c.json(await suggestCompany(c.req.query('fresh') === '1')))
+// the compliance profile, filled for you: from Linear and your code, as suggestions to take (complianceScan.ts)
+app.get('/compliance/suggest', async (c) => c.json(await suggestCompliance(c.req.query('fresh') === '1')))
 // who may open it through the tailnet link: the list, and changes to it (never empty while someone is on it: the last
 // one can't be removed from a request through the link, so the owner can't lock themselves out)
 app.get('/access', (c) => c.json({ logins: allowedLogins(), you: whoFrom((n) => c.req.header(n)).login, fromEnv: (setting('ALLOW') ?? '').split(',').map((x) => x.trim()).filter(Boolean) }))
@@ -1471,7 +1471,7 @@ app.post('/access', async (c) => {
   return c.json({ logins: allowedLogins(), you })
 })
 app.post('/config', async (c) => {
-  const b = await c.req.json() as { repos?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; company?: Company; skills?: Record<string, string>; skillSource?: string }
+  const b = await c.req.json() as { repos?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string }
   const errors: string[] = []
   if (b.repos) {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
@@ -1499,11 +1499,10 @@ app.post('/config', async (c) => {
   // which skill each feature uses (method.ts): a skill name, or empty for its default
   if (b.skills !== undefined && (typeof b.skills !== 'object' || Object.entries(b.skills).some(([k, v]) => !(k in FEATURES) || typeof v !== 'string' || !/^[\w:./-]{0,120}$/.test(v)))) errors.push('Each feature takes a skill name')
   if (b.skillSource !== undefined && (typeof b.skillSource !== 'string' || (b.skillSource.trim() && !/^(https:\/\/|git@)[\w.@:/~-]+$/.test(b.skillSource.trim())))) errors.push('The skill source is a git repository URL (https:// or git@)')
-  if (b.company !== undefined) {
-    const k = b.company, known: Record<string, [string, string][]> = { regions: REGIONS, certifications: CERTIFICATIONS, data: DATA, reviews: REVIEWS }
+  if (b.compliance !== undefined) {
+    const k = b.compliance, known: Record<string, [string, string][]> = { regions: REGIONS, certifications: CERTIFICATIONS, data: DATA, reviews: REVIEWS }
     for (const [f, list] of Object.entries(known)) { const v = (k as Record<string, unknown>)[f]; if (v !== undefined && (!Array.isArray(v) || v.some((x) => !list.some(([id]) => id === x)))) errors.push(`Unknown ${f}`) }
     if (k.team !== undefined && (!Array.isArray(k.team) || k.team.length > 50 || k.team.some((m) => typeof m?.name !== 'string' || !m.name.trim() || m.name.length > 60 || !ROLES.some(([id]) => id === m.role) || (m.pace !== undefined && !(Number(m.pace) > 0 && Number(m.pace) <= 50)) || (m.teams !== undefined && (!Array.isArray(m.teams) || m.teams.some((t) => !/^[A-Z][A-Z0-9]*$/.test(t))))))) errors.push('Each person needs a name and a role')
-    if (k.name !== undefined && (typeof k.name !== 'string' || k.name.length > 80)) errors.push('A company name is at most 80 characters')
   }
   if (errors.length) return c.json({ error: errors.join('. ') }, 400)
 
@@ -1515,7 +1514,8 @@ app.post('/config', async (c) => {
     ...(typeof b.linearDesktop === 'boolean' && { linearDesktop: b.linearDesktop }),
     ...(b.explainBudgetUsd !== undefined && { explainBudgetUsd: b.explainBudgetUsd }),
     ...(b.exec && { exec: b.exec }),
-    ...(b.company && { company: { ...config.company, ...b.company } }),
+    // the profile moves off its old key (company) on the first save
+    ...(b.compliance && { compliance: { ...config.compliance, ...b.compliance }, company: undefined }),
     ...(b.skills && { skills: Object.fromEntries(Object.entries({ ...config.skills, ...b.skills }).filter(([, v]) => v?.trim())) }),
     ...(b.skillSource !== undefined && { skillSource: b.skillSource.trim() || undefined }),
     ...((b.review || b.revise || b.stack !== undefined) && { agent: {

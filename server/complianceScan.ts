@@ -1,7 +1,7 @@
-// Fill the company profile for you (Settings → Company): from Linear, the organization, its teams and who is on each
+// Fill the compliance profile for you (Settings → Compliance): from Linear, its teams and who is on each
 // (a person on several teams keeps all of them), a role guessed from the teams they work in, and each person's pace
 // from the points they finished in the last six weeks; from your code (every watched repository), what it shows of
-// where customers are, what it is certified for, the data it handles and the reviews it requires, each with the
+// where its users are, what it is certified for, the data it handles and the reviews it requires, each with the
 // evidence it was read from. Suggestions only: Settings shows them, and you take what fits.
 import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -13,8 +13,7 @@ import type { Member } from './readiness.ts'
 
 const run = promisify(execFile)
 export type Evidence = { id: string; files: string[]; hits: number }
-export type CompanySuggestion = {
-  name?: string
+export type ComplianceSuggestion = {
   team: (Member & { done6w: number })[]
   regions: Evidence[]; certifications: Evidence[]; data: Evidence[]; reviews: Evidence[]
   teams: { key: string; name: string }[]
@@ -47,14 +46,14 @@ async function scanCode(paths = config.repos): Promise<{ found: Record<keyof typ
       if (files.length) found[k].push({ id, files: files.slice(0, 5), hits: files.length })
     }
   }
-  // a security policy or security owners: the company reviews changes for security
+  // a security policy or security owners: changes get a security review
   const sec = repos.flatMap(([repo, path]) => ['SECURITY.md', '.github/SECURITY.md', 'CODEOWNERS', '.github/CODEOWNERS'].filter((f) => existsSync(join(path, f)) && (!/CODEOWNERS/.test(f) || /security/i.test(readFileSync(join(path, f), 'utf8')))).map((f) => `${repo.split('/')[1]}/${f}`))
   if (sec.length) found.reviews.unshift({ id: 'security', files: sec, hits: sec.length })
   return { found, scanned: repos.map(([r]) => r) }
 }
 
 // the teams first, then each one's people (all in one query is more than Linear allows)
-const ORG = `query { organization { name } teams(first: 100) { nodes { id key name } } }`
+const TEAMS = `query { teams(first: 100) { nodes { id key name } } }`
 const MEMBERS = `query($id: String!) { team(id: $id) { members(first: 250) { nodes { id name displayName active } } } }`
 const DONE = `query($since: DateTimeOrDuration!, $after: String) { issues(first: 100, after: $after, filter: { completedAt: { gte: $since }, estimate: { gt: 0 } }) {
   pageInfo { hasNextPage endCursor } nodes { estimate assignee { id } } } }`
@@ -65,8 +64,8 @@ const roleOf = (teams: string[]) => {
   return one(/design|ux|ui/) ? 'designer' : one(/\bqa\b|quality|test/) ? 'qa' : one(/data|analytic|\bml\b/) ? 'data' : one(/secur/) ? 'security' : one(/product|\bpm\b/) ? 'pm' : /design/.test(all) && teams.length === 1 ? 'designer' : 'engineer'
 }
 /** The organization, its teams and their people (each with every team they are on), and each one's pace. */
-async function fromLinear(): Promise<Pick<CompanySuggestion, 'name' | 'team' | 'teams'>> {
-  const o = await gql<{ organization: { name: string }; teams: { nodes: { id: string; key: string; name: string }[] } }>(ORG)
+async function fromLinear(): Promise<Pick<ComplianceSuggestion, 'team' | 'teams'>> {
+  const o = await gql<{ teams: { nodes: { id: string; key: string; name: string }[] } }>(TEAMS)
   const people = new Map<string, { id: string; name: string; teams: string[]; teamNames: string[] }>()
   for (const t of o.teams.nodes) for (const m of (await gql<{ team: { members: { nodes: { id: string; name: string; displayName: string; active: boolean }[] } } }>(MEMBERS, { id: t.id })).team.members.nodes.filter((x) => x.active)) {
     // a name, not a login: Linear keeps the email as the name of someone who never set one
@@ -86,18 +85,18 @@ async function fromLinear(): Promise<Pick<CompanySuggestion, 'name' | 'team' | '
     const pts = done.get(p.id) ?? 0
     return { name: p.name, role: roleOf(p.teamNames), teams: p.teams, linearId: p.id, done6w: pts, ...(pts > 0 && { pace: Math.max(1, Math.round(pts / 6)) }) }
   }).sort((a, b) => b.done6w - a.done6w || a.name.localeCompare(b.name))
-  return { name: o.organization.name, team, teams: o.teams.nodes.map((t) => ({ key: t.key, name: t.name })) }
+  return { team, teams: o.teams.nodes.map((t) => ({ key: t.key, name: t.name })) }
 }
 
-let cache: { at: number; v: CompanySuggestion } | undefined
+let cache: { at: number; v: ComplianceSuggestion } | undefined
 /** Everything it can fill, read once every ten minutes at most (a full read of the code takes a while). */
-export async function suggestCompany(fresh = false, paths?: Record<string, string>): Promise<CompanySuggestion> {
+export async function suggestCompliance(fresh = false, paths?: Record<string, string>): Promise<ComplianceSuggestion> {
   if (cache && !fresh && Date.now() - cache.at < 10 * 60_000) return cache.v
   const [lin, code] = await Promise.all([
     hasKey() ? fromLinear().catch((e: Error) => ({ error: e.message })) : Promise.resolve({ error: 'LINEAR_API_KEY is not set: only your code was read' }),
     scanCode(paths),
   ])
-  const v: CompanySuggestion = { team: [], teams: [], ...('error' in lin ? { error: lin.error } : lin), ...code.found, scanned: code.scanned }
+  const v: ComplianceSuggestion = { team: [], teams: [], ...('error' in lin ? { error: lin.error } : lin), ...code.found, scanned: code.scanned }
   cache = { at: Date.now(), v }
   return v
 }

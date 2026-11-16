@@ -20,7 +20,7 @@ type Toast = (m: string, tone?: 'ok' | 'error') => void
 type Scope = 'all' | 'mine' | 'company' | 'others'
 type Sort = 'used' | 'trending' | 'work' | 'tokens'
 
-const SOURCE: Record<Source, string> = { mine: 'Yours', company: 'Company', source: 'Skill source', plugin: 'Plugin' }
+const SOURCE: Record<Source, string> = { mine: 'Yours', company: 'Organization', source: 'Skill source', plugin: 'Plugin' }
 const VERDICT: Record<Verdict, { label: string; dot: string; text: string; soft: string }> = {
   good: { label: 'Healthy', dot: 'bg-ok', text: 'text-ok-text', soft: 'bg-ok/12' },
   watch: { label: 'Watch', dot: 'bg-wait', text: 'text-wait-text', soft: 'bg-wait/14' },
@@ -256,7 +256,7 @@ export function SkillsWorkspace({ toast }: { toast: Toast }) {
             </div>
           </div>
           <div role="tablist" className="flex gap-0.5 rounded-ctl bg-hover p-[3px]">
-            {(['all', 'mine', 'company', 'others'] as const).map((s) => <button key={s} role="tab" aria-selected={scope === s} onClick={() => setScope(s)} title={s === 'others' ? 'Other roles\' skills: you can use them, not change them' : undefined} className={`flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-small font-medium ${scope === s ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{s === 'all' ? ROLES[role].label : s === 'mine' ? 'Mine' : s === 'company' ? 'Company' : 'Others'}</button>)}
+            {(['all', 'mine', 'company', 'others'] as const).map((s) => <button key={s} role="tab" aria-selected={scope === s} onClick={() => setScope(s)} title={s === 'others' ? 'Other roles\' skills: you can use them, not change them' : undefined} className={`flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-small font-medium ${scope === s ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{s === 'all' ? ROLES[role].label : s === 'mine' ? 'Mine' : s === 'company' ? 'Org' : 'Others'}</button>)}
           </div>
           <div className="flex items-center gap-1 text-meta">
             <span className="text-fg-4">Sort</span>

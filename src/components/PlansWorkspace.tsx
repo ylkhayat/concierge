@@ -11,7 +11,7 @@ import { Skeleton } from './Connections.tsx'
 import { Md } from './Md.tsx'
 import { MOSCOW_HUE, PlanStream, type ColorBy, type Move } from './PlanStream.tsx'
 import { playsFor } from '../planPlays.ts'
-import { AREAS, coverage, obligations, resources, type Company, type Obligation } from '../../server/readiness.ts'
+import { AREAS, coverage, obligations, resources, type Compliance, type Obligation } from '../../server/readiness.ts'
 import { Meter, Vital } from '../thread/Vitals.tsx'
 import type { SetupView } from '../../server/index.ts'
 import { applyAll, LATER } from '../../server/planOps.ts'
@@ -351,11 +351,11 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
 }
 
 /**
- * Readiness: what this plan must cover for the company (Settings → Company), area by area, and whether the team and
+ * Readiness: what this plan must cover (Settings → Compliance), area by area, and whether the team and
  * the time hold the work. Each tile says where it stands; a click lists what it holds: what is covered and by which
  * ticket, and for what isn't, a ticket to add or the planner to ask. Then the risks, highest first.
  */
-function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAdd, onSelect }: { whatIf: Plan; company?: Company; teamKey?: string; people: number; pace: number; points: number; onAsk: (t: string) => void; onAdd: (ob: Obligation) => void; onSelect: (id: string) => void }) {
+function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAdd, onSelect }: { whatIf: Plan; company?: Compliance; teamKey?: string; people: number; pace: number; points: number; onAsk: (t: string) => void; onAdd: (ob: Obligation) => void; onSelect: (id: string) => void }) {
   const [open, setOpen] = useState<string>()
   const obs = obligations(company, whatIf), cov = coverage(whatIf, obs)
   const res = resources(whatIf, company, people, pace, points, obs, teamKey)
@@ -367,7 +367,7 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
   return (
     <div className="border-b border-line px-4 py-2.5">
       <div className="flex items-center gap-2 pb-2"><span className="label text-fg-4">Readiness</span>
-        {!company?.regions?.length && !company?.certifications?.length && <span className="text-meta text-fg-4">· set your company’s profile in Settings → Company for compliance and security checks</span>}</div>
+        {!company?.regions?.length && !company?.certifications?.length && <span className="text-meta text-fg-4">· set where your users are and your certifications in Settings → Compliance for these checks</span>}</div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(118px,1fr))] gap-2">
         {areas.map((a) => {
           const done = a.items.filter((x) => x.by).length, all = done === a.items.length
@@ -389,7 +389,7 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
             <div className="space-y-1.5 text-small text-fg-2">
               <p>In scope: <b className="text-fg-1">{res.demand} pt</b>. The team finishes about <b className="text-fg-1">{res.weekly} pt a week</b>{res.capacity !== undefined && <>, <b className="text-fg-1">{res.capacity} pt</b> inside the appetite</>}.</p>
               {res.people.length ? <p className="text-meta text-fg-3">{whatIf.members?.length ? 'The project’s people' : teamKey ? `The ${teamKey} team` : 'Everyone in the profile'}: {res.people.map(({ m, share }) => `${m.name} (${m.role}, ${m.pace ?? pace}/wk${share < 1 ? `, ${Math.round(share * 100)}% here: also on ${(m.teams ?? []).filter((t) => t !== teamKey).join(', ')}` : ''})`).join(' · ')}</p>
-                : <p className="text-meta text-fg-3">No team in the company profile: counted as {people} at {pace} pt a week.</p>}
+                : <p className="text-meta text-fg-3">No one under Capacity in Settings → Compliance: counted as {people} at {pace} pt a week.</p>}
               {res.missing.length > 0 && <p className="text-wait-text">The work needs {res.missing.join(', ')}, and nobody on the team has that role or review.</p>}
             </div>
           ) : open === 'risks' ? (
@@ -457,9 +457,9 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatI
   )
 }
 
-/** The plan with the company obligations it doesn't cover yet among its unexplored angles (the planner's own first). */
+/** The plan with the obligations it doesn't cover yet among its unexplored angles (the planner's own first). */
 const OB_AREA = { compliance: 'compliance', security: 'security', operations: 'rollout', quality: 'accessibility' } as const
-function withObligations(p: Plan, company?: Company): Plan {
+function withObligations(p: Plan, company?: Compliance): Plan {
   const open = coverage(p, obligations(company, p)).filter((x) => !x.by).map(({ ob }) => ({ id: `ob:${ob.id}`, area: OB_AREA[ob.area], title: ob.title, why: ob.why }))
   const mine = p.gaps ?? []
   return open.length ? { ...p, gaps: [...mine, ...open.filter((o) => !mine.some((g) => g.title.toLowerCase().includes(o.title.toLowerCase().split(' ')[0])))].slice(0, 10) } : p
@@ -558,7 +558,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
         <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-col overflow-hidden bg-surface-2/40 lg:flex">
           {p.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)} />}
           {p.nodes.length > 0 && <Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void setTried([...tried, ...o])} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />}
-          {p.nodes.length > 0 && <Readiness whatIf={whatIf} company={setup.data?.config.company} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
+          {p.nodes.length > 0 && <Readiness whatIf={whatIf} company={setup.data?.config.compliance} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
                                                 onAdd={(ob) => void ops([{ op: 'add', id: `r-${ob.id}`, kind: 'ticket', title: ob.title, description: ob.why, parent: p.nodes.find((n) => n.kind === 'goal')?.id, covers: [ob.id], moscow: 'must' }])} />}
           {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} />}
           <div className="relative min-h-0 flex-1">
@@ -568,7 +568,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
                 <p className="text-body font-semibold text-fg-1">{p.busy ? 'Drawing the plan…' : 'The plan draws itself here'}</p>
                 <p className="max-w-sm text-small text-fg-3">Each epic a stream flowing into the goal, its tickets along it when they would be worked on, and the time it is worth marked.</p>
               </div>
-            ) : <PlanStream p={withObligations(whatIf, setup.data?.config.company)} base={tried.length ? p : undefined} onMove={p.busy || p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
+            ) : <PlanStream p={withObligations(whatIf, setup.data?.config.compliance)} base={tried.length ? p : undefined} onMove={p.busy || p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
         </section>
