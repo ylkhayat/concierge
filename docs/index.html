@@ -699,7 +699,7 @@ footer .theme button[aria-pressed="true"] { background: var(--s1); color: var(--
       <p class="sub">Run it on as many machines as you have, all online at once: every one of them runs agents, and one is the main server your link opens. The standby follows the main server's state as it changes, over your tailnet: a run's update is a few kilobytes, never a file sync re-walking your disk. When the main server sleeps or goes offline, the standby takes over within minutes with every run, setting and review intact, and hands back once the first has caught up. A new machine joins with one command once it is on your tailnet: signed in as you, it is in at once. It is a private extension: ask the author for access.</p>
     </div>
     <div class="fleet reveal" id="fleetDemo" data-s="0" aria-hidden="true">
-      <div class="lease"><span class="pin"></span>Lease on GitHub · held by <b class="who">Desktop</b></div>
+      <div class="lease"><span class="pin"></span>Tailscale sees it online · runs on <b class="who">Desktop</b></div>
       <div class="fleet-row">
         <div class="mach" data-m="a">
           <div class="mach-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Desktop</span><em class="st"></em></div>
@@ -754,7 +754,7 @@ footer .theme button[aria-pressed="true"] { background: var(--s1); color: var(--
     <div class="stack">
       <div class="stack-group reveal"><h3>Agents</h3><p>What does the work</p><div class="chips"><a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a><a href="https://github.com/openai/codex" target="_blank" rel="noreferrer">Codex</a><a href="https://github.com/github/copilot-cli" target="_blank" rel="noreferrer">Copilot CLI</a><a href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a></div></div>
       <div class="stack-group reveal"><h3>Work</h3><p>Where the work comes from and goes</p><div class="chips"><a href="https://github.com" target="_blank" rel="noreferrer">GitHub</a><a href="https://cli.github.com" target="_blank" rel="noreferrer">GitHub CLI</a><a href="https://linear.app" target="_blank" rel="noreferrer">Linear</a><a href="https://crit.md" target="_blank" rel="noreferrer">crit</a><a href="https://git-scm.com/docs/git-worktree" target="_blank" rel="noreferrer">git worktrees</a></div></div>
-      <div class="stack-group reveal"><h3>Fleet</h3><p>Many machines as one</p><div class="chips"><a href="https://nodejs.org/api/sqlite.html" target="_blank" rel="noreferrer">SQLite</a><a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a><a href="https://www.docker.com" target="_blank" rel="noreferrer">Docker</a><a href="https://docs.github.com/rest/repos/contents" target="_blank" rel="noreferrer">A lease on GitHub</a></div></div>
+      <div class="stack-group reveal"><h3>Fleet</h3><p>Many machines as one</p><div class="chips"><a href="https://nodejs.org/api/sqlite.html" target="_blank" rel="noreferrer">SQLite</a><a href="https://tailscale.com" target="_blank" rel="noreferrer">Tailscale</a><a href="https://www.docker.com" target="_blank" rel="noreferrer">Docker</a></div></div>
       <div class="stack-group reveal"><h3>App</h3><p>What it is made of</p><div class="chips"><a href="https://nodejs.org" target="_blank" rel="noreferrer">Node.js</a><a href="https://www.typescriptlang.org" target="_blank" rel="noreferrer">TypeScript</a><a href="https://hono.dev" target="_blank" rel="noreferrer">Hono</a><a href="https://react.dev" target="_blank" rel="noreferrer">React</a><a href="https://tanstack.com/query" target="_blank" rel="noreferrer">TanStack Query</a><a href="https://tailwindcss.com" target="_blank" rel="noreferrer">Tailwind CSS</a><a href="https://reactflow.dev" target="_blank" rel="noreferrer">React Flow</a><a href="https://eclipse.dev/elk/" target="_blank" rel="noreferrer">ELK</a><a href="https://mermaid.js.org" target="_blank" rel="noreferrer">Mermaid</a><a href="https://vite.dev" target="_blank" rel="noreferrer">Vite</a><a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a></div></div>
     </div>
   </section>
@@ -809,14 +809,14 @@ footer .theme button[aria-pressed="true"] { background: var(--s1); color: var(--
     try { await navigator.clipboard.writeText(text); e.target.textContent = 'Copied' } catch { e.target.textContent = 'Select and copy' }
     setTimeout(() => (e.target.textContent = 'Copy'), 1600)
   })
-  // the fleet, playing a hand-over on a loop: the desktop sleeps, the laptop takes the lease and the link follows; the
+  // the fleet, playing a hand-over on a loop: the desktop sleeps, the laptop takes over and the link follows; the
   // desktop wakes, catches up, and takes it back
   const fleet = document.getElementById('fleetDemo')
   if (fleet) {
     const STEPS = [
       { a: ['on', 'Main server'], b: ['by', 'Standby'], who: 'Desktop', to: 'Desktop', va: 'v528 · up to date', vb: 'v528 · up to date', cap: 'The desktop is the main server; the laptop stands by. Every machine, workers too, runs agents.' },
-      { a: ['off', 'Asleep'], b: ['go', 'Taking over'], who: 'Desktop', to: 'Desktop', va: 'last seen 3 min ago', vb: 'v528 · up to date', cap: 'The desktop goes to sleep. Its renewals stop.' },
-      { a: ['off', 'Asleep'], b: ['on', 'Main server'], who: 'Laptop', to: 'Laptop', va: 'last seen 9 min ago', vb: 'v528 · up to date', cap: 'The laptop takes the lease and becomes the main server; the link follows it. Runs continue where they left off.' },
+      { a: ['off', 'Asleep'], b: ['go', 'Taking over'], who: 'Desktop', to: 'Desktop', va: 'last seen 3 min ago', vb: 'v528 · up to date', cap: 'The desktop goes to sleep, and Tailscale sees it go offline.' },
+      { a: ['off', 'Asleep'], b: ['on', 'Main server'], who: 'Laptop', to: 'Laptop', va: 'last seen 9 min ago', vb: 'v528 · up to date', cap: 'Two minutes later the laptop becomes the main server; the link follows it. Runs continue where they left off.' },
       { a: ['go', 'Updating'], b: ['on', 'Main server'], who: 'Laptop', to: 'Laptop', va: 'v527 → v528', vb: 'v528 · up to date', cap: 'The desktop wakes and updates to the latest before taking anything back.' },
       { a: ['on', 'Main server'], b: ['by', 'Standby'], who: 'Desktop', to: 'Desktop', va: 'v528 · up to date', vb: 'v528 · up to date', cap: 'Ready again: once the desktop has every change from the laptop, the laptop hands the main server back.' },
     ]

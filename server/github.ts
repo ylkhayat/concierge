@@ -13,7 +13,7 @@ async function getToken() {
 const etags = new Map<string, { etag: string; body: unknown }>()
 
 // REST's own hourly quota (GraphQL keeps ghBudget): read from every response. Spent, calls fail at once until it
-// resets instead of asking GitHub again, which would keep it spent (and break the lease, which lives there too).
+// resets instead of asking GitHub again, which would keep it spent.
 const rest = { remaining: Infinity, resetAt: 0 }
 export const restBudget = () => ({ ...rest })
 
