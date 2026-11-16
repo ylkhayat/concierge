@@ -1,5 +1,6 @@
 // The PR page in the new design: the same features as the classic one (usePrThread), laid out as a conversation with
 // its next step, and beside it what to check before trusting the work.
+import { Overview } from './Overview.tsx'
 import { useStackNext } from './StackNext.tsx'
 import { queuedText } from '../time.ts'
 import { ArrowLeft, ArrowRight, CheckCheck, LoaderCircle, MessageCircleQuestion, Send, Upload, type LucideIcon, Layers } from 'lucide-react'
@@ -21,14 +22,14 @@ import { DomainView } from './DomainView.tsx'
 
 const Explain = lazy(() => import('../components/Explain.tsx'))
 
-type Pane = 'explain' | 'description' | 'turns' | 'ticket' | 'domain' | 'stack'
+type Pane = 'overview' | 'explain' | 'description' | 'turns' | 'ticket' | 'domain' | 'stack'
 // the panel's tab carries over to the next PR, per role (each role keeps its place), and sits in the URL
 const lastPane: Partial<Record<Role, Pane>> = {}
-const PANES: Pane[] = ['explain', 'description', 'turns', 'ticket', 'domain', 'stack']
+const PANES: Pane[] = ['overview', 'explain', 'description', 'turns', 'ticket', 'domain', 'stack']
 // what each role's panel has: the code's views for a developer; the domain first for product and design, and of
 // Explain only what isn't technical
 // (the vitals sit over the panel, always; how it changed direction opens from Explain; the tools are the box's / commands)
-const ROLE_PANES: Record<Role, Pane[]> = { developer: ['explain', 'description'], product: ['domain', 'explain', 'description'], design: ['domain', 'explain', 'description'] }
+const ROLE_PANES: Record<Role, Pane[]> = { developer: ['overview', 'explain', 'description'], product: ['overview', 'domain', 'explain', 'description'], design: ['overview', 'domain', 'explain', 'description'] }
 let lastWhole = false
 // how far along shipping is, by what comes next (of 4): a run, going through it, publishing, merging
 const STEP: Partial<Record<FlowAction, number>> = { run: 1, retry: 1, finalize: 1, answer: 1, read: 1, crit: 2, 'restart-crit': 2, fix: 2, 'retry-op': 2, 'dismiss-op': 2, publish: 3, post: 3, rerequest: 3, merge: 4 }
@@ -50,7 +51,7 @@ const TITLE: Partial<Record<FlowAction, (mine: boolean) => string>> = {
   'retry-op': () => 'Run the tool again',
   'dismiss-op': () => 'Put the failure away',
 }
-const TAB: Record<Pane, string> = { explain: 'Explain', description: 'Description', turns: 'Turns', ticket: 'Ticket', domain: 'Domain', stack: 'Stack' }
+const TAB: Record<Pane, string> = { overview: 'Overview', explain: 'Explain', description: 'Description', turns: 'Turns', ticket: 'Ticket', domain: 'Domain', stack: 'Stack' }
 const ICON: Partial<Record<FlowAction, LucideIcon>> = { post: Send, publish: Upload, merge: CheckCheck, answer: MessageCircleQuestion }
 
 export function PrThread(props: PrThreadProps) {
@@ -172,7 +173,7 @@ export function PrThread(props: PrThreadProps) {
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
         next={nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined}
         composer={!asking && <Composer>{steer}</Composer>}
-        tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain' })), ...(stackNext ? [{ id: 'stack' as const, label: `Stack · ${covers.length} waiting` }] : [])]}
+        tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain', rail: p === 'overview' })), ...(stackNext ? [{ id: 'stack' as const, label: `Stack · ${covers.length} waiting` }] : [])]}
         tab={pane === 'turns' ? 'explain' : pane} onTab={setPane}
         onAsk={(q) => appendDraft(`pr:${pr.id}`, q)}
         vitals={(
@@ -180,7 +181,7 @@ export function PrThread(props: PrThreadProps) {
                     shipping={<ShippingVital title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
                     topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number }} />
         )}
-        pane={pane === 'stack' && stackNext ? <div className="flex h-full min-h-0 flex-col p-4">{stackNext}</div> : pane === 'explain' ? (
+        pane={pane === 'overview' ? <Overview pr={pr} prs={prs} onSelect={props.onSelect} toast={toast} onOpen={(t) => setPane(t === 'stack' && !stackNext ? 'overview' : t)} /> : pane === 'stack' && stackNext ? <div className="flex h-full min-h-0 flex-col p-4">{stackNext}</div> : pane === 'explain' ? (
             <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>}>
               <Explain key={`${explainKey}:${role}`} pr={pr} toast={toast} prs={prs} onSelect={props.onSelect} lenses={role === 'developer' ? undefined : ['tour', 'business']} onTurns={role === 'developer' ? () => setPane('turns') : undefined} />
             </Suspense>

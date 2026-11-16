@@ -19,12 +19,13 @@ export const Pill = ({ tone, children }: { tone: Tone; children: ReactNode }) =>
 export type PaneTab<Id extends string = string> = {
   id: Id; label: string
   badge?: ReactNode // a count or a status beside the name
+  rail?: boolean // a rail of summaries beside the chat: the panel takes about a third
   fill?: boolean // its content scrolls itself (a graph, a column of its own); else the panel scrolls it
 }
 
 // how much of the width the chat history takes, by the chat you are in: the conversation reads, Intent weighs both,
 // Understanding is mostly Explain. Dragged widths are kept per chat; a double-click on the handle forgets them.
-const SPLIT: Record<string, number> = { main: 0.58, 'main:fill': 0.42 }
+const SPLIT: Record<string, number> = { main: 0.58, 'main:fill': 0.42, 'main:rail': 0.64 } // rail: a supporting pane, about a third
 const MIN = 360 // px, for either column
 const savedSplits = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem('thread-split') ?? '{}') } catch { return {} } }
 
@@ -61,7 +62,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
     return () => o.disconnect()
   }, [])
   // per chat, and per kind of tab: one that fills the panel (Explain's map) gets the larger share; each kept as dragged
-  const key = `main${current.fill ? ':fill' : ''}`
+  const key = `main${current.fill ? ':fill' : current.rail ? ':rail' : ''}`
   const [splits, setSplits] = useState(savedSplits)
   const [dragging, setDragging] = useState(false)
   const share = splits[key] ?? SPLIT[key] ?? 0.55
