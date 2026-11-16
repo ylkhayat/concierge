@@ -90,8 +90,9 @@ export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (
         </header>
         {teams.length > 1 && s && <TeamPills teams={teams} picked={picked} onToggle={toggle} onClear={() => setPicked([])} count={(t) => [...s.did, ...s.next].filter((x) => x.id.startsWith(`${t}-`)).length} />}
         {!s ? <div className="flex justify-center py-20"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div> : (
-          <div className="relative mt-5 grid min-h-0 flex-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-x-8">
-            <Calendar from={from} onPick={setFrom} busy={busy} />
+          <div className="relative mt-5 grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-x-8">
+            {/* the day is a supporting pane: beside what you read, on the right */}
+            <div className="lg:order-last"><Calendar from={from} onPick={setFrom} busy={busy} /></div>
             {view === 'written' ? <WrittenPanel w={s.written} day={day} writing={writing} onWrite={write} onOpen={onOpenTicket} titles={titles} empty={!did.length && !next.length} />
               : <Board did={done} next={plan} byId={byId} onOpen={onOpenTicket} />}
           </div>
@@ -137,7 +138,6 @@ const kindOf = (t?: TicketView, title = '') => /^user feedback/i.test(title) ? [
   : (t && KINDS.find(([re]) => t.labels.some((l) => re.test(l)))?.slice(1) as [string, string] | undefined)
 
 // columns that share the width by how many there are, none narrower than this (then they wrap)
-const FIT = 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))'
 
 type BoardRow = { id: string; title: string; project?: string; did?: string; next?: string; rank: number }
 
@@ -155,68 +155,69 @@ function Board({ did, next, byId, onOpen }: { did: Did[]; next: Next[]; byId: Ma
   const projects = [...by].filter(([p]) => p).sort((a, b) => b[1].length - a[1].length)
   const side = by.get('') ?? []
   if (!rows.size) return <p className="text-small text-fg-3">Nothing on your tickets for this standup.</p>
+  // the overview first: what moved, what is next, and what is blocked, said once (not on every ticket it holds up)
+  const all = [...rows.values()]
+  const blocked = new Map<string, string[]>()
+  for (const r of all) { const st = statusOf(byId.get(r.id)); if (st?.blocked) blocked.set(st.label, [...(blocked.get(st.label) ?? []), r.id]) }
+  const nBlocked = [...blocked.values()].reduce((n, ids) => n + ids.length, 0)
   return (
-    <div className="min-h-0 space-y-4 overflow-y-auto pb-2">
-      {projects.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-small font-semibold text-fg-3">Product <span className="font-normal text-fg-3">· {projects.length} project{projects.length === 1 ? '' : 's'}, talk about these first</span></h2>
-          <div className="grid gap-x-6 gap-y-4" style={{ gridTemplateColumns: FIT }}>{projects.map(([p, rs]) => <ThemeCard key={p} name={p} rows={rs} byId={byId} onOpen={onOpen} />)}</div>
-        </section>
-      )}
-      {side.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-small font-semibold text-fg-3">Side quests <span className="font-normal text-fg-3">· bugs, tech debt and feedback outside a project</span></h2>
-          <ThemeCard rows={side} byId={byId} onOpen={onOpen} />
-        </section>
-      )}
+    <div className="min-h-0 overflow-y-auto pb-2">
+      <div className="mx-auto max-w-[920px] space-y-5">
+        <p className="text-small text-fg-2"><b className="font-semibold text-fg-1">{all.filter((r) => r.did).length}</b> moved · <b className="font-semibold text-fg-1">{all.filter((r) => r.next).length}</b> next{nBlocked > 0 && <> · <b className="font-semibold text-wait-text">{nBlocked} blocked</b></>} · {projects.length} project{projects.length === 1 ? '' : 's'}{side.length > 0 && `, ${side.length} side quest${side.length === 1 ? '' : 's'}`}</p>
+        {blocked.size > 0 && (
+          <section className="card px-4 py-3">
+            <h2 className="mb-1.5 flex items-center gap-2 text-small font-semibold text-wait-text"><span className="size-1.5 rounded-full bg-wait" />Blocked</h2>
+            {[...blocked].map(([why, ids]) => (
+              <div key={why} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 py-1 text-small">
+                <span className="text-fg-1">{why.replace(/^Blocked:\s*/i, '').replace(/^./, (c) => c.toUpperCase())}</span>
+                <span className="flex flex-wrap gap-1">{ids.map((id) => <button key={id} onClick={() => onOpen(id)} title={byId.get(id)?.title} className="rounded bg-fill px-1.5 font-mono text-meta text-fg-2 hover:text-fg-1">{id}</button>)}</span>
+              </div>
+            ))}
+          </section>
+        )}
+        {projects.map(([p, rs]) => <Theme key={p} name={p} rows={rs} byId={byId} onOpen={onOpen} />)}
+        {side.length > 0 && <Theme rows={side} byId={byId} onOpen={onOpen} />}
+      </div>
     </div>
   )
 }
 
-/** A theme's card: a project in its own colour, or the side quests in a quiet grey; a row per ticket. */
-function ThemeCard({ name, rows, byId, onOpen }: { name?: string; rows: BoardRow[]; byId: Map<string, TicketView>; onOpen: (id: string) => void }) {
+/** A project (or the side quests) as a list you read down: one aligned row per ticket, its title whole. */
+function Theme({ name, rows, byId, onOpen }: { name?: string; rows: BoardRow[]; byId: Map<string, TicketView>; onOpen: (id: string) => void }) {
   const h = name ? hue(name) : 0
   const sorted = [...rows].sort((a, b) => (byId.get(a.id)?.priority || 9) - (byId.get(b.id)?.priority || 9) || a.rank - b.rank)
   const moved = rows.filter((r) => r.did).length, ahead = rows.filter((r) => r.next).length
   return (
-    <div className="min-w-0">
-      {name && (
-        <div className="mb-2 flex items-center gap-2 border-b px-1 pb-1.5" style={{ borderColor: `hsl(${h} 70% 50% / 0.35)` }}>
-          <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: `hsl(${h} 70% 50%)` }} />
-          <h3 className="min-w-0 text-body font-semibold leading-tight" style={{ color: `hsl(${h} 60% 38%)` }}>{name}</h3>
-          <span className="ml-auto shrink-0 text-meta tabular-nums text-fg-3">{[moved && `${moved} moved`, ahead && `${ahead} ahead`].filter(Boolean).join(' · ')}</span>
-        </div>
-      )}
-      {/* a wide one (a single project, the side quests) lays its rows out in columns too */}
-      <ul className="grid gap-x-3 gap-y-1.5" style={{ gridTemplateColumns: FIT }}>
+    <section>
+      <div className="mb-1 flex items-baseline gap-2 border-b border-line pb-1.5">
+        {name && <span className="size-2 shrink-0 translate-y-[-1px] rounded-full" style={{ backgroundColor: `hsl(${h} 70% 50%)` }} />}
+        <h3 className="min-w-0 text-body font-semibold text-fg-1">{name ?? 'Side quests'}</h3>
+        {!name && <span className="text-meta text-fg-3">bugs, tech debt and feedback outside a project</span>}
+        <span className="ml-auto shrink-0 text-meta tabular-nums text-fg-3">{[moved && `${moved} moved`, ahead && `${ahead} next`].filter(Boolean).join(' · ')}</span>
+      </div>
+      <ul>
         {sorted.map((r) => {
           const t = byId.get(r.id), st = statusOf(t), kind = name ? undefined : kindOf(t, r.title), P = t && PRIORITY[t.priority]
           return (
             <li key={r.id}>
-              {/* a tile per ticket, so the eye keeps its place: the id in its own column, the title and what moved aligned beside it */}
-              <button onClick={() => onOpen(r.id)} title={[`${r.id} ${r.title}`, st?.label].filter(Boolean).join('\n')}
-                      className={`grid h-full w-full grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-x-2 rounded-lg bg-white/70 px-2 py-1.5 text-left ring-1 transition-colors hover:bg-surface-1 dark:bg-zinc-900/40 ${st?.blocked ? 'ring-wait/40' : 'ring-line hover:ring-line-strong'}`}>
-                <span className="flex items-center gap-1 pt-px">
+              <button onClick={() => onOpen(r.id)} title={st?.blocked ? st.label : undefined}
+                      className="grid w-full grid-cols-[6rem_minmax(0,1fr)_minmax(0,11rem)_minmax(0,13rem)] items-baseline gap-x-3 rounded-ctl px-1.5 py-1.5 text-left transition-colors hover:bg-hover">
+                <span className="flex items-center gap-1">
                   <IdBadge id={r.id} team={r.id.split('-')[0]} />
                   {P && t!.priority > 0 && <P.icon className={`size-3 shrink-0 ${P.tone}`} aria-label={P.label} />}
                 </span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5">
-                    <span className="min-w-0 truncate text-small font-medium text-fg-1">{r.title || r.id}</span>
-                    {kind && <span className={`ml-auto shrink-0 rounded px-1.5 text-micro font-medium ${kind[1]}`}>{kind[0]}</span>}
-                  </span>
-                  <span className="mt-1 flex flex-wrap items-center gap-1 text-meta">
-                    {r.did && <span className="rounded bg-ok/10 px-1.5 text-ok-text">✓ {r.did}</span>}
-                    {r.next && <span className="rounded bg-accent/10 px-1.5 text-accent-text">→ {r.next}</span>}
-                    {st?.blocked && <span className="rounded bg-wait/10 px-1.5 font-medium text-wait-text">{st.label}</span>}
-                  </span>
+                <span className="min-w-0 text-small text-fg-1">
+                  {st?.blocked && <span className="mr-1.5 inline-block size-1.5 translate-y-[-1px] rounded-full bg-wait" aria-label="Blocked" />}
+                  {r.title || r.id}{kind && <span className={`ml-1.5 rounded px-1.5 text-micro font-medium ${kind[1]}`}>{kind[0]}</span>}
                 </span>
+                <span className="min-w-0 truncate text-meta text-ok-text" title={r.did}>{r.did ? `✓ ${r.did}` : ''}</span>
+                <span className="min-w-0 truncate text-meta text-accent-text" title={r.next}>{r.next ? `→ ${r.next}` : ''}</span>
               </button>
             </li>
           )
         })}
       </ul>
-    </div>
+    </section>
   )
 }
 

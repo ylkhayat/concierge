@@ -4,7 +4,8 @@
 import { ArrowRight, Sparkles } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { Overlay } from '../../server/explain.ts'
-import { api, type PrView } from '../lib.ts'
+import { api, type PrView, type TicketView } from '../lib.ts'
+import { ciLabel, ciTone } from '../components/PrStack.tsx'
 import { useApi } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 import { Md } from '../components/Md.tsx'
@@ -92,6 +93,49 @@ export function Overview({ pr, prs, onSelect, onOpen, toast }: {
           </ul>
         </Panel>
       )}
+    </div>
+  )
+}
+
+/** The ticket at a glance, beside its conversation: where it stands, its pull requests, and what it asks for. */
+export function TicketOverview({ t, why, onPr, onOpen }: {
+  t: TicketView; why?: string // the status line the page already shows (what happens next)
+  onPr: (p: { repo: string; number: number; title?: string }) => void; onOpen: () => void // the whole ticket
+}) {
+  const run = t.run
+  const said = t.lastComment
+  return (
+    <div className="space-y-3 p-3.5">
+      <Panel title="Where it stands" aside={<span className="rounded-full bg-fill px-1.5 text-micro font-medium text-fg-2">{t.state}</span>}>
+        {why && <p className="mb-1.5 text-small leading-snug text-fg-2">{why}</p>}
+        <Fact k="Agent" tone={t.queued ? 'idle' : t.busy ? 'wait' : run?.state === 'failed' ? 'fail' : run?.state === 'done' ? 'ok' : 'idle'}>
+          {t.queued ? `Queued: ${t.queued.why}` : t.busy ? `Working${run?.phase ? `: ${run.phase}` : ''}` : run ? `${run.label ?? 'Ship'} ${run.state}${run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''}` : 'No run yet'}
+        </Fact>
+        {t.waitsOn && <Fact k="Stack" tone="wait">Ready; submitted once {t.waitsOn} {t.waitsOn.includes(',') ? 'are' : 'is'} too</Fact>}
+        <Fact k="Linear" tone={t.agentWaiting ? 'wait' : 'idle'}>{t.agentWaiting ? 'The agent asked on the ticket' : said ? `${said.by} commented last` : 'No comments'}</Fact>
+      </Panel>
+
+      {t.prs.length > 0 && (
+        <Panel title={t.prs.length > 1 ? 'Its pull requests' : 'Its pull request'} aside={t.prs.length > 1 ? <span className="text-meta text-fg-3">bottom first</span> : undefined}>
+          <ul className="-mx-1.5">
+            {t.prs.map((p) => (
+              <li key={`${p.repo}#${p.number}`}>
+                <button onClick={() => onPr(p)} className="flex w-full items-center gap-2 rounded-ctl px-1.5 py-1 text-left text-small transition-colors hover:bg-hover">
+                  <span className="shrink-0 font-mono text-meta text-fg-3">#{p.number}</span>
+                  <span className="min-w-0 flex-1 truncate text-fg-1">{p.title ?? `${p.repo.split('/').pop()}#${p.number}`}</span>
+                  {!!p.openThreads && <span className="shrink-0 text-meta text-wait-text">{p.openThreads} thread{p.openThreads === 1 ? '' : 's'}</span>}
+                  <span title={ciLabel(p)} className={`size-2 shrink-0 rounded-full ring-2 ${ciTone(p)}`} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      <Panel title="The ticket">
+        {t.description.trim() ? <div className="max-h-56 overflow-hidden text-small leading-relaxed text-fg-2 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]"><Md text={t.description} /></div> : <p className="text-small text-fg-3">No description.</p>}
+        <button onClick={onOpen} className={`${more} mt-2`}>Read the whole ticket<ArrowRight className="size-3.5" /></button>
+      </Panel>
     </div>
   )
 }

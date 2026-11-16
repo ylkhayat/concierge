@@ -25,7 +25,7 @@ export type PaneTab<Id extends string = string> = {
 
 // how much of the width the chat history takes, by the chat you are in: the conversation reads, Intent weighs both,
 // Understanding is mostly Explain. Dragged widths are kept per chat; a double-click on the handle forgets them.
-const SPLIT: Record<string, number> = { main: 0.58, 'main:fill': 0.42, 'main:rail': 0.64 } // rail: a supporting pane, about a third
+const SPLIT: Record<string, number> = { main: 0.58, 'main:fill': 0.42, 'main:rail': 0.62 } // rail: a supporting pane, about a third
 const MIN = 360 // px, for either column
 const savedSplits = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem('thread-split') ?? '{}') } catch { return {} } }
 

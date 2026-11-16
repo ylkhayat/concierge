@@ -70,3 +70,10 @@ test('a step handed over is recognised by the hash of its wording: case, punctua
   assert.equal(h('Force-push #5203 with --force-with-lease.'), h('force push #5203 with `force-with-lease`'))
   assert.notEqual(h('Force-push #5203 with --force-with-lease'), h('Rebase #5203 onto #5224'))
 })
+
+test('a list row says what the agent asks: the blocking decision first, then how many more', async () => {
+  const { askLine } = await import('./reply.ts')
+  assert.equal(askLine({ steps: [{ text: 'Push the fix', kind: 'publish' }, { text: 'Keep 30 s?', kind: 'decide', blocking: true }] }), 'Keep 30 s? (+1)')
+  assert.equal(askLine({ steps: [{ text: 'Push the fix', kind: 'publish' }] }), 'Push the fix')
+  assert.equal(askLine({ steps: [] }), undefined)
+})

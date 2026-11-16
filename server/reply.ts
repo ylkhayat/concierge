@@ -88,3 +88,14 @@ export function routeSteps(msg: string, self: number, mine: Set<number>) {
   const foreign = splitByPr(split.here, self, named)
   return { here: foreign.here, there: split.there, foreign: foreign.there }
 }
+
+/**
+ * What a hand-back asks of you, in one line for a list row: the first decision it can't go on without, else the first
+ * decision, else its first step, and how many more. Undefined when it asks nothing.
+ */
+export function askLine(n?: { steps?: Step[] }): string | undefined {
+  const steps = n?.steps ?? []
+  if (!steps.length) return undefined
+  const first = steps.find((s) => s.kind === 'decide' && s.blocking) ?? steps.find((s) => s.kind === 'decide') ?? steps[0]
+  return `${first.text}${steps.length > 1 ? ` (+${steps.length - 1})` : ''}`
+}

@@ -1,4 +1,5 @@
 import type { Prep } from '../../server/plan.ts'
+import { askLine } from '../../server/reply.ts'
 import { queuedText } from '../time.ts'
 import { appColor } from '../appColor.ts'
 import { Bookmark, History, Moon,
@@ -176,6 +177,8 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
     const outcome = t.run?.outcomes[t.id]?.outcome
     const phase = t.busy ? (t.run?.phases[t.id] ?? t.run?.phase) : undefined
     const pickable = !t.busy && !!t.repo
+    // what its agent waits on you for: said on the row, so the list is the overview
+    const asks = !t.busy && t.run?.state === 'done' ? askLine(t.run.next) : undefined
     const pr = t.prs[0] ?? t.pr
     const mine = g.id === 'needs-you' || g.id === 'tend' // waiting on you: the whole title, it's what you came for
     const done = isDone(t)
@@ -208,6 +211,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
               : phase ? <span className="truncate text-run-text">{PHASE_LABEL[phase] ?? phase}</span>
               : g.id === 'stalled' ? <><span className="shrink-0 text-wait-text">Gone quiet</span>{pr ? <span className="shrink-0 font-mono">#{pr.number}</span> : <span className="truncate">{t.state}</span>}</>
               : outcome && !pr ? <span className={`truncate ${outcome === 'shipped' || outcome === 'ready' ? 'text-ok-text' : outcome === 'refined' ? 'text-wait-text' : 'text-fail-text'}`}>{outcome}</span>
+              : asks ? <span className="truncate font-medium text-wait-text" title={asks}>Asks: {asks}</span>
               : pr ? <>
                   <span className="shrink-0 font-mono">#{pr.number}</span>
                   {t.prs.length > 1 && <PrStrip prs={t.prs} />}

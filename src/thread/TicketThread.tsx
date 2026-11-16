@@ -1,5 +1,6 @@
 // The ticket page in the new design: the same features as the classic one (useTicketThread), laid out as a
 // conversation with its next step, and beside it what to check before trusting what was built.
+import { TicketOverview } from './Overview.tsx'
 import { queuedText } from '../time.ts'
 import { ArrowRight, LoaderCircle, MessageCircleQuestion } from 'lucide-react'
 import { useState } from 'react'
@@ -26,17 +27,17 @@ const TITLE: Record<'run' | 'pr' | 'tend' | 'dock', (t: TicketView) => string> =
   dock: (t) => (t.agentWaiting ? 'Answer the agent on Linear' : 'Tell the agent what next'),
 }
 
-type Pane = 'ticket' | 'domain'
-const PANES: Pane[] = ['ticket', 'domain']
+type Pane = 'overview' | 'ticket' | 'domain'
+const PANES: Pane[] = ['overview', 'ticket', 'domain']
 let lastPane: Pane | undefined
 
 export function TicketThread(props: TicketThreadProps) {
-  const { t, feed, toast, run, siblings, prItems, onOpenLinked, runIt, act, missing, chips, statusField, parentLinks, stackNav, headerActions, panelBody, ticketBody, asking, runAsks, next } = useTicketThread(props)
+  const { t, feed, toast, run, siblings, prItems, onOpenLinked, runIt, act, missing, chips, openPr, statusField, parentLinks, stackNav, headerActions, panelBody, ticketBody, asking, runAsks, next } = useTicketThread(props)
   // product and design read the ticket's domain beside the ticket; the tools are a developer's
-  const role = useRole(), panes: Pane[] = role === 'developer' ? ['ticket'] : ['ticket', 'domain']
-  const [paneState, setPaneState] = useState<Pane>(() => (PANES.find((p) => p === param('tpane')) ?? lastPane ?? 'ticket'))
-  const pane: Pane = panes.includes(paneState) ? paneState : 'ticket'
-  const setPane = (p: Pane) => { lastPane = p; setPaneState(p); setParam('tpane', p === 'ticket' ? null : p) }
+  const role = useRole(), panes: Pane[] = role === 'developer' ? ['overview', 'ticket'] : ['overview', 'ticket', 'domain']
+  const [paneState, setPaneState] = useState<Pane>(() => (PANES.find((p) => p === param('tpane')) ?? lastPane ?? 'overview'))
+  const pane: Pane = panes.includes(paneState) ? paneState : 'overview'
+  const setPane = (p: Pane) => { lastPane = p; setPaneState(p); setParam('tpane', p === 'overview' ? null : p) }
   // the chat: the main conversation, or a discussion beside it, with the ticket in the panel
   const target = `ticket:${t.id}`
   const talks = useDiscussions(target)
@@ -89,7 +90,7 @@ export function TicketThread(props: TicketThreadProps) {
                   actions={<SectionHeadings.Provider value={false}><div className="space-y-3">{panelBody}</div></SectionHeadings.Provider>} />
       )}
       composer={!asking && !runAsks && <Composer>{steer}</Composer>}
-      tabs={panes.map((p) => ({ id: p, label: p === 'ticket' ? 'Ticket' : role === 'design' ? 'Experience' : 'Domain' }))}
+      tabs={panes.map((p) => ({ id: p, label: p === 'overview' ? 'Overview' : p === 'ticket' ? 'Ticket' : role === 'design' ? 'Experience' : 'Domain', rail: p === 'overview' }))}
       tab={pane} onTab={setPane}
       onAsk={(q) => appendDraft(`ticket:${t.id}`, q)}
       vitals={(
@@ -98,7 +99,7 @@ export function TicketThread(props: TicketThreadProps) {
                                            why={t.queued ? queuedText(t.queued) : t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}
                   topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: t.prs.length > 1 ? steerPr : undefined, toast }} />
       )}
-      pane={pane === 'domain' ? <DomainView path={`/exec/tickets/${encodeURIComponent(t.id)}/domain`} focus={role === 'design' ? 'design' : 'product'} />
+      pane={pane === 'overview' ? <TicketOverview t={t} why={!t.busy && next ? TITLE[next](t) : undefined} onPr={openPr} onOpen={() => setPane('ticket')} /> : pane === 'domain' ? <DomainView path={`/exec/tickets/${encodeURIComponent(t.id)}/domain`} focus={role === 'design' ? 'design' : 'product'} />
         : ticketBody}
     >
       <div className="flex items-center justify-between gap-3">

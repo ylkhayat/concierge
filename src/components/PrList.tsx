@@ -1,4 +1,5 @@
 import { appColor } from '../appColor.ts'
+import { askLine } from '../../server/reply.ts'
 import { Bookmark, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { api, type PrView } from '../lib.ts'
@@ -241,6 +242,7 @@ function Row({ p, seen, active, onSelect, now, activeRef, pick, act }: RowProps)
       <span className={`min-w-0 flex-1 reading:hidden ${p.closed && !active ? 'opacity-45 group-hover:opacity-100' : ''}`}>
         <span className={`line-clamp-2 text-body leading-snug transition-colors ${p.closed ? 'line-through decoration-fg-4/60' : 'font-medium'} ${active ? 'text-fg-1 ' : 'text-fg-2 group-hover:text-fg-1'}`}>{p.closed && <CircleCheck className="mr-1 inline size-3.5 align-[-2px] text-ok-text no-underline" aria-label={p.merged ? 'merged' : 'closed'} />}{p.title}</span>
         <Facts p={p} now={now} seen={seen}><span className="flex min-w-0 font-mono"><span className={`truncate ${appColor(p.repo).text}`}>{p.repo.split('/')[1]}</span><span className="shrink-0">#{p.number}</span></span></Facts>
+        <Asks p={p} />
       </span>
       {/* the last column: when you opened it and its status, or (on hover) the quick actions in their place */}
       <Trail actions={<Quick p={p} act={act} />}><StatusBadge status={p.status} mine={p.mine} compact /></Trail>
@@ -290,6 +292,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
             <span className={`min-w-0 flex-1 reading:hidden ${lit || active ? '' : 'opacity-60 group-hover:opacity-100'}`}>
               <span className={`line-clamp-2 text-body leading-snug transition-colors ${lit ? 'font-medium' : ''} ${active ? 'text-fg-1 ' : 'text-fg-2 group-hover:text-fg-1'}`}>{plain(p.title)}</span>
               <Facts p={p} now={now}><span className="shrink-0 font-mono">#{p.number}</span></Facts>
+              <Asks p={p} />
             </span>
             {/* one trailing thing, only when it matters: it needs you, it failed, or it runs; the dot says the rest */}
             <Trail actions={<Quick p={p} act={act} />}>
@@ -380,4 +383,10 @@ function ReviewBar({ prs, picked, onPick, toast }: { prs: PrView[]; picked: stri
       </div>
     </div>
   )
+}
+
+/** What this PR's agent waits on you for, under its title: the list says it, so you needn't open the PR to know. */
+function Asks({ p }: { p: PrView }) {
+  const line = p.job && p.job.state !== 'running' && p.job.state !== 'queued' ? askLine(p.job.next) : undefined
+  return line ? <span className="mt-0.5 block truncate text-meta text-wait-text" title={line}>Asks: {line}</span> : null
 }
