@@ -33,5 +33,5 @@ function Root() {
 
 // the dev server's gallery of parts (src/dev/Gallery.tsx): never in a build
 const gallery = import.meta.env.DEV && new URLSearchParams(location.search).has('gallery')
-const Gallery = !gallery ? undefined : new URLSearchParams(location.search).get('gallery') === 'design' ? (await import('./dev/DesignSheet.tsx')).DesignSheet : new URLSearchParams(location.search).get('gallery') === 'stacks' ? (await import('./dev/StackSheet.tsx')).StackSheet : new URLSearchParams(location.search).get('gallery') === 'next' ? (await import('./dev/Redesign.tsx')).Redesign : (await import('./dev/Gallery.tsx')).Gallery
+const Gallery = !gallery ? undefined : new URLSearchParams(location.search).get('gallery') === 'design' ? (await import('./dev/DesignSheet.tsx')).DesignSheet : new URLSearchParams(location.search).get('gallery') === 'stacks' ? (await import('./dev/StackSheet.tsx')).StackSheet : (await import('./dev/Gallery.tsx')).Gallery
 createRoot(document.getElementById('root')!).render(<StrictMode><QueryClientProvider client={queryClient}>{Gallery ? <Gallery /> : <Root />}</QueryClientProvider></StrictMode>)
