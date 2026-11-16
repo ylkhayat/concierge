@@ -40,3 +40,7 @@ export const stamp = (iso: string | number | Date) => format(d(iso), 'MMM d, yyy
 
 /** Short weekday: "Mon". */
 export const weekday = (iso: string) => format(d(iso), 'EEE')
+
+/** Why queued work hasn't started, for its page: "an update waits … · by 15:40" (the time only when it is known). */
+export const queuedText = (q?: { why: string; until?: number }) =>
+  q ? `${q.why.charAt(0).toUpperCase()}${q.why.slice(1)}${q.until && q.until > Date.now() ? ` · by ${new Date(q.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}` : undefined

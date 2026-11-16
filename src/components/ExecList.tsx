@@ -1,4 +1,5 @@
 import type { Prep } from '../../server/plan.ts'
+import { queuedText } from '../time.ts'
 import { appColor } from '../appColor.ts'
 import { Bookmark, History, Moon,
   AlertTriangle, Archive, ChevronDown, MessageSquareWarning, Plus, CircleCheck, Inbox, Search, X, CircleDashed, CircleDot, Hourglass, Layers, LoaderCircle, MessageCircleQuestion, Play, Signal, SignalHigh,
@@ -203,6 +204,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
           <span className="mt-0.5 flex items-center gap-2 whitespace-nowrap text-meta text-fg-3">
             <span className="flex shrink-0 items-center gap-1 font-mono"><P.icon className={`size-3 ${P.tone}`} aria-label={P.label} />{t.id}</span>
             {done ? <span className="flex shrink-0 items-center gap-1 font-medium text-ok-text"><CircleCheck className="size-3" />{t.state}</span>
+              : t.queued ? <span className="truncate text-fg-3" title={queuedText(t.queued)}>Queued · {t.queued.why}</span>
               : phase ? <span className="truncate text-run-text">{PHASE_LABEL[phase] ?? phase}</span>
               : g.id === 'stalled' ? <><span className="shrink-0 text-wait-text">Gone quiet</span>{pr ? <span className="shrink-0 font-mono">#{pr.number}</span> : <span className="truncate">{t.state}</span>}</>
               : outcome && !pr ? <span className={`truncate ${outcome === 'shipped' || outcome === 'ready' ? 'text-ok-text' : outcome === 'refined' ? 'text-wait-text' : 'text-fail-text'}`}>{outcome}</span>

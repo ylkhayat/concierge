@@ -145,3 +145,13 @@ test('plan windows belong to the sign-in they were reported under: a new sign-in
   state.usageBy = { person: { ...spent } } // from before sign-ins were noted
   assert.equal(usageOf('person'), undefined)
 })
+
+test("queued work says why it hasn't started: the PR below it in its stack, a retry, else what holds every run", async () => {
+  const { queuedWhy } = await import('./runner.ts')
+  const t = { sessionId: 's', resumed: false }
+  assert.match(queuedWhy(t, 'review', '#12').why, /after #12, below it in its stack/)
+  const later = new Date(Date.now() + 60_000).toISOString()
+  const r = queuedWhy({ ...t, notBefore: later }, 'review')
+  assert.match(r.why, /tries again shortly/); assert.equal(r.until, Date.parse(later))
+  assert.ok(queuedWhy(t, 'review').why.length > 0)
+})

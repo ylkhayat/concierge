@@ -219,7 +219,7 @@ function Tickets({ tickets: all, now, onOpen, onMenu, machine }: { tickets: Tick
               <Row key={t.id} onClick={() => onOpen(t.id)} dot={g.dot ?? 'bg-fg-4'}
                    top={<><span className="font-mono font-medium">{t.id}</span>{t.repo && <span>{t.repo.split('/')[1]}</span>}</>}
                    title={t.title}
-                   meta={<>{t.busy ? <span className="text-run-text">agent at work{t.run?.phase ? ` · ${t.run.phase}` : ''}</span> : <span>{t.state}</span>}
+                   meta={<>{t.queued ? <span>Queued · {t.queued.why}</span> : t.busy ? <span className="text-run-text">agent at work{t.run?.phase ? ` · ${t.run.phase}` : ''}</span> : <span>{t.state}</span>}
                      {t.prs.length > 0 && <span>{t.prs.length} PR{t.prs.length === 1 ? '' : 's'}</span>}<span>{ago(t.updatedAt, now)}</span></>} />
             ))}
           </Section>

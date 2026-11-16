@@ -486,6 +486,21 @@ export function waitReason(): string | undefined {
   return undefined
 }
 
+/**
+ * Why this queued work hasn't started, for its own page: its account first (out, at its limit, its plan window full),
+ * then the PR below it in its stack, a retry it waits out, and then whatever holds every run (waitReason). `until`:
+ * when it should start, when that is known.
+ */
+export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: string }, work: Work, below?: string): { why: string; until?: number } {
+  const acct = waitingOn(t, work)
+  if (acct) return { why: `${acct.label} can't take it now: ${acct.why}`, until: acct.until }
+  if (below) return { why: `it starts after ${below}, below it in its stack` }
+  if (t.notBefore && t.notBefore > new Date().toISOString()) return { why: 'it tries again shortly', until: Date.parse(t.notBefore) }
+  const since = draining()
+  if (since && !fleet.elsewhere()) return { why: 'an update waits for the running agents to finish, then it starts', until: since + 30 * 60_000 }
+  return { why: waitReason() ?? 'it starts in a moment' }
+}
+
 export function pump() {
   // another machine runs it now (fleet.ts), and this one stops shortly
   if (fleet.elsewhere()) return bus.emit('health')

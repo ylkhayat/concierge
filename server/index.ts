@@ -39,7 +39,7 @@ import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
+import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { git } from './atlas.ts'
 import { load, ownUsage, stop } from './load.ts'
@@ -71,7 +71,8 @@ import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, 
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 
-export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean }
+export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
+export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean }
 /** An error in a few words, with what is under Node's bare "fetch failed" (ENOTFOUND: no DNS, a timeout, a reset). */
 const whyFailed = (e: unknown) => {
   const c = (e as { cause?: { code?: string; message?: string } }).cause
@@ -133,7 +134,10 @@ function views(): PrView[] {
       // the description is fetched when you open it (/prs/:id/body): the live list stays small
       const { body, bodyHtml: _html, ...pr } = p
       const waiting = p.job?.state === 'queued' ? waitingOn(p.job, p.mine ? 'revise' : 'review') : undefined
-      return { ...pr, waiting, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
+      // queued: why it hasn't started (and when it should), shown on the PR
+      const below = p.job?.state === 'queued' && p.job.after && ['queued', 'running'].includes(state.prs[p.job.after]?.job?.state ?? '') ? `#${state.prs[p.job.after].number}` : undefined
+      const queued = p.job?.state === 'queued' ? queuedWhy(p.job, p.mine ? 'revise' : 'review', below) : undefined
+      return { ...pr, waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
 }
@@ -874,7 +878,7 @@ type PrHealth = Awaited<ReturnType<typeof prHealth>>
 const execBoard: { tickets: Ticket[]; health: Record<string, PrHealth>; at?: string; error?: string; polling: boolean } = { tickets: [], health: {}, polling: false }
 
 type TicketPr = Ticket['prs'][number] & Partial<PrHealth>
-export type TicketView = Omit<Ticket, 'prs'> & { waitsOn?: string; background: number; prs: TicketPr[]; closedPrs: TicketPr[]; bucket: Bucket; repo?: string; pr?: TicketPr; run?: ExecRun; busy: boolean; env: Env & { asking?: boolean }; linked: Linked[]; stack?: TicketStack; pinned?: boolean; dimmed?: boolean }
+export type TicketView = Omit<Ticket, 'prs'> & { queued?: Queued; waitsOn?: string; background: number; prs: TicketPr[]; closedPrs: TicketPr[]; bucket: Bucket; repo?: string; pr?: TicketPr; run?: ExecRun; busy: boolean; env: Env & { asking?: boolean }; linked: Linked[]; stack?: TicketStack; pinned?: boolean; dimmed?: boolean }
 // which environment a ticket is about: cached from Sentry, else plain words in the ticket, else unknown
 const envAsked = new Set<string>()
 function envOf(t: Ticket): Env & { asking?: boolean } {
@@ -919,7 +923,7 @@ function ticketViews(): TicketView[] {
     const settled = settledIn(run, t.id), bucket = handedBack(ticketBusy(t.id) ? undefined : run, bucketOf(t, pr && { actionable: prs.some((p) => p.actionable) }))
     return {
       // the open ones (all of them when none is open); closed and merged ones apart, so they show but don't count
-      ...t, ...(waitsOn && !ticketBusy(t.id) && { waitsOn }), background: run ? openTasks(`exec:${run.id}`) : 0, prs: prs.length ? prs : all, closedPrs: prs.length ? all.filter((p) => !prs.includes(p)) : [], env: envOf(t), repo: repoFor(t.id, config.exec.repoByPrefix), run, busy: ticketBusy(t.id) && !settled,
+      ...t, ...(waitsOn && !ticketBusy(t.id) && { waitsOn }), ...(run?.state === 'queued' && { queued: queuedWhy(run, 'exec') }), background: run ? openTasks(`exec:${run.id}`) : 0, prs: prs.length ? prs : all, closedPrs: prs.length ? all.filter((p) => !prs.includes(p)) : [], env: envOf(t), repo: repoFor(t.id, config.exec.repoByPrefix), run, busy: ticketBusy(t.id) && !settled,
       bucket: settled === 'parked' && bucket !== 'closed' && bucket !== 'handed' ? 'needs-you' as const : bucket, pr, linked: linksOfTicket(t, `${run?.summary ?? ''}\n${t.lastComment?.body ?? ''}`),
     }
   })

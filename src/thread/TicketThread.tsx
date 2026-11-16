@@ -1,5 +1,6 @@
 // The ticket page in the new design: the same features as the classic one (useTicketThread), laid out as a
 // conversation with its next step, and beside it what to check before trusting what was built.
+import { queuedText } from '../time.ts'
 import { ArrowRight, LoaderCircle, MessageCircleQuestion } from 'lucide-react'
 import { useState } from 'react'
 import { ActivityFeed, FeedMode } from '../components/ActivityFeed.tsx'
@@ -80,7 +81,7 @@ export function TicketThread(props: TicketThreadProps) {
         // it handed back with questions: answering them is the next step, and the plan is under Understanding
         <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent asks you" actions={steer} />
       ) : t.busy ? (
-        <WorkingBar title="The agent is working" sub={[run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined}
+        <WorkingBar title={t.queued ? 'Queued' : 'The agent is working'} sub={t.queued ? queuedText(t.queued) : [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined}
                     stop={() => act('cancel', 'Run stopped')}><SectionHeadings.Provider value={false}><div className="space-y-3">{panelBody}</div></SectionHeadings.Provider></WorkingBar>
       ) : (
         <NextCard icon={t.busy ? LoaderCircle : asking ? MessageCircleQuestion : ArrowRight} tone={t.busy ? 'run' : asking ? 'wait' : 'run'}
@@ -92,9 +93,9 @@ export function TicketThread(props: TicketThreadProps) {
       tab={pane} onTab={setPane}
       onAsk={(q) => appendDraft(`ticket:${t.id}`, q)}
       vitals={(
-          <Vitals shipping={<ShippingVital title={t.busy ? 'The agent is working' : runAsks ? 'The agent asks you' : next ? TITLE[next](t) : 'All clear'} tone={t.busy ? 'run' : runAsks || asking ? 'wait' : next ? 'run' : 'ok'} busy={t.busy}
+          <Vitals shipping={<ShippingVital title={t.queued ? 'Queued' : t.busy ? 'The agent is working' : runAsks ? 'The agent asks you' : next ? TITLE[next](t) : 'All clear'} tone={t.busy ? 'run' : runAsks || asking ? 'wait' : next ? 'run' : 'ok'} busy={t.busy}
                                            at={t.busy ? 1 : next === 'run' ? (run ? 2 : 1) : next === 'dock' ? 2 : next ? 3 : 4}
-                                           why={t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}
+                                           why={t.queued ? queuedText(t.queued) : t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}
                   topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: t.prs.length > 1 ? steerPr : undefined, toast }} />
       )}
       pane={pane === 'domain' ? <DomainView path={`/exec/tickets/${encodeURIComponent(t.id)}/domain`} focus={role === 'design' ? 'design' : 'product'} />

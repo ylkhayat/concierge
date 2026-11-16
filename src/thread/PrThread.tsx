@@ -1,5 +1,6 @@
 // The PR page in the new design: the same features as the classic one (usePrThread), laid out as a conversation with
 // its next step, and beside it what to check before trusting the work.
+import { queuedText } from '../time.ts'
 import { ArrowLeft, ArrowRight, CheckCheck, LoaderCircle, MessageCircleQuestion, Send, Upload, type LucideIcon } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { FlowAction } from '../../server/flow.ts'
@@ -137,7 +138,7 @@ export function PrThread(props: PrThreadProps) {
   const shipTone = busy ? 'run' as const : askFirst || next === 'answer' ? 'wait' as const : next === 'retry' || next === 'retry-op' ? 'fail' as const : next ? 'run' as const : 'ok' as const
   const nextCard = busy && !pr.waiting ? (
     // working: one line (its background runs and Stop), the details folded; the conversation shows the work itself
-    <WorkingBar title={pr.status === 'queued' ? 'Queued' : pr.status === 'posting' ? 'Posting' : 'The agent is working'} sub={pr.background ? `${pr.background} running in the background` : undefined}
+    <WorkingBar title={pr.status === 'queued' ? 'Queued' : pr.status === 'posting' ? 'Posting' : 'The agent is working'} sub={pr.status === 'queued' ? queuedText(pr.queued) : pr.background ? `${pr.background} running in the background` : undefined}
                 stop={() => act('cancel', 'Cancelled')}>{doNext}</WorkingBar>
   ) : pr.waiting ? (
     <NextCard icon={LoaderCircle} tone="run" title="Waiting for an account" actions={doNext} />
@@ -165,7 +166,7 @@ export function PrThread(props: PrThreadProps) {
         onAsk={(q) => appendDraft(`pr:${pr.id}`, q)}
         vitals={(
             <Vitals key={target} scope={stack && { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } }}
-                    shipping={<ShippingVital title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
+                    shipping={<ShippingVital title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
                     topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number }} />
         )}
         pane={pane === 'explain' ? (
