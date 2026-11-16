@@ -23,7 +23,7 @@ import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
 import { cachedStackTour, makeStackTour, writingStackTour } from './stackTour.ts'
 import { trackTurns } from './turns.ts'
-import { hashOf, nextSteps, toSteps, type NextSteps } from './next.ts'
+import { hashOf, nextSteps, stepHash, toSteps, type NextSteps } from './next.ts'
 import { pendingOf, routeSteps } from './reply.ts'
 import { alert, alerts, condition, seeAlerts, whenAlerts } from './alerts.ts'
 import { pin, pins, prText, prYours, ticketText, ticketYours, watch, type Seen } from './pins.ts'
@@ -2002,13 +2002,11 @@ app.get('/prs/:id/next', async (c) => {
   const p = pr(c.req.param('id'))
   try {
     const n = await stepsFor(p?.job, p?.id ?? '')
-    // a step already handed over isn't offered again: the same words, or any step for a PR that was handed work after
-    // this agent last spoke (it was all dealt with then, however the agent words it next)
-    const gone = new Set((p?.handoffs ?? []).map((h) => h.text.toLowerCase()))
-    const spoke = p?.job?.endedAt ?? ''
-    const since = new Set((p?.handoffs ?? []).filter((h) => h.at > spoke).map((h) => h.to))
-    const handed = (text: string) => gone.has(text.toLowerCase()) || [...text.matchAll(/#(\d+)/g)].some((m) => since.has(Number(m[1])) && Number(m[1]) !== p?.number)
-    return c.json({ steps: n && (gone.size || since.size) ? { ...n, steps: (n.steps ?? []).filter((x) => !handed(x.text)) } : n })
+    // a step already handed over isn't offered again: the same wording, compared by hash (case, punctuation and spacing
+    // aside), so a new suggestion worded the same is recognised and one worded differently is shown
+    const gone = new Set((p?.handoffs ?? []).map((h) => stepHash(h.text)))
+    const handed = (text: string) => gone.has(stepHash(text))
+    return c.json({ steps: n && gone.size ? { ...n, steps: (n.steps ?? []).filter((x) => !handed(x.text)) } : n })
   } catch (e) { return c.json({ error: (e as Error).message }, 502) }
 })
 // hand linked work from one agent to the other: the source's latest word goes to the target's own session, which
@@ -2067,10 +2065,10 @@ app.post('/prs/:id/reply', async (c) => {
     logged(p.id, `Handed over to #${n}'s agent: ${lines.map((l) => l.replace(/^- /, '')).join('; ')}`)
   }
   // what went over is done here: those steps leave this PR's Next panel (a reply here brings a new list anyway)
-  const moved = new Set([...there.values(), ...foreign.there.values()].flat().map((l) => l.replace(/^- /, '')))
+  const moved = new Set([...there.values(), ...foreign.there.values()].flat().map((l) => stepHash(l.replace(/^- /, ''))))
   if (moved.size && p.job?.next) {
-    const n = p.job.next
-    p.job.next = { ...n, steps: (n.steps ?? []).filter((x) => !moved.has(x.text)), actions: n.actions.filter((x) => !moved.has(x.label) && !moved.has(x.reply)) }
+    const n = p.job.next, was = (t?: string) => !!t && moved.has(stepHash(t))
+    p.job.next = { ...n, steps: (n.steps ?? []).filter((x) => !was(x.text)), actions: n.actions.filter((x) => !was(x.label) && !was(x.reply)) }
     save(); bus.emit('change')
   }
   if (there.size || foreign.there.size) save()

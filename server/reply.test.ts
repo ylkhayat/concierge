@@ -64,3 +64,9 @@ test("a step for someone else's PR isn't handed to an agent: it becomes a commen
   assert.deepEqual([...r.foreign], [[4244, ['- #4244: fence the title']]])
   assert.equal(r.here, 'Go ahead with:\n- Fix the typo')
 })
+
+test('a step handed over is recognised by the hash of its wording: case, punctuation and spacing aside', async () => {
+  const { stepHash: h } = await import('./next.ts')
+  assert.equal(h('Force-push #5203 with --force-with-lease.'), h('force push #5203 with `force-with-lease`'))
+  assert.notEqual(h('Force-push #5203 with --force-with-lease'), h('Rebase #5203 onto #5224'))
+})

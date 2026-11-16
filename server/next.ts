@@ -125,6 +125,8 @@ ${msg.slice(0, 12000)}
 </message>`
 
 export const hashOf = (text: string) => createHash('sha1').update(text).digest('hex').slice(0, 12)
+/** A step's wording as a hash: lower case, punctuation and spacing aside, so the same words match however they're set. */
+export const stepHash = (text: string) => hashOf(text.toLowerCase().replace(/[^\p{L}\p{N}#]+/gu, ' ').trim())
 
 const inflight = new Map<string, Promise<NextSteps>>()
 
