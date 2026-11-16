@@ -1,4 +1,3 @@
-import type { ReleaseMove } from './releases.ts'
 import type { Env } from './envOf.ts'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { appendFile, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
@@ -213,7 +212,6 @@ type State = {
   execSeen: string[] // ticket ids already seen, so auto-exec only picks newly assigned ones
   envs: Record<string, Env & { at: string }> // ticket id → the environment it is about, once read from Sentry
   sessions: Record<string, { id: string; total: number; provider?: import('./providers.ts').ProviderId }> // PR id or ticket id → its one agent session, and that session's cost so far
-  autoRelease: boolean // put merged tickets into their Linear release (config.releases)
   autoClean: boolean // remove a PR's worktrees when it merges or closes, and sweep every night
   lastClean?: { at: string; removed: number; mb: number; why: string } // what the last automatic cleanup did
   lastSweepAt?: string // when the nightly sweep last ran (it catches up after the PC was off)
@@ -233,9 +231,6 @@ type State = {
   upstreamTold?: { at: string; behind: number } // a fork: when it was last told the original repo moved on (index.ts)
   alerts?: Record<string, import('./alerts.ts').Alert> // in-app alerts, one per PR or ticket (alerts.ts)
   connected?: string[] // connector fixes applied (e.g. Linear by API key), re-applied when the container is rebuilt
-  releaseSeen: Record<string, string> // "owner/repo:branch" → merges handled up to this time
-  releaseLog: ReleaseMove[] // newest first
-  releaseError?: string // why the last pass failed; it retries every sync from the same mark
   usage?: import('./usage.ts').Usage // the Claude plan's windows, as the agents last reported them
   skillAdvice?: { improve: Record<string, import('./skills.ts').Improvement>; suggest?: { suggestions: unknown[]; costUsd: number; from: number; at: string; days: number } } // the last proposals, kept until asked again
   briefs?: Record<string, { key: string; text: string; at: string }> // the Desk's written brief per topic, with the facts it was written from
@@ -275,7 +270,7 @@ function loadState(): State | null {
 }
 const loaded = loadState()
 export const state: State = {
-  prs: {}, seeded: false, autoStart: config.autoStart, spend: {}, base: {}, execs: {}, batches: {}, execAuto: false, execSeen: [], envs: {}, sessions: {}, autoRelease: false, autoClean: true, releaseSeen: {}, releaseLog: [],
+  prs: {}, seeded: false, autoStart: config.autoStart, spend: {}, base: {}, execs: {}, batches: {}, execAuto: false, execSeen: [], envs: {}, sessions: {}, autoClean: true,
   ...loaded,
   settings: { maxJobs: config.maxJobs, dailyBudgetUsd: 20, ...loaded?.settings }, // a fresh install starts capped at $20 a day
 }

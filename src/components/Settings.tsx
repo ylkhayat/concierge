@@ -204,7 +204,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
               <WorkflowCards setup={setup} health={health} save={save} saveConfig={saveConfig} go={go} />
               <Workflows health={health} setup={setup} save={save} saveConfig={saveConfig} />
               {uses('review') && <Skills setup={setup} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />}
-              {uses('exec') && <><Exec setup={setup} saveConfig={saveConfig} /><Releases toast={toast} /></>}
+              {uses('exec') && <Exec setup={setup} saveConfig={saveConfig} />}
             </>}
             {tab === 'roles' && <RolesSettings />}
             {tab === 'accounts' && <Agents toast={toast} onConnections={() => go('connections')} />}
@@ -1025,57 +1025,6 @@ function OrgSkills({ toast }: { toast: Toast }) {
       {ours.map(card)}
       {theirs.length > 0 && (more ? theirs.map(card)
         : <button onClick={() => setMore(true)} className="w-full px-4 py-2.5 text-left text-small font-medium text-accent-text hover:underline">+{theirs.length} from Anthropic ({theirs.filter((s) => s.mode !== 'off').length} on)</button>)}
-    </Group>
-  )
-}
-
-// --- Linear releases by merge -----------------------------------------------------------------------
-
-type Move = { at: string; pr: string; ticket: string; release: string; removed: string[]; note?: string }
-function Releases({ toast }: { toast: Toast }) {
-  const [v, setV] = useState<{ rules: { repo: string; pipeline: string; branches: Record<string, string> }[]; auto: boolean; log: Move[]; error?: string }>()
-  const [preview, setPreview] = useState<Move[] | 'loading'>()
-  useEffect(() => { api('/releases').then(setV).catch(() => {}) }, [])
-  if (!v || !v.rules.length) return null
-  const row = (m: Move, i: number) => (
-    <li key={i} className="flex items-center gap-2 px-4 py-2 text-small">
-      <span className="font-mono font-semibold">{m.ticket}</span><span className="text-fg-3">→</span>
-      <span className={m.note ? 'text-wait-text' : ''}>{m.release}</span>
-      {m.removed.length > 0 && <span className="text-fg-3">out of {m.removed.join(', ')}</span>}
-      <span className="ml-auto font-mono text-fg-3">{m.pr}</span>
-    </li>
-  )
-  return (
-    <Group title="Linear releases" hint="A merged PR moves its tickets to the release at that branch's stage.">
-      {v.rules.map((rule) => (
-        <Row key={rule.repo} icon={Rocket} title={rule.repo} hint={Object.entries(rule.branches).map(([b, st]) => `${b} → ${st}`).join(' · ') + ` (pipeline ${rule.pipeline})`} />
-      ))}
-      <Row icon={Zap} title="Auto-release" hint="Checked on every sync. Starts from merges after you switch it on.">
-        <Toggle label="Auto-release" on={v.auto} onChange={(on) => api('/releases/auto', { on }).then(() => { setV({ ...v, auto: on }); toast(on ? 'Auto-release on' : 'Auto-release off') }, (e: Error) => toast(e.message, 'error'))} />
-      </Row>
-      {v.auto && v.error && (
-        <p className="flex items-start gap-2 bg-fail/6 px-4 py-2.5 text-small text-fail-text">
-          <CircleAlert className="mt-px size-3.5 shrink-0" />
-          <span>Last check failed: {v.error}.{/scope/i.test(v.error) ? ' Your LINEAR_API_KEY can read but not change issues: make one with write access in Linear → Settings → Security & access → Personal API keys, export it, then Concierge restart.' : ''} It retries on every sync and catches up on what merged meanwhile.</span>
-        </p>
-      )}
-      <div className="flex items-center gap-2 px-4 py-3">
-        <button onClick={() => { setPreview('loading'); api('/releases/preview', { days: 3 }).then((r) => setPreview(r.moves), (e: Error) => { setPreview(undefined); toast(e.message, 'error') }) }}
-                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">
-          {preview === 'loading' ? <LoaderCircle className="size-3.5 animate-spin" /> : <BookOpen className="size-3.5" />}Preview the last 3 days
-        </button>
-        {Array.isArray(preview) && (() => {
-          const n = preview.filter((m) => !m.note).length, skip = preview.length - n
-          return <span className="text-small text-fg-3">{n ? `${n} change${n === 1 ? '' : 's'} it would make` : 'Nothing to change: merged tickets are already in their release'}{skip ? ` · ${skip} skipped` : ''}</span>
-        })()}
-      </div>
-      {Array.isArray(preview) && preview.length > 0 && <ul className="divide-y divide-line">{preview.map(row)}</ul>}
-      {v.log.length > 0 && (
-        <>
-          <div className="px-4 pt-3 text-small font-semibold text-fg-3">Recently moved</div>
-          <ul className="divide-y divide-line">{v.log.slice(0, 12).map(row)}</ul>
-        </>
-      )}
     </Group>
   )
 }

@@ -21,7 +21,6 @@ import { defaultBranch, tokenChanged, getMe, ghBudget, outside, poll, prHealth, 
 import { assignToMe, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
 import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
-import { syncReleases } from './releases.ts'
 import { cachedStackTour, makeStackTour, writingStackTour } from './stackTour.ts'
 import { trackTurns } from './turns.ts'
 import { hashOf, nextSteps, toSteps, type NextSteps } from './next.ts'
@@ -196,7 +195,6 @@ async function doPoll(forced?: unknown) {
   }
   dropClosed()
   pump()
-  if (state.autoRelease && config.releases?.length) await releasePass()
   health.lastPollAt = new Date().toISOString()
   health.polling = false
   bus.emit('change')
@@ -209,23 +207,6 @@ let lapsedSeen = state.claudeLoginLapsed // a lapse already known at start was a
 /** A line in a feed for something you did by hand (resume, cancel, dismiss): Activity tells the whole story. */
 const logged = (feed: string, text: string) => note(feed, { at: new Date().toISOString(), kind: 'you', text })
 
-// tickets of PRs merged since the last pass go to their branch's Linear release
-async function releasePass() {
-  try {
-    const { moves, marks } = await syncReleases(state.releaseSeen)
-    state.releaseSeen = marks
-    if (moves.length) {
-      state.releaseLog = [...moves.reverse(), ...state.releaseLog].slice(0, 50)
-      for (const m of moves) console.log(`release: ${m.ticket} → ${m.release}${m.removed.length ? ` (from ${m.removed.join(', ')})` : ''} · ${m.pr}`)
-    }
-    state.releaseError = undefined
-    save()
-  } catch (e) {
-    state.releaseError = whyFailed(e)
-    console.error('releases:', state.releaseError)
-  }
-  condition('releases', 'Linear releases', state.releaseError && `Moving tickets to their Linear release is failing: ${state.releaseError.slice(0, 160)}`)
-}
 // Keep each mapped repo's base map current: when its default branch moves, re-map only what drifted.
 const baseChecked = new Map<string, number>()
 async function refreshBaseMaps() {
@@ -270,6 +251,9 @@ const asked = (n?: NextSteps) => {
   return n?.actions.length ? `next: ${n.actions.map((a) => a.label).join(' · ')}` : ''
 }
 whenAlerts(() => bus.emit('alerts'))
+// Linear releases by merge is gone (Linear's own release integration does that, from CI): its saved state and its alert
+// go with it, once
+{ const s = state as unknown as Record<string, unknown>; for (const k of ['autoRelease', 'releaseSeen', 'releaseLog', 'releaseError']) delete s[k]; delete state.alerts?.['system:releases'] }
 // what a run couldn't do: N commands refused reads as "finished" otherwise
 const refusedNote = (r: { refused?: string[] }) =>
   r.refused?.length ? `${r.refused.length} command${r.refused.length > 1 ? 's' : ''} refused (${r.refused[0].slice(0, 90)}${r.refused.length > 1 ? ', …' : ''})` : ''
@@ -1026,21 +1010,6 @@ async function pollTickets() {
   bus.emit('exec')
 }
 
-app.get('/releases', (c) => c.json({ rules: config.releases ?? [], auto: state.autoRelease, log: state.releaseLog, error: state.releaseError }))
-app.post('/releases/auto', async (c) => {
-  state.autoRelease = !!(await c.req.json()).on
-  if (state.autoRelease) state.releaseSeen = {} // start from now: earlier merges are what Preview shows
-  save()
-  if (state.autoRelease) void releasePass()
-  return c.json({ auto: state.autoRelease })
-})
-// what the rules would do with the last few days of merges; changes nothing
-app.post('/releases/preview', async (c) => {
-  const days = Math.min(30, Math.max(1, Number((await c.req.json()).days) || 3))
-  const since = new Date(Date.now() - days * 86400_000).toISOString()
-  const marks = Object.fromEntries((config.releases ?? []).flatMap((r) => Object.keys(r.branches).map((b) => [`${r.repo}:${b}`, since])))
-  return syncReleases(marks, true).then(({ moves }) => c.json({ moves }), (e: Error) => c.json({ error: e.message }, 502))
-})
 
 app.get('/exec', (c) => c.json(execView()))
 // steer a running exec run without stopping it: it reads your words between steps, or right after it ends

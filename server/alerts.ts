@@ -3,7 +3,7 @@
 import { save, state } from './store.ts'
 
 export type AlertTone = 'info' | 'ok' | 'warn' | 'you'
-// system: Concierge itself (GitHub sync, releases, the Claude login, the queue held): it clears itself once fixed
+// system: Concierge itself (GitHub sync, the Claude login, the queue held): it clears itself once fixed
 export type AlertKind = 'pr' | 'ticket' | 'system'
 export type Alert = {
   key: string; kind: AlertKind; target: string; label: string; title: string

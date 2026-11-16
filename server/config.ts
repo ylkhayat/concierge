@@ -32,8 +32,6 @@ export type Config = {
   accounts?: import('./providers.ts').Account[]
   skillsRepo?: string | string[] // git checkouts of your skills (e.g. ~/.claude, ~/.claude/private): pulled every hour, so a second machine keeps up
   linearDesktop?: boolean // open Linear links in the Linear desktop app (linear://) instead of the browser
-  // Linear releases by merge: a PR merged into a branch puts its tickets in the release at that branch's stage
-  releases?: ReleaseRule[]
   workspaces?: Workspace[] // which halves of the app you use; unset: Review, plus Exec once it has a command
   // the areas of your code and the words that point to each ({"web-app": ["frontend", "settings page"]}): a PR's area
   // when its title has no conventional scope, and which PR a ticket's next step is about
@@ -71,7 +69,6 @@ export type Config = {
 }
 
 export type Workspace = 'review' | 'exec'
-export type ReleaseRule = { repo: string; pipeline: string; branches: Record<string, string> } // pipeline slug; base branch → stage name, e.g. { develop: 'In Progress', beta: 'Beta' }
 
 export type ExecAction = {
   id: string
