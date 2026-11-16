@@ -1,4 +1,5 @@
 // first: the keys every machine shares go into the environment before any module reads it
+import { reviewStack, type StackItem } from './stackSteps.ts'
 import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.ts'
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
@@ -1998,6 +1999,14 @@ const continueExec = (run: ExecRun) => (t: string) => {
   if (!enqueueExec(r.ids, r.repo, false, { label: 'Your steer', prompt: t + AFTER_NOTE, resume: r.sessionId, said: t, costBefore: (r.costBefore ?? 0) + (r.costUsd ?? 0), allowedTools: r.allowedTools })) note(`exec:${r.id}`, { at: new Date().toISOString(), kind: 'error', text: `Your words didn't reach it (the ticket is busy again): ${t.slice(0, 200)}` })
 }
 
+// a stack's waiting steps, read together: which are the same action and which can't both happen (stackSteps.ts)
+app.post('/stacks/steps-review', async (c) => {
+  const { items } = await c.req.json<{ items?: StackItem[] }>().catch(() => ({ items: undefined }))
+  if (!Array.isArray(items) || items.length > 200 || items.some((x) => typeof x?.id !== 'string' || typeof x.text !== 'string')) return c.json({ error: 'items: the steps, each with an id and its text' }, 400)
+  const r = await reviewStack(items.map((x) => ({ id: x.id, pr: Number(x.pr) || 0, text: x.text.slice(0, 500), kind: String(x.kind ?? 'do'), options: Array.isArray(x.options) ? x.options.slice(0, 6).map(String) : undefined })))
+  if (r.costUsd || r.tokens) { addSpend(r.costUsd, r.provider, r.tokens); save() }
+  return c.json({ duplicates: r.duplicates, conflicts: r.conflicts })
+})
 app.get('/prs/:id/next', async (c) => {
   const p = pr(c.req.param('id'))
   try {

@@ -1,5 +1,6 @@
 // The PR page in the new design: the same features as the classic one (usePrThread), laid out as a conversation with
 // its next step, and beside it what to check before trusting the work.
+import { useStackNext } from './StackNext.tsx'
 import { queuedText } from '../time.ts'
 import { ArrowLeft, ArrowRight, CheckCheck, LoaderCircle, MessageCircleQuestion, Send, Upload, type LucideIcon } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -68,6 +69,8 @@ export function PrThread(props: PrThreadProps) {
   // a PR in a stack can talk about itself or the whole stack: one decision, mapped to each PR
   const stack = pr.stack && pr.stack.length > 1 ? pr.stack : undefined
   const stackTarget = stack && `stack:${stack[0].repo}#${stack[0].number}`
+  // every next step the stack's agents wait on, answered at once (two or more of its PRs waiting)
+  const stackNext = useStackNext({ stack: stack ?? [], prs, toast })
   const [wholeState, setWhole] = useState(() => lastWhole)
   const whole = !!stack && wholeState
   const prTalks = useDiscussions(`pr:${pr.id}`), stackTalks = useDiscussions(stackTarget)
@@ -160,7 +163,7 @@ export function PrThread(props: PrThreadProps) {
         follow={`${pr.id}:${count}:${pr.status}:${next}`}
         header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions}
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
-        next={nextCard || (asking && !askFirst) ? <>{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined}
+        next={nextCard || (asking && !askFirst) || stackNext ? <>{stackNext}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined}
         composer={!asking && <Composer>{steer}</Composer>}
         tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain' }))]}
         tab={pane === 'turns' ? 'explain' : pane} onTab={setPane}
