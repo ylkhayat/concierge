@@ -145,3 +145,11 @@ test("a Ship run's goal is a prompt Stop hook naming every ticket, or the prep l
   assert.match(h.prompt, /AC-1, AC-2/)
   assert.match(JSON.parse(goalSettings(['AC-1'], 'prep')).hooks.Stop[0].hooks[0].prompt, /PREP <branch>/)
 })
+
+test('a review or revise goal is to reach the person: crit up and next steps, with crit allowed to keep running', async () => {
+  const { handGoalSettings, goalSettings } = await import('./exec.ts')
+  const p = JSON.parse(handGoalSettings('review')).hooks.Stop[0].hooks[0].prompt
+  assert.match(p, /crit is at/); assert.match(p, /deck-next/)
+  assert.doesNotMatch(p, /background_tasks is empty/)
+  assert.match(JSON.parse(goalSettings(['AC-1'])).hooks.Stop[0].hooks[0].prompt, /background_tasks is empty/)
+})

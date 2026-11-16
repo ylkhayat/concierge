@@ -9,7 +9,7 @@ import { appendFile, open, readdir, stat } from 'node:fs/promises'
 import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { explain, loadOverlay, mapBase } from './explain.ts'
-import { execCommand, furthest, goalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
+import { execCommand, furthest, goalSettings, handGoalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
 import { defaultBranch } from './github.ts'
 import { fill } from './config.ts'
 import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend } from './store.ts'
@@ -897,6 +897,8 @@ function start(pr: Pr) {
         : ['-p', asked, ...(job.resumed ? ['--resume', job.sessionId] : ['--session-id', job.sessionId])]),
       '--output-format', 'stream-json', '--verbose',
       '--allowedTools', ...config.agent.allowedTools, ...(pr.mine ? RUN_TESTS : []),
+      // its goal: reach you (crit up with its findings or replies, and next steps for you), not stop on the way
+      ...((job.kind === 'review' || job.kind === 'revise') && accountOf(job.provider ?? 'claude').kind === 'claude' ? ['--settings', handGoalSettings(job.kind)] : []),
       '--append-system-prompt', config.agent[pr.mine ? 'revise' : 'review'].instructions + linkNote({ pr }) + normsNote(pr.repo) + DECIDE_NOTE + keptMethod('everyRun') + devlogs + skillsNote() + accountNote(job.provider, pr.id) + (pr.mine ? '' : UNTRUSTED_NOTE), ...devlogArgs(),
     ],
     untrusted: !pr.mine,
