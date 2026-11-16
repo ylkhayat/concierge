@@ -120,9 +120,9 @@ function Segmented<T extends string>({ value, options, onChange, label = 'Choose
   return <Tabs value={value} options={options} onChange={onChange} label={label} />
 }
 
-const input = 'rounded-xl bg-fill/60 px-3 py-1.5 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:bg-surface-1 focus:ring-2 focus:ring-accent/60'
-const primary = 'inline-flex shrink-0 items-center gap-1.5 btn-primary transition-colors hover:bg-accent-hover disabled:pointer-events-none disabled:opacity-40'
-const quiet = 'inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-small font-medium text-fg-3 ring-1 ring-line-strong transition-all hover:text-fg-1 disabled:pointer-events-none disabled:opacity-40'
+const input = 'field'
+const primary = 'inline-flex shrink-0 items-center gap-1.5 btn-primary'
+const quiet = 'inline-flex shrink-0 items-center gap-1.5 btn-outline'
 const hours = (iso: string) => ago(iso)
 const home = (p: string) => p.replace(/^\/Users\/(?!Shared\/)[^/]+/, '~')
 

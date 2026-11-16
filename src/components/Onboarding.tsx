@@ -20,7 +20,7 @@ const STEPS: { id: string; title: string; hint: string; icon: LucideIcon }[] = [
 ]
 
 const field = 'w-full rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60'
-const primaryBtn = 'inline-flex items-center gap-1.5 btn-primary btn-lg shadow-sm transition-all active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40'
+const primaryBtn = 'inline-flex items-center gap-1.5 btn-primary btn-lg'
 const quietBtn = 'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-body font-medium text-fg-3 transition-colors hov hover:text-fg-1'
 
 export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {

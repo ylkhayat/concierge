@@ -23,11 +23,10 @@ import { Missing, missingTitle } from './Missing.tsx'
 import type { FlowAction } from '../../server/flow.ts'
 
 export const btn = 'group/btn inline-flex items-center gap-1.5 rounded-ctl px-3.5 py-2 text-body font-medium outline-none transition-[background-color,color,box-shadow,filter] duration-150 focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-40'
-export const primary = `${btn} bg-accent text-on-accent shadow-e1 hover:bg-accent-hover`
-export const secondary = `${btn} bg-surface-1 text-fg-1 shadow-e1 hover:bg-hover`
-export const mini = 'inline-flex items-center gap-1 rounded-lg px-2 py-1 text-small font-medium text-fg-3 transition-colors duration-150 hov hover:text-fg-1 disabled:opacity-40'
-export const ghost = `${btn} px-2.5 text-fg-3 hov hover:text-fg-1`
-
+export const primary = 'group/btn inline-flex items-center gap-1.5 btn-primary btn-lg'
+export const secondary = 'group/btn inline-flex items-center gap-1.5 btn-quiet btn-lg'
+export const mini = 'inline-flex items-center gap-1 btn-ghost btn-sm'
+export const ghost = 'group/btn inline-flex items-center gap-1.5 btn-ghost btn-lg'
 const green = `${btn} bg-ok text-white shadow-e1 hover:bg-ok`
 
 /** Marks the button that is the next step in the flow. */

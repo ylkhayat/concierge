@@ -30,7 +30,7 @@ export function Vital({ name, status, lane, meter, busy, idle, flag, back, open,
              className={`group/v vital flex h-[68px] min-w-0 flex-col ${onOpen ? 'cursor-pointer' : ''} ${busy ? 'vital-busy' : ''} ${idle ? 'vital-idle' : ''} ${open ? 'vital-open' : ''}`}>
       <div className="flex items-center gap-1.5">
         <span className={`size-1.5 shrink-0 rounded-full bg-[var(--lane)] ${busy ? 'animate-pulse' : ''}`} />
-        <span className="label truncate text-fg-3">{name}</span>
+        <span className="label truncate !tracking-[0.03em] text-fg-3">{name}</span>
         {flag && <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-micro font-medium text-fg-2" title="It has something for the agent: point at it, or open it, to send"><Send className="size-3" /><span className="sr-only">has something for the agent</span></span>}
       </div>
       {/* what is going on now, and under the pointer the one thing worth knowing or doing (same place, same size) */}

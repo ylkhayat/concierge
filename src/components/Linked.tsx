@@ -26,7 +26,7 @@ export function LinkedCard({ me, l, onOpen, toast, flat }: { me: Me; l: Linked; 
     setBusy('start')
     api(`/prs/${enc(l.id)}/run`, {}).then(() => toast(`Started ${l.label}'s agent; it knows about this work`), (e: Error) => toast(e.message, 'error')).finally(() => setBusy(undefined))
   }
-  const quiet = 'inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-meta font-medium ring-1 transition-colors disabled:opacity-40'
+  const quiet = 'inline-flex items-center gap-1 btn-outline btn-sm'
   const strong = l.suggest ? 'bg-accent text-on-accent ring-accent hover:bg-accent' : 'text-accent-text ring-accent/30 hover:bg-accent/10'
   return (
     <div className={flat ? '' : `rounded-xl bg-surface-1 p-2.5 ${l.suggest ? ' ring-2 ring-accent/40' : 'ring-1 ring-line '}`}>
@@ -40,7 +40,7 @@ export function LinkedCard({ me, l, onOpen, toast, flat }: { me: Me; l: Linked; 
         </span>
       </button>
       <div className="mt-2 flex flex-wrap gap-1.5 pl-8">
-        <button onClick={() => onOpen(l)} className={`${quiet} text-fg-2 ring-line-strong hover:text-fg-1`}>Open</button>
+        <button onClick={() => onOpen(l)} className={quiet}>Open</button>
         {l.kind === 'pr' && l.agent === 'none' ? (
           <button onClick={start} disabled={!!busy} title={`${l.label} has no agent run yet: start one; it is told about this work and its last word`} className={`${quiet} ${strong}`}>
             {busy === 'start' && <LoaderCircle className="size-3 animate-spin" />}Start its agent
@@ -53,7 +53,7 @@ export function LinkedCard({ me, l, onOpen, toast, flat }: { me: Me; l: Linked; 
         {/* taking over needs something to take over: an agent that ran there */}
         {l.agent !== 'none' && (
           <button onClick={() => hand(false)} disabled={!!busy || l.agent === 'working'} title="That agent stops; this one continues from its latest report"
-                  className={`${quiet} text-fg-2 ring-line-strong hover:text-accent-text`}>
+                  className={quiet}>
             {busy === 'false' && <LoaderCircle className="size-3 animate-spin" />}Take over
           </button>
         )}

@@ -132,8 +132,7 @@ export function Skeleton({ rows = 5 }: { rows?: number }) {
 }
 
 const chip = 'inline-flex items-center rounded-md px-2 py-0.5 text-meta font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1 hover:ring-line-strong'
-const btn = 'inline-flex items-center gap-1.5 btn-primary hover:bg-accent-hover disabled:opacity-40'
-
+const btn = 'inline-flex items-center gap-1.5 btn-primary'
 type AccountRow = { id: string; label: string; kind: 'claude' | 'openai' | 'llama' | 'copilot'; builtIn: boolean }
 type AccountConn = { name: string; status: Connection['status']; via: 'claude.ai' | 'claude code' | 'codex' }
 const KIND_LABEL = { claude: 'Claude', openai: 'OpenAI', llama: 'Llama' }

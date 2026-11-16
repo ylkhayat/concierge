@@ -213,7 +213,7 @@ function Brief({ unit, block, onFocus, onLater }: { unit: Unit; block?: { key: s
   const [, tick] = useState(0)
   useEffect(() => { if (!mine) return; const t = setInterval(() => tick((x) => x + 1), 15_000); return () => clearInterval(t) }, [mine])
   const left = mine ? Math.max(1, Math.ceil((block!.endsAt - Date.now()) / 60_000)) : 0
-  const quiet = 'inline-flex items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium text-fg-3 ring-1 ring-line transition-colors hover:text-fg-1'
+  const quiet = 'inline-flex items-center gap-1 btn-outline btn-sm'
   return (
     <div className="mx-3 mt-2 flex items-start gap-3 rounded-xl bg-accent/5 px-3 py-2 ring-1 ring-accent/15 sm:mx-5 lg:mx-7">
       <Sparkles className={`mt-0.5 size-3.5 shrink-0 text-accent ${b?.for === unit.key && !b.stale ? '' : 'animate-pulse'}`} />

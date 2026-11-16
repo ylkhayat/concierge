@@ -156,7 +156,7 @@ export function App() {
     }, (e: Error) => toast(e.message, 'error'))
 
 
-  const [pickedTab, setTabState] = useState<Tab | undefined>(() => param('list') as Tab | undefined)
+  const [pickedTab, setTabState] = useState<Tab | undefined>(() => { const l = param('list'); return l === 'review' || l === 'mine' ? l : undefined }) // a link with another value falls back, it never breaks the page
   const setTab = (t?: Tab) => { setTabState(t); setParam('list', t) }
   const pr = mode !== 'exec' ? prs?.find((p) => p.id === selected) : undefined
   // "codebase:owner/repo" selects the codebase view instead of a PR

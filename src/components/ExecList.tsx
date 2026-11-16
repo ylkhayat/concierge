@@ -386,7 +386,7 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
       .finally(() => setBusy(undefined))
   }
   const primaryCls = 'group flex flex-1 items-center justify-center gap-1.5 btn-primary btn-lg shadow-sm transition-all disabled:pointer-events-none disabled:opacity-40'
-  const quiet = 'rounded-lg px-2 py-1 text-meta font-medium text-fg-3 ring-1 ring-line-strong transition-colors hover:text-accent-text hover:ring-accent/30 disabled:opacity-40'
+  const quiet = 'btn-outline btn-sm'
   return (
         <div className="shrink-0 animate-[toast-in_200ms_var(--ease-snappy)] border-t border-line bg-white/80 p-2.5 backdrop-blur dark:bg-zinc-900/80">
           {shown && !shown.error && shape && (

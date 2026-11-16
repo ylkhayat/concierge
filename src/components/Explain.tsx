@@ -685,8 +685,7 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
   const touchedHere = codePath ? o.touched.find((t) => t.path === codePath) : undefined
   const flowsFor = (p: string) => o.flows.filter((fl) => under(fl.scope, p) || under(p, fl.scope))
   const systemCards = businessGraph(d!).cards.filter((c) => c.kind === 'system')
-  const ghost = 'flex items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium text-fg-3 ring-1 ring-line-strong transition-all hover:text-fg-1'
-
+  const ghost = 'flex items-center gap-1 btn-outline btn-sm'
   return (
     <Shell expanded={full} onClose={() => setFull(false)}>
       <div ref={box} className="flex h-full min-h-0 flex-col">

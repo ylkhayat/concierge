@@ -28,7 +28,7 @@ function Version({ m, latest }: { m: M; latest?: View['latest'] }) {
 }
 type Key = { name: string; label: string; shared?: string; from?: string; here: boolean }
 
-const quiet = 'inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium text-fg-3 ring-1 ring-line transition-all hover:text-fg-1 disabled:pointer-events-none disabled:opacity-40'
+const quiet = 'inline-flex shrink-0 items-center gap-1.5 btn-outline btn-sm'
 const gb = (mb: number) => `${(mb / 1024).toFixed(mb < 10240 ? 1 : 0)} GB`
 const pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : 0)
 const ROLE: Record<string, string> = { primary: 'main', standby: 'standby', worker: 'worker' }
