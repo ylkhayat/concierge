@@ -40,6 +40,7 @@ export function useDeck(selected: string | undefined) {
   const [health, setHealth] = useState<Health>()
   const [connected, setConnected] = useState(false)
   const [feed, setFeed] = useState<Activity[]>([])
+  const [feedFor, setFeedFor] = useState<string>() // whose feed `feed` is
   const [exec, setExec] = useState<ExecView>()
   const [alerts, setAlerts] = useState<Alert[]>([])
 
@@ -74,17 +75,28 @@ export function useDeck(selected: string | undefined) {
   // the SSE listener above outlives renders, so it reads the selection through a ref
   selectedRef.current = selected
   useEffect(() => {
-    setFeed(selected ? feedCache.get(selected) ?? [] : [])
-    // "ticket:<id>" is a ticket's whole timeline, "exec:<run>" one run's feed; anything else is a PR's
-    const url = selected?.startsWith('ticket:') ? `/exec/tickets/${selected.slice(7)}/activity`
-      : selected?.startsWith('exec:') ? `/exec/${selected.slice(5)}/activity` : `/prs/${enc(selected ?? '')}/activity`
-    if (selected) api(url).then((f: Activity[]) => { feedCache.set(selected, f); if (selectedRef.current === selected) setFeed(f) }).catch(() => {})
+    setFeed(selected ? feedCache.get(selected) ?? [] : []); setFeedFor(selected)
+    if (selected) api(feedUrl(selected)).then((f: Activity[]) => { feedCache.set(selected, f); if (selectedRef.current === selected) setFeed(f) }).catch(() => {})
   }, [selected])
 
-  return { me, prs, health, connected, feed, exec, alerts }
+  // one item's feed, right from the render that opens it: `feed` while it is that item's, else what is cached (never
+  // the item opened before, which `feed` still holds for a render or two)
+  const feedOf = (key: string) => (key === feedFor ? feed : feedCache.get(key) ?? [])
+  return { me, prs, health, connected, feed, feedOf, exec, alerts }
 }
 const selectedRef: { current?: string } = {}
 const feedCache = new Map<string, Activity[]>() // per PR, so switching back shows the feed instantly
+// "ticket:<id>" is a ticket's whole timeline, "exec:<run>" one run's feed; anything else is a PR's
+const feedUrl = (key: string) => key.startsWith('ticket:') ? `/exec/tickets/${key.slice(7)}/activity`
+  : key.startsWith('exec:') ? `/exec/${key.slice(5)}/activity` : `/prs/${enc(key)}/activity`
+const prefetching = new Set<string>()
+/** An item's feed into the cache before it opens (a pointer resting on its row), so it opens whole instead of blank
+ * for the time the fetch takes. Opening still fetches it fresh. */
+export function prefetchFeed(key: string) {
+  if (feedCache.has(key) || prefetching.has(key)) return
+  prefetching.add(key)
+  api(feedUrl(key)).then((f: Activity[]) => { if (!feedCache.has(key)) feedCache.set(key, f) }).catch(() => {}).finally(() => prefetching.delete(key))
+}
 
 // dates and times live in time.ts (date-fns); re-exported here for the callers that import them from lib
 export { ago, duration } from './time.ts'

@@ -67,7 +67,7 @@ export function App() {
   const [query, setQueryState] = useState(() => param('q') ?? '')
   const setQuery = (q: string) => { setQueryState(q); setParam('q', q) }
   const [refreshing, setRefreshing] = useState(false)
-  const { me, prs, health, connected, feed, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : feedKey ?? selected)
+  const { me, prs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : feedKey ?? selected)
   const now = useNow()
   const [theme, setTheme] = useTheme()
   // the PR and ticket pages: the classic design, or the new one while it is being built (the rail switches)
@@ -427,7 +427,7 @@ export function App() {
             </div>
           ) : ticket ? (
             <div key={ticket.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
-              <TicketPage compact t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={feedKey ? feed : []} onSelect={select} toast={toast} onOpenLinked={(l) => select(l.id)} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
+              <TicketPage compact t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={select} toast={toast} onOpenLinked={(l) => select(l.id)} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
             </div>
           ) : null}
         </Desk>
@@ -458,7 +458,7 @@ export function App() {
       <main className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket ? 'block' : 'hidden'}`}>
         {ticket ? (
           <div key={ticket.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
-            <TicketPage t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={feedKey ? feed : []} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
+            <TicketPage t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
           </div>
         ) : (
           <ExecHome repo={focus} tickets={scoped} prs={prs ?? []} now={now} onTicket={select} onPr={goPr} onMap={focus && repos.includes(focus) ? () => goCodebase(focus) : undefined} />
