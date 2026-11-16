@@ -144,7 +144,7 @@ def check():
                     print(f"  ··· {p.get('HostName')} is offline on your tailnet (the machines that are online stand in for it)", flush=True)
             found = [p for p in peers if answers.get(p['HostName']) == 'concierge']
             if found:
-                hellos = [get(f'http://{ip(p)}:{PORT}/hello', timeout=5) for p in found]
+                hellos = [hello(ip(p)) for p in found]
                 main_name = next((h.get('main') for h in hellos if h.get('main')), None)
                 name = re.sub(r'[^a-z0-9-]', '-', (me.get('HostName') or socket.gethostname()).lower().split('.')[0]).strip('-')[:31]
                 add(bool(main_name), f"the main server is {main_name or 'unknown'}", 'is the main server up? Its dashboard shows it in Settings → Machines')
@@ -152,6 +152,15 @@ def check():
     bad = [l for l in lines if not l[0]]
     say('ready: run bin/join' if not bad else f'{len(bad)} thing(s) to fix first (above); then bin/join --check again')
     return 0 if not bad else 1
+
+
+def hello(ip):
+    """A machine's /hello, or nothing when it stops answering between the probe and this ask (a Tailscale restart): the
+    check then says the main server is unknown instead of ending in a traceback."""
+    try:
+        return get(f'http://{ip}:{PORT}/hello', timeout=5)
+    except Exception:
+        return {}
 
 
 def get(url, timeout=3):
