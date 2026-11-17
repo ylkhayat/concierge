@@ -71,7 +71,7 @@ import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missi
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
-import { claudeHomeReady } from './claudeHome.ts'
+import { agentHomesReady } from './agentHome.ts'
 
 export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean }
@@ -1351,7 +1351,7 @@ app.get('/connections/login/:name', async (c) => {
 })
 // this machine's own sign-in decides which connectors it adds (the saved choice may be another machine's), and the
 // plugins are in place first: both write Claude Code's config
-void Promise.all([checkClaudeAuth(), claudeHomeReady()]).then(() => reconnect())
+void Promise.all([checkClaudeAuth(), agentHomesReady()]).then(() => reconnect())
 app.get('/worktrees', async (c) => c.json(await worktrees(c.req.query('fresh') === '1')))
 app.post('/worktrees/clean', async (c) => c.json(await cleanWorktrees()))
 app.post('/worktrees/auto', async (c) => { const { on } = await c.req.json<{ on?: boolean }>(); state.autoClean = !!on; save(); return c.json({ on: state.autoClean, last: state.lastClean }) })

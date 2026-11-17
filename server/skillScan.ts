@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { CLAUDE_HOME } from './claudeHome.ts'
+import { CLAUDE_HOME } from './agentHome.ts'
 import { join } from 'node:path'
 import { orgSkills } from './orgSkills.ts'
 

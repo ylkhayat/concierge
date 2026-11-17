@@ -7,7 +7,7 @@
 // to your repositories (the README's Security section says so) to keep that small.
 
 // what a review run keeps: its provider's sign-in, GitHub's token, and the plain environment (no other secret)
-const KEEP = new Set(['GITHUB_TOKEN', 'GH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'])
+const KEEP = new Set(['GITHUB_TOKEN', 'GH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME', 'COPILOT_SKILLS_DIRS', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'])
 const SECRET = /(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|_KEY$|^KEY_|CREDENTIAL|CONNECTION_STRING|DSN|PRIVATE|AUTH|COOKIE|SESSION|WEBHOOK)/i
 
 /** The environment for a run that reads someone else's work: every secret it doesn't need, gone. */
@@ -21,7 +21,7 @@ const DENY = [
   'Bash(gh auth token:*)', 'Bash(gh auth status --show-token:*)', 'Bash(gh gist:*)', 'Bash(gh secret:*)', 'Bash(gh ssh-key:*)', 'Bash(gh gpg-key:*)',
   'Bash(gh repo create:*)', 'Bash(gh repo delete:*)', 'Bash(gh repo edit:*)', 'Bash(gh release:*)', 'Bash(gh workflow run:*)',
   'Bash(nc:*)', 'Bash(ncat:*)', 'Bash(ssh:*)', 'Bash(scp:*)', 'Bash(sftp:*)', 'Bash(ftp:*)', 'Bash(telnet:*)',
-  'Read(~/.config/gh/**)', 'Read(~/.claude/.credentials.json)', 'Read(~/.codex/auth.json)', 'Read(~/.netrc)', 'Read(~/.ssh/**)', 'Read(~/.aws/**)',
+  'Read(~/.config/gh/**)', 'Read(~/.claude/.credentials.json)', 'Read(~/.codex/auth.json)', 'Read(**/claude-home/.credentials.json)', 'Read(**/codex-home/auth.json)', 'Read(~/.netrc)', 'Read(~/.ssh/**)', 'Read(~/.aws/**)',
   'Read(~/.config/concierge/**)', 'Read(~/.config/review-deck/**)', 'Read(~/.local/state/concierge/worker-token)', 'Read(~/.local/state/review-deck/worker-token)', 'Read(**/.env)', 'Read(**/.env.*)',
 ]
 export const UNTRUSTED_ARGS = ['--disallowedTools', ...DENY]

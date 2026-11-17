@@ -10,7 +10,7 @@ import { STATE_DIR } from './paths.ts'
 import { getMe, searchRepos } from './github.ts'
 
 const run = promisify(execFile)
-import { CLAUDE_HOME } from './claudeHome.ts'
+import { CLAUDE_HOME } from './agentHome.ts'
 const SKILLS_DIR = join(homedir(), '.claude', 'skills')
 
 export type Check = { ok: boolean; detail: string; fix?: string }

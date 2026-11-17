@@ -6,7 +6,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { CLAUDE_HOME, link, USER_CLAUDE } from './claudeHome.ts'
+import { CLAUDE_HOME, CODEX_HOME, link, USER_CLAUDE, userSkills } from './agentHome.ts'
 import { join } from 'node:path'
 import { PassThrough, type Readable, type Writable } from 'node:stream'
 import { config, state } from './store.ts'
@@ -129,12 +129,14 @@ export function providerFor(work: Work): ProviderId {
 // --- each account's environment: its own sign-in folder, or its own Ollama
 const OLLAMA_HERE = process.env.OLLAMA_HOST?.replace(/\/$/, '') || 'http://127.0.0.1:11434'
 export const ollamaOf = (p: ProviderId) => accountOf(p).host?.replace(/\/$/, '') || OLLAMA_HERE
+// your skills folder (agentHome.ts), found once at start: Copilot is pointed at it, the other tools have it linked in
+const skillsDir = await userSkills()
 export function envOf(p: ProviderId, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const a = accountOf(p)
   if (a.kind === 'claude' && a.home) { const env: NodeJS.ProcessEnv = { ...base, CLAUDE_CONFIG_DIR: a.home }; delete env.CLAUDE_CODE_OAUTH_TOKEN; return env }
   if (a.kind === 'openai' && a.home) return { ...base, CODEX_HOME: a.home }
   // Copilot finds the person's skills where Claude keeps them, so a skill that loads another one works there too
-  if (a.kind === 'copilot') return { ...base, COPILOT_SKILLS_DIRS: [base.COPILOT_SKILLS_DIRS, join(homedir(), '.claude', 'skills')].filter(Boolean).join(',') }
+  if (a.kind === 'copilot') return { ...base, COPILOT_SKILLS_DIRS: [base.COPILOT_SKILLS_DIRS, skillsDir].filter(Boolean).join(',') }
   return base
 }
 
@@ -500,10 +502,11 @@ export async function ollamaState(p: ProviderId = 'llama'): Promise<{ up: boolea
 export async function prepareHome(home: string, kind: 'claude' | 'openai') {
   const { mkdir } = await import('node:fs/promises')
   await mkdir(home, { recursive: true })
-  if (kind === 'openai') { for (const name of ['config.toml', 'skills']) await link(join(homedir(), '.codex', name), join(home, name)); return }
+  if (kind === 'openai') { await link(join(CODEX_HOME, 'config.toml'), join(home, 'config.toml'), true); await link(await userSkills('codex'), join(home, 'skills')); return }
   // yours: what you wrote. Concierge's own Claude folder: the settings as adapted for it, and the plugins installed for
   // this machine. A copy another machine sent in a link's place (links don't travel) is replaced by the link
-  for (const name of ['skills', 'commands', 'agents', 'CLAUDE.md']) await link(join(USER_CLAUDE, name), join(home, name), name === 'CLAUDE.md')
+  await link(await userSkills('claude'), join(home, 'skills'))
+  for (const name of ['commands', 'agents', 'CLAUDE.md']) await link(join(USER_CLAUDE, name), join(home, name), name === 'CLAUDE.md')
   for (const name of ['plugins', 'settings.json']) await link(join(CLAUDE_HOME, name), join(home, name), name === 'settings.json')
 }
 
@@ -514,7 +517,7 @@ export const codexWindowsOf = (p: ProviderId) => codexWindows.get(p)
 export async function readCodexWindows() {
   const { readdir, readFile, stat } = await import('node:fs/promises')
   for (const a of accounts().filter((x) => x.kind === 'openai')) {
-    const root = join(a.home ?? join(homedir(), '.codex'), 'sessions')
+    const root = join(a.home ?? CODEX_HOME, 'sessions')
     // sessions/<year>/<month>/<day>/rollout-*.jsonl: the newest day first, a few files at most
     const files: { f: string; t: number }[] = []
     const walk = async (d: string, depth: number) => {

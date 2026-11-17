@@ -18,7 +18,7 @@ import { planNote } from './router.ts'
 import { missingOn } from './connections.ts'
 import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
-import { CLAUDE_HOME, claudeHomeReady } from './claudeHome.ts'
+import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
 import { accountOf, accounts, available, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
@@ -516,7 +516,7 @@ export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: str
 
 // the agents' Claude folder is still being set up (the first start after it became Concierge's own): runs wait for it
 let homeReady = false
-void claudeHomeReady().then(() => { homeReady = true; pump() })
+void agentHomesReady().then(() => { homeReady = true; pump() })
 export function pump() {
   if (!homeReady) return
   // another machine runs it now (fleet.ts), and this one stops shortly

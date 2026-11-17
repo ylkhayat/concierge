@@ -3,7 +3,7 @@ import { mkdtemp, lstat, readFile, readlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { adapted, link, marketplaceSource, sessionDir } from './claudeHome.ts'
+import { adapted, link, marketplaceSource, sessionDir } from './agentHome.ts'
 
 test("your settings come over without what only runs on your machine", () => {
   const yours = { hooks: { Stop: [{ hooks: [{ command: '/Users/me/bin/notify' }] }] }, statusLine: { command: '/Users/me/bin/line' }, enabledPlugins: { 'linear@official': true }, permissions: { allow: ['Read'] } }
