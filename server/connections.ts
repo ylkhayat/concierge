@@ -53,6 +53,7 @@ export type McpServer = {
   url?: string; headers?: Record<string, string>; command?: string; args?: string[]; env?: Record<string, string>
   login?: boolean // it signs in in the browser, into one Claude account's own store: no key to hand to another tool
   coveredByClaudeAi?: boolean // a claude.ai login brings the same service itself
+  mine?: boolean // you put it in the bank yourself (it can be taken out there)
 }
 /** What Concierge itself holds: a service it has the key for, and each connector you added by its address (the bank, bank.ts). */
 export function ownServers(): McpServer[] {
@@ -62,6 +63,8 @@ export function ownServers(): McpServer[] {
   const s = secrets()
   if (s.sentryToken) out.push({ name: 'sentry-token', service: 'Sentry', command: 'npx', args: ['-y', '@sentry/mcp-server@latest'], env: { SENTRY_ACCESS_TOKEN: s.sentryToken, SENTRY_HOST: s.sentryHost ?? 'sentry.io' }, coveredByClaudeAi: true })
   for (const [name, url] of Object.entries(state.customConnectors ?? {})) out.push({ name, service: name, url, login: true })
+  // the ones you put in the bank yourself: with a key every tool can use it; without one it signs in in the browser
+  for (const [name, b] of Object.entries(s.bank ?? {})) if (!out.some((x) => x.name === name)) out.push({ name, service: name, url: b.url, ...(b.key ? { headers: { Authorization: `Bearer ${b.key}` } } : { login: true }), mine: true })
   return out
 }
 /** The `claude mcp add` arguments for a fix (tests check their order). */

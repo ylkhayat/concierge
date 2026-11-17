@@ -12,6 +12,9 @@ type Toast = (m: string, tone?: 'ok' | 'error') => void
 export function Connections({ toast }: { toast: Toast }) {
   return (
     <div className="space-y-6">
+      <Section title="The bank" hint="Connections Concierge holds itself: every agent run gets them, whichever account or tool does the work.">
+        <Bank toast={toast} />
+      </Section>
       <Section title="Connectors" hint="What agents can reach on each account. Set up once; every machine gets them.">
         <PerAccount toast={toast} />
       </Section>
@@ -21,6 +24,51 @@ export function Connections({ toast }: { toast: Toast }) {
       <Section title="VPNs" hint="Private databases and logs need the right VPN, checked live.">
         <Vpns />
       </Section>
+    </div>
+  )
+}
+
+type BankView = { only: boolean; servers: { name: string; service: string; how: 'key' | 'login'; mine: boolean; target: string }[] }
+/**
+ * The connection bank: what is in it, how each signs in, whether runs get only the bank, and a way to put one in.
+ * An account's own connections (below) differ per account; these are the same for every run.
+ */
+function Bank({ toast }: { toast: Toast }) {
+  const [b, setB] = useState<BankView>()
+  const [form, setForm] = useState<{ name: string; url: string; key: string }>()
+  useEffect(() => { api('/bank').then(setB, () => setB({ only: false, servers: [] })) }, [])
+  const post = (path: string, body: object, said: string) => api(path, body).then((v: BankView) => { setB(v); toast(said); return true }, (e: Error) => { toast(e.message, 'error'); return false })
+  if (!b) return <Skeleton rows={2} />
+  const field = 'field min-w-0 flex-1 text-small'
+  return (
+    <div className="space-y-2">
+      <div className="card divide-y divide-line">
+        {b.servers.length === 0 && <p className="px-3.5 py-3 text-small text-fg-3">Nothing in it yet. A service Concierge has a key for (Linear, Sentry) is in it by itself; add any other by its MCP address and its key.</p>}
+        {b.servers.map((s) => (
+          <div key={s.name} className="flex items-center gap-2.5 px-3.5 py-2 text-small">
+            <span className={`size-1.5 shrink-0 rounded-full ${s.how === 'key' ? 'bg-ok' : 'bg-wait'}`} />
+            <span className="font-medium text-fg-1">{s.service}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-meta text-fg-4" title={s.target}>{s.target.replace(/^https:\/\//, '')}</span>
+            <span className="shrink-0 text-meta text-fg-3" title={s.how === 'key' ? 'It signs in with a key Concierge holds: every tool can use it' : 'It signs in in the browser, into a Claude account: Codex and Copilot can’t use it'}>{s.how === 'key' ? 'Every tool' : 'Claude accounts only'}</span>
+            {s.mine && <button onClick={() => void post('/bank/remove', { name: s.name }, `${s.name} taken out of the bank`)} className="shrink-0 text-meta text-fg-4 hover:text-fail-text">Remove</button>}
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 px-0.5">
+        <Tabs size="sm" label="What a run gets" value={b.only ? 'only' : 'gaps'} onChange={(v) => void post('/bank', { only: v === 'only' }, v === 'only' ? 'Every run now gets only the bank' : 'The bank now fills what an account lacks')}
+              options={[{ id: 'gaps', label: 'Fill the gaps', title: 'An account that has a service through its own sign-in keeps that one; the bank adds what it lacks' }, { id: 'only', label: 'Bank only', title: 'Every run gets exactly the bank and nothing of the account’s own, so its tools no longer depend on where it landed' }]} />
+        <span className="min-w-0 flex-1 text-meta text-fg-3">{b.only ? 'Every run gets exactly the bank: nothing from claude.ai or plugins.' : 'An account keeps what its own sign-in brings; the bank adds the rest.'}</span>
+        {!form && <button onClick={() => setForm({ name: '', url: '', key: '' })} className="btn-outline btn-sm"><PlugZap className="mr-1 size-3.5" />Put one in</button>}
+      </div>
+      {form && (
+        <div className="card flex flex-wrap items-center gap-2 px-3.5 py-3">
+          <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="name" aria-label="Name" className={`${field} max-w-36 font-mono`} />
+          <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://… its MCP address" aria-label="MCP address" className={`${field} font-mono`} />
+          <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder="its key or token" aria-label="Key" className={`${field} max-w-64`} />
+          <button disabled={!form.name.trim() || !form.url.trim() || !form.key.trim()} onClick={() => void post('/bank/add', form, `${form.name} is in the bank`).then((ok) => ok && setForm(undefined))} className="btn-primary btn-sm">Add</button>
+          <button onClick={() => setForm(undefined)} className="btn-ghost btn-sm">Cancel</button>
+        </div>
+      )}
     </div>
   )
 }

@@ -46,9 +46,9 @@ import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
 import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepClaudeAuth, startClaudeLogin, stopUsingLogin } from './claudeLogin.ts'
-import { rereadSecrets, saveSecrets, scrub } from './scrub.ts'
+import { readSecrets, rereadSecrets, saveSecrets, scrub } from './scrub.ts'
 import { vpns } from './vpn.ts'
-import { applyConnectors, addCustom, customName, removeCustom, connect, connectSentry, connections, recheck, finishLogin, loginState, reconnect, removeFix, startLogin, accountConnections } from './connections.ts'
+import { applyConnectors, addCustom, customName, ownServers, removeCustom, connect, connectSentry, connections, recheck, finishLogin, loginState, reconnect, removeFix, startLogin, accountConnections } from './connections.ts'
 import { spentText } from './usage.ts'
 import { belongsTo, cleanWorktrees, sweepDue, worktrees } from './worktrees.ts'
 import { flowInOf, flowOf, type Flow } from './flow.ts'
@@ -1361,6 +1361,28 @@ void Promise.all([checkClaudeAuth(), agentHomesReady()]).then(() => reconnect())
 const bankNow = () => writeBank(accounts().map((a) => a.id)).catch((e) => console.warn('bank:', (e as Error).message))
 void bankNow(); setInterval(() => void bankNow(), 30_000).unref()
 app.get('/bank', (c) => c.json(bankView()))
+// a connection of your own in the bank: a name, its MCP address, and its key when it has one (kept with the secrets)
+app.post('/bank/add', async (c) => {
+  const b = await c.req.json<{ name?: string; url?: string; key?: string }>()
+  const name = String(b.name ?? '').trim(), url = String(b.url ?? '').trim(), key = String(b.key ?? '').trim()
+  if (!customName(name) || !/^https:\/\/\S+$/.test(url)) return c.json({ error: 'A name (letters, digits, - and _) and an https:// address' }, 400)
+  // one without a key signs in in the browser, into one tool's own store: there is no shared sign-in for those yet
+  if (!key) return c.json({ error: 'It needs a key (an API key or token of that service): a connection that signs in in the browser can’t be shared between tools yet' }, 400)
+  if (ownServers().some((s) => s.name === name && !s.mine)) return c.json({ error: `${name} is already in the bank` }, 400)
+  saveSecrets({ bank: { ...readSecrets().bank, [name]: { url, ...(key && { key }) } } })
+  const tools = `mcp__${name}`
+  if (!config.exec.allowedTools.includes(tools)) saveConfig({ exec: { allowedTools: [...config.exec.allowedTools, tools] } })
+  await bankNow()
+  return c.json(bankView())
+})
+app.post('/bank/remove', async (c) => {
+  const { name } = await c.req.json<{ name?: string }>()
+  const { [String(name)]: _, ...rest } = readSecrets().bank ?? {}
+  saveSecrets({ bank: rest })
+  saveConfig({ exec: { allowedTools: config.exec.allowedTools.filter((t) => t !== `mcp__${name}`) } })
+  await bankNow()
+  return c.json(bankView())
+})
 app.post('/bank', async (c) => {
   const { only } = await c.req.json<{ only?: boolean }>()
   saveConfig({ connections: { ...userConfig().connections, bankOnly: !!only } })

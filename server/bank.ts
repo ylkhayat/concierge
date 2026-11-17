@@ -91,4 +91,4 @@ export const copilotBank = (claudeFile: string) => claudeFile.replace(/\.claude\
 /** The servers behind a bank file, for Codex (it takes them as overrides, not a file). */
 export const codexBank = (p: ProviderId) => forCodex(pick(p).servers)
 /** The names in the bank now, with how each signs in: the Connections page. */
-export const bankView = () => ({ only: bankOnly(), servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, target: s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim() })) })
+export const bankView = () => ({ only: bankOnly(), servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, mine: !!s.mine, target: s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim() })) })

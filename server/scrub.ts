@@ -8,6 +8,7 @@ import { CONFIG_FILE } from './config.ts'
 export const SECRETS_FILE = join(dirname(CONFIG_FILE), 'secrets.json')
 export type Secrets = {
   sentryToken?: string; sentryHost?: string
+  bank?: Record<string, { url: string; key?: string }> // connections you put in the bank yourself: an address, and its key when it has one (bank.ts)
   shared?: import('./sharedEnv.ts').Shared // the keys every machine uses (sharedEnv.ts)
 }
 // read once, then kept in memory: only this app writes the file (saveSecrets), and reading it on every call
@@ -37,7 +38,7 @@ let values: { at: number; list: string[] } | undefined
 function secretValues(): string[] {
   if (values && Date.now() - values.at < 60_000) return values.list
   const s = readSecrets()
-  const list = [...ENV_KEYS.map((k) => process.env[k]), s.sentryToken, ...Object.values(s.shared ?? {}).map((x) => x?.value), ...extra]
+  const list = [...ENV_KEYS.map((k) => process.env[k]), s.sentryToken, ...Object.values(s.bank ?? {}).map((x) => x.key), ...Object.values(s.shared ?? {}).map((x) => x?.value), ...extra]
     .filter((x): x is string => !!x && x.length >= 8).sort((a, b) => b.length - a.length) // longest first: a string before the password inside it
   values = { at: Date.now(), list }
   return list
