@@ -30,3 +30,13 @@ test('the pause level is yours: a window counts as spent at the level set, 100% 
   assert.equal(spentWindow(u, now, 0.99), undefined)
   assert.equal(spentWindow({ ...u, five: { ...u.five, used: 1 } }, now, 1)?.which, '5-hour')
 })
+
+test('a plan served past its window on extra usage can take work; a refusal ends that', () => {
+  const now = 1792600000_000, full = { unifiedWindows: { five_hour: { utilization: 0.2, resetsAt: 1792603800 }, seven_day: { utilization: 1, resetsAt: 1792717200 } } }
+  const held = windowsOf({ status: 'allowed', isUsingOverage: false, ...full }, undefined, now)
+  assert.equal(spentWindow(held, now)?.which, '7-day')
+  const paid = windowsOf({ status: 'allowed', isUsingOverage: true, ...full }, held, now)
+  assert.equal(spentWindow(paid, now), undefined)
+  const refused = windowsOf({ status: 'rejected', rateLimitType: 'seven_day', isUsingOverage: true, resetsAt: 1792717200 }, paid, now)
+  assert.equal(spentWindow(refused, now)?.which, '7-day')
+})

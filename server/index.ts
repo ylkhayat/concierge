@@ -40,7 +40,7 @@ import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
+import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
@@ -1645,6 +1645,7 @@ app.get('/providers', async (c) => c.json(await providersView()))
 app.post('/providers/:id/test', async (c) => {
   const id = c.req.param('id')
   if (!isAccount(id)) return c.json({ error: 'No such account' }, 404)
+  if (accountOf(id).kind === 'claude') void probePlan(id) // and its plan's windows are read again: a limit you lifted shows at once
   const t0 = Date.now(), ac = new AbortController(), timer = setTimeout(() => ac.abort(), 90_000)
   const r = await new Promise<{ ok: boolean; text?: string; error?: string }>((done) => {
     let out = '', err = ''

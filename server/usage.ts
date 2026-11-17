@@ -4,7 +4,7 @@
 
 /** One window: how much of it is used (0–1) and when it starts over (epoch seconds). */
 export type Window = { used: number; resetsAt: number }
-export type Usage = { five?: Window; seven?: Window; at: string; who?: string } // who: the sign-in they were reported under (providers.ts identityOf)
+export type Usage = { five?: Window; seven?: Window; at: string; who?: string; overage?: boolean } // overage: past a window, on paid extra usage, and allowed // who: the sign-in they were reported under (providers.ts identityOf)
 
 // the default level for both windows; Settings → Accounts changes it (config.providers.stopAt)
 export const STOP_AT = 0.95
@@ -19,11 +19,14 @@ export function windowsOf(info: any, prev: Usage | undefined, now = Date.now()):
     const used = info.status === 'rejected' && info.rateLimitType === k ? 1 : x.utilization
     return used == null ? (old?.resetsAt === x.resetsAt ? old : undefined) : { used, resetsAt: x.resetsAt }
   }
-  return { five: pick('five_hour', prev?.five), seven: pick('seven_day', prev?.seven), at: new Date(now).toISOString() }
+  // past a window but still served, on extra usage you pay for: the plan can take work whatever the window says
+  const overage = info?.isUsingOverage === true && info.status !== 'rejected'
+  return { five: pick('five_hour', prev?.five), seven: pick('seven_day', prev?.seven), at: new Date(now).toISOString(), ...(overage && { overage }) }
 }
 
 /** The window that is (nearly) used up and hasn't reset yet, or nothing: while there is one, no agent works. */
 export function spentWindow(u: Usage | undefined, now = Date.now(), stopAt = STOP_AT): { which: '5-hour' | '7-day'; w: Window } | undefined {
+  if (u?.overage) return undefined // served past its window (extra usage): Claude's own answer is the referee
   for (const [which, w] of [['5-hour', u?.five], ['7-day', u?.seven]] as const)
     if (w && w.used >= stopAt && now < w.resetsAt * 1000) return { which, w }
 }

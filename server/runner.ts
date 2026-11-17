@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { appendFile, open, readdir, stat } from 'node:fs/promises'
-import { freemem, homedir } from 'node:os'
+import { freemem, homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { explain, loadOverlay, mapBase } from './explain.ts'
 import { execCommand, furthest, goalSettings, handGoalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
@@ -385,6 +385,28 @@ export const usageOf = (p: ProviderId) => {
 export const stopAt = () => (config.providers?.stopAt ?? STOP_AT * 100) / 100
 export const planSpent = (p: ProviderId = 'claude') => spentWindow(usageOf(p), Date.now(), stopAt())
 watchClaudePlan((p) => !!planSpent(p))
+/**
+ * A plan held for a full window is never asked again, so a limit you lifted meanwhile (extra usage, a raised cap) would
+ * go unseen until the window's own reset. Every few minutes each held Claude account gets one tiny question: its
+ * answer carries the plan's windows as they are now. Refused costs nothing; answered costs a fraction of a cent.
+ */
+export function probePlan(p: ProviderId): Promise<void> {
+  return new Promise((done) => {
+    const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 90_000)
+    let out = ''
+    try {
+      const child = spawnAgent(p, ['-p', 'Reply with the single word: ok', '--output-format', 'stream-json', '--verbose', '--tools', '', '--model', 'haiku', '--max-budget-usd', '0.1'], { cwd: tmpdir(), signal: ac.signal })
+      child.stdout.on('data', (d: Buffer) => { out += d })
+      child.on('error', () => { clearTimeout(timer); done() })
+      child.on('close', () => {
+        clearTimeout(timer)
+        for (const l of out.split('\n')) { try { const m = JSON.parse(l); if (m.type === 'rate_limit_event') sawLimit(m.rate_limit_info, p) } catch (e) { if (!(e instanceof SyntaxError)) console.warn("accounts: plan check:", (e as Error).message) } }
+        done()
+      })
+    } catch { clearTimeout(timer); done() }
+  })
+}
+setInterval(() => { if (!fleet.elsewhere()) for (const a of accounts()) if (a.kind === 'claude' && planSpent(a.id)) void probePlan(a.id) }, 5 * 60_000).unref()
 /** An agent reported the plan's windows: keep them, and stop the agents once one is nearly used up. */
 function sawLimit(info: any, p: ProviderId = 'claude') {
   if (kindOf(p) !== 'claude') return
@@ -394,7 +416,8 @@ function sawLimit(info: any, p: ProviderId = 'claude') {
   else state.usageBy = { ...state.usageBy, [p]: now }
   save()
   const s = planSpent(p)
-  if (!s) return
+  // it had no room and now has (a reset, a raised limit, extra usage switched on): decided again at once
+  if (!s) { if (was) { console.log(`accounts: ${accountOf(p).label}'s plan can take work again`); reroute() } return }
   if (!was) { console.log(`pausing agents: ${spentText(s)}`); bus.emit('health') }
   // a run whose result is in is only winding down; explanations and the map finish their step and wait in the queue
   // only runs on this account: the others have their own limits
@@ -418,7 +441,7 @@ function pausedBy(key: string, e: Ended, error?: string, provider: ProviderId = 
   // refused with no report saying so: count the session window as used up, so the queue doesn't start it again at once
   if (!planSpent('claude')) {
     const f = usageOf('claude')?.five
-    state.usage = { ...usageOf('claude'), who: identityOf('claude'), five: { used: 1, resetsAt: f && f.resetsAt * 1000 > Date.now() ? f.resetsAt : Math.round(Date.now() / 1000) + 900 }, at: new Date().toISOString() }
+    state.usage = { ...usageOf('claude'), overage: false, who: identityOf('claude'), five: { used: 1, resetsAt: f && f.resetsAt * 1000 > Date.now() ? f.resetsAt : Math.round(Date.now() / 1000) + 900 }, at: new Date().toISOString() }
   }
   return true
 }
