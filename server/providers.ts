@@ -6,6 +6,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
+import { CLAUDE_HOME, link, USER_CLAUDE } from './claudeHome.ts'
 import { join } from 'node:path'
 import { PassThrough, type Readable, type Writable } from 'node:stream'
 import { config, state } from './store.ts'
@@ -166,7 +167,7 @@ function skillPath(name: string): string | undefined {
     }
     return undefined
   }
-  return walk(join(homedir(), '.claude', 'plugins'), 4)
+  return walk(join(CLAUDE_HOME, 'plugins'), 4)
 }
 export function forCodex(prompt: string, instructions?: string): string {
   const [first, ...rest] = prompt.split('\n')
@@ -497,14 +498,13 @@ export async function ollamaState(p: ProviderId = 'llama'): Promise<{ up: boolea
  * plugins, settings, CLAUDE.md) or ~/.codex (its config, skills), so every account works the same. Its login is its own.
  */
 export async function prepareHome(home: string, kind: 'claude' | 'openai') {
-  const { mkdir, symlink, access } = await import('node:fs/promises')
+  const { mkdir } = await import('node:fs/promises')
   await mkdir(home, { recursive: true })
-  const from = join(homedir(), kind === 'claude' ? '.claude' : '.codex')
-  const shared = kind === 'claude' ? ['skills', 'commands', 'agents', 'plugins', 'settings.json', 'CLAUDE.md'] : ['config.toml', 'skills']
-  for (const name of shared) {
-    const there = join(from, name), here = join(home, name)
-    if (await access(there).then(() => true, () => false) && !(await access(here).then(() => true, () => false))) await symlink(there, here).catch(() => {})
-  }
+  if (kind === 'openai') { for (const name of ['config.toml', 'skills']) await link(join(homedir(), '.codex', name), join(home, name)); return }
+  // yours: what you wrote. Concierge's own Claude folder: the settings as adapted for it, and the plugins installed for
+  // this machine. A copy another machine sent in a link's place (links don't travel) is replaced by the link
+  for (const name of ['skills', 'commands', 'agents', 'CLAUDE.md']) await link(join(USER_CLAUDE, name), join(home, name), name === 'CLAUDE.md')
+  for (const name of ['plugins', 'settings.json']) await link(join(CLAUDE_HOME, name), join(home, name), name === 'settings.json')
 }
 
 // --- an OpenAI account's ChatGPT plan windows: Codex writes them into its session files as it works (a 5-hour one

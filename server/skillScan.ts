@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { CLAUDE_HOME } from './claudeHome.ts'
 import { join } from 'node:path'
 import { orgSkills } from './orgSkills.ts'
 
@@ -61,7 +62,7 @@ export function scanSkills(): Promise<Found[]> {
     for (const d of await list(join(home, 'skills'))) if (!d.name.startsWith('.')) out.push(read(join(home, 'skills', d.name, 'SKILL.md'), d.name, (n) => `/${n}`, 'yours', 'skill'))
     for (const d of await list(join(home, 'commands'))) if (d.name.endsWith('.md')) out.push(read(join(home, 'commands', d.name), d.name.slice(0, -3), (n) => `/${n}`, 'yours', 'command'))
     // plugins: cache/<marketplace>/<plugin>/<version>/{skills/*/SKILL.md, commands/*.md}, newest version only
-    const cacheDir = join(home, 'plugins', 'cache')
+    const cacheDir = join(CLAUDE_HOME, 'plugins', 'cache')
     for (const m of await list(cacheDir)) for (const p of await list(join(cacheDir, m.name))) {
       const versions = (await list(join(cacheDir, m.name, p.name))).map((v) => v.name).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       const at = versions.at(-1)

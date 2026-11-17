@@ -48,7 +48,7 @@ open http://127.0.0.1:4747
 
 - **Auth comes from `.env` only.** `GITHUB_TOKEN` (try `gh auth token`) serves Concierge, `gh` and `git push`. `CLAUDE_CODE_OAUTH_TOKEN` comes from `claude setup-token` and uses your subscription; `ANTHROPIC_API_KEY` works instead, billed per token. `LINEAR_API_KEY` is only for Ship.
 - **Your clones are mounted at the same path** (`CODE_DIR`), and `HOME` inside matches yours. Repo paths in `config.json`, `~` paths and the worktrees agents make all line up. Keep every repo you watch under `CODE_DIR`.
-- **It shares your setup.** `~/.config/concierge`, `~/.local/state/concierge` and `~/.claude` (skills, commands, settings) are mounted, so a native install and the container see the same settings, history and skills. Run one or the other, not both: they use the same port.
+- **It reads your setup and keeps its own.** `~/.config/concierge` and `~/.local/state/concierge` are mounted, so a native install and the container see the same settings and history. Your `~/.claude` is mounted for its skills, commands and settings; the agents' Claude Code keeps its own files (the plugins you enabled, its sign-in, connectors and sessions) in `~/.local/state/concierge/claude-home`, per machine, and never writes them into yours. Run one or the other, not both: they use the same port.
 - **Agents run as you** (`HOST_UID`/`HOST_GID`), never root, so files they write in your repos stay yours.
 - **Networking is host mode.** The dashboard and each crit server (every review picks a random port) are reachable from your browser as they are. On Docker Desktop turn it on once: Settings → Resources → Network → *Enable host networking* (4.34 or newer).
 - **Private DNS is opt-in.** Set `DNS_SERVERS` in `.env` (e.g. a VPN's internal DNS) and those nameservers are asked before your machine's, so agents reach private endpoints that public DNS would send to addresses that refuse them.
@@ -56,7 +56,7 @@ open http://127.0.0.1:4747
 
 What doesn't work from a container:
 - *Resume* in Terminal or iTerm, and opening Linear links in the desktop app (both are macOS-only). Copy the resume command from the run instead.
-- Claude Code hooks in `~/.claude/settings.json` that call macOS-only programs. They fail inside the container.
+- Claude Code hooks and the status line in your `~/.claude/settings.json`. They are programs of your machine, so the agents run without them (hooks that come with a plugin still run).
 - Repos outside `CODE_DIR`, and SSH-only setups: remotes are pushed over HTTPS with your token (`git@github.com:` is rewritten).
 
 ## More than one machine

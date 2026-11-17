@@ -10,6 +10,7 @@ import { STATE_DIR } from './paths.ts'
 import { getMe, searchRepos } from './github.ts'
 
 const run = promisify(execFile)
+import { CLAUDE_HOME } from './claudeHome.ts'
 const SKILLS_DIR = join(homedir(), '.claude', 'skills')
 
 export type Check = { ok: boolean; detail: string; fix?: string }
@@ -184,7 +185,7 @@ export const skillExists = async (command: string) => {
 
 /** A plugin skill (`plugin:name`): somewhere under ~/.claude/plugins as skills/<name>/SKILL.md or commands/<name>.md. */
 export async function pluginSkill(name: string): Promise<string | undefined> {
-  const root = join(homedir(), '.claude', 'plugins')
+  const root = join(CLAUDE_HOME, 'plugins')
   // ponytail: a bounded walk; plugins are a few hundred files at most
   const want = [join('skills', name, 'SKILL.md'), join('commands', `${name}.md`)]
   const walk = async (dir: string, depth: number): Promise<string | undefined> => {

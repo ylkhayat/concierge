@@ -45,7 +45,7 @@ import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadS
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
-import { claudeAuth, claudeLoginState, finishClaudeLogin, keepClaudeAuth, startClaudeLogin, stopUsingLogin } from './claudeLogin.ts'
+import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepClaudeAuth, startClaudeLogin, stopUsingLogin } from './claudeLogin.ts'
 import { rereadSecrets, saveSecrets, scrub } from './scrub.ts'
 import { vpns } from './vpn.ts'
 import { applyConnectors, addCustom, customName, removeCustom, connect, connectSentry, connections, recheck, finishLogin, loginState, reconnect, removeFix, startLogin, accountConnections } from './connections.ts'
@@ -71,6 +71,7 @@ import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missi
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
+import { claudeHomeReady } from './claudeHome.ts'
 
 export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean }
@@ -1184,6 +1185,8 @@ app.post('/claude-auth/login', async (c) => { try { return c.json({ url: await s
 app.post('/claude-auth/finish', async (c) => { const { input } = await c.req.json<{ input?: string }>(); try { finishClaudeLogin(String(input ?? '')); return c.json({ ok: true }) } catch (e) { return c.json({ error: (e as Error).message }, 400) } })
 app.post('/claude-auth/token', (c) => { stopUsingLogin(); return c.json({ ok: true }) })
 keepClaudeAuth()
+// every account's folder has its links on this machine too (they are made where the account was added, and don't travel)
+for (const a of accounts()) if (a.home && (a.kind === 'claude' || a.kind === 'openai')) void prepareHome(a.home, a.kind).catch((e) => console.warn(`accounts: ${a.label}: ${(e as Error).message}`))
 // the organization's skills: mirrored for every machine, offered to every run (orgSkills.ts)
 const syncSkills = () => fleet.elsewhere() ? Promise.resolve() : syncOrgSkills().catch((e) => console.warn('org skills:', (e as Error).message))
 void syncSkills()
@@ -1346,7 +1349,9 @@ app.get('/connections/login/:name', async (c) => {
   const st = loginState(loginOf(c.req.param('name')))
   return c.json({ ...st, list: st?.done ? (await recheck(loginOf(c.req.param('name')))).map(({ target: _, ...x }) => x) : undefined })
 })
-reconnect()
+// this machine's own sign-in decides which connectors it adds (the saved choice may be another machine's), and the
+// plugins are in place first: both write Claude Code's config
+void Promise.all([checkClaudeAuth(), claudeHomeReady()]).then(() => reconnect())
 app.get('/worktrees', async (c) => c.json(await worktrees(c.req.query('fresh') === '1')))
 app.post('/worktrees/clean', async (c) => c.json(await cleanWorktrees()))
 app.post('/worktrees/auto', async (c) => { const { on } = await c.req.json<{ on?: boolean }>(); state.autoClean = !!on; save(); return c.json({ on: state.autoClean, last: state.lastClean }) })

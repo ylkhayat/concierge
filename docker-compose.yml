@@ -17,6 +17,9 @@ services:
       # paths in config.json work; with two machines both set the same DECK_HOME/DECK_CODE, so state, sessions
       # and worktree paths are identical on each and sync as they are
       HOME: ${DECK_HOME:-${HOME}}
+      # the agents' Claude Code keeps its own folder (plugins, sign-in, connectors, sessions) in Concierge's state, per
+      # machine: it reads your ~/.claude (skills, commands, settings) and never writes its own files into it (claudeHome.ts)
+      CLAUDE_CONFIG_DIR: ${DECK_HOME:-${HOME}}/.local/state/${CONCIERGE_DIRNAME:-concierge}/claude-home
       GH_TOKEN: ${GITHUB_TOKEN:-}       # the gh CLI reads GH_TOKEN; Concierge itself reads GITHUB_TOKEN
       # the Azure sign-in in the config folder, which every machine syncs: one az login (Settings) for all of them
       AZURE_CONFIG_DIR: ${DECK_HOME:-${HOME}}/.config/${CONCIERGE_DIRNAME:-concierge}/azure
@@ -41,7 +44,8 @@ services:
       # inside its state, so a redeploy, a Docker restart or a hand-over to the other machine doesn't lose a review mid-way
       - ${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/review-pr:${DECK_HOME:-${HOME}}/.local/state/review-pr
       - ${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/revise:${DECK_HOME:-${HOME}}/.local/state/revise
-      # your Claude Code skills, commands and settings
+      # your Claude Code skills, commands and settings: read by the agents, and changed only by what you do on the
+      # Skills page (install, remove). Claude Code's own files go to CLAUDE_CONFIG_DIR above, not here
       - ${HOME}/.claude:${DECK_HOME:-${HOME}}/.claude
       # OpenAI's Codex: its sign-in and sessions, for agents run on OpenAI (Settings → Agents)
       - ${HOME}/.codex:${DECK_HOME:-${HOME}}/.codex

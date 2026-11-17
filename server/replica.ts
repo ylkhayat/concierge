@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, lstat, mkdir, open, readdir, readFile, rename, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { CLAUDE_HOME, sessionDir } from './claudeHome.ts'
 import { fleet } from './fleet.ts'
 import { token } from './machines.ts'
 import { CONFIG_DIR, STATE_DIR } from './paths.ts'
@@ -73,12 +74,15 @@ const ROOTS: Root[] = [
   { id: 'config', dir: CONFIG_DIR, walk: [''] },
   // Claude files a session under its working directory with every other character a dash: Concierge's agents all work
   // under the clones folder, the same path on every machine. Your own sessions elsewhere stay where they are
-  { id: 'claude', dir: join(homedir(), '.claude'), walk: ['settings.json', ...(CODE ? [`projects/${CODE.replace(/\/$/, '').replace(/[^A-Za-z0-9]/g, '-')}`] : [])] },
+  // Only those sessions travel. Your Claude settings never do: they are yours, and each machine's own
+  { id: 'claude', dir: CLAUDE_HOME, walk: CODE ? [`projects/${sessionDir(CODE)}`] : [] },
 ]
 // never: checkouts and what they rebuild, scratch, conflict copies, and the sign-ins (each machine signs in itself)
 const SKIP_DIR = new Set(['node_modules', '.venv', 'venv', '.pnpm-store', 'uv-cache', '__pycache__', '.git', '.nx', '.turbo', '.next', 'coverage', 'worktrees'])
+// in an account's folder: what is a link on each machine (to your files and to this machine's plugins), never a copy from another
+const LINKED = /^accounts\/[^/]+\/(claude|codex)\/(settings\.json|CLAUDE\.md|config\.toml|skills|commands|agents|plugins)(\/|$)/
 const LOGINS = [/^accounts\/[^/]+\/claude\/\.credentials\.json$/, /^accounts\/[^/]+\/codex\/auth\.json$/]
-const skipFile = (root: string, rel: string) => /\.tmp$|\.sync-conflict-|\.bak-|(^|\/)\.st(folder|ignore|versions)/.test(rel) || (root === 'config' && LOGINS.some((r) => r.test(rel)))
+const skipFile = (root: string, rel: string) => /\.tmp$|\.sync-conflict-|\.bak-|(^|\/)\.st(folder|ignore|versions)/.test(rel) || (root === 'config' && (LOGINS.some((r) => r.test(rel)) || LINKED.test(rel)))
 const MAX = 512 * 1024 * 1024 // a file bigger than this is someone's mistake, not state
 
 type Entry = { size: number; mtimeMs: number; v: number }

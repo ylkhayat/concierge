@@ -18,6 +18,7 @@ import { planNote } from './router.ts'
 import { missingOn } from './connections.ts'
 import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
+import { CLAUDE_HOME, claudeHomeReady } from './claudeHome.ts'
 import { accountOf, accounts, available, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
@@ -325,7 +326,7 @@ const moving = new Map<string, ProviderId>() // stopped to move: where to
 // a file that can be carried to another such account. Codex and Copilot take the prompt once, as an argument
 const isClaudeCode = (p: ProviderId) => kindOf(p) === 'claude' || kindOf(p) === 'llama'
 const rank = (p: ProviderId, work: Work) => { const order = [config.providers?.use?.[work] ?? 'claude', ...(config.providers?.fallback ?? [])]; const i = order.indexOf(p); return i < 0 ? order.length : i }
-const folderOf = (p: ProviderId) => accountOf(p).home ?? join(homedir(), '.claude')
+const folderOf = (p: ProviderId) => accountOf(p).home ?? CLAUDE_HOME
 /** Copy a Claude Code conversation into another account's folder (its projects/<dir>/<id>.jsonl), so it resumes there. */
 async function carry(session: string, from: ProviderId, to: ProviderId): Promise<boolean> {
   if (folderOf(from) === folderOf(to)) return true
@@ -513,7 +514,11 @@ export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: str
   return { why: waitReason() ?? 'it starts in a moment' }
 }
 
+// the agents' Claude folder is still being set up (the first start after it became Concierge's own): runs wait for it
+let homeReady = false
+void claudeHomeReady().then(() => { homeReady = true; pump() })
 export function pump() {
+  if (!homeReady) return
   // another machine runs it now (fleet.ts), and this one stops shortly
   if (fleet.elsewhere()) return bus.emit('health')
   if (overBudget()) return bus.emit('health') // queued jobs wait for tomorrow or a higher cap
