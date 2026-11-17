@@ -40,3 +40,12 @@ test('a plan served past its window on extra usage can take work; a refusal ends
   const refused = windowsOf({ status: 'rejected', rateLimitType: 'seven_day', isUsingOverage: true, resetsAt: 1792717200 }, paid, now)
   assert.equal(spentWindow(refused, now)?.which, '7-day')
 })
+
+test("Claude's refusals for a limit are recognised, the monthly spend one too; an answer that only mentions a limit is not a refusal", async () => {
+  const { refusedForLimit } = await import('./usage.ts')
+  const spend = "You've hit your monthly spend limit. Switch to another model, or manage usage credits at https://claude.ai/settings/usage?from=cc_cli_limit_message, to continue."
+  assert.ok(limitHit(spend) && refusedForLimit(spend))
+  assert.ok(refusedForLimit("You've hit your limit · resets 5pm"))
+  assert.equal(refusedForLimit('Reviewed the PR: the retry loop can hit your limit of 3 attempts. ' + 'Details follow. '.repeat(60)), false) // a real answer, long
+  assert.equal(refusedForLimit('All fixes are committed and the replies drafted.'), false)
+})

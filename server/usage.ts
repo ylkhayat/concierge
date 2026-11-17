@@ -32,7 +32,12 @@ export function spentWindow(u: Usage | undefined, now = Date.now(), stopAt = STO
 }
 
 /** A run's error that is Claude refusing for the plan's limit ("Claude AI usage limit reached", "You've hit your limit"). */
-export const limitHit = (text?: string) => !!text && /usage limit reached|hit your (session |weekly |usage )?limit|out of extra usage/i.test(text)
+export const limitHit = (text?: string) => !!text && /usage limit reached|hit your (session |weekly |usage |monthly |spend |monthly spend )?limit|out of extra usage|spend limit/i.test(text)
+/**
+ * A run's whole answer is Claude's refusal: it comes back as an ordinary result, not an error, so read as an answer it
+ * became the agent's "final words" (and its "next steps": switch model, manage credits). Short, and saying a limit was hit.
+ */
+export const refusedForLimit = (text?: string) => !!text && text.trim().length < 500 && limitHit(text)
 
 /** "the 5-hour window is 96% used; it resets at 17:30" */
 export function spentText(s: NonNullable<ReturnType<typeof spentWindow>>, now = Date.now()) {

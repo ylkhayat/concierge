@@ -27,7 +27,7 @@ import { scrub } from './scrub.ts'
 import { busyUnder, newRun, watch as watchBackground } from './background.ts'
 import { draining, machines, place, slotsHere, token } from './machines.ts'
 import { remoteAgent } from './worker.ts'
-import { STOP_AT, limitHit, spentText, spentWindow, windowsOf } from './usage.ts'
+import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
 import { keptMethod } from './method.ts'
 import { DECIDE_NOTE, fromAgent, hashOf, proseOf, type NextSteps } from './next.ts'
@@ -406,13 +406,19 @@ export function probePlan(p: ProviderId): Promise<void> {
       child.on('error', () => { clearTimeout(timer); done() })
       child.on('close', () => {
         clearTimeout(timer)
-        for (const l of out.split('\n')) { try { const m = JSON.parse(l); if (m.type === 'rate_limit_event') sawLimit(m.rate_limit_info, p) } catch (e) { if (!(e instanceof SyntaxError)) console.warn("accounts: plan check:", (e as Error).message) } }
+        for (const l of out.split('\n')) { try { const m = JSON.parse(l); if (m.type === 'rate_limit_event') sawLimit(m.rate_limit_info, p); if (m.type === 'result') answered(p, m) } catch (e) { if (!(e instanceof SyntaxError)) console.warn("accounts: plan check:", (e as Error).message) } }
         done()
       })
     } catch { clearTimeout(timer); done() }
   })
 }
-setInterval(() => { if (!fleet.elsewhere()) for (const a of accounts()) if (a.kind === 'claude' && planSpent(a.id)) void probePlan(a.id) }, 5 * 60_000).unref()
+/** The probe's own answer: a real one lifts a limit the account was held for; a refusal keeps (or starts) it. */
+function answered(p: ProviderId, m: { is_error?: boolean; result?: unknown }) {
+  const text = String(m.result ?? ''), refused = limitHit(text) && (m.is_error || refusedForLimit(text))
+  if (refused) { if (!planSpent(p) && !limitedUntil(p)) { markLimited(p, Date.now() + 60 * 60_000); bus.emit('health') } return }
+  if (!m.is_error && text.trim() && limitedUntil(p)) { markLimited(p, 0); console.log(`accounts: ${accountOf(p).label} answers again: its limit is lifted`); reroute() }
+}
+setInterval(() => { if (!fleet.elsewhere()) for (const a of accounts()) if (a.kind === 'claude' && (planSpent(a.id) || limitedUntil(a.id))) void probePlan(a.id) }, 5 * 60_000).unref()
 /** An agent reported the plan's windows: keep them, and stop the agents once one is nearly used up. */
 function sawLimit(info: any, p: ProviderId = 'claude') {
   if (kindOf(p) !== 'claude') return
@@ -443,11 +449,13 @@ export function reroute() {
 function pausedBy(wasPaused: boolean, e: Ended, error?: string, provider: ProviderId = 'claude') {
   if (wasPaused && !e.resulted) return true
   if (!limitHit(error)) return false
-  if (provider !== 'claude') return true // its limit is marked where the run said so (runAgent): it waits for that one
-  // refused with no report saying so: count the session window as used up, so the queue doesn't start it again at once
-  if (!planSpent('claude')) {
-    const f = usageOf('claude')?.five
-    state.usage = { ...usageOf('claude'), overage: false, who: identityOf('claude'), five: { used: 1, resetsAt: f && f.resetsAt * 1000 > Date.now() ? f.resetsAt : Math.round(Date.now() / 1000) + 900 }, at: new Date().toISOString() }
+  // refused, and no plan window says why (a monthly spend limit, extra usage run out, a window not reported yet): the
+  // account is at its limit for the next hour, so nothing is started on it again at once. It is asked every few
+  // minutes meanwhile (probePlan), so a limit you lift is noticed without waiting the hour out
+  if (kindOf(provider) === 'claude' && !planSpent(provider) && !limitedUntil(provider)) {
+    markLimited(provider, Date.now() + 60 * 60_000)
+    console.log(`accounts: ${accountOf(provider).label} refused for its limit (${(error ?? '').slice(0, 80)}): held for an hour, asked again every few minutes`)
+    bus.emit('health')
   }
   return true
 }
@@ -980,8 +988,8 @@ function start(pr: Pr) {
       job.tokens = tokensOf(r)
       job.denials = (r.permission_denials ?? []).map((d: any) => d.tool_name)
       job.refused = refusalsOf(r)
-      if (r.is_error) job.error = short(r.result ?? r.subtype, 400)
-      if (String(r.result ?? '').trim()) {
+      if (r.is_error || refusedForLimit(String(r.result ?? ''))) job.error = short(r.result ?? r.subtype, 400)
+      if (String(r.result ?? '').trim() && !refusedForLimit(String(r.result))) { // a refusal is not the agent's answer: nothing to read next steps from
         ({ summary: job.summary, next: job.next } = finalWords(String(r.result)))
         // kept on the PR too: the job's slot is taken by the next run (a reply, a re-run), whatever that one ends as
         if (job.summary) pr.lastSaid = { summary: job.summary, at: new Date().toISOString(), kind: job.kind }
@@ -1280,9 +1288,9 @@ function startExec(run: ExecRun, on?: string) {
       remember(run.ids, run.sessionId, total, run.provider)
       run.denials = (m.permission_denials ?? []).map((d: any) => d.tool_name)
       run.refused = refusalsOf(m)
-      if (m.is_error) run.error = short(m.result ?? m.subtype, 400)
       const text = String(m.result ?? '').trim()
-      if (text) { ({ summary: run.summary, next: run.next } = finalWords(text)); read(text) }
+      if (m.is_error || refusedForLimit(text)) run.error = short(m.result ?? m.subtype, 400)
+      if (text && !refusedForLimit(text)) { ({ summary: run.summary, next: run.next } = finalWords(text)); read(text) }
     },
     onEnd: (e) => {
       turns = e.turns

@@ -16,7 +16,7 @@ export type Entity = 'job' | 'exec' | 'explain' | 'base' | 'op' // op: a tool ru
 const LEGAL: Record<RunState, RunState[]> = {
   queued: ['running', 'cancelled', 'interrupted'],
   running: ['done', 'failed', 'cancelled', 'interrupted', 'queued'],
-  done: ['queued'],
+  done: ['queued', 'failed'], // failed: found afterwards to have ended on a refusal, not an answer
   failed: ['queued'],
   cancelled: ['queued'],
   interrupted: ['queued', 'cancelled'],

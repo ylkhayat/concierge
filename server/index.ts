@@ -71,6 +71,8 @@ import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missi
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
+import { refusedForLimit } from './usage.ts'
+import { transition } from './lifecycle.ts'
 import { cachedStackCheck, checkingStack, checkStack } from './stackCheck.ts'
 import { agentHomesReady } from './agentHome.ts'
 
@@ -2378,6 +2380,19 @@ function dropClosed() {
 dropClosed()
 // only the machine that runs it: a follower's copy of the state is the holder's to act on
 if (!fleet.elsewhere()) followUnfollowed()
+// runs whose whole "answer" was Claude's refusal for a limit (read as an answer before that was recognised): they
+// failed, and their "next steps" (switch model, manage credits) were never the agent's. Failed ones can be run again
+if (!fleet.elsewhere()) {
+  let n = 0
+  for (const p of Object.values(state.prs)) if (p.job?.state === 'done' && refusedForLimit(p.job.summary)) {
+    transition('job', p.id, p.job.queuedAt, p.job, 'failed', 'refused for a limit', { error: p.job.summary!.trim().slice(0, 400), summary: undefined, next: undefined }, { kind: p.job.kind }); n++
+    if (refusedForLimit(p.lastSaid?.summary)) delete p.lastSaid
+  }
+  for (const r of Object.values(state.execs)) if (r.state === 'done' && refusedForLimit(r.summary)) {
+    transition('exec', r.ids.join(' → '), r.id, r, 'failed', 'refused for a limit', { error: r.summary!.trim().slice(0, 400), summary: undefined, next: undefined }, { kind: r.label ?? 'exec' }); n++
+  }
+  if (n) { console.log(`runs: ${n} that only got a limit refusal are marked failed (they can be run again)`); save() }
+}
 pump() // whatever waited in the queue before the restart starts now
 
 // Linear has its own clock, so a slow GitHub sync never holds up the ticket board
