@@ -2,7 +2,7 @@
 // one answer, the actions that make sense for the whole stack, and the tickets it carries. Nothing is stored for a
 // stack: every number here is rolled up from its PRs as they are now, so unstacking or restacking just changes what the
 // page shows. A single PR is a stack of one. Each PR keeps its own conversation, one click away.
-import { ArrowRight, CircleCheck, GitCompareArrows, Layers, LoaderCircle, Play, TriangleAlert } from 'lucide-react'
+import { ArrowRight, CircleCheck, GitCompareArrows, Layers, LoaderCircle, Play, Send, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { askLine } from '../../server/reply.ts'
 import type { StackCheck } from '../../server/stackCheck.ts'
@@ -13,7 +13,7 @@ import { StatusBadge } from '../components/StatusBadge.tsx'
 import { plain } from '../components/StackNav.tsx'
 import type { StackView } from '../desk.ts'
 import { useStackNext } from './StackNext.tsx'
-import { Pill, ThreadHeader, ThreadLayout, type Tone } from '../ui/Thread.tsx'
+import { Composer, Pill, ThreadHeader, ThreadLayout, type Tone } from '../ui/Thread.tsx'
 
 // what its agent asks you, once it has finished
 const askOf = (p: PrView) => (p.job && p.job.state !== 'running' && p.job.state !== 'queued' ? askLine(p.job.next) : undefined)
@@ -40,11 +40,33 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
   const enc = encodeURIComponent, anchor = members[0]
   type Action = { id: string; label: string; hint: string; confirm?: string; missing: string[]; counts: { stack?: number } }
   const actions = useApi<Action[]>(anchor ? `/prs/${enc(anchor.id)}/actions?v=${members.map((p) => `${p.status}${p.headSha.slice(0, 5)}`).join('')}` : undefined, { placeholderData: (prev) => prev })
-  const offered = (actions.data ?? []).filter((a) => (a.counts.stack ?? 0) > 0 && !a.missing.length && !['cancel', 'crit-stop', 'explain', 'rerun'].includes(a.id))
+  const offered = (actions.data ?? []).filter((a) => (a.counts.stack ?? 0) > 0 && !a.missing.length && // only the ones whose count is exact: whether a check failed isn't known here, and the terminal one needs your own machine
+    !['cancel', 'crit-stop', 'explain', 'rerun', 'rerun-ci', 'fix-ci', 'review-stack'].includes(a.id))
   const { armed, arm } = useArm()
   const act = (a: Action) => { const go = () => api(`/prs/${enc(anchor.id)}/actions`, { action: a.id, scope: 'stack' }).then((r: { label: string; count: number }) => toast(`${r.label}: ${r.count} PR${r.count === 1 ? '' : 's'}`), (e: Error) => toast(e.message, 'error')); return a.confirm ? arm(a.id, go) : go() }
   const add = members.reduce((n, p) => n + p.additions, 0), del = members.reduce((n, p) => n + p.deletions, 0)
   const [tab, setTab] = useState<'check' | 'tickets'>('check')
+  // the stack's own chat: one message, sent to each PR's agent in its own conversation (each told it is one of several).
+  // What was said and what came back is read from the PRs themselves, so there is nothing to keep for the stack
+  const [words, setWords] = useState('')
+  const [skip, setSkip] = useState<string[]>([]) // the PRs left out of the next message
+  const [sending, setSending] = useState(false)
+  const [justSent, setJustSent] = useState<{ words: string; at: string; n: number }[]>([]) // shown at once; an agent at work only shows it as its own once it gets to it
+  const to = members.filter((p) => !skip.includes(p.id))
+  const say = () => {
+    if (!words.trim() || !to.length || sending) return
+    setSending(true)
+    api('/stacks/say', { ids: to.map((p) => p.id), text: words }).then((r: { sent: { number: number }[] }) => { toast(`Sent to ${r.sent.length === 1 ? `#${r.sent[0].number}` : `${r.sent.length} agents`}`); setJustSent((x) => [...x, { words: words.trim(), at: new Date().toISOString(), n: r.sent.length }]); setWords('') }, (e: Error) => toast(e.message, 'error')).finally(() => setSending(false))
+  }
+  const MARK = '\n\n(To the whole stack'
+  const talks = new Map<string, { words: string; at: string; to: PrView[] }>()
+  for (const p of members) {
+    const said = p.job?.said
+    if (!said?.includes(MARK)) continue
+    const w = said.slice(0, said.indexOf(MARK)), t = talks.get(w) ?? { words: w, at: p.job!.queuedAt, to: [] }
+    talks.set(w, { ...t, at: t.at < p.job!.queuedAt ? t.at : p.job!.queuedAt, to: [...t.to, p] })
+  }
+  const chat = [...talks.values()].sort((a, b) => a.at.localeCompare(b.at))
   const fact = (n: number, label: string, tone: Tone) => <Pill tone={n ? tone : 'quiet'}><span className="mr-1 font-semibold tabular-nums">{n}</span>{label}</Pill>
   const cell = 'whitespace-nowrap px-2 py-1.5 text-right tabular-nums'
 
@@ -79,6 +101,23 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
             <span className="inline-flex shrink-0 items-center gap-1 font-medium text-accent-text">Open<ArrowRight className="size-3.5" /></span>
           </button>
         ) : undefined}
+      composer={members.length > 0 && (
+        <Composer>
+          <div className="flex flex-wrap items-center gap-1 pb-1.5 text-meta text-fg-3">
+            <span className="mr-0.5">To</span>
+            {members.map((p) => { const on = !skip.includes(p.id); return (
+              <button key={p.id} role="checkbox" aria-checked={on} onClick={() => setSkip(on ? [...skip, p.id] : skip.filter((x) => x !== p.id))} title={`${on ? 'Leave out' : 'Include'} #${p.number}: ${p.title}`}
+                      className={`rounded-full px-1.5 font-mono text-micro transition-colors ${on ? 'bg-accent-soft text-accent-text' : 'bg-fill text-fg-4 line-through'}`}>#{p.number}</button>
+            ) })}
+          </div>
+          <div className="flex items-end gap-2">
+            <textarea value={words} onChange={(e) => setWords(e.target.value)} rows={2} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); say() } }}
+                      placeholder={`Tell the whole stack: each of the ${to.length} agents does its PR's part…`} aria-label="A message to the whole stack"
+                      className="max-h-40 min-h-[52px] flex-1 resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/50" />
+            <button onClick={say} disabled={!words.trim() || !to.length || sending} className="inline-flex items-center gap-1.5 btn-primary" title="Send (⌘↵)">{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}Send</button>
+          </div>
+        </Composer>
+      )}
       tabs={[{ id: 'check' as const, label: 'Agreement', rail: true }, { id: 'tickets' as const, label: 'Tickets', badge: tickets.length ? <span className="ml-1.5 rounded-full bg-fill px-1.5 text-micro font-semibold tabular-nums text-fg-2">{tickets.length}</span> : undefined, rail: true }]}
       pane={tab === 'tickets'
         ? (tickets.length ? <ul className="divide-y divide-line">{tickets.map((t) => <TicketRow key={t.id} t={t} onOpen={() => onTicket(t.id)} />)}</ul> : <p className="p-4 text-small text-fg-3">No ticket of yours is linked to these pull requests.</p>)
@@ -111,6 +150,28 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
           })}
         </tbody>
       </table>
+      {/* the stack's conversation: what you told all of it, and where each agent is with that */}
+      {chat.map((m) => (
+        <div key={m.at + m.words} className="border-t border-line px-4 py-3 text-small">
+          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-accent-soft/70 px-3 py-1.5 text-fg-1">{m.words}</p>
+          <ul className="mt-2 space-y-1">
+            {m.to.map((p) => { const j = p.job!, going = j.state === 'running' || j.state === 'queued'; return (
+              <li key={p.id}>
+                <button onClick={() => onSelect(p.id)} className="flex w-full items-baseline gap-2 rounded-ctl px-1.5 py-0.5 text-left transition-colors hover:bg-hover">
+                  <span className="shrink-0 font-mono text-meta text-fg-3">#{p.number}</span>
+                  <span className={`min-w-0 flex-1 truncate ${going ? 'text-run-text' : j.state === 'done' ? 'text-fg-2' : 'text-fail-text'}`}>{j.state === 'queued' ? 'Queued' : j.state === 'running' ? 'Working on it…' : j.state === 'done' ? (j.summary ?? 'Done').replace(/\s+/g, ' ').slice(0, 220) : `${j.state}${j.error ? `: ${j.error}` : ''}`}</span>
+                </button>
+              </li>
+            ) })}
+          </ul>
+        </div>
+      ))}
+      {justSent.filter((m) => !talks.has(m.words)).map((m) => (
+        <div key={m.at} className="border-t border-line px-4 py-3 text-small">
+          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-accent-soft/70 px-3 py-1.5 text-fg-1">{m.words}</p>
+          <p className="mt-1 text-right text-meta text-fg-3">Delivered to {m.n} agent{m.n === 1 ? '' : 's'}: each reads it between its steps, or the moment it starts</p>
+        </div>
+      ))}
     </ThreadLayout>
   )
 }

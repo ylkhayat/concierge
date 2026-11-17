@@ -2136,6 +2136,18 @@ bus.on('exec-started', (run: ExecRun) => sayHeld(run, `exec:${run.id}`, continue
 const handedNote = (p: Pr) => p.handoffs?.length
   ? `\n\n(Already handed over, so don't suggest these again: ${p.handoffs.slice(-8).map((h) => `#${h.to}: ${h.text}`).join('; ')})` : ''
 /** Your words to a PR's agent: they start a run, reach the running one between steps, or replace a queued start. */
+// one message to a whole stack: each PR's agent gets it in its own conversation, told that it is one of several
+export const STACK_MARK = '\n\n(To the whole stack'
+app.post('/stacks/say', async (c) => {
+  const { ids, text } = await c.req.json() as { ids?: unknown; text?: unknown }
+  const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
+  if (!msg) return c.json({ error: 'Write what the stack should do' }, 400)
+  const ps = (Array.isArray(ids) ? ids : []).map((id) => (typeof id === 'string' ? pr(id) : undefined)).filter((p): p is Pr => !!p && !p.closed && !!config.repos[p.repo])
+  if (!ps.length) return c.json({ error: 'None of these pull requests can take a message here (unknown, closed, or no local checkout)' }, 400)
+  const chain = ps.map((p) => `#${p.number}`).join(' → ')
+  const sent = ps.map((p) => ({ number: p.number, how: sendReply(p, `${msg}${STACK_MARK}, bottom first: ${chain}. You work on #${p.number}. Do the part of this that belongs to #${p.number}; when none of it does, say so in one line and change nothing. The agents on the other pull requests got the same message, each for its own.)`) }))
+  return c.json({ sent })
+})
 function sendReply(p: Pr, msg: string): string | undefined {
   // no run has worked on it yet: your words start one
   if (!p.job?.sessionId) {
