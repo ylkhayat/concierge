@@ -71,6 +71,7 @@ import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missi
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
+import { cachedStackCheck, checkingStack, checkStack } from './stackCheck.ts'
 import { agentHomesReady } from './agentHome.ts'
 
 export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
@@ -1947,6 +1948,20 @@ app.post('/prs/:id/stack-tour', async (c) => {
     addSpend(t.costUsd, t.provider, t.tokens); save(); bus.emit('health')
     return c.json({ tour: t })
   }, (e: Error) => c.json({ error: e.message }, 502))
+})
+// across a stack: where its PRs disagree with each other (stackCheck.ts). A PR in no stack has nothing to compare
+app.get('/prs/:id/stack-check', async (c) => {
+  const p = pr(c.req.param('id'))
+  if (!p?.stack) return c.json({ check: null, checking: false })
+  return c.json({ check: (await cachedStackCheck(p.stack)) ?? null, checking: checkingStack(p.stack) })
+})
+app.post('/prs/:id/stack-check', async (c) => {
+  const p = pr(c.req.param('id'))
+  if (!p?.stack) return c.json({ error: 'not in a stack' }, 404)
+  return checkStack(p.stack).then((t) => {
+    addSpend(t.costUsd, t.provider, t.tokens); save(); bus.emit('health')
+    return c.json({ check: { ...t, stale: false } })
+  }, (e: Error) => c.json({ error: e.message }, 400))
 })
 app.get('/prs/:id/diff', async (c) => {
   const p = pr(c.req.param('id'))

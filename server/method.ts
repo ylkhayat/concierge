@@ -12,6 +12,7 @@ export const FEATURES = {
   explainCodebase: { skill: 'explain-codebase', label: 'Map a codebase', hint: 'One entry per folder of the default branch' },
   explainDomain: { skill: 'explain-domain', label: 'Business lens', hint: 'A change in the language of the business' },
   stackTour: { skill: 'stack-tour', label: 'Stack tour', hint: 'How a stack of PRs fits together' },
+  stackCheck: { skill: 'check-stack', label: 'Stack check', hint: 'Whether the PRs of a stack agree with each other' },
   turns: { skill: 'pr-turns', label: 'PR turns', hint: 'How a PR changed direction with a push' },
   intent: { skill: 'settle-intent', label: 'Intent', hint: 'Settling what AI-built work is meant to do' },
   understanding: { skill: 'check-understanding', label: 'Understanding', hint: 'Making sure you understand a change' },
