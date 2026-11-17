@@ -54,6 +54,7 @@ export type Job = {
   pausedAt?: string // stopped near the end of the plan's window: it continues its session once the window resets
   after?: string // a planned review: it starts once this PR's (the one below it in its stack) has finished
   alerted?: boolean // stopped by restart after restart, and you were told
+  unfollowed?: boolean // marked done while the server was stopping: what follows a finish is still owed (runner.ts followUnfollowed)
   state: JobState
   headSha: string
   queuedAt: string
@@ -143,6 +144,7 @@ export type ExecRun = {
   pausedAt?: string // stopped near the end of the plan's window: it continues its session once the window resets
   after?: string // a planned review: it starts once this PR's (the one below it in its stack) has finished
   alerted?: boolean // stopped by restart after restart, and you were told
+  unfollowed?: boolean // marked done while the server was stopping: what follows a finish is still owed (runner.ts followUnfollowed)
   next?: import('./next.ts').NextSteps
 }
 
@@ -186,6 +188,7 @@ export type Pr = {
   explainAfterBase?: boolean // explain once the repo's codebase map finishes
   behindBase?: boolean // stacked on another PR whose branch moved past this one (it was pushed or rebased): needs a smart rebase
   stack?: StackRef[] // its line through the open PRs it is stacked with, bottom (on the default branch) to top: what is below it, itself, and up along the oldest PR built on each; absent when alone. PRs built on the same one have different lines with the same bottom
+  lastSaid?: { summary: string; at: string; kind: string } // the last thing an agent said when a run on it ended: outlives the job slot, which the next run takes
   below?: number // the PR it is built on: the one relation everything about stacks follows from (a tree, since several can sit on one)
   ghStack?: { number: number; position: number; size: number } | null // the stack GitHub lists it in (yours only): null when none, absent until read
   unlinked?: boolean // built on another PR, but GitHub doesn't list it in that stack, and linking it is not clear-cut

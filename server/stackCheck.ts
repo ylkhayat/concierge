@@ -37,7 +37,8 @@ const schema = {
 
 /** What there is to read on one PR: what it is for, what its agent last said, and what that leaves open. */
 export function partOf(s: StackRef, i: number, p: Pr | undefined, about?: { headline: string; what: string }) {
-  const said = p?.job && p.job.state !== 'running' && p.job.state !== 'queued' ? p.job.summary?.trim() : undefined
+  // what its agent last said when a run ended (kept on the PR: the job's own slot may hold a newer run that said nothing)
+  const said = (p?.job && p.job.state !== 'running' && p.job.state !== 'queued' ? p.job.summary?.trim() : undefined) || p?.lastSaid?.summary.trim()
   const open = p?.job?.next?.steps?.map((x) => `- ${x.text}`).join('\n')
   const text = [`## ${i + 1}. #${s.number} "${s.title}" (into ${s.base})`,
     about ? `What it is for: ${about.headline}. ${about.what}` : '',

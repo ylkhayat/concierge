@@ -26,6 +26,8 @@ test('your PR: one state per situation, first rule wins', () => {
     ['a push that sent nothing', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('publish') }, 'needs-fix:fix'],
     ['fix round done', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('reply') }, 'fixed:publish'],
     ['finished in crit', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('revise'), crit: { live: true, finishes: 1, known: true } }, 'fixed:publish'],
+    // a reply you cancelled fixed nothing: it must not read as fixes committed and ready to publish
+    ['a reply that was cancelled', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('reply', { state: 'cancelled' }) }, 'needs-fix:fix'],
     // #4317: the agent pushed and replied (head moved), GitHub now shows nothing waiting on you
     ['pushed and replied, approved', { reviewDecision: 'APPROVED', headSha: 'h2', job: job('reply') }, 'ready-to-merge:merge'],
     ['a smart rebase is running', { op: { label: 'Smart rebase', state: 'running' } }, 'tool-running:-'],

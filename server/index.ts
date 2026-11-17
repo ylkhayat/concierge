@@ -40,7 +40,7 @@ import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
+import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
@@ -2139,7 +2139,8 @@ function sayHeld(holder: { heldWords?: string[] }, key: string, then: (t: string
   if (!words?.length) return
   delete holder.heldWords; save()
   // the started signal comes just before its agent does: give it a moment to be there to tell
-  setTimeout(() => { for (const w of words) tell(key, w, then, true) }, 1500)
+  // its agent already gone by then (it failed at once, or was requeued): the words go the way a reply does, not nowhere
+  setTimeout(() => { for (const w of words) if (tell(key, w, then, true) === 'idle') then(w) }, 1500)
 }
 bus.on('started', (id: string, job: Job) => { const p = state.prs[id]; if (p) sayHeld(job, id, (t) => enqueue(p, 'reply', t + REPLY_NOTE, t)) })
 bus.on('exec-started', (run: ExecRun) => sayHeld(run, `exec:${run.id}`, continueExec(run)))
@@ -2375,6 +2376,8 @@ function dropClosed() {
   }
 }
 dropClosed()
+// only the machine that runs it: a follower's copy of the state is the holder's to act on
+if (!fleet.elsewhere()) followUnfollowed()
 pump() // whatever waited in the queue before the restart starts now
 
 // Linear has its own clock, so a slow GitHub sync never holds up the ticket board

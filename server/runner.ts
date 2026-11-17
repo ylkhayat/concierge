@@ -283,6 +283,8 @@ const sameProvider = (s: { provider?: ProviderId } | undefined, p: ProviderId) =
 const GONE = /No conversation found|session .* not found/i
 
 export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?: string, after?: string) {
+  // your words for a PR whose run is back in the queue (it was requeued just as they were due): kept with it, never dropped
+  if (pr.job?.state === 'queued' && kind === 'reply' && said) { (pr.job.heldWords ??= []).push(said); save(); return }
   if (children.has(pr.id) || pr.job?.state === 'queued') return
   const now = new Date().toISOString()
   const prev = pr.job
@@ -291,15 +293,19 @@ export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?
   const own = sessionOf(pr.id), mine = sameProvider(own, provider) ? own : undefined
   pr.job = !isFollowUp(kind)
     // a fresh review/revise still continues the PR's one session, when it has one on this provider
-    ? mine ? { kind, sessionId: mine.id, resumed: true, sessionCostBefore: mine.total, state: 'queued', headSha: pr.headSha, queuedAt: now, roundAt: now }
-      : { kind, sessionId: randomUUID(), state: 'queued', headSha: pr.headSha, queuedAt: now, roundAt: now }
+    ? { ...(mine ? { kind, sessionId: mine.id, resumed: true, sessionCostBefore: mine.total, state: 'queued' as const, headSha: pr.headSha, queuedAt: now, roundAt: now }
+      : { kind, sessionId: randomUUID(), state: 'queued' as const, headSha: pr.headSha, queuedAt: now, roundAt: now }),
+      // run again on the head already reviewed: that review stands (its findings are still in crit) until this one
+      // finishes; cancelled or failed, the PR doesn't fall back to "not reviewed"
+      ...(prev?.reviewDone && prev.headSha === pr.headSha && { reviewDone: true, critPort: prev.critPort, critKey: prev.critKey, critCwd: prev.critCwd }) }
     // follow-ups continue the same session, so the agent keeps its findings and context; your words on a PR no run
     // has touched start one (the PR's own session, when it has one)
     : !prev ? { kind, prompt, sessionId: own?.id ?? randomUUID(), resumed: !!own, sessionCostBefore: own?.total ?? 0, state: 'queued', headSha: pr.headSha, queuedAt: now, roundAt: now }
     : {
       kind, prompt, sessionId: prev!.sessionId, reviewDone: prev!.reviewDone, roundAt: prev!.roundAt, critPort: prev!.critPort, critKey: prev!.critKey, lastWords: prev!.summary,
       state: 'queued', headSha: prev!.headSha, queuedAt: now,
-      sessionCostBefore: prev!.sessionCostUsd ?? prev!.costUsd ?? 0, // what the session had cost before this run
+      // what the session had cost before this run: its total as last reported (a run that ended with no result reported none)
+      sessionCostBefore: (own?.id === prev!.sessionId ? own.total : undefined) ?? prev!.sessionCostUsd ?? prev!.sessionCostBefore ?? 0,
     }
   if (provider !== 'claude') pr.job.provider = provider
   if (said) pr.job.said = said
@@ -540,6 +546,8 @@ export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: str
 // the agents' Claude folder is still being set up (the first start after it became Concierge's own): runs wait for it
 let homeReady = false
 void agentHomesReady().then(() => { homeReady = true; pump() })
+/** A planned review waits while the PR below it is at work, or queued ahead of it (two waiting on each other: neither waits). */
+const waitsBelow = (p: Pr) => { const b = state.prs[p.job?.after ?? '']?.job; return !!b && (b.state === 'running' || (b.state === 'queued' && b.after !== p.id)) }
 export function pump() {
   if (!homeReady) return
   // another machine runs it now (fleet.ts), and this one stops shortly
@@ -558,7 +566,7 @@ export function pump() {
   const waiting: { prio: number; at: string; go: () => void; exec?: ExecRun }[] = [
     ...Object.values(state.prs).flatMap((p) => [
       // a planned review waits while the one below it in its stack is still queued or running
-      ...(p.job?.state === 'queued' && !['queued', 'running'].includes(state.prs[p.job.after ?? '']?.job?.state ?? '') && canRun(p.job, p.mine ? 'revise' : 'review') && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: () => start(p) }] : []),
+      ...(p.job?.state === 'queued' && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review') && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: () => start(p) }] : []),
       // an explanation waits while one below it in the stack is still being written: it reads theirs
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
         && available(providerFor('review')) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
@@ -975,6 +983,8 @@ function start(pr: Pr) {
       if (r.is_error) job.error = short(r.result ?? r.subtype, 400)
       if (String(r.result ?? '').trim()) {
         ({ summary: job.summary, next: job.next } = finalWords(String(r.result)))
+        // kept on the PR too: the job's slot is taken by the next run (a reply, a re-run), whatever that one ends as
+        if (job.summary) pr.lastSaid = { summary: job.summary, at: new Date().toISOString(), kind: job.kind }
         // its own word that nothing is left (an empty deck-next block), kept apart: next is trimmed later for other reasons
         job.leftNothing = job.next?.source === 'agent' && !job.next.steps.length
       }
@@ -1057,19 +1067,28 @@ export function stopAll() { for (const c of children.values()) c.kill('SIGTERM')
  * should find it. One still working stays running, so the next start continues its session (store.ts picks it up);
  * one whose result is already in was only waiting on a background task, so it is done.
  */
+/**
+ * Runs the last server marked done while it was stopping: what follows a finish (the alert, a prep handing over to its
+ * tickets, a stack's submit, a handover) never happened, because nothing was left to do it. Said again now, once.
+ */
+export function followUnfollowed() {
+  for (const pr of Object.values(state.prs)) if (pr.job?.unfollowed) { delete pr.job.unfollowed; bus.emit('finished', pr.id, pr.job) }
+  for (const r of Object.values(state.execs)) if (r.unfollowed) { delete r.unfollowed; bus.emit('exec-finished', r) }
+  save()
+}
 export function shutdown() {
   stopping = true
   const now = new Date().toISOString()
   eventsSync() // what's recorded from here on is written at once: the process won't be around to finish a queue
   for (const pr of Object.values(state.prs)) if (pr.job?.state === 'running' && resultIn.has(pr.id)) {
-    transition('job', pr.id, pr.job.queuedAt, pr.job, 'done', 'result (server stopping)', { endedAt: now, continuing: false, ...(isFollowUp(pr.job.kind) ? {} : { reviewDone: true }) },
+    transition('job', pr.id, pr.job.queuedAt, pr.job, 'done', 'result (server stopping)', { endedAt: now, continuing: false, unfollowed: true, ...(isFollowUp(pr.job.kind) ? {} : { reviewDone: true }) },
       { kind: pr.job.kind, costUsd: pr.job.costUsd, refused: pr.job.refused?.length })
-    if (pr.job.costUsd) addSpend(pr.job.costUsd)
+    if (pr.job.costUsd) addSpend(pr.job.costUsd, pr.job.provider, pr.job.tokens)
   }
   for (const r of Object.values(state.execs)) if (r.state === 'running' && resultIn.has(runKey(r))) {
-    transition('exec', r.ids.join(' → '), r.id, r, 'done', 'result (server stopping)', { phase: 'done', endedAt: now, continuing: false },
+    transition('exec', r.ids.join(' → '), r.id, r, 'done', 'result (server stopping)', { phase: 'done', endedAt: now, continuing: false, unfollowed: true },
       { kind: r.label ?? 'exec', costUsd: r.costUsd, refused: r.refused?.length })
-    if (r.costUsd) addSpend(r.costUsd)
+    if (r.costUsd) addSpend(r.costUsd, r.provider, r.tokens)
   }
   // stopped by a deploy, not dying on its own: the next start continues it without counting it toward the limit
   for (const pr of Object.values(state.prs)) if (pr.job?.state === 'running') pr.job.deployStop = true
@@ -1151,17 +1170,21 @@ export function runAgain(key: string): string | undefined {
     const r = state.execs[key.slice(5)]
     if (!r || !STOPPED.has(r.state)) return 'That run is not stopped'
     if (r.ids.some(ticketBusy)) return `${r.ids.find(ticketBusy)} already has a run going`
-    transition('exec', r.ids.join(' → '), r.id, r, 'queued', 'you ran it again', { ...again, continuing: !!r.startedAt }, { kind: r.label ?? 'exec' })
+    // its conversation is gone for good (that is why it failed): continuing it would fail the same way, so it starts a new one
+    const lost = GONE_SAID.test(r.error ?? '')
+    transition('exec', r.ids.join(' → '), r.id, r, 'queued', 'you ran it again', { ...again, continuing: !lost && !!r.startedAt, ...(lost && { sessionId: randomUUID(), resume: undefined, replyTo: undefined, costBefore: 0 }) }, { kind: r.label ?? 'exec' })
     note(key, { at: new Date().toISOString(), kind: 'event', text: 'You ran it again.' })
     save(); bus.emit('exec'); pump(); return
   }
   const pr = state.prs[key], job = pr?.job
   if (!pr || !job || !STOPPED.has(job.state)) return 'That run is not stopped'
-  transition('job', pr.id, job.queuedAt, job, 'queued', 'you ran it again', { ...again, continuing: !!job.startedAt }, { kind: job.kind })
+  const lost = GONE_SAID.test(job.error ?? '')
+  transition('job', pr.id, job.queuedAt, job, 'queued', 'you ran it again', { ...again, continuing: !lost && !!job.startedAt, ...(lost && { sessionId: randomUUID(), resumed: false, sessionCostBefore: 0 }) }, { kind: job.kind })
   note(pr.id, { at: new Date().toISOString(), kind: 'event', text: 'You ran it again.' })
   save(); bus.emit('change'); pump()
 }
 export const STOPPED = new Set<string>(['failed', 'interrupted', 'cancelled'])
+const GONE_SAID = /no agent session any ?more|session (is )?gone/i // the error a run is left with when its conversation was cleaned up
 
 export function cancelExec(id: string) {
   const run = state.execs[id]
@@ -1197,7 +1220,7 @@ function startExec(run: ExecRun, on?: string) {
     return transition('exec', run.ids.join(' → '), run.id, run, to, cause, extra, { kind: run.label ?? 'exec', costUsd: run.costUsd, turns, refused: run.refused?.length, ...(ENDS.has(to) && usedBy(key, config.exec.command)) })
   }
   // a continued run keeps its start, so its chapter stays where it was in the ticket's timeline
-  ev('running', run.continuing ? 'continued' : 'started', { startedAt: run.continuing && run.startedAt ? run.startedAt : now, endedAt: undefined, error: undefined, denials: [], refused: undefined, pausedAt: undefined })
+  ev('running', run.continuing ? 'continued' : 'started', { startedAt: run.continuing && run.startedAt ? run.startedAt : now, endedAt: undefined, error: undefined, costUsd: undefined, denials: [], refused: undefined, pausedAt: undefined })
   if (wasPaused) note(key, { at: now, kind: 'event', text: "The plan's window has room again: it continues where it left off." })
   else if (run.continuing) note(key, { at: now, kind: 'event', text: `It continues where it left off${run.continued ? ` (restart ${run.continued} of ${MAX_CONTINUES})` : ''}.` })
   else if (!run.opened) {

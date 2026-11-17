@@ -78,7 +78,8 @@ export async function runs(sinceDays = 7) {
     const prev = byRun.get(k)
     const r = { ...prev, ...e, restarts: (prev?.restarts ?? 0) + (e.cause === 'restart' ? 1 : 0),
       queuedAt: prev?.queuedAt ?? (e.to === 'queued' ? e.at : undefined), startedAt: prev?.startedAt ?? (e.to === 'running' ? e.at : undefined),
-      costUsd: e.costUsd ?? prev?.costUsd, turns: e.turns ?? prev?.turns, refused: e.refused ?? prev?.refused, kind: e.kind ?? prev?.kind,
+      // a run that was paused or continued ran in parts, each event carrying its own part's cost: the run cost their sum
+      costUsd: e.from === 'running' ? ((prev?.costUsd ?? 0) + (e.costUsd ?? 0) || undefined) : (prev?.costUsd ?? e.costUsd), turns: e.turns ?? prev?.turns, refused: e.refused ?? prev?.refused, kind: e.kind ?? prev?.kind,
       skills: e.skills ?? prev?.skills, steers: e.steers ?? prev?.steers }
     byRun.set(k, r)
   }
