@@ -6,6 +6,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
+import { codexBank, copilotBank } from './bank.ts'
 import { agentSkills, CLAUDE_HOME, CODEX_HOME, link, USER_CLAUDE, userSkills } from './agentHome.ts'
 import { join } from 'node:path'
 import { PassThrough, type Readable, type Writable } from 'node:stream'
@@ -186,7 +187,7 @@ export function forCodex(prompt: string, instructions?: string): string {
 }
 
 // --- Claude Code's flags, as Codex's
-type Parsed = { prompt?: string; system?: string; append?: string; resume?: string; session?: string; model?: string; schema?: string; addDirs: string[]; json: boolean; readOnly: boolean }
+type Parsed = { mcp?: string; prompt?: string; system?: string; append?: string; resume?: string; session?: string; model?: string; schema?: string; addDirs: string[]; json: boolean; readOnly: boolean }
 function parse(args: string[]): Parsed {
   const o: Parsed = { addDirs: [], json: false, readOnly: false }
   for (let i = 0; i < args.length; i++) {
@@ -206,20 +207,23 @@ function parse(args: string[]): Parsed {
     }
     else if (a === '--allowedTools') { while (args[i + 1] && !args[i + 1].startsWith('--')) i++ }
     else if (a === '--session-id') { o.session = v; i++ }
-    else if (['--max-budget-usd', '--input-format', '--setting-sources', '--settings', '--permission-mode', '--mcp-config'].includes(a)) i++
+    else if (a === '--mcp-config') { o.mcp = v; i++ } // the run's part of the connection bank (bank.ts)
+    else if (['--max-budget-usd', '--input-format', '--setting-sources', '--settings', '--permission-mode'].includes(a)) i++
   }
   return o
 }
 
-export function codexArgs(p: ProviderId, claudeArgs: string[]): { args: string[]; stdin: string; json: boolean } {
+export function codexArgs(p: ProviderId, claudeArgs: string[]): { args: string[]; stdin: string; json: boolean; env?: Record<string, string> } {
   const o = parse(claudeArgs)
   const small = !!o.schema || o.readOnly || o.model === 'haiku'
   const model = modelOf(p, small ? 'small' : 'large')
+  const bank = o.mcp ? codexBank(p) : undefined
   const conf = [
     `approval_policy="never"`,
     // runs push branches and read GitHub: the network is on; quick calls need neither files nor shell
     o.readOnly ? `sandbox_mode="read-only"` : `sandbox_mode="workspace-write"`, `sandbox_workspace_write.network_access=true`,
     ...(o.addDirs.length ? [`sandbox_workspace_write.writable_roots=${JSON.stringify(o.addDirs)}`] : []),
+    ...(bank?.conf ?? []), // the connection bank, as Codex takes it: overrides for this run, its keys by variable
   ].flatMap((c) => ['-c', c])
   let schemaFile: string[] = []
   if (o.schema) {
@@ -229,7 +233,7 @@ export function codexArgs(p: ProviderId, claudeArgs: string[]): { args: string[]
   }
   const common = ['--json', '--skip-git-repo-check', ...(model ? ['-m', model] : []), ...conf, ...schemaFile, ...(small ? ['--ephemeral'] : [])]
   const args = o.resume ? ['exec', 'resume', o.resume, ...common, '-'] : ['exec', ...common, '-']
-  return { args, stdin: forCodex(o.prompt ?? '', [o.system, o.append].filter(Boolean).join('\n\n') || undefined), json: o.json }
+  return { args, stdin: forCodex(o.prompt ?? '', [o.system, o.append].filter(Boolean).join('\n\n') || undefined), json: o.json, env: bank?.env }
 }
 
 /**
@@ -326,6 +330,7 @@ export function copilotArgs(p: ProviderId, claudeArgs: string[]): { args: string
     // it is told to read lives in ~/.claude). Read-only: reading only, anywhere
     ...(o.readOnly ? ['--allow-tool=read', '--allow-all-paths'] : ['--allow-all']),
     ...o.addDirs.flatMap((d) => ['--add-dir', d]),
+    ...(o.mcp ? ['--additional-mcp-config', `@${copilotBank(o.mcp)}`] : []), // the connection bank, as Copilot reads it
     ...(o.resume ? ['--resume', o.resume] : o.session ? ['--session-id', o.session] : [])]
   return { args, json: o.json, model, session: o.resume ?? o.session }
 }
@@ -441,7 +446,7 @@ export function spawnAgent(p: ProviderId, args: string[], opts: { cwd: string; e
   }
   const c = codexArgs(p, args)
   const model = c.args[c.args.indexOf('-m') + 1]
-  const child = spawn('codex', c.args, { cwd: opts.cwd, env, signal: opts.signal, stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn('codex', c.args, { cwd: opts.cwd, env: c.env ? { ...env, ...c.env } : env, signal: opts.signal, stdio: ['pipe', 'pipe', 'pipe'] })
   child.stdin!.on('error', () => {})
   child.stdin!.end(c.stdin)
   return translated(child, translator(p, model, c.json))

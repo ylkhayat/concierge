@@ -71,6 +71,7 @@ import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missi
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
+import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
 import { transition } from './lifecycle.ts'
 import { cachedStackCheck, checkingStack, checkStack } from './stackCheck.ts'
@@ -1355,6 +1356,17 @@ app.get('/connections/login/:name', async (c) => {
 // this machine's own sign-in decides which connectors it adds (the saved choice may be another machine's), and the
 // plugins are in place first: both write Claude Code's config
 void Promise.all([checkClaudeAuth(), agentHomesReady()]).then(() => reconnect())
+// the connection bank, written where each account's runs are pointed at: at start, and kept in step (a key set, a
+// connector added, the sign-in changed, another account)
+const bankNow = () => writeBank(accounts().map((a) => a.id)).catch((e) => console.warn('bank:', (e as Error).message))
+void bankNow(); setInterval(() => void bankNow(), 30_000).unref()
+app.get('/bank', (c) => c.json(bankView()))
+app.post('/bank', async (c) => {
+  const { only } = await c.req.json<{ only?: boolean }>()
+  saveConfig({ connections: { ...userConfig().connections, bankOnly: !!only } })
+  await bankNow()
+  return c.json(bankView())
+})
 app.get('/worktrees', async (c) => c.json(await worktrees(c.req.query('fresh') === '1')))
 app.post('/worktrees/clean', async (c) => c.json(await cleanWorktrees()))
 app.post('/worktrees/auto', async (c) => { const { on } = await c.req.json<{ on?: boolean }>(); state.autoClean = !!on; save(); return c.json({ on: state.autoClean, last: state.lastClean }) })

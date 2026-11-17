@@ -47,6 +47,23 @@ const FIXES: Record<Fix, FixDef> = {
   },
 } as Record<Fix, FixDef>
 
+/** A connection as a tool is told about it: an address (with its key as a header), or a command to start. */
+export type McpServer = {
+  name: string; service: string // service: what it reaches, for the page ("Linear", or the name you gave it)
+  url?: string; headers?: Record<string, string>; command?: string; args?: string[]; env?: Record<string, string>
+  login?: boolean // it signs in in the browser, into one Claude account's own store: no key to hand to another tool
+  coveredByClaudeAi?: boolean // a claude.ai login brings the same service itself
+}
+/** What Concierge itself holds: a service it has the key for, and each connector you added by its address (the bank, bank.ts). */
+export function ownServers(): McpServer[] {
+  const out: McpServer[] = []
+  const linear = process.env.LINEAR_API_KEY
+  if (linear) out.push({ name: 'linear-key', service: 'Linear', url: 'https://mcp.linear.app/mcp', headers: { Authorization: `Bearer ${linear}` }, coveredByClaudeAi: true })
+  const s = secrets()
+  if (s.sentryToken) out.push({ name: 'sentry-token', service: 'Sentry', command: 'npx', args: ['-y', '@sentry/mcp-server@latest'], env: { SENTRY_ACCESS_TOKEN: s.sentryToken, SENTRY_HOST: s.sentryHost ?? 'sentry.io' }, coveredByClaudeAi: true })
+  for (const [name, url] of Object.entries(state.customConnectors ?? {})) out.push({ name, service: name, url, login: true })
+  return out
+}
 /** The `claude mcp add` arguments for a fix (tests check their order). */
 export const addArgsFor = (fix: Fix, key: string) => FIXES[fix].add(key)
 

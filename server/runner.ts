@@ -19,6 +19,7 @@ import { missingOn } from './connections.ts'
 import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
 import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
+import { bankArgs } from './bank.ts'
 import { accountOf, accounts, available, chosenFor, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
@@ -750,14 +751,17 @@ export function runAgent(o: {
   const start = (args: string[], stdin: boolean) => m
     ? remoteAgent(m.name, m.base, token(), { provider, args, cwd: o.cwd, stdin, label: o.label })
     : spawnAgent(provider, o.untrusted ? [...args, ...UNTRUSTED_ARGS] : args, { cwd: o.cwd, stdin, ...(o.untrusted && { env: untrustedEnv() }) })
+  // its part of the connection bank (bank.ts): every run, on whichever account. Not a review of someone else's PR,
+  // which is kept away from your keys
+  const banked = (args: string[]) => (o.untrusted ? args : [...args, ...bankArgs(provider)])
   let child
   if (isClaudeCode(provider)) { // Claude Code, on a Claude account or on Ollama
     const at = o.args.indexOf('-p'), prompt = o.args[at + 1]
     const args = [...o.args.slice(0, at + 1), ...o.args.slice(at + 2), '--input-format', 'stream-json']
-    child = start(args, true)
+    child = start(banked(args), true)
     child.stdin!.on('error', () => {}) // it went away first: its close says the rest
     child.stdin!.write(userLine(prompt))
-  } else child = start(o.args, false)
+  } else child = start(banked(o.args), false)
   runningOn.set(o.key, provider)
   children.set(o.key, child)
   let buf = '', stderr = '', resulted = false, turns = 0, lastOut = Date.now(), stalled = false, hung = false
