@@ -2,7 +2,10 @@
 // suggests), and which can't both happen (rebase A onto B, and B onto A; two decisions pulling opposite ways). The same
 // wording is caught by its hash; the rest by a small model, cached per set of steps. Concierge's own reading, like the
 // next steps it reads from a message: nothing here is a method of yours.
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { haiku, hashOf, stepHash } from './next.ts'
+import { STATE_DIR } from './paths.ts'
 import type { ProviderId } from './providers.ts'
 
 export type StackItem = { id: string; pr: number; text: string; kind: string; options?: string[] } // id: "<pr>:<index>"
@@ -28,19 +31,22 @@ const seen = new Map<string, Promise<StackReview & { costUsd: number; provider?:
 /** Duplicates and conflicts among `items`: the same wording at once, the rest read once per set of steps. */
 export function reviewStack(items: StackItem[]) {
   const k = hashOf(items.map((x) => `${x.id}|${x.kind}|${x.text}`).join('\n'))
-  if (!seen.has(k)) {
+  // kept on disk as well: after a restart the same steps are not read (and paid for) again
+  const f = join(STATE_DIR, 'explain', `stack-steps-${k}.json`)
+  if (!seen.has(k)) seen.set(k, readFile(f, 'utf8').then((t) => ({ ...(JSON.parse(t) as StackReview), costUsd: 0 }), () => fresh(items, k).then(async (r) => { await mkdir(join(STATE_DIR, 'explain'), { recursive: true }); await writeFile(f, JSON.stringify({ duplicates: r.duplicates, conflicts: r.conflicts })); return r })))
+  if (seen.size > 200) seen.delete(seen.keys().next().value!)
+  return seen.get(k)!
+}
+function fresh(items: StackItem[], _k: string): Promise<StackReview & { costUsd: number; provider?: ProviderId; tokens?: { input: number; output: number } }> {
     // the same wording, by hash: no model needed for those
     const byHash = new Map<string, string[]>()
     for (const x of items) byHash.set(stepHash(x.text), [...(byHash.get(stepHash(x.text)) ?? []), x.id])
     const exact = [...byHash.values()].filter((ids) => ids.length > 1 && new Set(ids.map((id) => id.split(':')[0])).size > 1).map((ids) => ({ items: ids, why: 'The same step, word for word.' }))
     const known = new Set(items.map((x) => x.id))
     const clean = (groups: { items: string[]; why: string }[]) => groups.map((g) => ({ ...g, items: [...new Set(g.items)].filter((id) => known.has(id)) })).filter((g) => g.items.length > 1)
-    seen.set(k, (items.length < 2 ? Promise.resolve({ out: { duplicates: [], conflicts: [] } as StackReview, costUsd: 0 }) : haiku<StackReview>(prompt(items), SCHEMA, SYSTEM, 0.1))
+    return (items.length < 2 ? Promise.resolve({ out: { duplicates: [], conflicts: [] } as StackReview, costUsd: 0 }) : haiku<StackReview>(prompt(items), SCHEMA, SYSTEM, 0.1))
       .then(({ out, costUsd, ...rest }) => {
         const dup = clean(out.duplicates ?? []).filter((g) => !exact.some((e) => g.items.every((id) => e.items.includes(id))))
         return { duplicates: [...exact, ...dup], conflicts: clean(out.conflicts ?? []), costUsd, ...rest }
-      }, () => ({ duplicates: exact, conflicts: [], costUsd: 0 })))
-    if (seen.size > 200) seen.delete(seen.keys().next().value!)
-  }
-  return seen.get(k)!
+      }, () => ({ duplicates: exact, conflicts: [], costUsd: 0 }))
 }

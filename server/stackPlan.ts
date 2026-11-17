@@ -3,7 +3,10 @@
 // few decisions and an ordered list of steps, each still pointing at the items it stands for, so answering the short
 // plan answers every agent exactly as its own list would have (StackNext.tsx sends each PR its own part). The method
 // is the simplify-stack-steps skill; the shape it answers in, and the check that nothing was lost or made up, are here.
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { method } from './method.ts'
+import { STATE_DIR } from './paths.ts'
 import { haiku, hashOf } from './next.ts'
 import type { ProviderId } from './providers.ts'
 
@@ -62,17 +65,32 @@ const prompt = (items: PlanItem[], steer?: string, direction?: string) => `${dir
 
 ${items.map((x) => `${x.id} · #${x.pr} · ${x.kind}${x.blocking ? ' (needed)' : ''} · ${x.text}${x.why ? ` (${x.why})` : ''}${x.options?.length ? ` [${x.options.map((o, i) => `${i}: ${o}${i === x.recommended ? ' *' : ''}`).join(' | ')}]` : ''}`).join('\n')}`
 
-type Made = StackPlan & { costUsd: number; provider?: ProviderId; tokens?: { input: number; output: number }; sig: string }
-const made = new Map<string, Promise<Made>>()
-/** The plan for these items (and this steer, this direction): read once, kept while the server runs; `again` reads it afresh. */
-export function planStack(items: PlanItem[], steer = '', direction = '', again = false): Promise<Made> {
-  const sig = hashOf(JSON.stringify([items.map((x) => [x.id, x.kind, x.text, x.options]), steer.trim(), direction.trim()]))
-  if (again) made.delete(sig)
-  if (!made.has(sig)) {
-    made.set(sig, method('stackPlan', FORMAT).then((system) => haiku<StackPlan>(prompt(items, steer.trim() || undefined, direction.trim() || undefined), SCHEMA, system, 0.6, 'sonnet'))
-      .then(({ out, ...rest }) => ({ ...settle(items, out), ...rest, sig })))
-    made.get(sig)!.catch(() => made.delete(sig)) // a failed read is asked again next time
-    if (made.size > 100) made.delete(made.keys().next().value!)
+type Made = StackPlan & { costUsd: number; provider?: ProviderId; tokens?: { input: number; output: number }; sig: string; steer: string }
+// kept on disk, by the items it was read from: a restart (an update) must not make you pay and wait for the same read
+// again, or hand you a different plan than the one you were answering. One plan per set of items: the last one read,
+// with the steer it was read with
+const DIR = join(STATE_DIR, 'explain')
+const file = (items: PlanItem[]) => join(DIR, `stack-plan-${hashOf(JSON.stringify(items.map((x) => [x.id, x.kind, x.text, x.options])))}.json`)
+const reading = new Map<string, Promise<Made>>()
+/**
+ * The plan for these items. With no steer and not `again`: the one last read for them, whatever steer that was read
+ * with (so the page finds it again after a reload); otherwise read now, and kept.
+ */
+export async function planStack(items: PlanItem[], steer = '', direction = '', again = false): Promise<Made> {
+  const f = file(items)
+  if (!again && !steer.trim()) {
+    const kept = await readFile(f, 'utf8').then((t) => JSON.parse(t) as Made, () => undefined)
+    if (kept) return { ...kept, costUsd: 0 } // paid for when it was read
   }
-  return made.get(sig)!
+  const sig = hashOf(JSON.stringify([f, steer.trim(), direction.trim(), again ? Date.now() : 0]))
+  const key = `${f}|${steer.trim()}`
+  if (!reading.has(key)) {
+    reading.set(key, method('stackPlan', FORMAT).then((system) => haiku<StackPlan>(prompt(items, steer.trim() || undefined, direction.trim() || undefined), SCHEMA, system, 0.6, 'sonnet'))
+      .then(async ({ out, ...rest }) => {
+        const made: Made = { ...settle(items, out), ...rest, sig, steer: steer.trim() }
+        await mkdir(DIR, { recursive: true }); await writeFile(f, JSON.stringify(made))
+        return made
+      }).finally(() => reading.delete(key)))
+  }
+  return reading.get(key)!
 }

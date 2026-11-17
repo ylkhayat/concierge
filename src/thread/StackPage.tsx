@@ -204,6 +204,15 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
   // the direction the stack follows: written by the check, yours to change, given to every agent on these PRs
   const dir = q.data?.direction
   const [draft, setDraft] = useState<string>()
+  // an inconsistency is fixed by the agents of the PRs it crosses: each is told what was found and the fix, and does its PR's part
+  const [fixing, setFixing] = useState<string[]>([])
+  const fix = (issues: StackCheck['issues']) => {
+    const ids = [...new Set(issues.flatMap((x) => x.prs))].map((n) => members.find((m) => m.number === n)?.id).filter((x): x is string => !!x)
+    if (!ids.length) return toast('None of its PRs is tracked here', 'error')
+    const text = `The stack's agreement check found ${issues.length === 1 ? 'this' : 'these'} across its pull requests. Fix what belongs to your PR, and say what you changed.\n\n${issues.map((x) => `- ${x.title} (${x.prs.map((n) => `#${n}`).join(', ')}): ${x.why}\n  Fix: ${x.fix}`).join('\n')}`
+    setFixing((f) => [...f, ...issues.map((x) => x.title)])
+    api('/stacks/say', { ids, text }).then((r: { sent: { number: number }[] }) => toast(`Sent to the agent${r.sent.length === 1 ? '' : 's'} of ${r.sent.map((x) => `#${x.number}`).join(', ')}`), (e: Error) => { toast(e.message, 'error'); setFixing((f) => f.filter((t) => !issues.some((x) => x.title === t))) })
+  }
   const saveDir = () => api(path.replace(/stack-check$/, 'stack-direction'), { text: draft ?? '' }).then((r: { direction: Dir | null }) => { remember(`${path}?v=${sig}`, { ...q.data, direction: r.direction } as Got); setDraft(undefined); toast(r.direction ? 'The stack follows this direction now' : 'Direction dropped') }, (e: Error) => toast(e.message, 'error'))
   return (
     <section>
@@ -240,9 +249,11 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
                     <p className="font-medium text-fg-1">{x.title} <span className="ml-1 inline-flex gap-1 align-middle">{x.prs.map((n) => <button key={n} onClick={() => open(n)} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-2 transition-colors hover:bg-accent-soft hover:text-accent-text">#{n}</button>)}</span></p>
                     <p className="mt-0.5 leading-relaxed text-fg-2">{x.why}</p>
                     <p className="mt-0.5 leading-relaxed text-fg-3"><span className="font-medium text-fg-2">Fix:</span> {x.fix}</p>
+                    <button onClick={() => fix([x])} disabled={fixing.includes(x.title)} title={`Tell the agent${x.prs.length === 1 ? '' : 's'} of ${x.prs.map((n) => `#${n}`).join(', ')} what was found and the fix: each does its PR's part`} className="mt-1.5 btn-outline btn-sm">{fixing.includes(x.title) ? 'Sent to the agents' : `Have the agent${x.prs.length === 1 ? '' : 's'} fix it`}</button>
                   </div>
                 </li>
               ))}
+              {c.issues.length > 1 && <li><button onClick={() => fix(c.issues)} disabled={c.issues.every((x) => fixing.includes(x.title))} className="btn-primary btn-sm">Have the agents fix all {c.issues.length}</button></li>}
               {c.agrees && <li className="border-t border-line pt-2 text-meta text-fg-3">{c.agrees}</li>}
             </ul>
           )}

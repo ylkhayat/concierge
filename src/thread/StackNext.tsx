@@ -62,7 +62,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const planSig = planItems.map((x) => `${x.id}|${x.text}`).join('\n')
   const plan = useQuery({
     queryKey: ['/stacks/plan', planSig, steer, again], enabled: waiting.length >= 2 && planItems.length > 1, staleTime: Infinity, retry: false,
-    queryFn: () => api('/stacks/plan', { items: planItems, steer, again: again > 0, pr: waiting[0]?.pr.id }) as Promise<StackPlan & { sig: string }>,
+    queryFn: () => api('/stacks/plan', { items: planItems, steer, again: again > 0, pr: waiting[0]?.pr.id }) as Promise<StackPlan & { sig: string; steer: string }>,
   })
   const keyById = new Map<string, string>(waiting.flatMap((m) => m.steps.map((_, i) => [`${m.pr.number}:${i}`, `${m.pr.id}:${i}`] as const)))
   // a new plan sets the answer: its suggested option for each decision (none: you choose), its steps on or off
@@ -75,6 +75,8 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     for (const st of p.steps) for (const id of st.items) ck[keyById.get(id)!] = st.on
     for (const sk of p.skipped) for (const id of sk.items) ck[keyById.get(id)!] = false
     setPicks(pk); setChecked(ck)
+    // the plan kept from before a reload was read with a steer: it is yours, so it is back in the box (and still goes to the agents)
+    if (p.steer && !note.trim()) setNote(p.steer)
   }, [plan.data?.sig]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (waiting.length < 2) return { card: null, covers: [] }
@@ -180,7 +182,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         {standing.length > 0 && <span className="text-meta text-wait-text">{standing.length} conflict{standing.length === 1 ? '' : 's'}: keep one side</span>}
         {unanswered.length > 0 && <span className="text-meta text-wait-text">Decide {unanswered.length} first</span>}
         <span className="flex-1" />
-        {note.trim() && note.trim() !== steer && <button onClick={() => { setRaw(false); setSteer(note.trim()) }} disabled={plan.isFetching} title="Read the PRs' suggestions again with your steer: it settles what it can and suggests the rest" className="inline-flex items-center gap-1.5 btn-outline btn-sm"><RefreshCw className="size-3.5" />Reanalyze with this steer</button>}
+        {note.trim() && note.trim() !== (plan.data?.steer ?? steer) && <button onClick={() => { setRaw(false); setSteer(note.trim()) }} disabled={plan.isFetching} title="Read the PRs' suggestions again with your steer: it settles what it can and suggests the rest" className="inline-flex items-center gap-1.5 btn-outline btn-sm"><RefreshCw className="size-3.5" />Reanalyze with this steer</button>}
         <button disabled={sending || unanswered.length > 0 || standing.length > 0} onClick={() => void send()}
                 className="relative inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-small font-medium text-on-accent transition-all active:scale-[0.98] disabled:bg-fill-strong disabled:text-fg-3">
           {sending ? <LoaderCircle className="size-3.5 animate-spin" /> : publishing.length ? <Upload className="size-3.5" /> : <Send className="size-3.5" />}
