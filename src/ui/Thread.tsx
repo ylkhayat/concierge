@@ -97,9 +97,15 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           column, the panel over the chat while a tab is open, the bottom row stacked */}
       <div ref={body} style={{ '--split': px ? `${px}px` : '50%' } as React.CSSProperties}
            className={`relative flex min-h-0 flex-1 flex-col @[1100px]/thread:grid @[1100px]/thread:[grid-template-columns:var(--split)_1px_minmax(0,1fr)] @[1100px]/thread:[grid-template-rows:minmax(0,1fr)_auto] ${dragging ? '' : 'transition-[grid-template-columns] duration-300 ease-[var(--ease-snappy)]'}`}>
-        <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col @[1100px]/thread:col-start-1 @[1100px]/thread:row-start-1">
-          <Transcript follow={follow}>{children}</Transcript>
-        </section>
+        {/* the chat's own column, top to bottom: the conversation, then its box on the floor. One piece, so the height of
+            what sits under the panel (the next step can be tall) never pushes the box up or takes room from the chat */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col @[1100px]/thread:col-start-1 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1">
+          <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <Transcript follow={follow}>{children}</Transcript>
+          </section>
+          {/* its box, or (no box: the agent asks) the next step: at most about half the height, scrolling inside */}
+          {left && <div className="flex max-h-[min(46vh,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4">{left}</div>}
+        </div>
         {/* the handle between the two: drag to share the width, double-click to go back to this chat's own split */}
         <div role="separator" aria-orientation="vertical" aria-label="Resize the chat and the panel" title="Drag to resize · double-click to reset"
              onPointerDown={drag} onDoubleClick={reset}
@@ -111,10 +117,8 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           <div className="hidden shrink-0 border-b border-line px-4 @[1100px]/thread:block"><TabBar tabs={tabs} tab={tab} onTab={onTab} /></div>
           <Quotable onAsk={ask} fill={current.fill} key={current.id}>{pane}</Quotable>
         </section>
-        {/* under the chat: its box, or (no box: the agent asks) the next step */}
-        {left && <div className="flex max-h-[min(46vh,560px)] min-h-0 shrink-0 flex-col border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4 @[1100px]/thread:col-start-1 @[1100px]/thread:row-start-2">{left}</div>}
-        {/* under the panel: the next step, beside the box */}
-        {under && <div className="flex max-h-[min(60vh,640px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-4 sm:pb-4 @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-2">{under}</div>}
+                {/* under the panel: the next step, beside the box */}
+        {under && <div className="flex max-h-[min(46vh,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-4 sm:pb-4 @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-2">{under}</div>}
       </div>
     </div>
   )
