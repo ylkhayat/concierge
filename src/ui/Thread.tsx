@@ -112,7 +112,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           <Quotable onAsk={ask} fill={current.fill} key={current.id}>{pane}</Quotable>
         </section>
         {/* under the chat: its box, or (no box: the agent asks) the next step */}
-        {left && <div className="flex max-h-[min(72vh,760px)] min-h-0 shrink-0 flex-col border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4 @[1100px]/thread:col-start-1 @[1100px]/thread:row-start-2">{left}</div>}
+        {left && <div className="flex max-h-[min(46vh,560px)] min-h-0 shrink-0 flex-col border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4 @[1100px]/thread:col-start-1 @[1100px]/thread:row-start-2">{left}</div>}
         {/* under the panel: the next step, beside the box */}
         {under && <div className="flex max-h-[min(60vh,640px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-4 sm:pb-4 @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-2">{under}</div>}
       </div>

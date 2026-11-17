@@ -73,6 +73,7 @@ export function PrThread(props: PrThreadProps) {
   // every next step the stack's agents wait on, answered at once (two or more of its PRs waiting)
   const { card: stackNext, covers } = useStackNext({ stack: stack ?? [], prs, toast })
   const [wholeState, setWhole] = useState(() => lastWhole)
+  const [ownFor, setOwnFor] = useState<string>() // the PR whose own card you asked for while the Stack tab is open
   const whole = !!stack && wholeState
   const prTalks = useDiscussions(`pr:${pr.id}`), stackTalks = useDiscussions(stackTarget)
   const target = whole ? stackTarget! : `pr:${pr.id}`
@@ -142,6 +143,15 @@ export function PrThread(props: PrThreadProps) {
     : askFirst ? 'The agent asks you' : next ? TITLE[next]?.(!!pr.mine) ?? 'Next' : 'All clear'
   const shipTone = busy ? 'run' as const : askFirst || next === 'answer' ? 'wait' as const : next === 'retry' || next === 'retry-op' ? 'fail' as const : next ? 'run' as const : 'ok' as const
   // the stack's waiting steps live in the panel (its Stack tab); here only one line that opens it, so the chat stays the chat
+  // while the Stack tab is open it already holds this PR's questions: shown twice, the card here would only push the
+  // conversation out of view. One line stands in for it, and brings it back when you'd rather answer this PR alone
+  const viaStack = pane === 'stack' && !!stackNext && covers.includes(pr.id) && ownFor !== pr.id
+  const viaStackLine = viaStack ? (
+    <div className="flex items-center gap-2 rounded-xl bg-surface-1 px-3 py-2 text-small ring-1 ring-line">
+      <Layers className="size-4 shrink-0 text-accent-text" /><span className="min-w-0 flex-1 truncate text-fg-2">This PR’s questions are in the stack’s answer, in the panel</span>
+      <button onClick={() => setOwnFor(pr.id)} className="btn-ghost btn-sm shrink-0">Answer only this PR</button>
+    </div>
+  ) : null
   const stackLine = stackNext && pane !== 'stack' ? (
     <button onClick={() => setPane('stack')} className="mb-2 flex w-full items-center gap-2 rounded-xl bg-accent/6 px-3 py-2 text-left text-small ring-1 ring-accent/20 transition-colors hover:bg-accent/10">
       <Layers className="size-4 shrink-0 text-accent-text" /><span className="font-semibold text-fg-1">The stack waits on you</span>
@@ -171,7 +181,7 @@ export function PrThread(props: PrThreadProps) {
         follow={`${pr.id}:${count}:${pr.status}:${next}`}
         header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions}
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
-        next={nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined}
+        next={viaStackLine ?? (nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined)}
         composer={!asking && <Composer>{steer}</Composer>}
         tabs={[...(props.ticket ? [{ id: 'ticket' as const, label: props.ticket.id }] : []), ...panes.map((p) => ({ id: p, label: p === 'domain' && role === 'design' ? 'Experience' : TAB[p], fill: p === 'explain', rail: p === 'overview' })), ...(stackNext ? [{ id: 'stack' as const, label: 'Stack', badge: <span className="rounded-full bg-wait/15 px-1.5 text-micro font-semibold tabular-nums text-wait-text" title={`${covers.length} PRs of the stack wait on you`}>{covers.length}</span> }] : [])]}
         tab={pane === 'turns' ? 'explain' : pane} onTab={setPane}
