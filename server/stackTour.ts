@@ -19,7 +19,8 @@ export type StackTour = {
   costUsd: number
 }
 
-const file = (chain: StackRef[]) => join(STATE_DIR, 'explain', `stack-${chain[0].repo.replace('/', '-')}-${chain[0].number}.json`)
+// by its bottom and its top: PRs built on the same one have different lines with the same bottom
+const file = (chain: StackRef[]) => join(STATE_DIR, 'explain', `stack-${chain[0].repo.replace('/', '-')}-${chain[0].number}${chain.length > 1 ? `-${chain.at(-1)!.number}` : ''}.json`)
 const tracked = (s: StackRef): Pr | undefined => state.prs[`${s.repo}#${s.number}`]
 /** Changes whenever a PR in the stack gets a new head or a new explanation. */
 export const signature = (chain: StackRef[]) => chain.map((s) => { const p = tracked(s); return `${s.number}:${p?.headSha?.slice(0, 7) ?? '?'}:${p ? loadOverlay(p)?.iteration ?? 0 : 0}` }).join(',')

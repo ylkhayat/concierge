@@ -68,7 +68,7 @@ import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, type Op as PlanOp } from './plans.ts'
 import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
-import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
+import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { cachedStackCheck, checkingStack, checkStack } from './stackCheck.ts'
@@ -1949,16 +1949,27 @@ app.post('/prs/:id/stack-tour', async (c) => {
     return c.json({ tour: t })
   }, (e: Error) => c.json({ error: e.message }, 502))
 })
+/** Every PR of the tree `p` sits in, as refs, each after the one it is built on (PRs built on the same one are one stack). */
+function treeChain(p: Pr): StackRef[] {
+  const root = (x: Pr) => x.stack?.[0].number ?? x.number
+  const refs = new Map<number, StackRef>()
+  for (const x of Object.values(state.prs)) if (!x.closed && x.repo === p.repo && root(x) === root(p)) for (const r of x.stack ?? []) if (!refs.has(r.number)) refs.set(r.number, r)
+  const byHead = new Map([...refs.values()].map((r) => [r.head, r])), out: StackRef[] = [], seen = new Set<number>()
+  const walk = (r: StackRef) => { if (seen.has(r.number)) return; seen.add(r.number); out.push(r); for (const k of [...refs.values()].filter((x) => x.base === r.head).sort((a, b) => a.number - b.number)) walk(k) }
+  for (const r of [...refs.values()].filter((x) => !byHead.has(x.base)).sort((a, b) => a.number - b.number)) walk(r)
+  for (const r of refs.values()) walk(r)
+  return out
+}
 // across a stack: where its PRs disagree with each other (stackCheck.ts). A PR in no stack has nothing to compare
 app.get('/prs/:id/stack-check', async (c) => {
   const p = pr(c.req.param('id'))
   if (!p?.stack) return c.json({ check: null, checking: false })
-  return c.json({ check: (await cachedStackCheck(p.stack)) ?? null, checking: checkingStack(p.stack) })
+  return c.json({ check: (await cachedStackCheck(treeChain(p))) ?? null, checking: checkingStack(treeChain(p)) })
 })
 app.post('/prs/:id/stack-check', async (c) => {
   const p = pr(c.req.param('id'))
   if (!p?.stack) return c.json({ error: 'not in a stack' }, 404)
-  return checkStack(p.stack).then((t) => {
+  return checkStack(treeChain(p)).then((t) => {
     addSpend(t.costUsd, t.provider, t.tokens); save(); bus.emit('health')
     return c.json({ check: { ...t, stale: false } })
   }, (e: Error) => c.json({ error: e.message }, 400))

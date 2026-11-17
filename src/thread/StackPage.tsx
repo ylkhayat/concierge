@@ -134,7 +134,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
             return (
               <tr key={p.id} onClick={() => onSelect(p.id)} title={`${p.title}\n${ask ? `Asks: ${ask}` : p.flow.why}`} className="cursor-pointer transition-colors hover:bg-hover">
                 <td className="w-8 py-1.5 pl-4 align-top tabular-nums text-fg-4">{i + 1}</td>
-                <td className="max-w-0 px-2 py-1.5">
+                <td className="max-w-0 px-2 py-1.5" style={{ paddingLeft: 8 + s.depth * 14 }} title={s.depth ? `Built on #${p.below ?? '?'}` : 'On the base branch'}>
                   <button onClick={(e) => { e.stopPropagation(); onSelect(p.id) }} className="block w-full truncate text-left"><span className="font-mono text-meta text-fg-3">#{p.number}</span> <span className="font-medium text-fg-1">{plain(p.title)}</span></button>
                   <span className={`block truncate text-meta ${ask ? 'text-wait-text' : 'text-fg-3'}`}>{ask ? `Asks: ${ask}` : p.flow.why}</span>
                 </td>

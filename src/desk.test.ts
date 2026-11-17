@@ -74,3 +74,16 @@ test('a stack is found from a ticket too: the tickets that ship together, with w
   assert.deepEqual([some.key, some.members.map((m) => m.number), some.tickets.map((x) => x.id)], ['stack:o/r#1', [1, 2], ['B-1', 'B-2']]) // the same stack as from its PRs
   assert.deepEqual(stackAt([pr(1, [1, 2]), pr(2, [1, 2])], tickets, 'o/r#2')!.tickets.map((x) => x.id), ['B-1', 'B-2']) // B-2 has no PR yet and still belongs
 })
+
+test('PRs built on the same one are one stack: found from any of them, read so nothing comes before what it is built on', async () => {
+  const { stackAt, treeOf } = await import('./desk.ts')
+  const ref = (n: number, head: string, base: string) => ({ repo: 'o/r', number: n, title: `t${n}`, head, base })
+  const R = { 1: ref(1, 'a', 'main'), 2: ref(2, 'b', 'a'), 3: ref(3, 'c', 'a'), 5: ref(5, 'e', 'b') }
+  const pr = (n: keyof typeof R, line: (keyof typeof R)[]) => ({ id: `o/r#${n}`, repo: 'o/r', number: n, title: `t${n}`, head: R[n].head, base: R[n].base, closed: false, stack: line.map((x) => R[x]) }) as never
+  // #1 with #2 → #5 on it, and #3 straight on #1: each PR carries its own line
+  const prs = [pr(3, [1, 3]), pr(5, [1, 2, 5]), pr(1, [1, 2, 5]), pr(2, [1, 2, 5])]
+  assert.deepEqual(treeOf(prs).map((x) => [x.number, x.depth]), [[1, 0], [2, 1], [5, 2], [3, 1]])
+  const fromSide = stackAt(prs, [] as never, 'o/r#3')!, fromTop = stackAt(prs, [] as never, 'o/r#5')!
+  assert.deepEqual(fromSide.members.map((m) => m.number), [1, 2, 5, 3])
+  assert.deepEqual([fromTop.key, fromTop.members.map((m) => m.number)], [fromSide.key, [1, 2, 5, 3]]) // the same stack from either branch
+})

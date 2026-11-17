@@ -185,7 +185,8 @@ export type Pr = {
   explainFollow?: boolean // false: the explanation stays where it is when new commits land (default: it follows)
   explainAfterBase?: boolean // explain once the repo's codebase map finishes
   behindBase?: boolean // stacked on another PR whose branch moved past this one (it was pushed or rebased): needs a smart rebase
-  stack?: StackRef[] // the open PRs this one is stacked with, bottom (on the default branch) to top; absent when alone
+  stack?: StackRef[] // its line through the open PRs it is stacked with, bottom (on the default branch) to top: what is below it, itself, and up along the oldest PR built on each; absent when alone. PRs built on the same one have different lines with the same bottom
+  below?: number // the PR it is built on: the one relation everything about stacks follows from (a tree, since several can sit on one)
   ghStack?: { number: number; position: number; size: number } | null // the stack GitHub lists it in (yours only): null when none, absent until read
   unlinked?: boolean // built on another PR, but GitHub doesn't list it in that stack, and linking it is not clear-cut
   job?: Job

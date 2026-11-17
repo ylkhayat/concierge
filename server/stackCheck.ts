@@ -18,7 +18,7 @@ export type StackCheck = {
   at: string; costUsd: number; provider?: ProviderId; tokens?: { input: number; output: number }
 }
 
-const file = (chain: StackRef[]) => join(STATE_DIR, 'explain', `stack-check-${chain[0].repo.replace('/', '-')}-${chain[0].number}.json`)
+const file = (chain: StackRef[]) => join(STATE_DIR, 'explain', `stack-check-${chain[0].repo.replace('/', '-')}-${chain[0].number}-${chain.length}.json`)
 const tracked = (s: StackRef): Pr | undefined => state.prs[`${s.repo}#${s.number}`]
 /** Changes whenever a PR in the stack gets a new head or its agent finishes another run. */
 export const checkSignature = (chain: StackRef[]) => chain.map((s) => { const p = tracked(s); return `${s.number}:${p?.headSha?.slice(0, 7) ?? '?'}:${p?.job?.endedAt ?? ''}` }).join(',')
@@ -60,7 +60,7 @@ async function read(chain: StackRef[]): Promise<StackCheck> {
   const readNums = parts.filter((x) => x.has).map((x) => x.n), unread = parts.filter((x) => !x.has).map((x) => x.n)
   if (readNums.length < 2) throw new Error('Fewer than two PRs of this stack have a finished run: there is nothing to compare yet')
   const system = await method('stackCheck', 'Return only the structured output. Fields: issues (each: prs as PR numbers, title, why, fix; an empty array when the PRs agree) and agrees.')
-  const prompt = ['These pull requests form one stack, bottom (merges first) to top. Below is what there is on each.', '', ...parts.map((x) => x.text)].join('\n\n')
+  const prompt = ['These pull requests form one stack. Each is built on the branch it merges into ("into"), so one listed earlier merges first; several can be built on the same one. Below is what there is on each.', '', ...parts.map((x) => x.text)].join('\n\n')
   const p = providerFor('small')
   const r = await new Promise<any>((resolve, reject) => {
     const child = spawnAgent(p, ['-p', prompt, '--json-schema', JSON.stringify(schema), '--output-format', 'json', '--model', 'sonnet', '--max-budget-usd', '0.5',

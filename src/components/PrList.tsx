@@ -3,6 +3,7 @@ import { askLine } from '../../server/reply.ts'
 import { Bookmark, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { api, type PrView } from '../lib.ts'
+import { treeOf } from '../desk.ts'
 import { useDragPick } from '../pick.ts'
 import { reviewPlan } from '../plan.ts'
 import { statusMeta, StatusBadge } from './StatusBadge.tsx'
@@ -55,7 +56,7 @@ export function grouped(prs: PrView[], q: string, tab: Tab): { group: Group; uni
       : a.firstSeenAt.localeCompare(b.firstSeenAt))
   const units = new Map<string, PrView[]>() // in the order of each unit's first (most pressing) member
   for (const p of hits) { const k = stackKey(p) ?? p.id; units.set(k, [...(units.get(k) ?? []), p]) }
-  const every = [...units.values()].map((u) => u.sort((a, b) => stackPos(a) - stackPos(b)))
+  const every = [...units.values()].map((u) => { if (u.length < 2) return u; const at = new Map(treeOf(u).map((x, i) => [x.number, i])); return u.sort((a, b) => (at.get(a.number) ?? 0) - (at.get(b.number) ?? 0)) })
   // bookmarked ones lead, whatever their state; then what you opened last
   const pinned = every.filter((u) => u.some((p) => p.pinned)), all = every.filter((u) => !pinned.includes(u))
   // what you opened last comes first, except what already leads (the first group stays where it is)
@@ -258,7 +259,8 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
   prs: PrView[]; here: PrView['status'][]; byNumber: Map<string, PrView>; selected?: string; onSelect: (id: string) => void; now: number
   activeRef: RefObject<HTMLButtonElement | null>; pick: Pick; act: Act
 }) {
-  const all = prs[0].stack!, repo = prs[0].repo
+  // every PR of the tree, bottom first (PRs built on the same one have different lines: one card holds them all)
+  const all = treeOf(prs), repo = prs[0].repo
   const authors = [...new Map(prs.map((p) => [p.author.login, p.author])).values()]
   return (
     <div style={appColor(repo).style} className="mb-1.5 rounded-xl bg-white/50 p-1 ring-1 ring-line reading:mb-0 reading:bg-transparent reading:p-0 reading:ring-0 dark:bg-zinc-900/30 ">

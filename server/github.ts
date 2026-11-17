@@ -379,61 +379,83 @@ export function defaultBranch(repo: string): Promise<string> {
 
 // --- stacked PRs: each PR's base is the head branch of the PR below it ----------------------
 
-type OpenPull = { number: number; title: string; html_url: string; draft: boolean; user: { login: string }; head: { ref: string }; base: { ref: string } }
+type OpenPull = { number: number; title: string; html_url: string; draft: boolean; user: { login: string }; head: { ref: string; repo?: { full_name?: string } | null }; base: { ref: string } }
 const ref = (repo: string, p: OpenPull): StackRef => ({ repo, number: p.number, title: p.title, url: p.html_url, head: p.head.ref, base: p.base.ref, author: p.user.login, draft: p.draft })
 const STACK_EVERY = 10 * 60_000
 const MAX_DEPTH = 12
 
 /**
- * For each tracked open PR, walk down (the PR whose head is our base) and up (PRs based on our head)
- * through open PRs. ETag caching makes unchanged lookups free; recomputed every 10 minutes per PR.
+ * How a repository's open PRs sit on each other, from ONE list of them: a PR is built on the PR whose head branch is
+ * its base. That relation is a tree (several PRs can sit on the same one), so every PR gets:
+ *   below  the PR it is built on (none: it sits on the default branch, or on a branch with no open PR)
+ *   line   its own line through the tree, bottom to top: everything below it, itself, then up along the oldest PR
+ *          built on each (a line needs one way up; the others built on the same PR have lines of their own)
+ * Worked out for all of them from the same list, so the PRs of one tree always agree on what is below and above them.
  */
+export function stacksFrom(repo: string, pulls: OpenPull[], trunk: string) {
+  // only branches of this repository stack: a fork's branch of the same name is another branch
+  const own = pulls.filter((p) => !p.head.repo?.full_name || p.head.repo.full_name === repo)
+  const byHead = new Map(own.map((p) => [p.head.ref, p]))
+  const kids = new Map<string, OpenPull[]>()
+  for (const p of [...pulls].sort((a, b) => a.number - b.number)) kids.set(p.base.ref, [...(kids.get(p.base.ref) ?? []), p])
+  const out = new Map<number, { below?: number; line: StackRef[] }>()
+  for (const p of pulls) {
+    const below: OpenPull[] = [], seen = new Set([p.number])
+    for (let base = p.base.ref, i = 0; base !== trunk && i < MAX_DEPTH; i++) {
+      const b = byHead.get(base)
+      if (!b || seen.has(b.number)) break // nothing open there, or branches based on each other in a circle
+      seen.add(b.number); below.unshift(b); base = b.base.ref
+    }
+    const above: OpenPull[] = []
+    for (let head = p.head.ref, i = 0; i < MAX_DEPTH && byHead.get(head)?.number === (above.at(-1) ?? p).number; i++) {
+      const k = kids.get(head)?.find((x) => !seen.has(x.number))
+      if (!k) break
+      seen.add(k.number); above.push(k); head = k.head.ref
+    }
+    out.set(p.number, { below: below.at(-1)?.number, line: [...below, p, ...above].map((x) => ref(repo, x)) })
+  }
+  return out
+}
+
 let stacking: Promise<void> | undefined
-// when each PR's stack was last worked out, and at which head: kept in memory, not in the state, so a check that finds
-// nothing new doesn't rewrite (and sync) the state file. A restart works every stack out once.
-const stacked = new Map<string, { at: number; sha?: string }>()
-export const restack = (id: string) => stacked.delete(id)
+// when each repository's stacks were last worked out, and from which heads: kept in memory, not in the state, so a
+// check that finds nothing new doesn't rewrite (and sync) the state. A restart works them out once.
+const stacked = new Map<string, { at: number; sig: string }>()
+/** Work this PR's stack out again at the next sync (after something changed how it sits: a rebase, a link). */
+export const restack = (id: string) => stacked.delete(id.slice(0, id.lastIndexOf('#')))
 let onStacks = () => {}
 /** Called when stacks finish refreshing after a sync (the server re-sends the PR list). */
 export const setOnStacks = (f: () => void) => { onStacks = f }
 
 async function refreshStacks() {
-  // due: never worked out since the server started, its head moved, or older than STACK_EVERY
-  const due = Object.values(state.prs).filter((pr) => { const s = stacked.get(pr.id); return !pr.closed && !(s && s.sha === pr.headSha && Date.now() - s.at < STACK_EVERY) })
-  // six PRs at a time: each walks its chain with a few calls, one after another
-  const queue = [...due]
-  await Promise.all(Array.from({ length: 6 }, async () => { for (let pr; (pr = queue.shift());) await stackOf(pr).catch((e) => console.error('stack', pr.id, e.message)) }))
-}
-
-async function stackOf(pr: Pr) {
-  {
-    const [owner] = pr.repo.split('/')
-    const trunk = await defaultBranch(pr.repo).catch(() => 'main')
-    const self: StackRef = { repo: pr.repo, number: pr.number, title: pr.title, url: pr.url, head: pr.head, base: pr.base, author: pr.author.login, draft: pr.draft }
-    const below: StackRef[] = []
-    for (let base = pr.base, i = 0; base !== trunk && i < MAX_DEPTH; i++) {
-      const [p] = await gh<OpenPull[]>(`/repos/${pr.repo}/pulls?state=open&head=${owner}:${encodeURIComponent(base)}&per_page=5`)
-      if (!p) break
-      below.unshift(ref(pr.repo, p))
-      base = p.base.ref
-    }
-    const above: StackRef[] = []
-    for (let head = pr.head, i = 0; i < MAX_DEPTH; i++) {
-      // ponytail: a branch with several PRs on top follows the oldest; real trees are rare in practice
-      const kids = await gh<OpenPull[]>(`/repos/${pr.repo}/pulls?state=open&base=${encodeURIComponent(head)}&sort=created&direction=asc&per_page=5`)
-      if (!kids.length) break
-      above.push(ref(pr.repo, kids[0]))
-      head = kids[0].head.ref
-    }
-    const chain = [...below, self, ...above]
-    pr.stack = chain.length > 1 ? chain : undefined
-    // yours: which stack GitHub itself lists it in, so one built on another PR but never linked can be put in its stack
-    if (pr.mine && pr.stack) {
-      const s = (await gh<{ stack?: { number: number; position: number; size: number } }>(`/repos/${pr.repo}/pulls/${pr.number}`)).stack
-      pr.ghStack = s ? { number: s.number, position: s.position, size: s.size } : null
-    }
-    stacked.set(pr.id, { at: Date.now(), sha: pr.headSha })
-  }
+  const byRepo = new Map<string, Pr[]>()
+  for (const pr of Object.values(state.prs)) if (!pr.closed) byRepo.set(pr.repo, [...(byRepo.get(pr.repo) ?? []), pr])
+  await Promise.all([...byRepo].map(async ([repo, prs]) => {
+    // due: never worked out since the server started, a tracked PR's head or base moved (or one came or went), or older than STACK_EVERY
+    const sig = prs.map((p) => `${p.number}:${p.headSha}:${p.base}`).sort().join(','), was = stacked.get(repo)
+    if (was && was.sig === sig && Date.now() - was.at < STACK_EVERY) return
+    try {
+      const pulls: OpenPull[] = []
+      for (let page = 1; page <= 10; page++) { // 1000 open PRs: past that the rest count as not stacked
+        const got = await gh<OpenPull[]>(`/repos/${repo}/pulls?state=open&per_page=100&page=${page}`)
+        pulls.push(...got)
+        if (got.length < 100) break
+      }
+      const found = stacksFrom(repo, pulls, await defaultBranch(repo).catch(() => 'main'))
+      await Promise.all(prs.map(async (pr) => {
+        const f = found.get(pr.number)
+        if (!f) return // not in the list of open ones (just merged or closed): the next sync settles it
+        pr.stack = f.line.length > 1 ? f.line : undefined
+        pr.below = f.below
+        // yours: which stack GitHub itself lists it in, so one built on another PR but never linked can be put in its stack
+        if (pr.mine && pr.stack) {
+          const s = (await gh<{ stack?: { number: number; position: number; size: number } }>(`/repos/${repo}/pulls/${pr.number}`)).stack
+          pr.ghStack = s ? { number: s.number, position: s.position, size: s.size } : null
+        }
+      }))
+      stacked.set(repo, { at: Date.now(), sig })
+    } catch (e) { console.error('stacks', repo, (e as Error).message) }
+  }))
 }
 
 /** Refresh one tracked PR right away (after a post or approve, so the new review shows without waiting for a poll). */

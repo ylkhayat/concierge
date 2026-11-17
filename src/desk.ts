@@ -28,7 +28,9 @@ export function units(prs: PrView[], tickets: TicketView[], rules: Rules): Unit[
   const claimed = new Set<string>() // PRs a ticket unit holds
   const out: Unit[] = []
   const unit = (key: string, kind: Unit['kind'], title: string, members: PrView[], ticket?: TicketView): Unit => {
-    members = [...members].sort((a, b) => pos(a) - pos(b) || a.number - b.number)
+    // each after what it is built on (PRs built on the same one are a tree, not a line)
+    const at = new Map(treeOf(members).map((x, i) => [`${x.repo}#${x.number}`, i]))
+    members = [...members].sort((a, b) => (at.get(a.id) ?? 0) - (at.get(b.id) ?? 0) || pos(a) - pos(b) || a.number - b.number)
     const tAsks = ticket && ASKS.includes(rules.ticketGroup(ticket)) ? 1 : 0
     return {
       key, kind, title, members, ticket,
@@ -83,7 +85,27 @@ export function unitOf(all: Unit[], id: string, prefer?: string) {
 }
 
 /** A stack as it is now, found from any of its PRs (so a link to it survives restacking). A PR in no stack is a stack of one. */
-export type StackView = { key: string; all: { repo: string; number: number; title?: string }[]; members: PrView[]; tickets: TicketView[]; title?: string } // title: for one with no PR yet
+export type StackItem = { repo: string; number: number; title?: string; depth: number } // depth: how many PRs it sits on
+export type StackView = { key: string; all: StackItem[]; members: PrView[]; tickets: TicketView[]; title?: string } // title: for one with no PR yet
+
+/**
+ * Every PR of the tree these PRs belong to, bottom first: each PR's line names what is below and above it, and several
+ * PRs can be built on the same one, so the lines are joined into the tree and read depth first (a PR, then everything
+ * built on it, the oldest branch first). The order to work in: nothing comes before what it is built on.
+ */
+export function treeOf(prs: PrView[]): StackItem[] {
+  type Ref = NonNullable<PrView['stack']>[number]
+  const refs = new Map<number, Ref>()
+  for (const p of prs) for (const r of p.stack ?? [{ repo: p.repo, number: p.number, title: p.title, head: p.head, base: p.base } as Ref]) if (!refs.has(r.number)) refs.set(r.number, r)
+  const byHead = new Map([...refs.values()].map((r) => [r.head, r]))
+  const kids = new Map<number | undefined, Ref[]>()
+  for (const r of [...refs.values()].sort((a, b) => a.number - b.number)) { const below = byHead.get(r.base)?.number; kids.set(below, [...(kids.get(below) ?? []), r]) }
+  const out: StackItem[] = [], seen = new Set<number>()
+  const walk = (r: Ref, depth: number) => { if (seen.has(r.number)) return; seen.add(r.number); out.push({ repo: r.repo, number: r.number, title: r.title, depth }); for (const k of kids.get(r.number) ?? []) walk(k, depth + 1) }
+  for (const r of kids.get(undefined) ?? []) walk(r, 0)
+  for (const r of refs.values()) walk(r, 0) // a circle of branches: still listed
+  return out
+}
 export function stackAt(prs: PrView[], tickets: TicketView[], id: string): StackView | undefined {
   // "ticket:<id>": tickets that ship as one stack, found from any of them, with whatever PRs they have so far
   if (id.startsWith('ticket:')) {
@@ -97,7 +119,9 @@ export function stackAt(prs: PrView[], tickets: TicketView[], id: string): Stack
   }
   const p = prs.find((x) => x.id === id)
   if (!p) return undefined
-  const all = p.stack?.length ? p.stack.map((s) => ({ repo: p.repo, number: s.number, title: s.title })) : [{ repo: p.repo, number: p.number, title: p.title }]
+  // the whole tree it sits in: every open PR with the same bottom (PRs built on the same one are one stack, not several)
+  const root = (x: PrView) => x.stack?.[0].number ?? x.number
+  const all = treeOf(prs.filter((x) => !x.closed && x.repo === p.repo && root(x) === root(p)))
   const members = all.map((s) => prs.find((x) => x.repo === s.repo && x.number === s.number && !x.closed)).filter((x): x is PrView => !!x)
   const has = new Set(members.map((m) => `${m.repo}#${m.number}`))
   // its tickets, and the ones those ship with (a ticket of the same run-stack that has no PR yet still belongs)
