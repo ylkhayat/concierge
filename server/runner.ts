@@ -434,8 +434,8 @@ export function reroute() {
   void rebalance().catch((e) => console.warn('orchestrator:', (e as Error).message)).finally(() => { pump(); bus.emit('health'); bus.emit('change'); bus.emit('exec') })
 }
 /** Was this run ended by the plan (paused here, or refused by Claude)? Then it goes back in the queue. */
-function pausedBy(key: string, e: Ended, error?: string, provider: ProviderId = 'claude') {
-  if (paused.delete(key) && !e.resulted) return true
+function pausedBy(wasPaused: boolean, e: Ended, error?: string, provider: ProviderId = 'claude') {
+  if (wasPaused && !e.resulted) return true
   if (!limitHit(error)) return false
   if (provider !== 'claude') return true // its limit is marked where the run said so (runAgent): it waits for that one
   // refused with no report saying so: count the session window as used up, so the queue doesn't start it again at once
@@ -963,6 +963,7 @@ function start(pr: Pr) {
       if (port && job.critPort !== Number(port)) { job.critPort = Number(port); save(); bus.emit('change') }
     },
     onResult: (r) => {
+      if (r.num_turns) job.continued = 0 // it got somewhere: the restarts before that no longer count as "in a row"
       // Claude reports a resumed session's running total, so this run cost the difference; Codex reports this run's own
       const total = r.provider ? (job.sessionCostBefore ?? 0) + (r.total_cost_usd ?? 0) : r.total_cost_usd ?? 0
       job.sessionCostUsd = total
@@ -983,13 +984,14 @@ function start(pr: Pr) {
       job.endedAt = new Date().toISOString()
       addSpend(job.costUsd ?? 0, job.provider, job.tokens)
       const told = (kind: 'error' | 'event', text: string) => note(pr.id, { at: job.endedAt!, kind, text })
+      // why it was stopped, taken (and forgotten) once: left behind, a flag would explain away the next real failure
+      const wasPaused = paused.delete(pr.id), moveTo = moving.get(pr.id); moving.delete(pr.id)
       if (e.cancelled) { // you stopped it: that is the whole story, whatever its exit says
         ev('cancelled', 'cancelled by you', { continuing: false })
         save(); bus.emit('change'); bus.emit('finished', pr.id, job); pump(); return
       }
-      if (moving.has(pr.id) && e.resulted) moving.delete(pr.id) // it finished first: nothing to move
-      if (moving.has(pr.id)) { // stopped to move to the account that leads now: it continues there, same conversation
-        const to = moving.get(pr.id)!; moving.delete(pr.id)
+      if (moveTo && !e.resulted) { // stopped to move to the account that leads now (one that finished first has nothing to move): it continues there, same conversation
+        const to = moveTo
         if (to === 'claude') delete job.provider; else job.provider = to
         ev('queued', 'moved', { continuing: true, error: undefined, sessionCostBefore: e.resulted ? job.sessionCostUsd : job.sessionCostBefore })
         told('event', `Moved to ${accountOf(to).label}: it continues the same conversation there.`)
@@ -1006,7 +1008,7 @@ function start(pr: Pr) {
         ev('queued', 'provider unavailable', { continuing: false, error: undefined })
         save(); bus.emit('change'); pump(); return
       }
-      if (pausedBy(pr.id, e, job.error, job.provider)) {
+      if (pausedBy(wasPaused, e, job.error, job.provider)) {
         // what this part cost is counted now, so the next part counts from here
         ev('queued', 'plan limit', { continuing: true, pausedAt: job.endedAt, error: undefined, sessionCostBefore: e.resulted ? job.sessionCostUsd : job.sessionCostBefore })
         told('event', pausedNote(job.provider))
@@ -1026,10 +1028,14 @@ function start(pr: Pr) {
         save(); bus.emit('change'); pump(); return
       }
       job.continuing = false
-      if (e.signal && !e.resulted) ev('cancelled', `stopped (${e.signal})`)
-      else if ((e.code === 0 || e.resulted) && !job.error && isFollowUp(job.kind) && e.turns === 0) {
-        // the agent ended without doing anything: nothing was posted, so say so instead of "done"
-        job.error = 'The agent session ended without acting, so nothing was posted. Try again.'
+      if (e.signal && !e.resulted) {
+        // killed without a word (you stopping it was handled above): out of memory, or stopped from outside. A failure
+        // you are told about, not a cancel that reads as if nothing went wrong
+        job.error ??= `The agent was killed (${e.signal}) before it finished: the machine ran out of memory, or something outside stopped it. Run it again.`
+        ev('failed', `killed (${e.signal})`); told('error', job.error)
+      } else if ((e.code === 0 || e.resulted) && !job.error && e.turns === 0) {
+        // the agent ended without doing anything (a review as much as a reply): say so instead of "done"
+        job.error = isFollowUp(job.kind) ? 'The agent session ended without acting, so nothing was posted. Try again.' : 'The agent ended without doing anything, so nothing was reviewed. Run it again.'
         ev('failed', 'ended without acting'); told('error', job.error)
       } else if ((e.code === 0 || e.resulted) && !job.error) {
         ev('done', 'result', isFollowUp(job.kind) ? {} : { reviewDone: true })
@@ -1140,7 +1146,7 @@ const devlogArgs = () => (devlogs ? ['--add-dir', DEVLOGS] : [])
  * (sending its command again could re-post or re-push what it already did); one that never started starts as it was.
  */
 export function runAgain(key: string): string | undefined {
-  const again = { continued: 0, error: undefined, alerted: undefined, endedAt: undefined, pausedAt: undefined, notBefore: undefined }
+  const again = { continued: 0, error: undefined, alerted: undefined, endedAt: undefined, pausedAt: undefined, notBefore: undefined, planning: undefined }
   if (key.startsWith('exec:')) {
     const r = state.execs[key.slice(5)]
     if (!r || !STOPPED.has(r.state)) return 'That run is not stopped'
@@ -1243,6 +1249,7 @@ function startExec(run: ExecRun, on?: string) {
       changed()
     },
     onResult: (m) => {
+      if (m.num_turns) run.continued = 0 // it got somewhere: the restarts before that no longer count as "in a row"
       // Claude reports a resumed session's running total; Codex this run's own
       const total = m.provider ? (run.costBefore ?? 0) + (m.total_cost_usd ?? 0) : m.total_cost_usd ?? 0
       run.costUsd = Math.max(0, total - (run.costBefore ?? 0))
@@ -1260,10 +1267,10 @@ function startExec(run: ExecRun, on?: string) {
       addSpend(run.costUsd ?? 0, run.provider, run.tokens)
       const told = (kind: 'error' | 'event', text: string) => note(key, { at: run.endedAt!, kind, text })
       const finished = () => { save(); bus.emit('exec'); bus.emit('exec-finished', run); pump() }
+      const wasPaused = paused.delete(key), moveTo = moving.get(key); moving.delete(key) // taken once, as for a PR's run
       if (e.cancelled) { ev('cancelled', 'cancelled by you', { continuing: false }); return finished() } // that's the whole story
-      if (moving.has(key) && e.resulted) moving.delete(key) // it finished first: nothing to move
-      if (moving.has(key)) {
-        const to = moving.get(key)!; moving.delete(key)
+      if (moveTo && !e.resulted) { // one that finished first has nothing to move
+        const to = moveTo
         if (to === 'claude') delete run.provider; else run.provider = to
         ev('queued', 'moved', { continuing: true, error: undefined, costBefore: e.resulted ? (run.costBefore ?? 0) + (run.costUsd ?? 0) : run.costBefore })
         told('event', `Moved to ${accountOf(to).label}: it continues the same conversation there.`)
@@ -1280,7 +1287,7 @@ function startExec(run: ExecRun, on?: string) {
         ev('queued', 'provider unavailable', { continuing: false, error: undefined })
         return finished()
       }
-      if (pausedBy(key, e, run.error, run.provider)) {
+      if (pausedBy(wasPaused, e, run.error, run.provider)) {
         ev('queued', 'plan limit', { continuing: true, pausedAt: run.endedAt, error: undefined, costBefore: e.resulted ? (run.costBefore ?? 0) + (run.costUsd ?? 0) : run.costBefore })
         told('event', pausedNote(run.provider))
         save(); bus.emit('exec'); pump(); return
@@ -1299,8 +1306,10 @@ function startExec(run: ExecRun, on?: string) {
         save(); bus.emit('exec'); pump(); return
       }
       run.continuing = false
-      if (e.signal && !e.resulted) ev('cancelled', `stopped (${e.signal})`)
-      else if ((e.code === 0 || e.resulted) && !run.error && e.turns > 0) ev('done', 'result', { phase: 'done' })
+      if (e.signal && !e.resulted) {
+        run.error ??= `The agent was killed (${e.signal}) before it finished: the machine ran out of memory, or something outside stopped it. Run it again.`
+        ev('failed', `killed (${e.signal})`); told('error', run.error)
+      } else if ((e.code === 0 || e.resulted) && !run.error && e.turns > 0) ev('done', 'result', { phase: 'done' })
       else {
         run.error ??= short(e.stderr, 400) || `exited with code ${e.code}`
         ev('failed', e.resulted ? 'error result' : `exit ${e.code}`); told('error', run.error) // a failed exec run says so in its feed too

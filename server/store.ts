@@ -295,7 +295,9 @@ export function prune(now = Date.now()) {
     else if (age > 3 * DAY && (p.body || p.bodyHtml)) { p.body = ''; p.bodyHtml = '' }
   }
   for (const [id, r] of Object.entries(state.execs)) {
-    if (!busy(r.state) && r.endedAt && now - Date.parse(r.endedAt) > 90 * DAY) { delete state.execs[id]; gone++ }
+    // one cancelled in the queue, or stopped by restarts, has no end: its last known time stands in
+    const last = r.endedAt ?? r.startedAt ?? (r.state === 'cancelled' ? r.queuedAt : undefined) // (one that never started and wasn't cancelled goes back in the queue below)
+    if (!busy(r.state) && last && now - Date.parse(last) > 90 * DAY) { delete state.execs[id]; gone++ }
   }
   const year = new Date(now - 366 * DAY).toLocaleDateString('en-CA')
   for (const day of Object.keys(state.spend)) if (day < year) delete state.spend[day]
@@ -361,6 +363,7 @@ for (const pr of Object.values(state.prs)) {
   if (pr.explain?.state === 'running') transition('explain', pr.id, pr.explain.queuedAt, pr.explain, 'queued', 'restart')
 }
 for (const r of Object.values(state.execs)) {
+  delete r.planning // its plan was being made by the server that stopped: nothing would ever say it is in, so it starts without one
   if (r.state === 'running') pickUp('exec', r.ids.join(' → '), r.id, r)
   else if (r.state === 'interrupted' && !r.startedAt) transition('exec', r.ids.join(' → '), r.id, r, 'queued', 'never started')
 }

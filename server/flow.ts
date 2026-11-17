@@ -125,7 +125,8 @@ function mine(f: FlowIn): Flow {
     return { state: 'feedback', step: 0, why: `${approved ? 'Approved, but' : f.reviewDecision === 'CHANGES_REQUESTED' ? 'Changes were requested:' : 'New feedback:'} ${waits}. A revise brings ${f.awaiting === 1 ? 'it' : 'them'} into crit.`, next: approved ? 'finalize' : 'run', also: ['read'] }
   }
   // the round has them: fixed by a fix round (or Finish Review in crit), and not pushed since?
-  const fixed = j!.kind === 'reply' || (finished && j!.kind === 'revise')
+  // a reply you cancelled (or one that failed) fixed nothing: only one that finished counts
+  const fixed = (j!.kind === 'reply' && j!.state === 'done') || (finished && j!.kind === 'revise')
   if (fixed) return { state: 'fixed', step: 3, why: 'The fixes are committed locally and the replies drafted. Nothing is on GitHub yet.', next: 'publish', also: ['fix'] }
   if (critUp && j!.kind === 'revise') return { state: 'in-crit', step: 2, why: `The threads are in crit: ${waits}. Fix or answer them there, then Finish Review.`, next: 'crit', also: ['fix'] }
   return {
