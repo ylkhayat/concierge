@@ -116,12 +116,14 @@ export function setIdentity(p: ProviderId, who: string) {
 }
 
 /**
- * The account for this work now: the chosen one for as long as it can take work, then the first in the fallback order
- * that can. Strictly in that order: an account is used until it is used up (its plan window at the pause point, a
- * limit, a budget, a lapsed sign-in), never left early for one further down.
+ * The account for this work now: the one picked for it (else the top of the order) for as long as it can take work,
+ * then the first in the order that can. Strictly in that order: an account is used until it is used up (its plan
+ * window at the pause point, a limit, a budget, a lapsed sign-in), never left early for one further down.
  */
+/** The account a kind of work is meant for: the one picked for it, else the top of the order. */
+export const chosenFor = (work: Work): ProviderId => config.providers?.use?.[work] ?? config.providers?.fallback?.[0] ?? 'claude'
 export function providerFor(work: Work): ProviderId {
-  const chosen = config.providers?.use?.[work] ?? 'claude'
+  const chosen = chosenFor(work)
   if (available(chosen)) return chosen
   return (config.providers?.fallback ?? []).find((p) => p !== chosen && available(p)) ?? chosen
 }

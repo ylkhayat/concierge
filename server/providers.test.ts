@@ -57,7 +57,7 @@ test('who runs it: the chosen account, else the next in the fallback order that 
   assert.equal(available('llama'), false) // no Ollama with its models seen here
   config.accounts = [{ id: 'b', label: 'Claude (b)', kind: 'claude', home: '/h/b' }]
   config.providers = { use: { review: 'openai' }, fallback: ['llama', 'b', 'claude'], budgets: { b: 1 } }
-  assert.equal(providerFor('small'), 'claude') // nothing chosen: Claude
+  assert.equal(providerFor('small'), 'b') // nothing picked for it: the top of the order (Llama) can't, so the next that can
   assert.equal(providerFor('review'), 'b') // OpenAI isn't signed in, Llama lacks its models: the next one
   state.spendBy = { [today()]: { b: { usd: 1, input: 0, output: 0, runs: 1 } } }
   assert.equal(providerFor('review'), 'claude') // b is over its budget
@@ -80,6 +80,11 @@ test('work follows the order strictly: the chosen account until it is used up, t
   assert.equal(providerFor('exec'), 'third')
   held.delete('work')
   assert.equal(providerFor('exec'), 'work') // room again (a reset, or the pause point raised): back at once
+  held.clear()
+  config.providers = { fallback: ['person', 'work'] }
+  assert.equal(providerFor('exec'), 'person') // nothing picked for this work: the top of the order takes it
+  config.providers = { use: { exec: 'work' }, fallback: ['person', 'work'] }
+  assert.equal(providerFor('exec'), 'work') // picked for it: that one first, whatever the order
   watchClaudePlan(() => false); delete config.providers; delete config.accounts
 })
 

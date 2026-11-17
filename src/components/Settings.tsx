@@ -643,7 +643,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
             </thead>
             <tbody className="divide-y divide-line">
               {WORKS.map(([w, title, hint]) => {
-                const chosen = v.use[w] ?? 'claude', r = v.routing.find((x) => x.work === w)
+                const chosen = v.use[w] ?? v.fallback[0] ?? 'claude', r = v.routing.find((x) => x.work === w)
                 return (
                   <tr key={w} className="hover:bg-hover/50">
                     <td className="px-4 py-2.5">
@@ -746,7 +746,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
       </section>
 
       {!compact && <>
-      <Group title="When an account can't run" hint="Agents pause when a Claude plan window is this full; fresh work then goes to the first account below that can take it.">
+      <Group title="The order" hint="Work goes to the first account here that can take it, unless you picked one for that kind of work above; when that one can't run, the next here does. Agents pause when a Claude plan window is this full.">
         <Row icon={Gauge} title="Pause agents at" hint="Lower leaves room for your own Claude use. At 100%, a run stops wherever Claude refuses.">
           <Tabs size="sm" label="Pause agents at" value={String(v.stopAt)} onChange={(n) => void set({ stopAt: Number(n) }, `Agents now pause at ${n}% of a plan window`)}
                 options={[...new Set([80, 90, 95, 99, 100, v.stopAt])].sort((a, b) => a - b).map((n) => ({ id: String(n), label: `${n}%`, title: n === 95 ? 'The default' : n === 100 ? 'Until Claude refuses' : undefined }))} />

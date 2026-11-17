@@ -19,7 +19,7 @@ import { missingOn } from './connections.ts'
 import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
 import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
-import { accountOf, accounts, available, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
+import { accountOf, accounts, available, chosenFor, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
 import { mine, readLines } from './perMachine.ts'
@@ -325,7 +325,7 @@ const moving = new Map<string, ProviderId>() // stopped to move: where to
 // Claude Code itself (a Claude account, or Llama through Ollama): takes its prompt on stdin and keeps a conversation as
 // a file that can be carried to another such account. Codex and Copilot take the prompt once, as an argument
 const isClaudeCode = (p: ProviderId) => kindOf(p) === 'claude' || kindOf(p) === 'llama'
-const rank = (p: ProviderId, work: Work) => { const order = [config.providers?.use?.[work] ?? 'claude', ...(config.providers?.fallback ?? [])]; const i = order.indexOf(p); return i < 0 ? order.length : i }
+const rank = (p: ProviderId, work: Work) => { const order = [chosenFor(work), ...(config.providers?.fallback ?? [])]; const i = order.indexOf(p); return i < 0 ? order.length : i }
 const folderOf = (p: ProviderId) => accountOf(p).home ?? CLAUDE_HOME
 /** Copy a Claude Code conversation into another account's folder (its projects/<dir>/<id>.jsonl), so it resumes there. */
 async function carry(session: string, from: ProviderId, to: ProviderId): Promise<boolean> {
@@ -479,7 +479,7 @@ export const windowsFor = (p: ProviderId) => kindOf(p) === 'claude' ? usageOf(p)
 /** Who takes each kind of fresh work now: the chosen account, or the fallback standing in for it, and why. */
 export function routing() {
   return (['review', 'revise', 'exec', 'small'] as Work[]).map((work) => {
-    const chosen = config.providers?.use?.[work] ?? 'claude', using = providerFor(work)
+    const chosen = chosenFor(work), using = providerFor(work)
     const w = whyNot(chosen)
     return { work, chosen, using, label: accountOf(using).label, chosenLabel: accountOf(chosen).label, why: w?.why, until: w?.until, stuck: !available(using) }
   })
