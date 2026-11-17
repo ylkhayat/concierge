@@ -17,9 +17,9 @@
 // A tool you don't use costs an empty folder. Without these variables (a native install, where Concierge runs your
 // own tools as you do) nothing here does anything.
 import { execFile } from 'node:child_process'
-import { chmod, copyFile, lstat, mkdir, readdir, readFile, readlink, stat, symlink, unlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
@@ -91,11 +91,41 @@ async function sessions() {
   if (dirs.length) console.log(`agent home: copied the agents' sessions (${dirs.length} folders, ${Math.round((Date.now() - t) / 1000)}s)`)
 }
 
+// --- one skills folder for the tools that aren't Claude Code. Claude Code finds your skills, your commands and its
+// plugins' skills by itself; Codex and Copilot only know skill folders. So Concierge keeps a folder of links, rebuilt at
+// start and every ten minutes: each of your skills, each of your commands as a skill of the same name (a command file is
+// a skill's text without the folder), and each skill of the plugins you enabled. Nothing is copied or changed.
+const base = OWN ?? OWN_CODEX ?? process.env.COPILOT_HOME
+const SHARED = base ? join(dirname(base), 'agent-skills') : undefined
+/** The skills folder Codex and Copilot read: Concierge's folder of links, or yours on a native install. */
+export const agentSkills = async () => SHARED ?? userSkills()
+/** What the folder should hold: name → the skill folder it links to, or the command file that is its SKILL.md. */
+export async function wantedSkills(skills: string, commands: string, pluginDirs: string[]) {
+  const want = new Map<string, { dir: string } | { file: string }>()
+  const names = async (d: string) => (await readdir(d).catch(() => [] as string[])).filter((n) => !n.startsWith('.')).sort()
+  for (const n of await names(skills)) if (await there(join(skills, n, 'SKILL.md'))) want.set(n, { dir: join(skills, n) })
+  for (const f of await names(commands)) if (f.endsWith('.md') && !want.has(f.slice(0, -3))) want.set(f.slice(0, -3), { file: join(commands, f) })
+  for (const d of pluginDirs) for (const n of await names(d)) if (!want.has(n) && await there(join(d, n, 'SKILL.md'))) want.set(n, { dir: join(d, n) })
+  return want
+}
+async function shareSkills() {
+  if (!SHARED) return
+  const installed = await readFile(join(CLAUDE_HOME, 'plugins', 'installed_plugins.json'), 'utf8').then((t) => Object.values((JSON.parse(t) as { plugins?: Record<string, { installPath?: string }[]> }).plugins ?? {}).flatMap((v) => (v[0]?.installPath ? [join(v[0].installPath, 'skills')] : [])), () => [] as string[])
+  const want = await wantedSkills(await userSkills(), join(USER_CLAUDE, 'commands'), installed)
+  await mkdir(SHARED, { recursive: true })
+  for (const n of await readdir(SHARED).catch(() => [] as string[])) if (!want.has(n)) await rm(join(SHARED, n), { recursive: true, force: true }) // a link, or a command's folder: never what they point to
+  for (const [n, w] of want) {
+    const here = join(SHARED, n), st = await lstat(here).catch(() => undefined)
+    if ('dir' in w) { if (st?.isDirectory()) await rm(here, { recursive: true, force: true }); await link(w.dir, here) }
+    else { if (st?.isSymbolicLink()) await unlink(here); await mkdir(here, { recursive: true }); await link(w.file, join(here, 'SKILL.md')) }
+  }
+}
+
 /** Codex's folder: your config (when yours is newer), your skills, and once your sign-in and its sessions so far. */
 async function codexHome() {
   if (!OWN_CODEX) return
   await mkdir(OWN_CODEX, { recursive: true })
-  await link(await userSkills('codex'), join(OWN_CODEX, 'skills'))
+  await link(await agentSkills(), join(OWN_CODEX, 'skills'))
   const yours = join(USER_CODEX, 'config.toml'), mine = join(OWN_CODEX, 'config.toml')
   const [a, b] = await Promise.all([stat(yours).catch(() => undefined), stat(mine).catch(() => undefined)])
   if (a && (!b || a.mtimeMs > b.mtimeMs)) await copyFile(yours, mine)
@@ -112,6 +142,7 @@ export const agentHomesReady = () => slow
  * sign-in. The sessions and Claude's plugins follow in the background; agent runs wait for them (agentHomesReady).
  */
 export async function ensureAgentHomes() {
+  await shareSkills().catch((e: Error) => console.warn('agent home: skills:', e.message))
   if (process.env.COPILOT_HOME) await mkdir(process.env.COPILOT_HOME, { recursive: true }).catch(() => {}) // its sessions, kept across rebuilds; it signs in with the GitHub token
   await codexHome().catch((e: Error) => console.warn('agent home: codex:', e.message))
   if (!OWN) return
@@ -121,9 +152,9 @@ export async function ensureAgentHomes() {
   await settings().catch((e: Error) => console.warn('agent home: claude settings:', e.message))
   const login = join(OWN, '.credentials.json')
   if (!(await there(login)) && await there(join(USER_CLAUDE, '.credentials.json'))) { await copyFile(join(USER_CLAUDE, '.credentials.json'), login); await chmod(login, 0o600) }
-  const work = Promise.all([sessions(), plugins()]).catch((e: Error) => console.warn('agent home:', e.message))
+  const work = Promise.all([sessions(), plugins().then(shareSkills)]).catch((e: Error) => console.warn('agent home:', e.message))
   slow = Promise.race([work, new Promise((r) => setTimeout(r, 5 * 60_000).unref())])
   // your settings may change while it runs (a plugin enabled, a permission): followed every ten minutes
-  setInterval(() => void settings().then(plugins).catch(() => {}), 10 * 60_000).unref()
+  setInterval(() => void settings().then(plugins).then(shareSkills).catch(() => {}), 10 * 60_000).unref()
 }
 await ensureAgentHomes() // on import: every module that starts a tool imports this first, so its folder is there before it is asked anything

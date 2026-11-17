@@ -3,7 +3,8 @@ import { mkdtemp, lstat, readFile, readlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { adapted, link, marketplaceSource, sessionDir } from './agentHome.ts'
+import { mkdir } from 'node:fs/promises'
+import { adapted, link, marketplaceSource, sessionDir, wantedSkills } from './agentHome.ts'
 
 test("your settings come over without what only runs on your machine", () => {
   const yours = { hooks: { Stop: [{ hooks: [{ command: '/Users/me/bin/notify' }] }] }, statusLine: { command: '/Users/me/bin/line' }, enabledPlugins: { 'linear@official': true }, permissions: { allow: ['Read'] } }
@@ -27,4 +28,13 @@ test('a link is made once, redone when it points elsewhere, and never replaces a
   const file = join(d, 'file'); await writeFile(file, 'copy from another machine')
   await link(a, file); assert.equal(await readFile(file, 'utf8'), 'copy from another machine') // left alone…
   await link(a, file, true); assert.equal(await readlink(file), a) // …unless it is one that must be a link
+})
+
+test("the other tools' skills folder: your skills, your commands as skills, then the plugins', the first of a name winning", async () => {
+  const d = await mkdtemp(join(tmpdir(), 'sk-')), put = async (p: string) => { await mkdir(join(d, p, '..'), { recursive: true }); await writeFile(join(d, p), 'x') }
+  await put('skills/review/SKILL.md'); await put('skills/.removed/old/SKILL.md'); await put('skills/notes.txt')
+  await put('commands/ship.md'); await put('commands/review.md') // a command named like a skill: the skill stays
+  await put('plugin/skills/crit/SKILL.md'); await put('plugin/skills/ship/SKILL.md')
+  const want = await wantedSkills(join(d, 'skills'), join(d, 'commands'), [join(d, 'plugin/skills'), join(d, 'missing')])
+  assert.deepEqual([...want], [['review', { dir: join(d, 'skills/review') }], ['ship', { file: join(d, 'commands/ship.md') }], ['crit', { dir: join(d, 'plugin/skills/crit') }]])
 })

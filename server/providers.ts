@@ -6,7 +6,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { CLAUDE_HOME, CODEX_HOME, link, USER_CLAUDE, userSkills } from './agentHome.ts'
+import { agentSkills, CLAUDE_HOME, CODEX_HOME, link, USER_CLAUDE, userSkills } from './agentHome.ts'
 import { join } from 'node:path'
 import { PassThrough, type Readable, type Writable } from 'node:stream'
 import { config, state } from './store.ts'
@@ -129,8 +129,8 @@ export function providerFor(work: Work): ProviderId {
 // --- each account's environment: its own sign-in folder, or its own Ollama
 const OLLAMA_HERE = process.env.OLLAMA_HOST?.replace(/\/$/, '') || 'http://127.0.0.1:11434'
 export const ollamaOf = (p: ProviderId) => accountOf(p).host?.replace(/\/$/, '') || OLLAMA_HERE
-// your skills folder (agentHome.ts), found once at start: Copilot is pointed at it, the other tools have it linked in
-const skillsDir = await userSkills()
+// the skills folder for tools that aren't Claude Code (agentHome.ts): Copilot is pointed at it, Codex has it linked in
+const skillsDir = await agentSkills()
 export function envOf(p: ProviderId, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const a = accountOf(p)
   if (a.kind === 'claude' && a.home) { const env: NodeJS.ProcessEnv = { ...base, CLAUDE_CONFIG_DIR: a.home }; delete env.CLAUDE_CODE_OAUTH_TOKEN; return env }
@@ -502,7 +502,7 @@ export async function ollamaState(p: ProviderId = 'llama'): Promise<{ up: boolea
 export async function prepareHome(home: string, kind: 'claude' | 'openai') {
   const { mkdir } = await import('node:fs/promises')
   await mkdir(home, { recursive: true })
-  if (kind === 'openai') { await link(join(CODEX_HOME, 'config.toml'), join(home, 'config.toml'), true); await link(await userSkills('codex'), join(home, 'skills')); return }
+  if (kind === 'openai') { await link(join(CODEX_HOME, 'config.toml'), join(home, 'config.toml'), true); await link(await agentSkills(), join(home, 'skills')); return }
   // yours: what you wrote. Concierge's own Claude folder: the settings as adapted for it, and the plugins installed for
   // this machine. A copy another machine sent in a link's place (links don't travel) is replaced by the link
   await link(await userSkills('claude'), join(home, 'skills'))
