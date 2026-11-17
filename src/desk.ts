@@ -81,3 +81,14 @@ export function unitOf(all: Unit[], id: string, prefer?: string) {
   const holds = (u: Unit) => u.ticket?.id === id || u.members.some((p) => p.id === id)
   return all.find((u) => u.key === prefer && holds(u)) ?? all.find(holds)
 }
+
+/** A stack as it is now, found from any of its PRs (so a link to it survives restacking). A PR in no stack is a stack of one. */
+export type StackView = { key: string; all: { repo: string; number: number; title?: string }[]; members: PrView[]; tickets: TicketView[] }
+export function stackAt(prs: PrView[], tickets: TicketView[], id: string): StackView | undefined {
+  const p = prs.find((x) => x.id === id)
+  if (!p) return undefined
+  const all = p.stack?.length ? p.stack.map((s) => ({ repo: p.repo, number: s.number, title: s.title })) : [{ repo: p.repo, number: p.number, title: p.title }]
+  const members = all.map((s) => prs.find((x) => x.repo === s.repo && x.number === s.number && !x.closed)).filter((x): x is PrView => !!x)
+  const has = new Set(members.map((m) => `${m.repo}#${m.number}`))
+  return { key: `stack:${members[0]?.id ?? p.id}`, all, members, tickets: tickets.filter((t) => t.prs.some((x) => has.has(`${x.repo}#${x.number}`))) }
+}

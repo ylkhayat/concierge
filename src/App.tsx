@@ -31,7 +31,8 @@ import { Desk } from './components/Desk.tsx'
 import { Machine } from './components/Machine.tsx'
 import { Read } from './components/Read.tsx'
 import { Focus } from './components/Focus.tsx'
-import { current, finished, unitOf, units, type Rules, type Unit } from './desk.ts'
+import { current, finished, stackAt, unitOf, units, type Rules, type Unit } from './desk.ts'
+import { StackPage } from './thread/StackPage.tsx'
 import { focusBlock, offUntil, useDeskTime } from './deskTime.ts'
 import { useNewVersion } from './fresh.ts'
 
@@ -164,11 +165,14 @@ export function App() {
   const pr = mode !== 'exec' ? prs?.find((p) => p.id === selected) : undefined
   // "codebase:owner/repo" selects the codebase view instead of a PR
   const codebaseRepo = mode === 'review' && selected?.startsWith('codebase:') ? selected.slice('codebase:'.length) : undefined
-  const detailOpen = !!pr || !!codebaseRepo || !!ticket
+  // "stack:<any of its PRs>" selects the stack itself: found from that PR as the stack is now, so a link survives restacking
+  const stack = selected?.startsWith('stack:') && prs ? stackAt(prs, tickets, selected.slice('stack:'.length)) : undefined
+  const stackPage = stack && <div key={stack.key} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]"><StackPage stack={stack} prs={prs ?? []} waiting={waiting} onSelect={(id) => goPr(id)} onTicket={(id) => goTicket(id)} toast={toast} /></div>
+  const detailOpen = !!pr || !!codebaseRepo || !!ticket || !!stack
   // the list follows the open PR (link, notification, hash) until you pick a tab yourself
-  const tab = pickedTab ?? (pr ? tabOf(pr) : 'review')
+  const tab = pickedTab ?? (pr ? tabOf(pr) : stack?.members[0] ? tabOf(stack.members[0]) : 'review')
   // Review under the focus: its PRs (the open one stays listed, even from a link into another repo)
-  const focusedPrs = prs && focus ? prs.filter((p) => p.repo === focus || p.id === selected) : prs
+  const focusedPrs = prs && focus ? prs.filter((p) => p.repo === focus || p.id === selected || stack?.members.includes(p)) : prs
   const list = focusedPrs ? ordered(focusedPrs, query, tab) : []
   const needsYou = prs?.filter(waiting).length ?? 0
   // the desk: one unit (a stack, a ticket with its PRs, a lone PR) at a time, under the same focus
@@ -397,7 +401,7 @@ export function App() {
               <CodebaseView repo={codebaseRepo} repos={repos} onRepo={(r) => select(`codebase:${r}`)} health={health} toast={toast} />
             </Suspense>
           </div>
-        ) : pr ? (
+        ) : stackPage ? stackPage : pr ? (
           // keyed: each PR gets a fresh detail that fades in, instead of morphing the previous one
           <div key={pr.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
             <PrPage pr={pr} feed={feed} now={now} onBack={() => select(undefined)} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => (l.kind === 'ticket' ? goTicket(l.id) : select(l.id))} sync={{ at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }} />
@@ -417,11 +421,11 @@ export function App() {
         <Desk unit={unit} all={deskUnits} later={deskLater} selected={selected} onSelect={select} onUnit={(u) => goUnit(u)} toast={toast}>
           {pr ? (
             <div key={pr.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
-              <PrPage compact ticket={unit.ticket} pr={pr} feed={feed} now={now} onBack={() => setMode('review')} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => select(l.id)} sync={syncPr} />
+              <PrPage compact ticket={unit.ticket} pr={pr} feed={feed} now={now} onBack={() => setMode('review')} toast={toast} prs={prs ?? []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} onOpenLinked={(l) => select(l.id)} sync={syncPr} />
             </div>
           ) : ticket ? (
             <div key={ticket.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
-              <TicketPage compact t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={select} toast={toast} onOpenLinked={(l) => select(l.id)} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
+              <TicketPage compact t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} toast={toast} onOpenLinked={(l) => select(l.id)} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
             </div>
           ) : null}
         </Desk>
@@ -449,8 +453,8 @@ export function App() {
             : <div className="space-y-2 p-3 pt-6">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-xl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
-      <main className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket ? 'block' : 'hidden'}`}>
-        {ticket ? (
+      <main className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
+        {stackPage ? stackPage : ticket ? (
           <div key={ticket.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
             <TicketPage t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
           </div>

@@ -99,7 +99,7 @@ export function TicketThread(props: TicketThreadProps) {
                                            why={t.queued ? queuedText(t.queued) : t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}
                   topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: t.prs.length > 1 ? steerPr : undefined, toast }} />
       )}
-      pane={pane === 'overview' ? <TicketOverview t={t} why={!t.busy && next ? TITLE[next](t) : undefined} onPr={openPr} onOpen={() => setPane('ticket')} /> : pane === 'domain' ? <DomainView path={`/exec/tickets/${encodeURIComponent(t.id)}/domain`} focus={role === 'design' ? 'design' : 'product'} />
+      pane={pane === 'overview' ? <TicketOverview t={t} why={!t.busy && next ? TITLE[next](t) : undefined} onPr={openPr} onOpen={() => setPane('ticket')} onStack={props.onSelect} /> : pane === 'domain' ? <DomainView path={`/exec/tickets/${encodeURIComponent(t.id)}/domain`} focus={role === 'design' ? 'design' : 'product'} />
         : ticketBody}
     >
       <div className="flex items-center justify-between gap-3">

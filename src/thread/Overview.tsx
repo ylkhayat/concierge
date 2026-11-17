@@ -75,7 +75,7 @@ export function Overview({ pr, prs, onSelect, onOpen, toast }: {
       </Panel>
 
       {stack && (
-        <Panel title="The stack" aside={<span className="text-meta text-fg-3">{stack.length} PRs · bottom first</span>}>
+        <Panel title="The stack" aside={<button onClick={() => onSelect(`stack:${pr.id}`)} className={more}>{stack.length} PRs · open the stack<ArrowRight className="size-3.5" /></button>}>
           <ul className="-mx-1.5">
             {stack.map((s) => {
               const p = prs.find((x) => x.repo === s.repo && x.number === s.number), here = s.number === pr.number
@@ -98,9 +98,10 @@ export function Overview({ pr, prs, onSelect, onOpen, toast }: {
 }
 
 /** The ticket at a glance, beside its conversation: where it stands, its pull requests, and what it asks for. */
-export function TicketOverview({ t, why, onPr, onOpen }: {
+export function TicketOverview({ t, why, onPr, onOpen, onStack }: {
   t: TicketView; why?: string // the status line the page already shows (what happens next)
   onPr: (p: { repo: string; number: number; title?: string }) => void; onOpen: () => void // the whole ticket
+  onStack?: (id: string) => void // its PRs as one stack (a single PR is a stack of one)
 }) {
   const run = t.run
   const said = t.lastComment
@@ -116,7 +117,7 @@ export function TicketOverview({ t, why, onPr, onOpen }: {
       </Panel>
 
       {t.prs.length > 0 && (
-        <Panel title={t.prs.length > 1 ? 'Its pull requests' : 'Its pull request'} aside={t.prs.length > 1 ? <span className="text-meta text-fg-3">bottom first</span> : undefined}>
+        <Panel title={t.prs.length > 1 ? 'Its pull requests' : 'Its pull request'} aside={onStack ? <button onClick={() => onStack(`stack:${t.prs[0].repo}#${t.prs[0].number}`)} className={more}>Open the stack<ArrowRight className="size-3.5" /></button> : undefined}>
           <ul className="-mx-1.5">
             {t.prs.map((p) => (
               <li key={`${p.repo}#${p.number}`}>

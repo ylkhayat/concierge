@@ -49,3 +49,16 @@ test('two tickets on one stack: the one you opened keeps a PR they share', () =>
   assert.equal(unitOf(all, 'o/app#4', keys[1])?.key, keys[1])
   assert.equal(unitOf(all, 'o/app#4', 'pr:o/app#9')?.key, keys[0]) // a preferred unit that lacks it: the first
 })
+
+test('a stack is found from any of its PRs, as it is now; a PR in no stack is a stack of one', async () => {
+  const { stackAt } = await import('./desk.ts')
+  const pr = (number: number, stack?: number[], closed = false) => ({ id: `o/r#${number}`, repo: 'o/r', number, title: `t${number}`, closed, stack: stack?.map((n) => ({ repo: 'o/r', number: n, title: `t${n}` })) }) as never
+  const prs = [pr(1, [1, 2, 3]), pr(2, [1, 2, 3]), pr(9)] // #3 isn't tracked here
+  const tickets = [{ id: 'T-1', prs: [{ repo: 'o/r', number: 2 }] }, { id: 'T-2', prs: [{ repo: 'o/r', number: 9 }] }] as never
+  const s = stackAt(prs, tickets, 'o/r#2')!
+  assert.deepEqual([s.key, s.all.map((x) => x.number), s.members.map((m) => m.number), s.tickets.map((t) => t.id)], ['stack:o/r#1', [1, 2, 3], [1, 2], ['T-1']])
+  assert.equal(stackAt(prs, tickets, 'o/r#1')!.key, s.key) // any member finds the same stack
+  const one = stackAt(prs, tickets, 'o/r#9')!
+  assert.deepEqual([one.all.length, one.members.length, one.tickets.map((t) => t.id)], [1, 1, ['T-2']])
+  assert.equal(stackAt(prs, tickets, 'o/r#404'), undefined)
+})

@@ -262,7 +262,9 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
   const authors = [...new Map(prs.map((p) => [p.author.login, p.author])).values()]
   return (
     <div style={appColor(repo).style} className="mb-1.5 rounded-xl bg-white/50 p-1 ring-1 ring-line reading:mb-0 reading:bg-transparent reading:p-0 reading:ring-0 dark:bg-zinc-900/30 ">
-      <div className="flex items-center gap-2 px-2 pb-1 pt-1 text-meta text-fg-3 reading:hidden" title={all.map((s) => `#${s.number}`).join(' → ')}>
+      {/* the stack itself is a row: it opens the stack's page (its PRs at a glance, one answer for all of them) */}
+      <button onClick={() => onSelect(`stack:${prs[0].id}`)} aria-current={selected?.startsWith('stack:') && prs.some((p) => `stack:${p.id}` === selected)} title={`Open the stack: ${all.map((s) => `#${s.number}`).join(' → ')}`}
+              className="flex w-full items-center gap-2 rounded-ctl px-2 pb-1 pt-1 text-left text-meta text-fg-3 transition-colors hover:bg-hover hover:text-fg-1 aria-[current=true]:bg-accent-soft/60 aria-[current=true]:text-fg-1 reading:hidden">
         <Layers className="size-3.5 shrink-0 text-accent" />
         <span className={`truncate font-mono ${appColor(repo).text}`}>{repo.split('/')[1]}</span>
         <span className="shrink-0 tabular-nums">{all.length} PRs</span>
@@ -274,7 +276,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
             return <span key={s.number} title={`#${s.number} ${m ? statusMeta(m.status, m.mine).label : ''}`} className={`h-1 flex-1 rounded-full ${m ? statusMeta(m.status, m.mine).dot : 'bg-fill-strong'} ${m && !here.includes(m.status) ? 'opacity-35' : ''}`} />
           })}
         </span>
-      </div>
+      </button>
       {prs.map((p, i) => {
         const active = p.id === selected, lit = here.includes(p.status)
         const working = p.status === 'preparing' || p.status === 'posting'
