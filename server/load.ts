@@ -7,6 +7,7 @@ import { CRIT_DIR } from './crit.ts'
 import { stopAt, usageOf, cancel, cancelBase, cancelExec, cancelExplain, children, waitReason, STOPPED } from './runner.ts'
 import { state } from './store.ts'
 import { capped, hosted, machines } from './machines.ts'
+import { accountOf } from './providers.ts'
 import { fleet } from './fleet.ts'
 
 const run = promisify(execFile)
@@ -131,7 +132,7 @@ export async function load() {
     total: plus(sum([...ours, ...strayTrees, ...crit.flatMap((c) => c.tree)]), add('cpu'), add('usedMb')),
     machine: { ...here, cores: here.cores + add('cores'), mb: here.mb + add('mb'), freeMb: here.freeMb + add('freeMb'),
       slots: here.slots + [...machines.values()].reduce((n, m) => n + (m.status ? capped(m.name, m.status.slots) : 0), 0), count: 1 + up.length },
-    plan: usageOf('claude') && { ...usageOf('claude')!, stopAt: stopAt() }, // the Claude plan's windows, as the agents last reported them
+    plan: usageOf('claude') && { ...usageOf('claude')!, stopAt: stopAt(), label: accountOf('claude').label }, // the Claude plan's windows, as the agents last reported them
   }
 }
 export type Load = Awaited<ReturnType<typeof load>>

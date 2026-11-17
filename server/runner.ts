@@ -18,7 +18,7 @@ import { planNote } from './router.ts'
 import { missingOn } from './connections.ts'
 import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
-import { accountOf, available, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, watchPlanUse, type ProviderId, type Work } from './providers.ts'
+import { accountOf, available, SPILL, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, watchPlanUse, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
 import { mine, readLines } from './perMachine.ts'
@@ -471,7 +471,11 @@ export function routing() {
   return (['review', 'revise', 'exec', 'small'] as Work[]).map((work) => {
     const chosen = config.providers?.use?.[work] ?? 'claude', using = providerFor(work)
     const w = whyNot(chosen)
-    return { work, chosen, using, label: accountOf(using).label, chosenLabel: accountOf(chosen).label, why: w?.why, until: w?.until, stuck: !available(using) }
+    // it can still take work, yet another account does: one of its plan windows is nearly used up (providers.ts SPILL)
+    const u = !w && using !== chosen ? usageOf(chosen) : undefined
+    const full = u && ([['5-hour', u.five], ['weekly', u.seven]] as const).filter(([, x]) => x && x.resetsAt * 1000 > Date.now() && x.used >= SPILL).sort((a, b) => b[1]!.used - a[1]!.used)[0]
+    const spill = full && { why: `${full[0]} window ${Math.round(full[1]!.used * 100)}% used: new work goes to the plan with more left`, until: full[1]!.resetsAt * 1000 }
+    return { work, chosen, using, label: accountOf(using).label, chosenLabel: accountOf(chosen).label, why: w?.why ?? spill?.why, until: w?.until ?? spill?.until, stuck: !available(using) }
   })
 }
 

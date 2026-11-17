@@ -98,7 +98,7 @@ function accountNow() {
   for (const x of r) counts.set(x.using, (counts.get(x.using) ?? 0) + 1)
   const id = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'claude', a = accounts().find((x) => x.id === id)
   const standIn = r.find((x) => x.using === id && x.chosen !== id)
-  return { id, label: a?.label ?? id, kind: a?.kind ?? 'claude', windows: windowsFor(id), today: state.spendBy?.[today()]?.[id], standingInFor: standIn?.chosenLabel }
+  return { id, label: a?.label ?? id, kind: a?.kind ?? 'claude', windows: windowsFor(id), today: state.spendBy?.[today()]?.[id], standingInFor: standIn?.chosenLabel, why: standIn?.why }
 }
 const days = (n: number) => Array.from({ length: n }, (_, i) => new Date(Date.now() - (n - 1 - i) * 86400_000).toLocaleDateString('en-CA'))
 

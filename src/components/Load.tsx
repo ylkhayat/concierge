@@ -165,10 +165,12 @@ export function LoadRibbon() {
   const cpuHot = total.cpu >= m.cores * 75, memHot = m.freeMb < 1024
   // a window that has reset counts as empty until an agent reports it again
   const live = (w?: { used: number; resetsAt: number }) => (w && w.resetsAt * 1000 > Date.now() ? w : undefined)
-  const plan = [live(load.plan?.five), live(load.plan?.seven)].filter((w) => !!w).sort((a, b) => b.used - a.used)[0]
+  const plan = ([['5-hour', live(load.plan?.five)], ['weekly', live(load.plan?.seven)]] as const).flatMap(([k, w]) => (w ? [{ ...w, k }] : [])).sort((a, b) => b.used - a.used)[0]
+  // whose plan and which window, so it isn't read as the account named beside it
+  const planText = plan && `${load.plan!.label} ${plan.k} ${Math.round(plan.used * 100)}%`
   // one sentence, the way you'd say it: what the agents are doing, and only what needs a look
   const planHot = !!plan && plan.used >= load.plan!.stopAt - 0.1
-  const issues = [cpuHot && 'machine busy', memHot && 'memory low', used != null && m.diskFreeGb! < 10 && 'disk almost full', planHot && `plan ${Math.round(plan!.used * 100)}% used`].filter(Boolean) as string[]
+  const issues = [cpuHot && 'machine busy', memHot && 'memory low', used != null && m.diskFreeGb! < 10 && 'disk almost full', planHot && `${planText} used`].filter(Boolean) as string[]
   const doing = running ? `${running} agent${running === 1 ? '' : 's'} working` : 'Agents idle'
   const section = (title: string, body: ReactNode) => <span className="block space-y-1 border-t border-line pt-2 first:border-0 first:pt-0"><span className="block text-meta font-medium text-fg-3">{title}</span>{body}</span>
   return (
@@ -177,7 +179,7 @@ export function LoadRibbon() {
         <span className={`size-1.5 rounded-full ${issues.length ? 'bg-wait' : running ? 'animate-pulse bg-run' : 'bg-ok'}`} />
         <span>{doing}{load.queued > 0 && `, ${load.queued} queued`}</span>
         {issues.length > 0 && <span className="text-fg-1">· {issues.join(', ')}</span>}
-        {!issues.length && plan && <span className="text-fg-4">· plan {Math.round(plan.used * 100)}%</span>}
+        {!issues.length && plan && <span className="text-fg-4">· {planText}</span>}
       </button>
       <span className="pointer-events-none absolute bottom-full right-0 z-50 mb-1.5 hidden w-64 space-y-2 rounded-card bg-surface-1 p-3 text-small text-fg-2 shadow-e2 group-hover/r:block">
         {section('Agents', <>

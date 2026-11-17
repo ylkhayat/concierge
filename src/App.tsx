@@ -548,9 +548,9 @@ function SpendChip({ health, onOpen }: { health: NonNullable<ReturnType<typeof u
   const tone = cap != null && today >= cap ? 'text-fail' : cap != null && today >= cap * 0.75 ? 'text-wait' : 'text-fg-2'
   return (
     <>
-      <button popoverTarget="spend" style={{ anchorName: '--spend' } as CSSProperties} title="AI spend and the account in use"
+      <button popoverTarget="spend" style={{ anchorName: '--spend' } as CSSProperties} title={health.now?.standingInFor ? `${health.now.label} takes new work in place of ${health.now.standingInFor}${health.now.why ? `: ${health.now.why}` : ''}` : 'AI spend and the account in use'}
               className="inline-flex items-center gap-1 rounded-md px-1.5 leading-[18px] text-fg-3 transition-colors duration-150 hov hover:text-fg-1">
-        {health.now && <span className={`hidden max-w-28 truncate sm:inline ${health.now.standingInFor ? 'text-wait' : ''}`}>{health.now.label} ·</span>}
+        {health.now && <span className={`hidden max-w-52 truncate sm:inline ${health.now.standingInFor ? 'text-wait' : ''}`}>{health.now.label}{health.now.standingInFor ? ` for ${health.now.standingInFor}` : ''} ·</span>}
         <span className={`tabular-nums ${tone}`}>${today.toFixed(2)}</span><span className="text-fg-4">today</span>
       </button>
       <div id="spend" popover="auto" style={{ positionAnchor: '--spend', positionArea: 'top span-left', inset: 'auto' } as CSSProperties}
