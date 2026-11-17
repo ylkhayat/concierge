@@ -20,6 +20,7 @@ import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
 import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
 import { bankArgs } from './bank.ts'
+import { directionNote } from './stackDirection.ts'
 import { accountOf, accounts, available, chosenFor, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
@@ -975,7 +976,7 @@ function start(pr: Pr) {
       '--allowedTools', ...config.agent.allowedTools, ...(pr.mine ? RUN_TESTS : []),
       // its goal: reach you (crit up with its findings or replies, and next steps for you), not stop on the way
       ...((job.kind === 'review' || job.kind === 'revise') && accountOf(job.provider ?? 'claude').kind === 'claude' ? ['--settings', handGoalSettings(job.kind)] : []),
-      '--append-system-prompt', config.agent[pr.mine ? 'revise' : 'review'].instructions + linkNote({ pr }) + normsNote(pr.repo) + DECIDE_NOTE + keptMethod('everyRun') + devlogs + skillsNote() + accountNote(job.provider, pr.id) + (pr.mine ? '' : UNTRUSTED_NOTE), ...devlogArgs(),
+      '--append-system-prompt', config.agent[pr.mine ? 'revise' : 'review'].instructions + linkNote({ pr }) + directionNote(pr) + normsNote(pr.repo) + DECIDE_NOTE + keptMethod('everyRun') + devlogs + skillsNote() + accountNote(job.provider, pr.id) + (pr.mine ? '' : UNTRUSTED_NOTE), ...devlogArgs(),
     ],
     untrusted: !pr.mine,
     onMessage: (_m, line) => {

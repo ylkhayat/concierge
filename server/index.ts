@@ -75,6 +75,8 @@ import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
 import { transition } from './lifecycle.ts'
 import { cachedStackCheck, checkingStack, checkStack } from './stackCheck.ts'
+import { directionOf, setDirection } from './stackDirection.ts'
+import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
 
 export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
@@ -1999,16 +2001,39 @@ function treeChain(p: Pr): StackRef[] {
 // across a stack: where its PRs disagree with each other (stackCheck.ts). A PR in no stack has nothing to compare
 app.get('/prs/:id/stack-check', async (c) => {
   const p = pr(c.req.param('id'))
-  if (!p?.stack) return c.json({ check: null, checking: false })
-  return c.json({ check: (await cachedStackCheck(treeChain(p))) ?? null, checking: checkingStack(treeChain(p)) })
+  if (!p?.stack) return c.json({ check: null, checking: false, direction: null })
+  return c.json({ check: (await cachedStackCheck(treeChain(p))) ?? null, checking: checkingStack(treeChain(p)), direction: directionOf(p) ?? null })
 })
 app.post('/prs/:id/stack-check', async (c) => {
   const p = pr(c.req.param('id'))
   if (!p?.stack) return c.json({ error: 'not in a stack' }, 404)
-  return checkStack(treeChain(p)).then((t) => {
-    addSpend(t.costUsd, t.provider, t.tokens); save(); bus.emit('health')
-    return c.json({ check: { ...t, stale: false } })
+  const chain = treeChain(p), had = directionOf(p)
+  return checkStack(chain, had?.by === 'you' ? had.text : '').then((t) => {
+    addSpend(t.costUsd, t.provider, t.tokens)
+    // the check's reading becomes the stack's direction unless you wrote one yourself: yours stands until you change it
+    if (t.direction && had?.by !== 'you') setDirection(chain, t.direction, 'check')
+    save(); bus.emit('health')
+    return c.json({ check: { ...t, stale: false }, direction: directionOf(p) ?? null })
   }, (e: Error) => c.json({ error: e.message }, 400))
+})
+// the stack's direction in your own words (none: it is dropped, and the next check writes one again)
+app.post('/prs/:id/stack-direction', async (c) => {
+  const p = pr(c.req.param('id'))
+  const { text } = await c.req.json<{ text?: string }>()
+  if (!p?.stack) return c.json({ error: 'not in a stack' }, 404)
+  setDirection(treeChain(p), String(text ?? ''), 'you')
+  return c.json({ direction: directionOf(p) ?? null })
+})
+// what a stack's agents wait on, boiled down to a few decisions and steps (stackPlan.ts); `again`: read afresh
+app.post('/stacks/plan', async (c) => {
+  const b = await c.req.json<{ items?: PlanItem[]; steer?: string; again?: boolean; pr?: string }>().catch(() => ({} as { items?: PlanItem[]; steer?: string; again?: boolean; pr?: string }))
+  const items = b.items
+  if (!Array.isArray(items) || items.length < 2 || items.length > 200 || items.some((x) => typeof x?.id !== 'string' || typeof x.text !== 'string' || !['decide', 'do', 'publish'].includes(x.kind))) return c.json({ error: 'items: the steps, each with an id, a kind and its text' }, 400)
+  const of = b.pr ? pr(b.pr) : undefined
+  return planStack(items, String(b.steer ?? '').slice(0, 4000), (of && directionOf(of)?.text) || '', !!b.again).then(({ costUsd, provider, tokens, ...plan }) => {
+    if (costUsd) { addSpend(costUsd, provider, tokens); save(); bus.emit('health') }
+    return c.json(plan)
+  }, (e: Error) => c.json({ error: e.message }, 502))
 })
 app.get('/prs/:id/diff', async (c) => {
   const p = pr(c.req.param('id'))

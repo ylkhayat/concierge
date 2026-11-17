@@ -3,8 +3,9 @@
 // checklist and your note, through its reply), so handovers, queued runs and the hashed "already handed over" work the
 // same. Shown on a stacked PR's page when two or more of the stack's PRs wait on you.
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { Check, CopyMinus, Layers, LoaderCircle, Send, Sparkles, TriangleAlert, Upload } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Check, CopyMinus, Layers, LoaderCircle, RefreshCw, Send, Sparkles, TriangleAlert, Upload } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import type { PlanItem, StackPlan } from '../../server/stackPlan.ts'
 import type { NextSteps as Steps } from '../../server/next.ts'
 import { composeChecklist, type Step } from '../../server/reply.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
@@ -51,6 +52,31 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const [note, setNote] = useState('')
   const [sending, setSending] = useState(false)
   const { armed, arm } = useArm()
+  // --- the short plan: the same items read together and boiled down to a few decisions and steps (server/stackPlan.ts).
+  // Each line of it still stands for the agents' own items, so choosing here fills in exactly what each PR's agent gets
+  const [steer, setSteer] = useState('') // the steer the plan was last read with
+  const [again, setAgain] = useState(0)
+  const [raw, setRaw] = useState(false) // look at every item as the agents wrote it
+  const planItems: PlanItem[] = waiting.flatMap((m) => m.steps.map((s, i) => ({ id: `${m.pr.number}:${i}`, pr: m.pr.number, kind: s.kind, text: s.text, why: s.why, blocking: s.blocking,
+    ...(s.options && { options: s.options.map((o) => o.label), recommended: s.options.findIndex((o) => o.recommended) }) })))
+  const planSig = planItems.map((x) => `${x.id}|${x.text}`).join('\n')
+  const plan = useQuery({
+    queryKey: ['/stacks/plan', planSig, steer, again], enabled: waiting.length >= 2 && planItems.length > 1, staleTime: Infinity, retry: false,
+    queryFn: () => api('/stacks/plan', { items: planItems, steer, again: again > 0, pr: waiting[0]?.pr.id }) as Promise<StackPlan & { sig: string }>,
+  })
+  const keyById = new Map<string, string>(waiting.flatMap((m) => m.steps.map((_, i) => [`${m.pr.number}:${i}`, `${m.pr.id}:${i}`] as const)))
+  // a new plan sets the answer: its suggested option for each decision (none: you choose), its steps on or off
+  useEffect(() => {
+    const p = plan.data
+    if (!p) return
+    const pk: Record<string, number> = {}, ck: Record<string, boolean> = {}
+    for (const d of p.decisions) for (const o of d.options) for (const x of o.picks) pk[keyById.get(x.id)!] = -1
+    for (const d of p.decisions) if (d.suggested >= 0) for (const x of d.options[d.suggested].picks) pk[keyById.get(x.id)!] = x.option
+    for (const st of p.steps) for (const id of st.items) ck[keyById.get(id)!] = st.on
+    for (const sk of p.skipped) for (const id of sk.items) ck[keyById.get(id)!] = false
+    setPicks(pk); setChecked(ck)
+  }, [plan.data?.sig]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (waiting.length < 2) return { card: null, covers: [] }
 
   const key = (m: Member, i: number) => `${m.pr.id}:${i}`
@@ -65,6 +91,14 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   // a conflict still standing: every side of it is still ticked (a step) or chosen (a decision)
   const active = (id: string) => { const x = all.find(({ m, i }) => idOf(m, i) === id); return !!x && (x.s.kind === 'decide' ? pickOf(x.m, x.i) >= 0 : on(x.m, x.i)) }
   const standing = (review.data?.conflicts ?? []).filter((g) => g.items.every(active))
+
+  // the plan's view of the answer: which option of a decision is chosen (the one whose picks are all in place), whether a step is on
+  const p = plan.data, showPlan = !!p && !raw
+  const chosen = (d: StackPlan['decisions'][number]) => d.options.findIndex((o) => o.picks.length > 0 && o.picks.every((x) => (picks[keyById.get(x.id)!] ?? -1) === x.option))
+  const choose = (d: StackPlan['decisions'][number], j: number) => setPicks((cur) => ({ ...cur, ...Object.fromEntries(d.options.flatMap((o) => o.picks.map((x) => [keyById.get(x.id)!, -1]))), ...(chosen(d) === j ? {} : Object.fromEntries(d.options[j].picks.map((x) => [keyById.get(x.id)!, x.option]))) }))
+  const stepOn = (st: StackPlan['steps'][number]) => st.items.some((id) => checked[keyById.get(id)!])
+  const toggle = (st: StackPlan['steps'][number]) => setChecked((cur) => ({ ...cur, ...Object.fromEntries(st.items.map((id) => [keyById.get(id)!, !stepOn(st)])) }))
+  const prsOf = (ids: string[]) => [...new Set(ids.map((id) => Number(id.split(':')[0])))]
 
   const send = async () => {
     if (publishing.length && armed !== 'send') return arm('send', () => {})
@@ -90,9 +124,19 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   return { covers: waiting.map((m) => m.pr.id), card: (
     // the list scrolls inside the space under the chat; the note and Send stay in view
     <section className="flex min-h-0 flex-1 flex-col gap-3">
-      <p className="flex items-center gap-2 text-small font-semibold text-fg-1"><Layers className="size-4 text-accent-text" />The stack waits on you<span className="font-normal text-fg-3">· {waiting.length} PRs, {all.length} item{all.length === 1 ? '' : 's'}, answered at once</span></p>
+      <div className="flex items-center gap-2">
+        <p className="flex min-w-0 flex-1 items-center gap-2 text-small font-semibold text-fg-1"><Layers className="size-4 shrink-0 text-accent-text" /><span className="shrink-0">The stack waits on you</span>
+          <span className="truncate font-normal text-fg-3">· {waiting.length} PRs, {showPlan ? `${all.length} items boiled down to ${p!.decisions.length + p!.steps.length}` : `${all.length} item${all.length === 1 ? '' : 's'}`}</span></p>
+        {(p || raw) && <button onClick={() => setRaw(!raw)} className="shrink-0 text-meta font-medium text-fg-3 hover:text-fg-1">{raw ? 'The short plan' : `Every item (${all.length})`}</button>}
+        <button onClick={() => { setRaw(false); setAgain((n) => n + 1) }} disabled={plan.isFetching} title="Read every PR's suggestions together again" className="inline-flex shrink-0 items-center gap-1 btn-ghost btn-sm">
+          <RefreshCw className={`size-3.5 ${plan.isFetching ? 'animate-spin' : ''}`} />{plan.isFetching ? 'Reading…' : 'Reanalyze'}
+        </button>
+      </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
-      {waiting.map((m) => (
+      {showPlan && <PlanView p={p!} chosen={chosen} choose={choose} stepOn={stepOn} toggle={toggle} prsOf={prsOf} />}
+      {!showPlan && plan.isFetching && !raw && <p className="flex items-center gap-2 px-1 py-3 text-small text-fg-3"><LoaderCircle className="size-4 animate-spin" />Reading the {all.length} items of {waiting.length} PRs together…</p>}
+      {!showPlan && plan.isError && !raw && <p className="px-1 text-meta text-wait-text">Couldn’t boil them down ({(plan.error as Error).message}): here is every item as the agents wrote it.</p>}
+      {(raw || (!showPlan && !plan.isFetching)) && waiting.map((m) => (
         <div key={m.pr.id} className="rounded-xl bg-fill/40 p-2.5 ring-1 ring-line">
           <p className="mb-1.5 truncate text-meta text-fg-3"><span className="font-mono font-semibold text-fg-2">#{m.pr.number}</span> {m.pr.title}</p>
           <ul className="space-y-1.5">
@@ -129,13 +173,14 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         </div>
       ))}
       </div>
-      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000} placeholder="A note to every agent of the stack (optional)…"
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000} placeholder="Steer the stack: say which way to go. Reanalyze reads it, and every agent gets it with your answer…"
                 className="w-full resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60" />
       <div className="flex items-center gap-2">
         {review.isFetching && <span className="flex items-center gap-1 text-meta text-fg-3"><LoaderCircle className="size-3 animate-spin" />Checking for duplicates and conflicts…</span>}
         {standing.length > 0 && <span className="text-meta text-wait-text">{standing.length} conflict{standing.length === 1 ? '' : 's'}: keep one side</span>}
         {unanswered.length > 0 && <span className="text-meta text-wait-text">Decide {unanswered.length} first</span>}
         <span className="flex-1" />
+        {note.trim() && note.trim() !== steer && <button onClick={() => { setRaw(false); setSteer(note.trim()) }} disabled={plan.isFetching} title="Read the PRs' suggestions again with your steer: it settles what it can and suggests the rest" className="inline-flex items-center gap-1.5 btn-outline btn-sm"><RefreshCw className="size-3.5" />Reanalyze with this steer</button>}
         <button disabled={sending || unanswered.length > 0 || standing.length > 0} onClick={() => void send()}
                 className="relative inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-small font-medium text-on-accent transition-all active:scale-[0.98] disabled:bg-fill-strong disabled:text-fg-3">
           {sending ? <LoaderCircle className="size-3.5 animate-spin" /> : publishing.length ? <Upload className="size-3.5" /> : <Send className="size-3.5" />}
@@ -157,6 +202,67 @@ function Flags({ id, copyOf, clashes, label }: { id: string; copyOf: Map<string,
     <div className="mb-0.5 flex flex-wrap gap-1.5 pl-1">
       {c && <span title={tidy(c.why)} className="inline-flex items-center gap-1 rounded-full bg-fill px-1.5 text-micro font-medium text-fg-3"><CopyMinus className="size-3" />same as {label(c.of)}: unticked</span>}
       {x && <span title={tidy(x.why)} className="inline-flex items-center gap-1 rounded-full bg-wait/14 px-1.5 text-micro font-medium text-wait-text"><TriangleAlert className="size-3" />conflicts with {x.with.map(label).join(', ')}: {tidy(x.why)}</span>}
+    </div>
+  )
+}
+
+/**
+ * The short plan: what needs your input on top (one decision per real question), then what will be done, and at the
+ * bottom what becomes public (a push, a posted reply), so the things others will see are read last and on their own.
+ */
+function PlanView({ p, chosen, choose, stepOn, toggle, prsOf }: {
+  p: StackPlan
+  chosen: (d: StackPlan['decisions'][number]) => number; choose: (d: StackPlan['decisions'][number], j: number) => void
+  stepOn: (s: StackPlan['steps'][number]) => boolean; toggle: (s: StackPlan['steps'][number]) => void
+  prsOf: (ids: string[]) => number[]
+}) {
+  const Prs = ({ ids }: { ids: string[] }) => <span className="ml-1.5 inline-flex gap-1 align-middle">{prsOf(ids).map((n) => <span key={n} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-3">#{n}</span>)}</span>
+  const head = 'label text-fg-3'
+  const row = (st: StackPlan['steps'][number], i: number) => (
+    <li key={i}>
+      <button role="checkbox" aria-checked={stepOn(st)} onClick={() => toggle(st)} className="flex w-full items-start gap-2 rounded-ctl px-1 py-0.5 text-left hover:bg-hover">
+        <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded ${stepOn(st) ? 'bg-accent text-on-accent' : 'ring-1 ring-line-strong'}`}>{stepOn(st) && <Check className="size-3" strokeWidth={3} />}</span>
+        <span className="min-w-0"><span className={`text-small ${stepOn(st) ? 'text-fg-1' : 'text-fg-3'}`}>{st.text}</span><Prs ids={st.items} />{st.why && <span className="block text-meta text-fg-3">{st.why}</span>}</span>
+      </button>
+    </li>
+  )
+  const priv = p.steps.filter((s) => !s.public), pub = p.steps.filter((s) => s.public)
+  return (
+    <div className="space-y-3">
+      {p.summary && <p className="px-1 text-small leading-relaxed text-fg-2">{p.summary}</p>}
+      {p.decisions.length > 0 && (
+        <section className="rounded-xl bg-wait/6 p-2.5 ring-1 ring-wait/20">
+          <p className={`${head} mb-1.5 !text-wait-text`}>Needs your input</p>
+          <ul className="space-y-2.5">
+            {p.decisions.map((d, i) => (
+              <li key={i}>
+                <p className="text-small font-medium text-fg-1">{d.question}<Prs ids={d.options.flatMap((o) => o.picks.map((x) => x.id))} />{chosen(d) < 0 && <span className="ml-1.5 rounded-full bg-wait/15 px-1.5 label text-wait-text">needed</span>}</p>
+                {d.why && <p className="text-meta text-fg-3">{d.why}</p>}
+                <div role="radiogroup" aria-label={d.question} className="mt-1 flex flex-wrap gap-1.5">
+                  {d.options.map((o, j) => { const sel = chosen(d) === j; return (
+                    <button key={j} role="radio" aria-checked={sel} onClick={() => choose(d, j)} className={`flex items-start gap-1.5 rounded-ctl px-2.5 py-1 text-left text-small transition-colors ${sel ? 'bg-accent font-medium text-on-accent' : 'bg-surface-1 text-fg-2 ring-1 ring-line hover:bg-fill'}`}>
+                      {sel ? <Check className="mt-0.5 size-3.5 shrink-0" /> : d.suggested === j && <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent-text" />}{o.label}
+                    </button>
+                  ) })}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {priv.length > 0 && <section className="rounded-xl bg-fill/40 p-2.5 ring-1 ring-line"><p className={`${head} mb-1`}>Then, on your machine</p><ul className="space-y-1">{priv.map(row)}</ul></section>}
+      {pub.length > 0 && (
+        <section className="rounded-xl bg-ok/5 p-2.5 ring-1 ring-ok/20">
+          <p className={`${head} mb-1 flex items-center gap-1 !text-ok-text`}><Upload className="size-3" />Public: others will see these</p>
+          <ul className="space-y-1">{pub.map(row)}</ul>
+        </section>
+      )}
+      {p.skipped.length > 0 && (
+        <details className="px-1 text-meta text-fg-3">
+          <summary className="cursor-pointer select-none">{p.skipped.reduce((n, s) => n + s.items.length, 0)} left out</summary>
+          <ul className="mt-1 space-y-0.5">{p.skipped.map((s, i) => <li key={i}>{prsOf(s.items).map((n) => `#${n}`).join(', ')}: {s.why}</li>)}</ul>
+        </details>
+      )}
     </div>
   )
 }

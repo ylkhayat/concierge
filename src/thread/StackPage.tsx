@@ -193,13 +193,18 @@ function TicketRow({ t, onOpen }: { t: TicketView; onOpen: () => void }) {
 
 /** Where the stack's PRs disagree with each other: read on demand (each PR was only ever looked at on its own). */
 function Check({ path, sig, members, onSelect, toast }: { path: string; sig: string; members: PrView[]; onSelect: (id: string) => void; toast: (m: string, tone?: 'ok' | 'error') => void }) {
-  type Got = { check: (StackCheck & { stale: boolean }) | null; checking?: boolean }
+  type Dir = { text: string; by: 'check' | 'you'; at: string }
+  type Got = { check: (StackCheck & { stale: boolean }) | null; checking?: boolean; direction?: Dir | null }
   const q = useApi<Got>(`${path}?v=${sig}`, { placeholderData: (prev) => prev })
   const [busyNow, setBusy] = useState(false)
   const c = q.data?.check, checking = busyNow || !!q.data?.checking
   const finished = members.filter((p) => p.job && p.job.state !== 'running' && p.job.state !== 'queued').length
-  const run = () => { setBusy(true); api(path, {}).then((r: Got) => remember(`${path}?v=${sig}`, r), (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
+  const run = () => { setBusy(true); api(path, {}).then((r: Got) => remember(`${path}?v=${sig}`, { ...r, direction: r.direction ?? q.data?.direction }), (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
   const open = (n: number) => { const p = members.find((m) => m.number === n); if (p) onSelect(p.id) }
+  // the direction the stack follows: written by the check, yours to change, given to every agent on these PRs
+  const dir = q.data?.direction
+  const [draft, setDraft] = useState<string>()
+  const saveDir = () => api(path.replace(/stack-check$/, 'stack-direction'), { text: draft ?? '' }).then((r: { direction: Dir | null }) => { remember(`${path}?v=${sig}`, { ...q.data, direction: r.direction } as Got); setDraft(undefined); toast(r.direction ? 'The stack follows this direction now' : 'Direction dropped') }, (e: Error) => toast(e.message, 'error'))
   return (
     <section>
       <div className="flex items-center gap-2 border-b border-line px-3.5 py-2">
@@ -209,6 +214,19 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
         <button onClick={run} disabled={checking || finished < 2} title={finished < 2 ? 'Needs a finished run on two of its PRs' : 'One read across what each PR’s agent found and decided'} className={`inline-flex items-center gap-1.5 btn-sm ${c && !c.stale ? 'btn-ghost' : 'btn-outline'}`}>
           {checking && <LoaderCircle className="size-3.5 animate-spin" />}{checking ? 'Reading…' : c ? 'Check again' : 'Check'}
         </button>
+      </div>
+      <div className="border-b border-line px-3.5 py-3 text-small">
+        <div className="flex items-center gap-2">
+          <h3 className="label text-fg-3">The direction this stack follows</h3>
+          {dir && <span className="text-meta text-fg-4">{dir.by === 'you' ? 'yours' : 'from the check'}</span>}
+          <span className="flex-1" />
+          {draft === undefined ? <button onClick={() => setDraft(dir?.text ?? '')} className="btn-ghost btn-sm">{dir ? 'Edit' : 'Write one'}</button>
+            : <><button onClick={() => setDraft(undefined)} className="btn-ghost btn-sm">Cancel</button><button onClick={() => void saveDir()} className="btn-primary btn-sm">Save</button></>}
+        </div>
+        {draft !== undefined ? <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} rows={6} placeholder={'- one rule or decision per line, that every PR of the stack holds to'} className="field mt-1.5 w-full resize-y font-mono text-meta leading-relaxed" />
+          : dir ? <p className="mt-1.5 whitespace-pre-wrap leading-relaxed text-fg-2">{dir.text}</p>
+          : <p className="mt-1.5 text-fg-3">None yet. The check writes one from what the PRs show; you can write it yourself.</p>}
+        <p className="mt-1.5 text-meta text-fg-4">Every agent on these PRs is told to hold to it, and the stack’s answer is read against it.</p>
       </div>
       <div className="px-3.5 py-3 text-small">
         {!c ? <p className="text-fg-3">Each PR was reviewed on its own. This reads what every PR’s agent found and decided, and reports only what crosses PRs: one question decided two ways, a change above that a PR below contradicts, the same fix twice.</p>
