@@ -417,11 +417,9 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
  */
 function StackCard({ ids, byId, here, onOpen, children }: { ids: string[]; byId: Map<string, TicketView>; here: Tier; onOpen: (id: string) => void; children: ReactNode }) {
   const repo = byId.get(ids.find((id) => byId.get(id)?.repo) ?? '')?.repo
-  // the stack's page is found from any of its pull requests: there once one of its tickets has one
-  const pr = ids.flatMap((id) => byId.get(id)?.prs ?? [])[0]
   return (
     <div style={repo ? appColor(repo).style : undefined} className="mb-1.5 rounded-xl bg-white/50 p-1 ring-1 ring-line dark:bg-zinc-900/30 ">
-      <button disabled={!pr} onClick={() => pr && onOpen(`stack:${pr.repo}#${pr.number}`)} title={`${pr ? 'Open the stack' : 'One stack'}: ${ids.join(' → ')}`}
+      <button onClick={() => onOpen(`stack:ticket:${ids.find((id) => byId.has(id)) ?? ids[0]}`)} title={`Open the stack: ${ids.join(' → ')}`}
               className="flex w-full items-center gap-2 rounded-ctl px-2 pb-1 pt-1 text-left text-meta text-fg-3 transition-colors enabled:hover:bg-hover enabled:hover:text-fg-1">
         <Layers className="size-3.5 shrink-0 text-accent" />
         {repo && <span className={`truncate font-mono ${appColor(repo).text}`}>{repo.split('/')[1]}</span>}

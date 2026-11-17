@@ -117,7 +117,7 @@ export function TicketOverview({ t, why, onPr, onOpen, onStack }: {
       </Panel>
 
       {t.prs.length > 0 && (
-        <Panel title={t.prs.length > 1 ? 'Its pull requests' : 'Its pull request'} aside={onStack ? <button onClick={() => onStack(`stack:${t.prs[0].repo}#${t.prs[0].number}`)} className={more}>Open the stack<ArrowRight className="size-3.5" /></button> : undefined}>
+        <Panel title={t.prs.length > 1 ? 'Its pull requests' : 'Its pull request'} aside={onStack ? <button onClick={() => onStack(`stack:ticket:${t.id}`)} className={more}>Open the stack<ArrowRight className="size-3.5" /></button> : undefined}>
           <ul className="-mx-1.5">
             {t.prs.map((p) => (
               <li key={`${p.repo}#${p.number}`}>

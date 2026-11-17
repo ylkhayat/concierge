@@ -62,3 +62,15 @@ test('a stack is found from any of its PRs, as it is now; a PR in no stack is a 
   assert.deepEqual([one.all.length, one.members.length, one.tickets.map((t) => t.id)], [1, 1, ['T-2']])
   assert.equal(stackAt(prs, tickets, 'o/r#404'), undefined)
 })
+
+test('a stack is found from a ticket too: the tickets that ship together, with whatever PRs they have so far', async () => {
+  const { stackAt } = await import('./desk.ts')
+  const pr = (number: number, stack?: number[]) => ({ id: `o/r#${number}`, repo: 'o/r', number, title: `t${number}`, closed: false, stack: stack?.map((n) => ({ repo: 'o/r', number: n, title: `t${n}` })) }) as never
+  const t = (id: string, ids: string[], prs: number[] = []) => ({ id, title: `title ${id}`, repo: 'o/r', stack: { ids }, prs: prs.map((number) => ({ repo: 'o/r', number })) })
+  const tickets = [t('A-1', ['A-1', 'A-2']), t('A-2', ['A-1', 'A-2']), t('B-1', ['B-1', 'B-2'], [1]), t('B-2', ['B-1', 'B-2'])] as never
+  const none = stackAt([pr(1, [1, 2]), pr(2, [1, 2])], tickets, 'ticket:A-2')!
+  assert.deepEqual([none.key, none.members.length, none.tickets.map((x) => x.id), none.title], ['stack:ticket:A-1', 0, ['A-1', 'A-2'], 'title A-1']) // no PR yet: the tickets alone
+  const some = stackAt([pr(1, [1, 2]), pr(2, [1, 2])], tickets, 'ticket:B-2')!
+  assert.deepEqual([some.key, some.members.map((m) => m.number), some.tickets.map((x) => x.id)], ['stack:o/r#1', [1, 2], ['B-1', 'B-2']]) // the same stack as from its PRs
+  assert.deepEqual(stackAt([pr(1, [1, 2]), pr(2, [1, 2])], tickets, 'o/r#2')!.tickets.map((x) => x.id), ['B-1', 'B-2']) // B-2 has no PR yet and still belongs
+})

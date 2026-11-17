@@ -52,8 +52,8 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
     // the chat's own layout, so a stack reads like a PR: its header, the PRs where the conversation is, what waits on
     // you docked under them, and a panel beside. The page itself never scrolls: each part scrolls inside its place
     <ThreadLayout subject={stack.key} tab={tab} onTab={setTab}
-      header={<ThreadHeader title={plain(all[0].title ?? members[0]?.title ?? '')}
-        crumb={<><Layers className="size-3.5 text-accent-text" /><span className="font-medium text-accent-text">{all.length === 1 ? 'A stack of one' : `Stack · ${all.length} pull requests`}</span><span className="font-mono">{members[0]?.repo.split('/')[1]}</span></>}
+      header={<ThreadHeader title={plain(all[0]?.title ?? members[0]?.title ?? stack.title ?? '')}
+        crumb={<><Layers className="size-3.5 text-accent-text" /><span className="font-medium text-accent-text">{all.length === 0 ? `Stack · ${tickets.length} ticket${tickets.length === 1 ? '' : 's'}, no pull request yet` : all.length === 1 ? 'A stack of one' : `Stack · ${all.length} pull requests`}</span><span className="font-mono">{(members[0]?.repo ?? tickets[0]?.repo)?.split('/')[1]}</span></>}
         status={<>
           {fact(asks.length, 'waiting on you', 'wait')}{fact(working.length, working.length === 1 ? 'agent working' : 'agents working', 'run')}{fact(fresh.length, 'not started', 'quiet')}
           <span className="text-meta tabular-nums text-fg-3"><span className="text-ok-text">+{add}</span> <span className="text-fail-text">−{del}</span></span>
@@ -85,6 +85,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
         : all.length > 1 && anchor ? <Check path={`/prs/${enc(anchor.id)}/stack-check`} sig={members.map((p) => `${p.headSha.slice(0, 5)}${p.job?.endedAt ?? ''}`).join('')} members={members} onSelect={onSelect} toast={toast} />
         : <p className="p-4 text-small text-fg-3">A stack of one has nothing to compare with.</p>}>
       {/* where the conversation is on a PR's page: the stack's PRs, bottom first, one compact row each */}
+      {all.length === 0 && <ul className="divide-y divide-line">{tickets.map((t) => <TicketRow key={t.id} t={t} onOpen={() => onTicket(t.id)} />)}</ul>}
       <table className="w-full text-small">
         <tbody className="divide-y divide-line">
           {all.map((s, i) => {

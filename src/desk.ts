@@ -83,12 +83,25 @@ export function unitOf(all: Unit[], id: string, prefer?: string) {
 }
 
 /** A stack as it is now, found from any of its PRs (so a link to it survives restacking). A PR in no stack is a stack of one. */
-export type StackView = { key: string; all: { repo: string; number: number; title?: string }[]; members: PrView[]; tickets: TicketView[] }
+export type StackView = { key: string; all: { repo: string; number: number; title?: string }[]; members: PrView[]; tickets: TicketView[]; title?: string } // title: for one with no PR yet
 export function stackAt(prs: PrView[], tickets: TicketView[], id: string): StackView | undefined {
+  // "ticket:<id>": tickets that ship as one stack, found from any of them, with whatever PRs they have so far
+  if (id.startsWith('ticket:')) {
+    const t = tickets.find((x) => x.id === id.slice('ticket:'.length))
+    if (!t) return undefined
+    const mine = (t.stack?.ids ?? [t.id]).map((i) => tickets.find((x) => x.id === i)).filter((x): x is TicketView => !!x)
+    const first = mine.flatMap((x) => x.prs).map((x) => prs.find((p) => p.repo === x.repo && p.number === x.number && !p.closed)).find(Boolean)
+    const s = first && stackAt(prs, tickets, first.id)
+    const all = [...new Map([...mine, ...(s?.tickets ?? [])].map((x) => [x.id, x])).values()]
+    return { key: s?.key ?? `stack:ticket:${mine[0].id}`, all: s?.all ?? [], members: s?.members ?? [], tickets: all, title: s ? undefined : mine[0].title }
+  }
   const p = prs.find((x) => x.id === id)
   if (!p) return undefined
   const all = p.stack?.length ? p.stack.map((s) => ({ repo: p.repo, number: s.number, title: s.title })) : [{ repo: p.repo, number: p.number, title: p.title }]
   const members = all.map((s) => prs.find((x) => x.repo === s.repo && x.number === s.number && !x.closed)).filter((x): x is PrView => !!x)
   const has = new Set(members.map((m) => `${m.repo}#${m.number}`))
-  return { key: `stack:${members[0]?.id ?? p.id}`, all, members, tickets: tickets.filter((t) => t.prs.some((x) => has.has(`${x.repo}#${x.number}`))) }
+  // its tickets, and the ones those ship with (a ticket of the same run-stack that has no PR yet still belongs)
+  const direct = tickets.filter((t) => t.prs.some((x) => has.has(`${x.repo}#${x.number}`)))
+  const ids = new Set(direct.flatMap((t) => t.stack?.ids ?? [t.id]))
+  return { key: `stack:${members[0]?.id ?? p.id}`, all, members, tickets: tickets.filter((t) => ids.has(t.id)) }
 }
