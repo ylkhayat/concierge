@@ -122,9 +122,11 @@ export function Desk({ unit, all, later = [], selected, onSelect, onUnit, toast,
           {/* one slim row: what the unit is, the way through its parts (the ticket, then its PRs bottom to top), where you are
               in the order and the way on */}
           <div className="flex shrink-0 items-center gap-3 px-3 pt-2.5 sm:px-5 lg:px-7">
-            <span title={unit.title} className="inline-flex shrink-0 items-center gap-1 text-small font-semibold text-accent-text">
+            {/* the unit as one thing: its stack view (every PR at a glance, one answer, the whole-stack actions) */}
+            <button disabled={!unit.members.length} onClick={() => onSelect(`stack:${unit.members[0].id}`)} title={unit.members.length ? `${unit.title}\nOpen the stack view` : unit.title}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md text-small font-semibold text-accent-text enabled:hover:underline">
               <K.icon className="size-3.5" />{K.label}{parts.length > 1 ? ` · ${parts.length}` : ''}
-            </span>
+            </button>
             {parts.length > 1 ? (
               <span className="flex min-w-0 flex-1">
                 <StackNav keys noun="part" items={parts.map((x) => ({ id: x.id, kind: x.id === unit.ticket?.id ? 'ticket' as const : 'pr' as const, ref: x.ref, title: x.title, dot: x.dot, state: x.label }))}

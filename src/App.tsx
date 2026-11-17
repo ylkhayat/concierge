@@ -418,7 +418,7 @@ export function App() {
   const deskFrame = (
     <main className="@container relative min-h-0 min-w-0 flex-1 overflow-hidden">
       {unit && selected ? (
-        <Desk unit={unit} all={deskUnits} later={deskLater} selected={selected} onSelect={select} onUnit={(u) => goUnit(u)} toast={toast}>
+        <Desk unit={unit} all={deskUnits} later={deskLater} selected={selected} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} onUnit={(u) => goUnit(u)} toast={toast}>
           {pr ? (
             <div key={pr.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
               <PrPage compact ticket={unit.ticket} pr={pr} feed={feed} now={now} onBack={() => setMode('review')} toast={toast} prs={prs ?? []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} onOpenLinked={(l) => select(l.id)} sync={syncPr} />
