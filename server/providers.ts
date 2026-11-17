@@ -114,27 +114,15 @@ export function setIdentity(p: ProviderId, who: string) {
   if (was && was !== who) { limited.delete(p); console.log(`accounts: ${accountOf(p).label} is signed in as someone else now; its plan and limits start over`) }
 }
 
-// how much of its plan a Claude account has used (0–1, the fuller of its two windows), as the runner tracks it
-let planUsed = (_p: ProviderId) => 0
-export const watchPlanUse = (used: (p: ProviderId) => number) => { planUsed = used }
 /**
- * The account for this work now: the chosen one, or the first available in the fallback order after it. Several
- * Claude plans share the work: of the chosen one and the Claude accounts in the fallback order, the one with the most
- * of its plan left takes it (the chosen one on a tie), so a second plan is used, not kept for when the first runs out.
+ * The account for this work now: the chosen one for as long as it can take work, then the first in the fallback order
+ * that can. Strictly in that order: an account is used until it is used up (its plan window at the pause point, a
+ * limit, a budget, a lapsed sign-in), never left early for one further down.
  */
-/** How far through a plan window the chosen account may get before fresh work spills over to another Claude plan. */
-export const SPILL = 0.85
 export function providerFor(work: Work): ProviderId {
   const chosen = config.providers?.use?.[work] ?? 'claude'
-  const order = config.providers?.fallback ?? []
-  if (available(chosen)) {
-    // the chosen one keeps the work; only once it nears the end of a plan window does fresh work spill over to the
-    // Claude plan with the most left (a plan never seen counts as unused, so it must not win while the chosen one has room)
-    if (kindOf(chosen) !== 'claude' || planUsed(chosen) < SPILL) return chosen
-    const plans = [chosen, ...order.filter((p) => p !== chosen && kindOf(p) === 'claude' && available(p))]
-    return plans.reduce((a, b) => (planUsed(b) < planUsed(a) ? b : a))
-  }
-  return order.find((p) => p !== chosen && available(p)) ?? chosen
+  if (available(chosen)) return chosen
+  return (config.providers?.fallback ?? []).find((p) => p !== chosen && available(p)) ?? chosen
 }
 
 // --- each account's environment: its own sign-in folder, or its own Ollama

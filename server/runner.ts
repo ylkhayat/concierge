@@ -18,7 +18,7 @@ import { planNote } from './router.ts'
 import { missingOn } from './connections.ts'
 import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
-import { accountOf, available, SPILL, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, watchPlanUse, type ProviderId, type Work } from './providers.ts'
+import { accountOf, accounts, available, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
 import { mine, readLines } from './perMachine.ts'
@@ -384,7 +384,6 @@ export const usageOf = (p: ProviderId) => {
 export const stopAt = () => (config.providers?.stopAt ?? STOP_AT * 100) / 100
 export const planSpent = (p: ProviderId = 'claude') => spentWindow(usageOf(p), Date.now(), stopAt())
 watchClaudePlan((p) => !!planSpent(p))
-watchPlanUse((p) => { const u = usageOf(p); const live = (w?: { used: number; resetsAt: number }) => (w && w.resetsAt * 1000 > Date.now() ? w.used : 0); return Math.max(live(u?.five), live(u?.seven)) })
 /** An agent reported the plan's windows: keep them, and stop the agents once one is nearly used up. */
 function sawLimit(info: any, p: ProviderId = 'claude') {
   if (kindOf(p) !== 'claude') return
@@ -398,7 +397,17 @@ function sawLimit(info: any, p: ProviderId = 'claude') {
   if (!was) { console.log(`pausing agents: ${spentText(s)}`); bus.emit('health') }
   // a run whose result is in is only winding down; explanations and the map finish their step and wait in the queue
   // only runs on this account: the others have their own limits
-  for (const [key, child] of children) if (!key.endsWith(':explain') && !key.startsWith('base:') && !resultIn.has(key) && !paused.has(key) && (runningOn.get(key) ?? 'claude') === p) { paused.add(key); child.kill('SIGTERM') }
+  pauseOn(p)
+}
+const pauseOn = (p: ProviderId) => { for (const [key, child] of children) if (!key.endsWith(':explain') && !key.startsWith('base:') && !resultIn.has(key) && !paused.has(key) && (runningOn.get(key) ?? 'claude') === p) { paused.add(key); child.kill('SIGTERM') } }
+/**
+ * The accounts' settings changed (the pause point, the order, who takes what): decide again now, not at the next
+ * report or tick. Runs on a plan that is now past the pause point stop and wait (or move), what waited on a plan that
+ * now has room starts, and work on a stand-in goes back to the account ahead of it.
+ */
+export function reroute() {
+  for (const a of accounts()) if (a.kind === 'claude' && planSpent(a.id)) pauseOn(a.id)
+  void rebalance().catch((e) => console.warn('orchestrator:', (e as Error).message)).finally(() => { pump(); bus.emit('health'); bus.emit('change'); bus.emit('exec') })
 }
 /** Was this run ended by the plan (paused here, or refused by Claude)? Then it goes back in the queue. */
 function pausedBy(key: string, e: Ended, error?: string, provider: ProviderId = 'claude') {
@@ -471,11 +480,7 @@ export function routing() {
   return (['review', 'revise', 'exec', 'small'] as Work[]).map((work) => {
     const chosen = config.providers?.use?.[work] ?? 'claude', using = providerFor(work)
     const w = whyNot(chosen)
-    // it can still take work, yet another account does: one of its plan windows is nearly used up (providers.ts SPILL)
-    const u = !w && using !== chosen ? usageOf(chosen) : undefined
-    const full = u && ([['5-hour', u.five], ['weekly', u.seven]] as const).filter(([, x]) => x && x.resetsAt * 1000 > Date.now() && x.used >= SPILL).sort((a, b) => b[1]!.used - a[1]!.used)[0]
-    const spill = full && { why: `${full[0]} window ${Math.round(full[1]!.used * 100)}% used: new work goes to the plan with more left`, until: full[1]!.resetsAt * 1000 }
-    return { work, chosen, using, label: accountOf(using).label, chosenLabel: accountOf(chosen).label, why: w?.why ?? spill?.why, until: w?.until ?? spill?.until, stuck: !available(using) }
+    return { work, chosen, using, label: accountOf(using).label, chosenLabel: accountOf(chosen).label, why: w?.why, until: w?.until, stuck: !available(using) }
   })
 }
 

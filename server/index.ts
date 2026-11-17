@@ -40,7 +40,7 @@ import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
+import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
@@ -54,7 +54,7 @@ import { belongsTo, cleanWorktrees, sweepDue, worktrees } from './worktrees.ts'
 import { flowInOf, flowOf, type Flow } from './flow.ts'
 import { planStacks, valid, validPrep, type Prep } from './plan.ts'
 import { CONFIG_FILE, configured, fill, saveConfig, userConfig, workspaces, type Workspace } from './config.ts'
-import { accountOf, accounts, available, spawnAgent, SPILL, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
+import { accountOf, accounts, available, spawnAgent, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
 import { orgSkills, setMode, syncOrgSkills } from './orgSkills.ts'
 import { improveSkill, removeSkill, skillsView, suggestSkills } from './skills.ts'
 import { discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
@@ -1672,7 +1672,7 @@ app.post('/providers', async (c) => {
   const models = { ...prev.models }
   for (const [k, m] of Object.entries(b.models ?? {})) models[k] = { ...models[k], ...m }
   saveConfig({ providers: { ...prev, ...(b.use && { use: { ...prev.use, ...b.use } }), ...(b.fallback && { fallback: b.fallback }), ...(b.budgets && { budgets }), ...(b.models && { models }), ...(b.stopAt !== undefined && { stopAt: b.stopAt }) } })
-  pump()
+  reroute() // decided again at once: the pause point or the order may have changed who takes what
   return c.json(await providersView())
 })
 // another account: a Claude or OpenAI one gets its own sign-in folder; a Llama one is an Ollama somewhere
@@ -2474,9 +2474,7 @@ setInterval(() => {
   routedAs = now
   const moved = r.filter((x) => x.using !== x.chosen), stuck = r.filter((x) => x.stuck)
   const names = (xs: typeof r) => [...new Set(xs.map((x) => x.chosenLabel))].join(' and ')
-  // moved for a reason (a limit, a budget, a sign-in), or spilled over: the chosen one is near the end of a plan window
-  const text = moved.length ? (moved[0].why ? `${names(moved)} can't take work now (${moved[0].why}): ${[...new Set(moved.map((x) => x.label))].join(' and ')} stands in`
-      : `${names(moved)} is past ${Math.round(SPILL * 100)}% of a plan window: fresh work goes to ${[...new Set(moved.map((x) => x.label))].join(' and ')}, which has more left`) + (stuck.length ? `; ${names(stuck)} work waits` : '')
+  const text = moved.length ? `${names(moved)} can't take work now (${moved[0].why ?? 'its limit or budget'}): ${[...new Set(moved.map((x) => x.label))].join(' and ')} stands in` + (stuck.length ? `; ${names(stuck)} work waits` : '')
     : stuck.length ? `${names(stuck)} can't take work now (${stuck[0].why}) and nothing is set to stand in: its work waits (Settings → Agents)` : undefined
   if (!first) console.log(`accounts: ${text ?? 'every kind of work is back on its own account'}`)
   condition('accounts', 'Accounts', text)

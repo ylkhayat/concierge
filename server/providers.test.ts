@@ -66,25 +66,21 @@ test('who runs it: the chosen account, else the next in the fallback order that 
   delete config.providers; delete config.accounts; state.spendBy = {}
 })
 
-test('the chosen Claude plan keeps the work until it nears its limit; then fresh work spills over to the one with the most left', async () => {
-  const { providerFor, watchPlanUse } = await import('./providers.ts')
+test('work follows the order strictly: the chosen account until it is used up, then the next that can take it', async () => {
+  const { providerFor, watchClaudePlan } = await import('./providers.ts')
   const { config } = await import('./store.ts')
-  // (an earlier test left the built-in claude limited: two accounts of their own here)
-  config.accounts = [{ id: 'work', label: 'Claude (work)', kind: 'claude', home: '/h/w' }, { id: 'person', label: 'Claude (Person)', kind: 'claude', home: '/h/p' }]
-  config.providers = { use: { exec: 'work' }, fallback: ['work', 'person', 'llama'] }
-  const used: Record<string, number> = { work: 0.89, person: 0.1 }
-  watchPlanUse((p) => used[p] ?? 0)
-  assert.equal(providerFor('exec'), 'person') // 89% used: past the spill point, the one with 10% takes it
-  used.work = 0.24; delete used.person
-  assert.equal(providerFor('exec'), 'work') // 24%, and the other never seen: the chosen one keeps it
-  used.work = 0.89; used.person = 0.1
-  used.person = 0.95
-  assert.equal(providerFor('exec'), 'work')
-  used.work = used.person = 0.9
-  assert.equal(providerFor('exec'), 'work') // both past it, a tie: the chosen one
-  config.providers = { use: { exec: 'work' }, fallback: ['llama'] }
-  assert.equal(providerFor('exec'), 'work') // not in the list: never picked
-  watchPlanUse(() => 0); delete config.providers; delete config.accounts
+  config.accounts = [{ id: 'work', label: 'Claude (work)', kind: 'claude', home: '/h/w' }, { id: 'person', label: 'Claude (Person)', kind: 'claude', home: '/h/p' }, { id: 'third', label: 'Claude (third)', kind: 'claude', home: '/h/t' }]
+  config.providers = { use: { exec: 'work' }, fallback: ['work', 'person', 'third'] }
+  const held = new Set<string>()
+  watchClaudePlan((p) => held.has(p))
+  assert.equal(providerFor('exec'), 'work') // however full its plan, short of the pause point it keeps the work
+  held.add('work')
+  assert.equal(providerFor('exec'), 'person') // used up: the next in the order, not the emptiest
+  held.add('person')
+  assert.equal(providerFor('exec'), 'third')
+  held.delete('work')
+  assert.equal(providerFor('exec'), 'work') // room again (a reset, or the pause point raised): back at once
+  watchClaudePlan(() => false); delete config.providers; delete config.accounts
 })
 
 test('accounts: one you add runs in its own sign-in folder, and takes work like the built-in ones', async () => {
