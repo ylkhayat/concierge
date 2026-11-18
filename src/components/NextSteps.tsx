@@ -41,6 +41,10 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   const { armed, arm } = useArm()
   const slash = useSlash(commands, text, () => setText(''))
   const [sentTo, setSentTo] = useState<{ lane: Lane; text: string; at: number }>() // where your last words went, to send them elsewhere
+  // where your words go: Auto (read to find the lane) or one you picked, kept for this box until you change it
+  const [pin, setPinState] = useState<Lane | 'auto'>(() => { try { return (localStorage.getItem('send-lane') as Lane | 'auto' | null) ?? 'auto' } catch { return 'auto' } })
+  const setPin = (l: Lane | 'auto') => { setPinState(l); try { localStorage.setItem('send-lane', l) } catch { /* private window */ } }
+  const [placing, setPlacing] = useState<string>() // words sent on Auto whose lane is still being found
   useEffect(() => { if (!sentTo) return; const t = setTimeout(() => setSentTo(undefined), 30_000); return () => clearTimeout(t) }, [sentTo])
 
   // what the agent asks, cached per run (its version): reading it takes a model call the first time, so coming back to
@@ -98,12 +102,18 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
       return
     }
     if (routing && words) {
-      setSending(true)
-      try {
-        const lane = await where(words)
-        await deliver(lane, words)
-        setText(''); setSentTo({ lane, text: words, at: Date.now() })
-      } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }
+      // a lane you picked: straight there, no reading
+      const fixed = route?.force ?? (pin !== 'auto' ? pin : undefined)
+      if (fixed) {
+        setSending(true)
+        try { await deliver(fixed, words); setText(''); setSentTo({ lane: fixed, text: words, at: Date.now() }) } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }
+        return
+      }
+      // Auto: the box is yours again at once; where it fits is found in the background, and said when it lands
+      setText(''); setSentTo(undefined); setPlacing(words)
+      void (async () => {
+        try { const lane = await where(words); await deliver(lane, words); setSentTo({ lane, text: words, at: Date.now() }) } catch (e) { toast((e as Error).message, 'error'); setText(words) } finally { setPlacing(undefined) }
+      })()
       return
     }
     const msg = composeChecklist(list, picks, checked, text)
@@ -222,6 +232,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
           {/* the box: docked under the checklist; in steps, under every step, so you can steer whichever decision is on screen */}
           <div className={inline ? 'sticky bottom-0 -mx-1 space-y-2 bg-gradient-to-t from-surface-1 from-80% to-transparent px-1 pb-1 pt-3' : 'space-y-3'}>
           {attach?.chips}
+          {route && !route.force && <LanePicker pin={pin} onPin={setPin} />}
           <div className="relative" style={slash.anchor}>
           {slash.menu}
           <textarea ref={box} data-composer value={text} onChange={(e) => setText(e.target.value)} rows={stepper ? 2 : 3}
@@ -244,6 +255,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
               {armed === 'send' ? <ArmLabel>{`Confirm: ${publishing.length} public step${publishing.length === 1 ? '' : 's'}`}</ArmLabel> : sendLabel}
               {armed === 'send' && <ArmBar on="color" />}
             </button>
+          {placing && <span className="flex min-w-0 items-center gap-1.5 text-micro text-fg-3 animate-[detail-in_200ms_var(--ease-snappy)]"><Sparkles className="size-3 shrink-0 animate-pulse text-accent" /><span className="truncate">Sent · finding where “{placing.slice(0, 60)}{placing.length > 60 ? '…' : ''}” fits best…</span></span>}
           {sentTo && route && <SentTo to={sentTo} unsettled={route.unsettled} onMove={(l) => { const t = sentTo.text; setSentTo(undefined); void deliver(l, t).then(() => setSentTo({ lane: l, text: t, at: Date.now() }), (e: Error) => toast(e.message, 'error')) }} />}
           </div>
           </div>
@@ -284,6 +296,21 @@ function SentTo({ to, unsettled, onMove }: { to: { lane: Lane; text: string }; u
       {LANES.filter((l) => l !== to.lane).map((l) => (
         <button key={l} type="button" onClick={() => onMove(l)} className="rounded-md px-1.5 py-0.5 font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1">Send to {WHERE[l]}</button>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Where your words go, before you send: Auto (a small model reads them with the agent's last reply, in the background:
+ * the box is yours again at once) or a lane you pick, which sends them straight there. Kept until you change it.
+ */
+function LanePicker({ pin, onPin }: { pin: Lane | 'auto'; onPin: (l: Lane | 'auto') => void }) {
+  const chip = (on: boolean, cls: string) => `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro font-medium transition-colors ${on ? cls : 'text-fg-3 ring-1 ring-line hover:text-fg-1'}`
+  return (
+    <div role="radiogroup" aria-label="Send to" className="flex flex-wrap items-center gap-1">
+      <span className="mr-0.5 text-micro text-fg-4">Send to</span>
+      <button type="button" role="radio" aria-checked={pin === 'auto'} onClick={() => onPin('auto')} title="Found for you from what you write (it sends at once, and says where it went)" className={chip(pin === 'auto', 'bg-fill-strong text-fg-1')}><Sparkles className="size-3" />Auto</button>
+      {LANES.map((l) => <button key={l} type="button" role="radio" aria-checked={pin === l} onClick={() => onPin(l)} title={LANE[l].hint} className={chip(pin === l, LANE[l].fill)}>{LANE[l].label}</button>)}
     </div>
   )
 }
