@@ -49,3 +49,10 @@ test("Claude's refusals for a limit are recognised, the monthly spend one too; a
   assert.equal(refusedForLimit('Reviewed the PR: the retry loop can hit your limit of 3 attempts. ' + 'Details follow. '.repeat(60)), false) // a real answer, long
   assert.equal(refusedForLimit('All fixes are committed and the replies drafted.'), false)
 })
+
+test("a provider out of quota is recognised as one that can't be paid, Copilot's monthly quota too", async () => {
+  const { cantPay } = await import('./claudeLogin.ts')
+  assert.ok(cantPay('You have exceeded your monthly quota (Request ID: 00000-d564d252)'))
+  assert.ok(cantPay('You exceeded your current quota, please check your plan'))
+  assert.equal(cantPay('The reviewer asked whether the quota check is monthly.'), false)
+})

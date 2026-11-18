@@ -889,32 +889,28 @@ export function tell(key: string, text: string, then: (text: string) => void, sh
 /** Fresh work: no session of its own to continue yet (a reply or a resume has one, and stays on its provider). */
 const fresh = (t: { provider?: ProviderId; continuing?: boolean; resumed?: boolean; resume?: string; replyTo?: string; kind?: string }) =>
   !t.continuing && !t.resumed && !t.resume && !t.replyTo && !(t.kind && isFollowUp(t.kind as JobKind))
-/** How long an account can't run for: until its plan window resets or its limit lifts; for good when signed out or over budget. */
-function outFor(p: ProviderId): number {
-  if (available(p)) return 0
-  const plan = kindOf(p) === 'claude' ? planSpent(p) : undefined, until = limitedUntil(p)
-  return plan ? plan.w.resetsAt * 1000 - Date.now() : until ? until - Date.now() : Infinity
-}
-const LONG_OUT = 30 * 60_000
-/** Work with a session of its own moves only when that account is out for long: a short pause is worth waiting for. */
-const movable = (t: Parameters<typeof fresh>[0]) => !fresh(t) && outFor(t.provider ?? 'claude') > LONG_OUT
-/** May it start now: its account can run, or (fresh, or its account out for long) another one can take it. */
-const canRun = (t: Parameters<typeof fresh>[0], work: Work) => available(t.provider ?? 'claude') || ((fresh(t) || movable(t)) && available(providerFor(work)))
-/** What queued work waits for, when it can't start: its account, why, and until when. */
+/**
+ * Every run goes to the account the order picks now (providerFor), a reply as much as fresh work: the order you set is
+ * the one that is used. May it start now: that account can take work.
+ */
+const canRun = (_t: Parameters<typeof fresh>[0], work: Work) => available(providerFor(work))
+/** What queued work waits for, when it can't start: the account the order picks, why, and until when. */
 export function waitingOn(t: Parameters<typeof fresh>[0], work: Work) {
   if (canRun(t, work)) return undefined
-  const p = t.provider ?? 'claude', w = whyNot(p)
+  const p = providerFor(work), w = whyNot(p)
   return { label: accountOf(p).label, why: w?.why ?? 'busy', until: w?.until }
 }
 /**
- * Work whose account can't run now goes to the next one that can (the fallback order). Fresh work just moves; work
- * with a session moves only when its account is out for long, and starts a new session there with `handoff`.
+ * Put work on the account the order picks now, when it is on another one. Fresh work just moves. Work that continues
+ * a conversation is handed to a new session there with what the last one said (`handoff`): a session belongs to the
+ * account it ran on. (Between two Claude Code accounts the orchestrator copies the conversation across instead, when it
+ * gets there first: rebalance.)
  */
 function settle(t: Parameters<typeof fresh>[0], work: Work, key: string, handoff?: (prev: ProviderId) => void) {
-  if (available(t.provider ?? 'claude') || (!fresh(t) && !movable(t))) return
   const prev = t.provider ?? 'claude', p = providerFor(work)
-  if (p === prev) return
-  note(key, { at: new Date().toISOString(), kind: 'event', text: `${accountOf(prev).label} can't run now (${whyNot(prev)?.why ?? 'its limit or budget'}): ${accountOf(p).label} takes it${fresh(t) ? '' : ', in a new session handed what the last one said'}.` })
+  if (p === prev || !available(p)) return
+  const why = available(prev) ? `${accountOf(p).label} is ahead of it in the order` : `${accountOf(prev).label} can't run now (${whyNot(prev)?.why ?? 'its limit or budget'})`
+  note(key, { at: new Date().toISOString(), kind: 'event', text: `${why}: ${accountOf(p).label} takes it${fresh(t) ? '' : ', in a new session handed what the last one said'}.` })
   if (!fresh(t)) handoff?.(prev)
   if (p === 'claude') delete t.provider; else t.provider = p
 }
@@ -1026,8 +1022,10 @@ function start(pr: Pr) {
         told('event', NET_NOTE)
         save(); bus.emit('change'); return
       }
-      if (shutOut(job.error) && fresh({ kind: job.kind })) {
-        startOver(job, pr.id)
+      if (shutOut(job.error)) {
+        // refused because its account can't be paid or signed in: back in the queue, where it goes to the next account in
+        // the order (a follow-up in a new session handed what the last one said, at its start)
+        if (fresh({ kind: job.kind })) startOver(job, pr.id); else note(pr.id, { at: job.endedAt!, kind: 'event', text: `${accountOf(job.provider ?? 'claude').label} refused it (${short(job.error!, 120)}): it goes to the next account in the order.` })
         ev('queued', 'provider unavailable', { continuing: false, error: undefined })
         save(); bus.emit('change'); pump(); return
       }
@@ -1318,8 +1316,8 @@ function startExec(run: ExecRun, on?: string) {
         told('event', NET_NOTE)
         return finished()
       }
-      if (shutOut(run.error) && !run.replyTo) {
-        startOver(run, key)
+      if (shutOut(run.error)) {
+        if (!run.replyTo && !run.resume) startOver(run, key); else note(key, { at: run.endedAt!, kind: 'event', text: `${accountOf(run.provider ?? 'claude').label} refused it (${short(run.error!, 120)}): it goes to the next account in the order.` })
         ev('queued', 'provider unavailable', { continuing: false, error: undefined })
         return finished()
       }

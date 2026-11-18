@@ -94,4 +94,4 @@ export const checkClaudeAuth = () => (checking ??= (async () => {
 /** Claude Code's words when it can't sign in, in a run's output. */
 export const authFailed = (text: string) => /Failed to authenticate|OAuth session expired|Invalid API key|Please run \/login/i.test(text)
 /** A provider that can't be paid: a subscription that ended, no credit or quota left. */
-export const cantPay = (text: string) => /credit balance is too low|subscription (has )?(ended|expired|been cancel)|no active subscription|payment required|insufficient_quota|exceeded your current quota/i.test(text)
+export const cantPay = (text: string) => /credit balance is too low|subscription (has )?(ended|expired|been cancel)|no active subscription|payment required|insufficient_quota|exceeded your (current |monthly |weekly |daily )?quota|out of (premium )?requests/i.test(text)
