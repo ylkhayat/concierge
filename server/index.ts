@@ -75,7 +75,7 @@ import { githubLoginState, startGithubLogin } from './githubLogin.ts'
 import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
 import { transition } from './lifecycle.ts'
-import { cachedStackCheck, checkingStack, checkStack } from './stackCheck.ts'
+import { cachedStackCheck, checkingStack, checkStack, partOf } from './stackCheck.ts'
 import { directionOf, setDirection } from './stackDirection.ts'
 import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
@@ -2277,6 +2277,35 @@ app.post('/stacks/say', async (c) => {
   const chain = ps.map((p) => `#${p.number}`).join(' → ')
   const sent = ps.map((p) => ({ number: p.number, how: sendReply(p, `${msg}${STACK_MARK}, bottom first: ${chain}. You work on #${p.number}. Do the part of this that belongs to #${p.number}; when none of it does, say so in one line and change nothing. The agents on the other pull requests got the same message, each for its own.)`) }))
   return c.json({ sent })
+})
+// one agent for the whole stack (the drive-stack skill): it works bottom-up through every PR, settles what crosses them,
+// restacks and checks again after each, and ends done or with one question. One run instead of a resume per PR's agent
+const driveKey = (p: Pr) => { const c = treeChain(p); return `STACK-${p.repo.split('/')[1]}-${c[0]?.number ?? p.number}` }
+const driveOf = (key: string) => Object.values(state.execs).filter((r) => r.ids[0] === key).sort((a, b) => (b.queuedAt ?? '').localeCompare(a.queuedAt ?? ''))[0]
+app.get('/stacks/drive', (c) => {
+  const p = pr(c.req.query('pr') ?? '')
+  const r = p && driveOf(driveKey(p))
+  return c.json({ run: r ? { id: r.id, state: r.state, summary: r.summary?.slice(-1500), costUsd: r.costUsd, at: r.endedAt ?? r.startedAt ?? r.queuedAt } : null })
+})
+app.post('/stacks/drive', async (c) => {
+  const b = await c.req.json<{ pr?: string; text?: string; push?: boolean }>().catch(() => ({} as { pr?: string; text?: string; push?: boolean }))
+  const p = b.pr ? pr(b.pr) : undefined
+  if (!p || !config.repos[p.repo]) return c.json({ error: 'Unknown pull request, or no local checkout for its repository' }, 400)
+  const key = driveKey(p)
+  if (ticketBusy(key)) return c.json({ error: 'The stack already has a run going: it reads new words once it ends' }, 409)
+  const chain = treeChain(p), dir = directionOf(p)?.text, check = await cachedStackCheck(chain)
+  const lines = chain.map((s, i) => { const t = state.prs[`${s.repo}#${s.number}`]; return `${i + 1}. #${s.number} "${s.title}" branch ${t?.head ?? '?'} into ${s.base}${t?.mine ? '' : " (not the person's: never change it)"}` })
+  const parts = chain.map((s, i) => partOf(s, i, state.prs[`${s.repo}#${s.number}`]).text)
+  const words = String(b.text ?? '').trim().slice(0, 12_000)
+  const prompt = [`Use the drive-stack skill. The stack in ${p.repo}, bottom first:\n${lines.join('\n')}`,
+    dir && `The direction the stack follows:\n${dir}`,
+    words && `What the person says now (their answers and steer; it wins over the PRs' own notes):\n${words}`,
+    check?.issues.length ? `The agreement check found (it may be out of date: verify against the branches):\n${check.issues.map((x) => `- ${x.title} (${x.prs.map((n) => `#${n}`).join(', ')}): ${x.why} Fix: ${x.fix}`).join('\n')}` : '',
+    `What each PR's own agent last found and left open:\n${parts.join('\n\n')}`,
+    b.push ? 'Push each changed branch when its part is done (with lease).' : 'Do not push: commit in the worktrees and report the shas.',
+  ].filter(Boolean).join('\n\n')
+  const run = enqueueExec([key], p.repo, false, { label: 'Resolve stack', prompt, said: words || 'Resolve the stack', role: 'stack' })
+  return run ? c.json({ ok: true, run: { id: run.id, state: run.state } }) : c.json({ error: 'Could not start the stack run' }, 400)
 })
 function sendReply(p: Pr, msg: string): string | undefined {
   // no run has worked on it yet: your words start one

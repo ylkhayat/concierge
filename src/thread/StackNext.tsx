@@ -144,18 +144,18 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     if (publishing.length && armed !== 'send') return arm('send', () => {})
     if (armed) arm(armed, () => {})
     setSending(true)
-    let sent = 0, handed = 0
     try {
-      // one PR after the other, bottom first: a step handed from one to the next lands in order
-      for (const m of waiting) {
+      // one agent for the whole stack (drive-stack): every PR's answers in one message, worked bottom-up in one run
+      const parts = waiting.map((m) => {
         const p = Object.fromEntries(m.steps.map((_, i) => [i, pickOf(m, i)]).filter(([, j]) => (j as number) >= 0))
         const c = Object.fromEntries(m.steps.map((_, i) => [i, on(m, i)]))
-        const said = [note.trim() && `For the whole stack: ${note.trim()}`, pushDone && PUSH_WHEN_DONE].filter(Boolean).join('\n\n')
-        const msg = composeChecklist(m.steps, p, c, said)
-        if (!msg) continue
-        const r = await api(`${m.url}/reply`, { text: msg }) as { handedOver?: number[] }
-        sent++; handed += r?.handedOver?.length ?? 0
-      }
+        const msg = composeChecklist(m.steps, p, c, '')
+        return msg ? `## #${m.pr.number}\n${msg}` : ''
+      }).filter(Boolean)
+      const text = [note.trim() && `For the whole stack: ${note.trim()}`, ...parts].filter(Boolean).join('\n\n')
+      if (!text) return
+      await api('/stacks/drive', { pr: waiting[0].pr.id, text, push: pushDone })
+      refresh(`/stacks/drive?pr=${enc(waiting[0].pr.id)}`)
       for (const m of waiting) refresh(`${m.url}/next`)
       // what you decided (and your steer) becomes part of the stack's direction: every agent on it is told from now on,
       // and the next plan is read against it, so the same question isn't put to you again
@@ -163,7 +163,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
       const kept = [...decided, ...(note.trim() ? [`- ${note.trim().replace(/\s+/g, ' ')}`] : [])]
       if (kept.length && waiting[0]) await api(`/prs/${enc(waiting[0].pr.id)}/stack-direction`, { append: kept.join('\n') }).catch(() => {})
       setNote(''); setPicks({}); setChecked({})
-      toast(`Sent to ${sent} agent${sent === 1 ? '' : 's'} of the stack${handed ? `; ${handed} step${handed === 1 ? '' : 's'} handed to another PR's agent` : ''}`)
+      toast('One agent resolves the whole stack now, bottom first')
     } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }
   }
 

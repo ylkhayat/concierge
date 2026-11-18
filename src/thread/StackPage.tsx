@@ -8,7 +8,7 @@ import { askLine } from '../../server/reply.ts'
 import type { StackCheck } from '../../server/stackCheck.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { api, type PrView, type TicketView } from '../lib.ts'
-import { remember, useApi } from '../query.ts'
+import { refresh, remember, useApi } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 import { plain } from '../components/StackNav.tsx'
 import type { StackView } from '../desk.ts'
@@ -55,10 +55,16 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
   const [sending, setSending] = useState(false)
   const [justSent, setJustSent] = useState<{ words: string; at: string; n: number }[]>([]) // shown at once; an agent at work only shows it as its own once it gets to it
   const to = members.filter((p) => !skip.includes(p.id))
+  // one agent for the whole stack (drive-stack): your words, the check's issues and every PR's open work in one run
+  const drivePath = anchor ? `/stacks/drive?pr=${enc(anchor.id)}` : undefined
+  const driven = useApi<{ run: { id: string; state: string; summary?: string; costUsd?: number } | null }>(drivePath, { refetchInterval: 15_000 })
+  const driveRun = driven.data?.run, driving = driveRun?.state === 'running' || driveRun?.state === 'queued'
+  const drive = (text = '') => api('/stacks/drive', { pr: anchor?.id, text }).then(() => { toast('One agent resolves the whole stack now, bottom first'); if (drivePath) refresh(drivePath); return true }, (e: Error) => { toast(e.message, 'error'); return false })
+  const driveEnd = driveRun?.summary?.match(/STACK (done|needs you:.*)$/m)?.[1]
   const say = () => {
     if (!words.trim() || !to.length || sending) return
     setSending(true)
-    api('/stacks/say', { ids: to.map((p) => p.id), text: words }).then((r: { sent: { number: number }[] }) => { toast(`Sent to ${r.sent.length === 1 ? `#${r.sent[0].number}` : `${r.sent.length} agents`}`); setJustSent((x) => [...x, { words: words.trim(), at: new Date().toISOString(), n: r.sent.length }]); setWords('') }, (e: Error) => toast(e.message, 'error')).finally(() => setSending(false))
+    drive(words).then((ok) => { if (ok) { setJustSent((x) => [...x, { words: words.trim(), at: new Date().toISOString(), n: 1 }]); setWords('') } }).finally(() => setSending(false))
   }
   const MARK = '\n\n(To the whole stack'
   const talks = new Map<string, { words: string; at: string; to: PrView[] }>()
@@ -82,8 +88,12 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
           {fact(asks.length, 'waiting on you', 'wait')}{fact(working.length, working.length === 1 ? 'agent working' : 'agents working', 'run')}{fact(fresh.length, 'not started', 'quiet')}
           <span className="text-meta tabular-nums text-fg-3"><span className="text-ok-text">+{add}</span> <span className="text-fail-text">−{del}</span></span>
         </>}
-        meta={(fresh.length > 0 || offered.length > 0 || feedback.length > 0) && <>
+        meta={members.length > 0 && <>
           <span className="mr-1 text-meta text-fg-3">For the whole stack</span>
+          <button onClick={() => void drive()} disabled={driving} title={driveRun?.summary ? driveRun.summary.slice(-600) : 'One agent for the whole stack: settles what crosses the PRs, bottom first, restacks and checks again after each, and ends done or with one question'} className="inline-flex items-center gap-1.5 btn-primary btn-sm">
+            {driving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Layers className="size-3.5" />}{driving ? 'Resolving the stack…' : 'Resolve the stack'}
+          </button>
+          {!driving && driveEnd && <span className={`max-w-[28rem] truncate text-meta ${driveEnd === 'done' ? 'text-ok-text' : 'text-wait-text'}`} title={driveRun?.summary?.slice(-600)}>{driveEnd === 'done' ? 'Last run: done' : `Last run ${driveEnd}`}</span>}
           {fresh.length > 0 && (
             <button onClick={run} disabled={starting} className="inline-flex items-center gap-1.5 btn-primary btn-sm" title="Each starts once the one below it is done, so it reads what that one found">
               {starting ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}{fresh.length === 1 ? `Start #${fresh[0].number}` : `Start the ${fresh.length} not started`}
@@ -105,16 +115,9 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
         ) : undefined}
       composer={members.length > 0 && (
         <Composer>
-          <div className="flex flex-wrap items-center gap-1 pb-1.5 text-meta text-fg-3">
-            <span className="mr-0.5">To</span>
-            {members.map((p) => { const on = !skip.includes(p.id); return (
-              <button key={p.id} role="checkbox" aria-checked={on} onClick={() => setSkip(on ? [...skip, p.id] : skip.filter((x) => x !== p.id))} title={`${on ? 'Leave out' : 'Include'} #${p.number}: ${p.title}`}
-                      className={`rounded-full px-1.5 font-mono text-micro transition-colors ${on ? 'bg-accent-soft text-accent-text' : 'bg-fill text-fg-4 line-through'}`}>#{p.number}</button>
-            ) })}
-          </div>
           <div className="flex items-end gap-2">
             <textarea value={words} onChange={(e) => setWords(e.target.value)} rows={2} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); say() } }}
-                      placeholder={`Tell the whole stack: each of the ${to.length} agents does its PR's part…`} aria-label="A message to the whole stack"
+                      placeholder="Tell the stack: one agent works it through, bottom first…" aria-label="A message to the whole stack"
                       className="max-h-40 min-h-[52px] flex-1 resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/50" />
             <button onClick={say} disabled={!words.trim() || !to.length || sending} className="inline-flex items-center gap-1.5 btn-primary" title="Send (⌘↵)">{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}Send</button>
           </div>
@@ -213,7 +216,7 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
     if (!ids.length) return toast('None of its PRs is tracked here', 'error')
     const text = `The stack's agreement check found ${issues.length === 1 ? 'this' : 'these'} across its pull requests. Fix what belongs to your PR, and say what you changed.\n\n${issues.map((x) => `- ${x.title} (${x.prs.map((n) => `#${n}`).join(', ')}): ${x.why}\n  Fix: ${x.fix}`).join('\n')}`
     setFixing((f) => [...f, ...issues.map((x) => x.title)])
-    api('/stacks/say', { ids, text }).then((r: { sent: { number: number }[] }) => toast(`Sent to the agent${r.sent.length === 1 ? '' : 's'} of ${r.sent.map((x) => `#${x.number}`).join(', ')}`), (e: Error) => { toast(e.message, 'error'); setFixing((f) => f.filter((t) => !issues.some((x) => x.title === t))) })
+    api('/stacks/drive', { pr: ids[0], text }).then(() => { toast('One agent resolves these across the stack now'); refresh('/stacks/drive') }, (e: Error) => { toast(e.message, 'error'); setFixing((f) => f.filter((t) => !issues.some((x) => x.title === t))) })
   }
   const saveDir = () => api(path.replace(/stack-check$/, 'stack-direction'), { text: draft ?? '' }).then((r: { direction: Dir | null }) => { remember(`${path}?v=${sig}`, { ...q.data, direction: r.direction } as Got); setDraft(undefined); toast(r.direction ? 'The stack follows this direction now' : 'Direction dropped') }, (e: Error) => toast(e.message, 'error'))
   const [openIssue, setOpenIssue] = useState<number>()

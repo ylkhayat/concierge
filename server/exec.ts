@@ -201,6 +201,7 @@ export function handGoalSettings(kind: 'review' | 'revise'): string {
 
 function shipDone(ids: string[], role?: string) {
   return role === 'prep' ? 'a line `PREP <branch>` or `PREP none`'
+    : role === 'stack' ? 'a line `STACK done` or `STACK needs you: <question>`'
     : `for every ticket (${ids.join(', ')}) its outcome line: \`<ID> <branch> <sha> shipped\`, \`<ID> <branch> <sha> ready\` (inside a stack), \`<ID> refined\` (it asked on the ticket) or \`<ID> failed: <reason>\``
 }
 
