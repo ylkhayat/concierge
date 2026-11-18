@@ -42,27 +42,42 @@ const MODELS: Record<Kind, { large?: string; small: string }> = {
 export const modelOf = (p: ProviderId, size: 'large' | 'small') => config.providers?.models?.[p]?.[size] ?? MODELS[kindOf(p)][size]
 
 /**
- * Which Claude model does each kind of work (Settings → Accounts, "Models"). Every call names its tier by a word, and
- * the word becomes the model you picked when a Claude account runs it (the other tools pick theirs: modelOf).
- *   agents    reviews, revisions, Ship runs, explanations: no word, so they used whatever your Claude Code defaults
- *             to (your /model). Picked here, they run on that whatever your own default is
- *   planner   breaking a brief into a project (Plans)
- *   reading   deeper structured reads: the stack's check and answer, the business lens, discussions, skill reviews
- *   quick     small structured calls: next steps, turns, briefs, the standup, the stack tour
+ * Which model does each kind of work, per account (Settings → Accounts, an account's Models). Every call names its kind
+ * by a word, and a Claude account turns the word into the model picked for it there; unpicked, it inherits:
+ *   agents    reviews, revisions, Ship runs, explanations: no word, so they inherit Claude Code's own default (your /model)
+ *   planner   breaking a brief into a project (Plans): inherits Opus
+ *   reading   deeper structured reads (the stack's check and answer, the business lens, discussions, skill reviews): Sonnet
+ *   quick     small structured calls (next steps, turns, briefs, the standup, the stack tour): Haiku
+ * The other tools take only agents and quick calls (modelOf large and small); their deeper reads and plans use the agents' model.
  */
 export type Tier = 'agents' | 'planner' | 'reading' | 'quick'
-export const TIERS: Record<Tier, { word?: string; default?: string }> = {
-  agents: { default: undefined }, planner: { word: 'planner', default: 'opus' }, reading: { word: 'sonnet', default: 'sonnet' }, quick: { word: 'haiku', default: 'haiku' },
-}
-export const tierModel = (t: Tier) => config.providers?.tiers?.[t]?.trim() || TIERS[t].default
-/** Claude Code's flags with each tier word turned into the model picked for it (and the agents' model added when picked). */
-export function claudeModels(args: string[]): string[] {
+const WORD: Partial<Record<string, Tier>> = { planner: 'planner', sonnet: 'reading', haiku: 'quick' }
+const INHERIT: Record<Tier, string | undefined> = { agents: undefined, planner: 'opus', reading: 'sonnet', quick: 'haiku' }
+const SLOT: Record<Tier, 'large' | 'small' | 'reading' | 'planner'> = { agents: 'large', quick: 'small', reading: 'reading', planner: 'planner' }
+export const tierModel = (p: ProviderId, t: Tier) => config.providers?.models?.[p]?.[SLOT[t]]?.trim() || INHERIT[t]
+/** Claude Code's flags with each kind's word turned into the model this account runs it on (and the agents' one added when picked). */
+export function claudeModels(args: string[], p: ProviderId = 'claude'): string[] {
   const out = [...args], at = out.indexOf('--model')
-  if (at < 0) { const m = tierModel('agents'); return m ? [...out, '--model', m] : out }
-  const t = (Object.keys(TIERS) as Tier[]).find((k) => TIERS[k].word === out[at + 1])
-  if (t) out[at + 1] = tierModel(t)!
+  if (at < 0) { const m = tierModel(p, 'agents'); return m ? [...out, '--model', m] : out }
+  const t = WORD[out[at + 1]]
+  if (t) out[at + 1] = tierModel(p, t)!
   return out
 }
+/** The models an account can be told to use, for its Models picker: read from the tool where it can say, else the known names. */
+export async function modelsOf(p: ProviderId): Promise<{ id: string; label: string }[]> {
+  const a = accountOf(p)
+  if (a.kind === 'claude') return [['claude-fable-5-2', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']].map(([id, label]) => ({ id, label }))
+  if (a.kind === 'openai') {
+    const { execFile } = await import('node:child_process')
+    const out = await new Promise<string>((res) => execFile('codex', ['debug', 'models'], { env: envOf(p), timeout: 30_000 }, (_e, so) => res(so ?? '')))
+    try { return (JSON.parse(out).models as { slug: string; display_name?: string; visibility?: string }[]).filter((m) => m.visibility !== 'hide').map((m) => ({ id: m.slug, label: m.display_name ?? m.slug })) } catch { return [] }
+  }
+  if (a.kind === 'llama') return (await ollamaState(p)).models.map((m) => ({ id: m.replace(/:latest$/, ''), label: m.replace(/:latest$/, '') }))
+  // Copilot can't list them: auto, and every model it has run on here
+  return ['auto', ...copilotSeen].map((m) => ({ id: m, label: m === 'auto' ? 'Auto' : m }))
+}
+const copilotSeen = new Set<string>()
+export const sawCopilotModel = (m?: string) => { if (m && m !== 'auto') copilotSeen.add(m) }
 
 // dollars per million tokens, for OpenAI on an API key (a ChatGPT sign-in and Llama cost nothing per token)
 const PRICES: Record<string, { in: number; cached: number; out: number }> = {
@@ -375,7 +390,7 @@ export function copilotTranslator(p: ProviderId, model: string, json: boolean, s
   const result = () => {
     const r = {
       type: 'result', subtype: error && !last ? 'error_during_execution' : 'success', is_error: !!error && !last, result: last || error,
-      num_turns: turns, session_id: session, provider: p, model: used ?? model,
+      num_turns: turns, session_id: session, provider: p, model: (sawCopilotModel(used), used ?? model),
       usage: { input_tokens: 0, output_tokens: 0 }, total_cost_usd: costOf(p, model, usage), structured_output: undefined as unknown,
     }
     // a structured answer: the JSON object in its last message (it may come fenced)
@@ -459,7 +474,7 @@ export function spawnAgent(p: ProviderId, args: string[], opts: { cwd: string; e
   // stdin stays open only for a run that takes messages mid-way (runAgent): `claude -p` otherwise waits for it to end
   const stdio: ['pipe' | 'ignore', 'pipe', 'pipe'] = [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe']
   const kind = kindOf(p), env = envOf(p, opts.env)
-  if (kind === 'claude') return spawn('claude', claudeModels(args), { cwd: opts.cwd, env, signal: opts.signal, stdio }) as AgentProcess
+  if (kind === 'claude') return spawn('claude', claudeModels(args, p), { cwd: opts.cwd, env, signal: opts.signal, stdio }) as AgentProcess
   if (kind === 'llama') return llama(p, args, { ...opts, env }, stdio)
   if (kind === 'copilot') {
     const c = copilotArgs(p, args)

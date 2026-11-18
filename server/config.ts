@@ -26,9 +26,8 @@ export type Config = {
     use?: Partial<Record<import('./providers.ts').Work, string>>
     fallback?: string[]
     budgets?: Record<string, number>
-    models?: Record<string, { large?: string; small?: string }>
+    models?: Record<string, { large?: string; small?: string; reading?: string; planner?: string }> // per account: agents (large), quick calls (small), and for Claude the deeper reads and plans; unset: inherit
     stopAt?: number // how full (percent) a Claude plan window may get before its agents pause; 100: until Claude refuses
-    tiers?: Partial<Record<import('./providers.ts').Tier, string>> // which Claude model does each kind of work (providers.ts TIERS)
   }
   // accounts beyond the built-in Claude, OpenAI and Llama (or settings for those): each with its own sign-in (providers.ts)
   accounts?: import('./providers.ts').Account[]

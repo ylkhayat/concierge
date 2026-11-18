@@ -54,7 +54,7 @@ import { belongsTo, cleanWorktrees, sweepDue, worktrees } from './worktrees.ts'
 import { flowInOf, flowOf, type Flow } from './flow.ts'
 import { planStacks, valid, validPrep, type Prep } from './plan.ts'
 import { CONFIG_FILE, configured, fill, saveConfig, userConfig, workspaces, type Workspace } from './config.ts'
-import { accountOf, accounts, available, spawnAgent, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
+import { accountOf, accounts, available, modelsOf, spawnAgent, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
 import { orgSkills, setMode, syncOrgSkills } from './orgSkills.ts'
 import { improveSkill, removeSkill, skillsView, suggestSkills } from './skills.ts'
 import { discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
@@ -1605,7 +1605,6 @@ const readIdentities = () => Promise.all(accounts().filter((a) => a.kind === 'cl
 setTimeout(() => void readIdentities(), 5_000).unref(); setInterval(() => void readIdentities(), 5 * 60_000).unref()
 const providersView = async () => ({
   use: config.providers?.use ?? {}, fallback: config.providers?.fallback ?? [], budgets: config.providers?.budgets ?? {}, stopAt: Math.round(stopAt() * 100),
-  tiers: Object.fromEntries((['agents', 'planner', 'reading', 'quick'] as const).map((t) => [t, config.providers?.tiers?.[t] ?? null])),
   login: { claude: claudeLoginState(), openai: openaiLoginState() }, routing: routing(),
   accounts: await Promise.all(accounts().map(async (a) => { const who = a.kind === 'claude' ? await whoOf(a) : undefined; return {
     id: a.id, label: a.label, kind: a.kind, host: a.host, builtIn: ['claude', 'openai', 'llama'].includes(a.id),
@@ -1704,9 +1703,14 @@ app.post('/providers/:id/test', async (c) => {
   clearTimeout(timer)
   return c.json({ ...r, ms: Date.now() - t0 })
 })
+// the models an account can be told to use, for its Models picker (providers.ts modelsOf)
+app.get('/accounts/:id/models', async (c) => {
+  const id = c.req.param('id')
+  if (!isAccount(id)) return c.json({ error: 'No such account' }, 404)
+  return c.json({ models: await modelsOf(id).catch(() => []), picked: config.providers?.models?.[id] ?? {} })
+})
 app.post('/providers', async (c) => {
-  const b = await c.req.json() as { use?: Record<string, string>; fallback?: string[]; budgets?: Record<string, number | null>; models?: Record<string, { large?: string; small?: string }>; stopAt?: number; tiers?: Record<string, string | null> }
-  if (b.tiers && Object.entries(b.tiers).some(([t, m]) => !['agents', 'planner', 'reading', 'quick'].includes(t) || (m !== null && (typeof m !== 'string' || !/^[\w.:-]{1,60}$/.test(m))))) return c.json({ error: 'A model per kind of work: a Claude model name, or none' }, 400)
+  const b = await c.req.json() as { use?: Record<string, string>; fallback?: string[]; budgets?: Record<string, number | null>; models?: Record<string, { large?: string; small?: string }>; stopAt?: number }
   if (b.stopAt !== undefined && !(Number.isInteger(b.stopAt) && b.stopAt >= 50 && b.stopAt <= 100)) return c.json({ error: 'Pause agents at 50% to 100% of a plan window' }, 400)
   const works = ['review', 'revise', 'exec', 'small']
   if (b.use && Object.entries(b.use).some(([w, p]) => !works.includes(w) || !isAccount(p))) return c.json({ error: 'Each kind of work takes one of your accounts' }, 400)
@@ -1717,8 +1721,9 @@ app.post('/providers', async (c) => {
   const budgets: Record<string, number> = { ...prev.budgets }
   for (const [k, v] of Object.entries(b.budgets ?? {})) if (v == null) delete budgets[k]; else budgets[k] = v
   const models = { ...prev.models }
-  for (const [k, m] of Object.entries(b.models ?? {})) models[k] = { ...models[k], ...m }
-  saveConfig({ providers: { ...prev, ...(b.use && { use: { ...prev.use, ...b.use } }), ...(b.fallback && { fallback: b.fallback }), ...(b.budgets && { budgets }), ...(b.models && { models }), ...(b.stopAt !== undefined && { stopAt: b.stopAt }), ...(b.tiers && { tiers: Object.fromEntries(Object.entries({ ...prev.tiers, ...b.tiers }).filter(([, m]) => m)) as Record<string, string> }) } })
+  // an empty name inherits again: the key goes
+  for (const [k, m] of Object.entries(b.models ?? {})) models[k] = Object.fromEntries(Object.entries({ ...models[k], ...m }).filter(([, v]) => v)) as typeof models[string]
+  saveConfig({ providers: { ...prev, ...(b.use && { use: { ...prev.use, ...b.use } }), ...(b.fallback && { fallback: b.fallback }), ...(b.budgets && { budgets }), ...(b.models && { models }), ...(b.stopAt !== undefined && { stopAt: b.stopAt }) } })
   reroute() // decided again at once: the pause point or the order may have changed who takes what
   return c.json(await providersView())
 })

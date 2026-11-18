@@ -103,17 +103,19 @@ test('accounts: one you add runs in its own sign-in folder, and takes work like 
   delete config.accounts; delete config.providers
 })
 
-test('each kind of work runs on the Claude model picked for it; nothing picked, its default (agents: your own)', async () => {
+test("each kind of work runs on the model picked for it on that account; unpicked, it inherits (agents: your own default)", async () => {
   const { claudeModels } = await import('./providers.ts')
   const { config } = await import('./store.ts')
   delete config.providers
-  assert.deepEqual(claudeModels(['-p', 'x']), ['-p', 'x']) // an agent run: your Claude Code default
+  assert.deepEqual(claudeModels(['-p', 'x']), ['-p', 'x']) // an agent run: Claude Code's own default
   assert.deepEqual(claudeModels(['--model', 'planner']), ['--model', 'opus'])
   assert.deepEqual(claudeModels(['--model', 'sonnet']), ['--model', 'sonnet'])
-  config.providers = { tiers: { agents: 'sonnet', planner: 'claude-fable-5-2', quick: 'sonnet' } }
-  assert.deepEqual(claudeModels(['-p', 'x']), ['-p', 'x', '--model', 'sonnet'])
-  assert.deepEqual(claudeModels(['--model', 'planner']), ['--model', 'claude-fable-5-2'])
-  assert.deepEqual(claudeModels(['--model', 'haiku']), ['--model', 'sonnet'])
+  config.providers = { models: { claude: { large: 'sonnet', planner: 'claude-fable-5-2', small: 'sonnet' }, other: { large: 'opus' } } }
+  assert.deepEqual(claudeModels(['-p', 'x'], 'claude'), ['-p', 'x', '--model', 'sonnet'])
+  assert.deepEqual(claudeModels(['--model', 'planner'], 'claude'), ['--model', 'claude-fable-5-2'])
+  assert.deepEqual(claudeModels(['--model', 'haiku'], 'claude'), ['--model', 'sonnet'])
+  assert.deepEqual(claudeModels(['--model', 'sonnet'], 'other'), ['--model', 'sonnet']) // another account: its own picks, the rest inherited
+  assert.deepEqual(claudeModels(['-p', 'x'], 'other'), ['-p', 'x', '--model', 'opus'])
   assert.deepEqual(claudeModels(['--model', 'claude-opus-5-5']), ['--model', 'claude-opus-5-5']) // a model named outright stays
   delete config.providers
 })

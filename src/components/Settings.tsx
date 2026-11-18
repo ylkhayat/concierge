@@ -1,6 +1,6 @@
 import {
   ArrowLeft, ArrowRight, ChevronRight, BookOpen, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
-  CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon, Cpu
+  CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
 import { label, sha, VERSION } from '../version.ts'
@@ -535,14 +535,6 @@ export type ProvidersView = {
   routing: { work: string; chosen: string; using: string; label: string; chosenLabel: string; why?: string; until?: number; stuck: boolean }[]
   accounts: AccountView[]
 }
-// the Claude models each kind of work can run on, cheapest last: [tier, title, hint, options, what "no pick" means]
-const MODEL_OPTIONS: [string, string][] = [['claude-fable-5-2', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']]
-const TIER_ROWS: [string, string, string, [string, string][], string][] = [
-  ['agents', 'Agents run on', 'Reviews, revisions, Ship runs and explanations: most of the tokens. Unpicked, they follow your own Claude Code default.', MODEL_OPTIONS.slice(0, 3), 'Your default'],
-  ['planner', 'Plans run on', 'Breaking a brief down into a project.', MODEL_OPTIONS.slice(0, 3), 'Opus'],
-  ['reading', 'Deeper reads run on', 'The stack’s check and answer, the business lens, discussions, skill reviews.', MODEL_OPTIONS.slice(1), 'Sonnet'],
-  ['quick', 'Quick calls run on', 'Next steps, turns, briefs, the standup, the stack tour.', MODEL_OPTIONS.slice(2), 'Haiku'],
-]
 const KINDS: [Kind, string][] = [['claude', 'Claude'], ['openai', 'OpenAI'], ['llama', 'Llama'], ['copilot', 'Copilot']]
 const WORKS: [string, string, string][] = [
   ['review', 'Reviews', 'Reviewing PRs you were asked to look at, and explaining them'],
@@ -731,6 +723,8 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
                          className="w-14 bg-transparent px-1 py-0.5 text-right tabular-nums text-fg-1 outline-none placeholder:text-fg-4" /></span>
               </label>
             </div>}
+            {/* which model each kind of work runs on here: inherited unless picked (Llama's are picked with its speed checks below) */}
+            {!compact && a.kind !== 'llama' && <AccountModels a={a} set={set} />}
             {a.kind === 'llama' && a.llama?.up && (
               <details className="group/models mt-2">
                 <summary className="flex cursor-pointer list-none items-center gap-1 text-meta font-medium text-fg-3 hover:text-fg-1">
@@ -755,16 +749,6 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
 
       {!compact && <>
       <Group title="The order" hint="Work goes to the first account here that can take it, unless you picked one for that kind of work above; when that one can't run, the next here does. Agents pause when a Claude plan window is this full.">
-        {/* which Claude model does each kind of work: the biggest models cost the most tokens, so each is picked here */}
-        {TIER_ROWS.map(([t, title, hint, options, none]) => {
-          const cur = v.tiers?.[t] ?? null
-          return (
-            <Row key={t} icon={Cpu} title={title} hint={hint}>
-              <Tabs size="sm" label={title} value={cur ?? ''} onChange={(m) => void set({ tiers: { [t]: m || null } } as never, `${title}: ${options.find(([id]) => id === m)?.[1] ?? none}`)}
-                    options={[{ id: '', label: none, title: t === 'agents' ? 'What your own Claude Code uses (your /model)' : 'The default' }, ...options.map(([id, label]) => ({ id, label }))]} />
-            </Row>
-          )
-        })}
         <Row icon={Gauge} title="Pause agents at" hint="Lower leaves room for your own Claude use. At 100%, a run stops wherever Claude refuses.">
           <Tabs size="sm" label="Pause agents at" value={String(v.stopAt)} onChange={(n) => void set({ stopAt: Number(n) }, `Agents now pause at ${n}% of a plan window`)}
                 options={[...new Set([80, 90, 95, 99, 100, v.stopAt])].sort((a, b) => a - b).map((n) => ({ id: String(n), label: `${n}%`, title: n === 95 ? 'The default' : n === 100 ? 'Until Claude refuses' : undefined }))} />
@@ -1971,5 +1955,55 @@ function RoleSlots({ role, v, onSaved }: { role: Role; v: RolesView; onSaved: (x
         ))}
       </div>
     </section>
+  )
+}
+
+// each kind of work an account can run, what it inherits when nothing is picked, and whether the kind takes it
+const MODEL_KINDS: { slot: 'large' | 'planner' | 'reading' | 'small'; label: string; hint: string; inherit: string; claudeOnly?: boolean }[] = [
+  { slot: 'large', label: 'Agents', hint: 'Reviews, revisions, Ship runs, explanations: most of the tokens', inherit: 'its default' },
+  { slot: 'planner', label: 'Plans', hint: 'Breaking a brief down into a project', inherit: 'Opus', claudeOnly: true },
+  { slot: 'reading', label: 'Deeper reads', hint: 'The stack’s check and answer, the business lens, discussions, skill reviews', inherit: 'Sonnet', claudeOnly: true },
+  { slot: 'small', label: 'Quick calls', hint: 'Next steps, turns, briefs, the standup, the stack tour', inherit: 'its default' },
+]
+/**
+ * An account's Models, folded: each kind of work inherits until you pick one of the models this account offers (read
+ * from the tool where it can list them). Nothing is assumed about which tool the account is.
+ */
+function AccountModels({ a, set }: { a: AccountView; set: (b: object, m: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const q = useApi<{ models: { id: string; label: string }[]; picked: Record<string, string> }>(open ? `/accounts/${encodeURIComponent(a.id)}/models` : undefined)
+  const picked = q.data?.picked ?? {}
+  const kinds = MODEL_KINDS.filter((k) => !k.claudeOnly || a.kind === 'claude')
+  const pick = (slot: string, label: string, m: string, name: string) => {
+    set({ models: { [a.id]: { [slot]: m } } }, `${a.label} · ${label}: ${m ? name : 'inherits'}`)
+    void q.refetch()
+  }
+  const shown = Object.values(picked).filter(Boolean).length
+  return (
+    <details className="group/am mt-2" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="flex cursor-pointer list-none items-center gap-1 text-meta font-medium text-fg-3 hover:text-fg-1">
+        <ChevronRight className="size-3.5 transition-transform group-open/am:rotate-90" />Models<span className="font-normal text-fg-4">{shown ? `· ${shown} picked` : '· all inherited'}</span>
+      </summary>
+      {open && (!q.data ? <p className="mt-2 text-meta text-fg-3">{q.isError ? 'Couldn’t read the models this account offers: everything inherits.' : 'Reading the models this account offers…'}</p> : (
+        <div className="mt-2 space-y-2">
+          {kinds.map((k) => {
+            const cur = picked[k.slot] ?? ''
+            const list = q.data!.models.some((m) => m.id === cur) || !cur ? q.data!.models : [...q.data!.models, { id: cur, label: cur }]
+            return (
+              <div key={k.slot}>
+                <p className="text-meta text-fg-2" title={k.hint}>{k.label}</p>
+                <div role="radiogroup" aria-label={`${a.label}: ${k.label}`} className="mt-0.5 flex flex-wrap gap-1">
+                  {[{ id: '', label: `Inherit (${k.inherit})` }, ...list].map((m) => (
+                    <button key={m.id || 'inherit'} role="radio" aria-checked={cur === m.id} onClick={() => cur !== m.id && pick(k.slot, k.label, m.id, m.label)}
+                            className={`rounded-full px-2 py-0.5 text-micro font-medium transition-colors ${cur === m.id ? 'bg-accent text-on-accent' : 'bg-fill text-fg-2 hover:bg-fill-strong'}`}>{m.label}</button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+          {!q.data.models.length && <p className="text-meta text-fg-4">This account can’t list its models right now: everything inherits.</p>}
+        </div>
+      ))}
+    </details>
   )
 }
