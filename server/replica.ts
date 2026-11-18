@@ -82,7 +82,8 @@ const SKIP_DIR = new Set(['node_modules', '.venv', 'venv', '.pnpm-store', 'uv-ca
 // in an account's folder: what is a link on each machine (to your files and to this machine's plugins), never a copy from another
 const LINKED = /^accounts\/[^/]+\/(claude|codex)\/(settings\.json|CLAUDE\.md|config\.toml|skills|commands|agents|plugins)(\/|$)/
 const LOGINS = [/^accounts\/[^/]+\/claude\/\.credentials\.json$/, /^accounts\/[^/]+\/codex\/auth\.json$/]
-const skipFile = (root: string, rel: string) => /\.tmp$|\.sync-conflict-|\.bak-|(^|\/)\.st(folder|ignore|versions)/.test(rel) || (root === 'config' && (LOGINS.some((r) => r.test(rel)) || LINKED.test(rel)))
+// mcp.env: your values for the bank's connections, on this machine alone (localEnv.ts)
+const skipFile = (root: string, rel: string) => (root === 'config' && rel === 'mcp.env') || /\.tmp$|\.sync-conflict-|\.bak-|(^|\/)\.st(folder|ignore|versions)/.test(rel) || (root === 'config' && (LOGINS.some((r) => r.test(rel)) || LINKED.test(rel)))
 const MAX = 512 * 1024 * 1024 // a file bigger than this is someone's mistake, not state
 
 type Entry = { size: number; mtimeMs: number; v: number }

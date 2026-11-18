@@ -18,6 +18,7 @@ import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ownServers, type McpServer } from './connections.ts'
 import { readSecrets } from './scrub.ts'
+import { expand, LOCAL_ENV, localEnv, missingIn } from './localEnv.ts'
 import { STATE_DIR } from './paths.ts'
 import { accountOf, type ProviderId } from './providers.ts'
 import { config, state } from './store.ts'
@@ -26,13 +27,15 @@ const DIR = join(STATE_DIR, 'bank')
 /** Every run gets exactly the bank, nothing of the account's own (Settings → Connections). */
 export const bankOnly = () => !!config.connections?.bankOnly
 
+// an address and its key with this machine's values put in (a command gets them as it starts: bin/bank-env.mjs)
+const here = (s: McpServer): McpServer => (s.url ? { ...s, url: expand(s.url, localEnv()), ...(s.headers && { headers: Object.fromEntries(Object.entries(s.headers).map(([k, v]) => [k, expand(v, localEnv())])) }) } : s)
 const forClaude = (s: McpServer) => (s.url ? { type: 'http', url: s.url, ...(s.headers && { headers: s.headers }) } : { command: s.command, args: s.args ?? [], ...(s.env && { env: s.env }) })
 const forCopilot = (s: McpServer) => (s.url ? { type: 'http', url: s.url, tools: ['*'], ...(s.headers && { headers: s.headers }) } : { type: 'local', command: s.command, args: s.args ?? [], tools: ['*'], ...(s.env && { env: s.env }) })
 const toml = (v: unknown) => JSON.stringify(v) // strings and arrays of strings read the same in TOML
 /** Codex takes a server as config overrides; a bearer key goes in by the name of a variable, set for that run only. */
 export function forCodex(servers: McpServer[]): { conf: string[]; env: Record<string, string> } {
   const conf: string[] = [], env: Record<string, string> = {}
-  for (const s of servers) {
+  for (const s of servers.map(here)) {
     const at = `mcp_servers.${s.name.replace(/[^A-Za-z0-9_-]/g, '_')}`
     if (s.url) {
       conf.push(`${at}.url=${toml(s.url)}`)
@@ -74,7 +77,7 @@ export async function writeBank(accounts: ProviderId[]) {
   await mkdir(DIR, { recursive: true, mode: 0o700 })
   for (const p of accounts) for (const tool of ['claude', 'copilot'] as const) {
     const { servers } = pick(p)
-    const text = JSON.stringify({ mcpServers: Object.fromEntries(servers.map((s) => [s.name, (tool === 'claude' ? forClaude : forCopilot)(s)])) })
+    const text = JSON.stringify({ mcpServers: Object.fromEntries(servers.map((s) => [s.name, (tool === 'claude' ? forClaude : forCopilot)(here(s))])) })
     const f = file(p, tool)
     if (written.get(f) === text) continue
     await writeFile(f, text, { mode: 0o600 }); await chmod(f, 0o600)
@@ -95,7 +98,9 @@ export const codexBank = (p: ProviderId) => forCodex(pick(p).servers)
 /** The names in the bank now, with how each signs in: the Connections page. */
 export const bankView = () => {
   const mine = readSecrets().bank ?? {}
-  return { only: bankOnly(), servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, mine: !!s.mine, target: s.shown ?? s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim(),
+  return { only: bankOnly(), file: LOCAL_ENV, servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, mine: !!s.mine, target: s.shown ?? s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim(),
     // yours, for editing: what it is, never a value (a key or a value left empty keeps the one kept)
+    // the ${NAME}s it needs that this machine's mcp.env doesn't have
+    ...(s.mine && mine[s.name] && { missing: missingIn([mine[s.name].url ?? '', mine[s.name].key ?? '', ...(mine[s.name].command ?? []), ...Object.values(mine[s.name].env ?? {})]) }),
     ...(s.mine && mine[s.name] && { edit: mine[s.name].command ? { kind: 'command' as const, command: mine[s.name].command!.join(' '), env: Object.keys(mine[s.name].env ?? {}) } : { kind: 'address' as const, url: mine[s.name].url ?? '' } }) })) }
 }

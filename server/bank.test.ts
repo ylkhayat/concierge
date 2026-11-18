@@ -40,3 +40,12 @@ test("the first Claude account gets what neither its login nor its own configura
   const { conf, env } = forCodex([cmd])
   assert.deepEqual([conf, env], [['mcp_servers.mongo.command="node"', 'mcp_servers.mongo.args=["bank-env.mjs","secrets.json","mongo","--","npx","-y","mongodb-mcp-server"]'], {}]) // no value on its command line
 })
+
+test("a connection names its secrets as ${NAME}: read from this machine's mcp.env, a default after :-, and what is missing said", async () => {
+  const { expand, missingIn, parseEnv } = await import('./localEnv.ts')
+  const vals = parseEnv('# my values\nMONGO_DEV_URI="mongodb+srv://u:p@h/db?x=1"\nexport TOKEN=abc # a comment\nEMPTY=\n')
+  assert.deepEqual(vals, { MONGO_DEV_URI: 'mongodb+srv://u:p@h/db?x=1', TOKEN: 'abc', EMPTY: '' })
+  assert.equal(expand('Bearer ${TOKEN}', vals), 'Bearer abc')
+  assert.equal(expand('${MODE:-read}', vals), 'read')
+  assert.deepEqual(missingIn(['${MONGO_DEV_URI}', '${MONGO_PROD_URI}', '${MODE:-x}', 'plain'], vals), ['MONGO_PROD_URI'])
+})

@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { saveConfig } from './config.ts'
 import { readSecrets, rereadSecrets, saveSecrets, scrub, SECRETS_FILE } from './scrub.ts'
 import { fileURLToPath } from 'node:url'
+import { LOCAL_ENV } from './localEnv.ts'
 // the launcher a bank command starts through (bin/bank-env.mjs)
 const BANK_ENV = fileURLToPath(new URL('../bin/bank-env.mjs', import.meta.url))
 import { config, save, state } from './store.ts'
@@ -73,7 +74,8 @@ export function ownServers(): McpServer[] {
     if (out.some((x) => x.name === name)) continue
     // a command starts through bin/bank-env, which hands it its environment from the secrets file as it starts: no value
     // is ever on its command line
-    if (b.command?.length) out.push({ name, service: name, command: process.execPath, args: [BANK_ENV, SECRETS_FILE, name, '--', ...b.command], mine: true, shown: b.command.join(' ') })
+    if (b.command?.length) out.push({ name, service: name, command: process.execPath, args: [BANK_ENV, SECRETS_FILE, LOCAL_ENV, name, '--', ...b.command], mine: true, shown: b.command.join(' ') })
+    // an address and its key: ${NAME} in either is put in from this machine's mcp.env when the bank's files are written
     else if (b.url) out.push({ name, service: name, url: b.url, ...(b.key ? { headers: { Authorization: `Bearer ${b.key}` } } : { login: true }), mine: true })
   }
   return out

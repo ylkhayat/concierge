@@ -3,6 +3,7 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { CONFIG_FILE } from './config.ts'
+import { localEnv } from './localEnv.ts'
 
 // keys you hand over in the app (a Sentry token, MongoDB strings): next to the settings, readable only by you
 export const SECRETS_FILE = join(dirname(CONFIG_FILE), 'secrets.json')
@@ -38,7 +39,7 @@ let values: { at: number; list: string[] } | undefined
 function secretValues(): string[] {
   if (values && Date.now() - values.at < 60_000) return values.list
   const s = readSecrets()
-  const list = [...ENV_KEYS.map((k) => process.env[k]), s.sentryToken, ...Object.values(s.bank ?? {}).flatMap((x) => [x.key, ...Object.values(x.env ?? {})]), ...Object.values(s.shared ?? {}).map((x) => x?.value), ...extra]
+  const list = [...ENV_KEYS.map((k) => process.env[k]), s.sentryToken, ...Object.values(s.bank ?? {}).flatMap((x) => [x.key, ...Object.values(x.env ?? {})]), ...Object.values(localEnv()), ...Object.values(s.shared ?? {}).map((x) => x?.value), ...extra]
     .filter((x): x is string => !!x && x.length >= 8).sort((a, b) => b.length - a.length) // longest first: a string before the password inside it
   values = { at: Date.now(), list }
   return list

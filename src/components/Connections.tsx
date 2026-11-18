@@ -28,7 +28,7 @@ export function Connections({ toast }: { toast: Toast }) {
   )
 }
 
-type BankView = { only: boolean; servers: { name: string; service: string; how: 'key' | 'login'; mine: boolean; target: string; edit?: { kind: 'address'; url: string } | { kind: 'command'; command: string; env: string[] } }[] }
+type BankView = { only: boolean; file?: string; servers: { name: string; service: string; how: 'key' | 'login'; mine: boolean; target: string; missing?: string[]; edit?: { kind: 'address'; url: string } | { kind: 'command'; command: string; env: string[] } }[] }
 /**
  * The connection bank: what is in it, how each signs in, whether runs get only the bank, and a way to put one in.
  * An account's own connections (below) differ per account; these are the same for every run.
@@ -43,12 +43,14 @@ function Bank({ toast }: { toast: Toast }) {
   return (
     <div className="space-y-2">
       <div className="card divide-y divide-line">
+        {b.file && <p className="px-3.5 py-2 text-meta text-fg-3">Secrets for these live in <code className="font-mono text-fg-2">{b.file.replace(/^\/(Users|home)\/[^/]+/, '~')}</code> on each machine: one <code className="font-mono">NAME=value</code> per line, named in a connection as <code className="font-mono">{'${NAME}'}</code>.</p>}
         {b.servers.length === 0 && <p className="px-3.5 py-3 text-small text-fg-3">Nothing in it yet. A service Concierge has a key for (Linear, Sentry) is in it by itself; add any other by its MCP address and key, or by the command that starts it.</p>}
         {b.servers.map((s) => (
           <div key={s.name} className="flex items-center gap-2.5 px-3.5 py-2 text-small">
             <span className={`size-1.5 shrink-0 rounded-full ${s.how === 'key' ? 'bg-ok' : 'bg-wait'}`} />
             <span className="font-medium text-fg-1">{s.service}</span>
             <span className="min-w-0 flex-1 truncate font-mono text-meta text-fg-4" title={s.target}>{s.target.replace(/^https:\/\//, '')}</span>
+            {!!s.missing?.length && <span className="shrink-0 rounded-full bg-wait/15 px-1.5 text-micro font-medium text-wait-text" title={`Add ${s.missing.join(', ')} to ${b.file ?? 'mcp.env'} on this machine`}>needs {s.missing.join(', ')}</span>}
             <span className="shrink-0 text-meta text-fg-3" title={s.how === 'key' ? 'It signs in with a key Concierge holds: every tool can use it' : 'It signs in in the browser, into a Claude account: Codex and Copilot can’t use it'}>{s.how === 'key' ? 'Every tool' : 'Claude accounts only'}</span>
             {s.mine && s.edit && <button onClick={() => setForm(s.edit!.kind === 'command' ? { kind: 'command', name: s.name, url: '', key: '', command: s.edit!.command, env: s.edit!.env.map((k) => `${k}=`).join('\n'), was: s.name } : { kind: 'address', name: s.name, url: s.edit!.url, key: '', command: '', env: '', was: s.name })} className="shrink-0 text-meta text-fg-3 hover:text-fg-1">Edit</button>}
             {s.mine && <button onClick={() => void post('/bank/remove', { name: s.name }, `${s.name} taken out of the bank`)} className="shrink-0 text-meta text-fg-4 hover:text-fail-text">Remove</button>}
@@ -71,13 +73,13 @@ function Bank({ toast }: { toast: Toast }) {
           {form.kind === 'address' ? (
             <div className="flex flex-wrap items-center gap-2">
               <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://… its MCP address" aria-label="MCP address" className={`${field} font-mono`} />
-              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder={form.was ? 'its key (empty: keep the one kept)' : 'its key or token'} aria-label="Key" className={`${field} max-w-64`} />
+              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder={form.was ? 'its key, or ${NAME} (empty: keep)' : 'its key, or ${NAME} from mcp.env'} aria-label="Key" className={`${field} max-w-64`} />
             </div>
           ) : (
             <div className="space-y-2">
               <input value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="npx -y mongodb-mcp-server@latest" aria-label="Command" className={`${field} w-full font-mono`} />
-              <textarea value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} rows={3} placeholder={'MDB_MCP_CONNECTION_STRING=mongodb+srv://…\nMDB_MCP_READ_ONLY=true'} aria-label="Values, one NAME=value per line" className={`${field} w-full resize-y font-mono text-meta`} />
-              <p className="text-meta text-fg-4">Kept with Concierge’s secrets and handed to it only as it starts: never on its command line, never shown again.{form.was && ' A value left empty keeps the one kept; a line you delete is dropped.'}</p>
+              <textarea value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} rows={3} placeholder={'MDB_MCP_CONNECTION_STRING=${MONGO_DEV_URI}\nMDB_MCP_READ_ONLY=true'} aria-label="Values, one NAME=value per line" className={`${field} w-full resize-y font-mono text-meta`} />
+              <p className="text-meta text-fg-4">As the server’s own docs give it. Name a secret as <code className="font-mono">{'${NAME}'}</code> and put <code className="font-mono">NAME=…</code> in <code className="font-mono">{b.file ?? 'mcp.env'}</code> on each machine: it stays there, is never copied to another machine, and is handed to the server only as it starts.{form.was && ' A value left empty keeps the one kept; a line you delete is dropped.'}</p>
             </div>
           )}
           <div className="flex justify-end gap-2">
