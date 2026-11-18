@@ -19,7 +19,8 @@ try {
   }
 } catch { /* no file on this machine: only written values */ }
 const missing = new Set()
-const expand = (t) => t.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_, n, d) => vals[n] ?? d ?? (missing.add(n), ''))
+// a placeholder left empty counts as missing: a server started with an empty connection string only fails later, less clearly
+const expand = (t) => t.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_, n, d) => vals[n] || d || (missing.add(n), ''))
 const env = { ...process.env }
 for (const [k, v] of Object.entries(entry.env ?? {})) if (typeof v === 'string') env[k] = expand(v)
 const args = cmd.map(expand)

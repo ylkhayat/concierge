@@ -38,9 +38,9 @@ const REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g
 /** The names a text refers to. */
 export const refsIn = (text: string) => [...text.matchAll(REF)].map((m) => m[1])
 /** A text with each ${NAME} put in from `vals` (a missing one: its default, else empty). */
-export const expand = (text: string, vals: Record<string, string>) => text.replace(REF, (_, n: string, d?: string) => vals[n] ?? d ?? '')
+export const expand = (text: string, vals: Record<string, string>) => text.replace(REF, (_, n: string, d?: string) => vals[n] || d || '')
 /** The names these texts refer to that this machine's file doesn't have (and that carry no default). */
 export function missingIn(texts: string[], vals = localEnv()): string[] {
   const need = texts.flatMap((t) => [...t.matchAll(REF)].filter((m) => m[2] === undefined).map((m) => m[1]))
-  return [...new Set(need.filter((n) => vals[n] === undefined))]
+  return [...new Set(need.filter((n) => !vals[n]))] // a placeholder left empty is missing too
 }

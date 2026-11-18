@@ -47,5 +47,5 @@ test("a connection names its secrets as ${NAME}: read from this machine's mcp.en
   assert.deepEqual(vals, { MONGO_DEV_URI: 'mongodb+srv://u:p@h/db?x=1', TOKEN: 'abc', EMPTY: '' })
   assert.equal(expand('Bearer ${TOKEN}', vals), 'Bearer abc')
   assert.equal(expand('${MODE:-read}', vals), 'read')
-  assert.deepEqual(missingIn(['${MONGO_DEV_URI}', '${MONGO_PROD_URI}', '${MODE:-x}', 'plain'], vals), ['MONGO_PROD_URI'])
+  assert.deepEqual(missingIn(['${MONGO_DEV_URI}', '${MONGO_PROD_URI}', '${MODE:-x}', '${EMPTY}', 'plain'], vals), ['MONGO_PROD_URI', 'EMPTY']) // a placeholder left empty is missing
 })
