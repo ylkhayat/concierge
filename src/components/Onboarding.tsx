@@ -205,7 +205,8 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               <Step title="Connect your accounts" lead="Concierge works with your GitHub, private repositories included, and runs the agents you already pay for. Sign in once here; everything stays on this machine.">
                 <div className="space-y-2">
                   <ToolRow name="GitHub" required c={c!.github} />
-                  {!c!.github.ok && <KeyField name="GITHUB_TOKEN" placeholder="ghp_… or github_pat_…" hint={<>A token with <b>repo</b> access. With the GitHub CLI: <code className="font-mono">gh auth token</code>. Or create one at github.com/settings/tokens.</>} onSaved={load} toast={toast} />}
+                  {!c!.github.ok && <GithubSignIn onSaved={load} toast={toast} />}
+                  {!c!.github.ok && <KeyField label="Or paste a token" name="GITHUB_TOKEN" placeholder="ghp_… or github_pat_…" hint={<>A token with <b>repo</b> access. With the GitHub CLI: <code className="font-mono">gh auth token</code>. Or create one at github.com/settings/tokens.</>} onSaved={load} toast={toast} />}
                   <ToolRow name="crit" c={c!.crit} note="Used by the review and revise skills" />
                 </div>
                 <div className="space-y-2">
@@ -462,17 +463,57 @@ function Segmented({ value, options, onChange }: { value: string; options: [stri
 }
 
 /** A key pasted into the page: checked by the server against GitHub or Linear, then kept for every machine. */
-function KeyField({ name, placeholder, hint, onSaved, toast }: { name: string; placeholder: string; hint: ReactNode; onSaved: () => void; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+function KeyField({ name, placeholder, hint, onSaved, toast, label }: { name: string; placeholder: string; hint: ReactNode; onSaved: () => void; toast: (m: string, tone?: 'ok' | 'error') => void; label?: string }) {
   const [v, setV] = useState('')
   const [busy, setBusy] = useState(false)
-  const save = () => { setBusy(true); api('/shared-keys', { name, value: v.trim() }).then(() => { toast('Connected'); setV(''); onSaved() }, (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
+  const save = () => { setBusy(true); api('/shared-keys', { name, value: v.trim() }).then((r: { who?: string }) => { toast(r.who ? `Connected as ${r.who}` : 'Connected'); setV(''); onSaved() }, (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
   return (
     <div className="space-y-1.5 card p-3">
+      {label && <p className="text-meta font-medium text-fg-3">{label}</p>}
       <div className="flex gap-2">
         <input type="password" autoComplete="off" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && v.trim() && save()} placeholder={placeholder} aria-label={name} className={`${field} font-mono`} />
         <button onClick={save} disabled={!v.trim() || busy} className={`${primaryBtn} shrink-0`}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : 'Connect'}</button>
       </div>
       <p className="text-small text-fg-3">{hint}</p>
+    </div>
+  )
+}
+
+/**
+ * GitHub without a token: the GitHub CLI's device sign-in. A code to enter at github.com, then Concierge keeps the
+ * token it got (server/githubLogin.ts). An organisation that blocks that app still takes a pasted token (below it).
+ */
+function GithubSignIn({ onSaved, toast }: { onSaved: () => void; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+  const [code, setCode] = useState<{ code: string; url: string }>()
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!code) return
+    const t = setInterval(() => {
+      void api('/github/login').then((s: { done: boolean; ok: boolean; error?: string; login?: string } | null) => {
+        if (!s?.done) return
+        clearInterval(t); setCode(undefined)
+        if (s.ok) { toast(`Signed in to GitHub${s.login ? ` as ${s.login}` : ''}`); onSaved() } else toast(s.error ?? 'The sign-in didn’t finish', 'error')
+      }, () => {})
+    }, 2000)
+    return () => clearInterval(t)
+  }, [code?.code]) // eslint-disable-line react-hooks/exhaustive-deps
+  const start = () => { setBusy(true); api('/github/login', {}).then(setCode, (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
+  return (
+    <div className="space-y-1.5 card p-3">
+      {code ? (
+        <>
+          <p className="text-small text-fg-2">Open <a href={code.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">{code.url.replace('https://', '')}</a> and enter</p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => void navigator.clipboard?.writeText(code.code).then(() => toast('Code copied'))} title="Copy the code" className="rounded-lg bg-fill px-3 py-1.5 font-mono text-title font-semibold tracking-widest text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}</button>
+            <span className="flex items-center gap-1.5 text-meta text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Waiting for you to approve it on GitHub…</span>
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center gap-3">
+          <button onClick={start} disabled={busy} className={`${primaryBtn} shrink-0`}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : 'Sign in with GitHub'}</button>
+          <p className="text-small text-fg-3">A code to enter on github.com: no token to create. Access to your repositories, your organisations’ pull requests and their checks.</p>
+        </div>
+      )}
     </div>
   )
 }

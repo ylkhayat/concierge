@@ -1229,7 +1229,7 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
   return (
     <>
       <Group title="Linear teams" hint="Whose tickets show in Ship, and the repository each team’s tickets are worked in. Saved as you click.">
-        {!setup.linearKey && <Row icon={CircleAlert} title="LINEAR_API_KEY missing" hint="Export it in your shell profile, then restart Concierge. Ship lists your tickets with it." />}
+        {!setup.linearKey && <Row icon={CircleAlert} title="Linear isn’t connected" hint="Paste a Linear API key under Machines → Shared keys (Linear → Settings → Security & access → API keys). Ship lists your tickets with it." />}
         {setup.linearKey && teamsQ.isLoading && <div className="px-4 py-3"><Skeleton rows={2} /></div>}
         {keys.map((k) => {
           const on = all || x.teams.includes(k), repo = x.repoByPrefix[k]

@@ -71,6 +71,7 @@ import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missi
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
+import { githubLoginState, startGithubLogin } from './githubLogin.ts'
 import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
 import { transition } from './lifecycle.ts'
@@ -493,24 +494,50 @@ app.get('/machines', async (c) => {
 // the keys every machine uses (sharedEnv.ts): whether each is set and since when, never the value
 const KEY_LABEL: Record<SharedKey, string> = { GITHUB_TOKEN: 'GitHub token', LINEAR_API_KEY: 'Linear API key', CLAUDE_CODE_OAUTH_TOKEN: 'Claude token (claude setup-token)' }
 app.get('/shared-keys', (c) => c.json(SHARED_KEYS.map((k) => ({ name: k, label: KEY_LABEL[k], shared: sharedNow()[k]?.at, from: sharedNow()[k]?.from, here: !!localKeys[k] }))))
-app.post('/shared-keys', async (c) => {
-  const { name, value } = await c.req.json() as { name?: string; value?: string | null }
-  if (!SHARED_KEYS.includes(name as SharedKey)) return c.json({ error: 'Unknown key' }, 400)
-  const k = name as SharedKey
-  const v = typeof value === 'string' ? value.trim() : null
-  if (v !== null && (v.length < 20 || v.length > 4000 || /\s/.test(v))) return c.json({ error: 'That doesn\'t look like a key' }, 400)
-  // checked before it is kept: a wrong key would stop every machine at once
-  if (v && k === 'GITHUB_TOKEN') { const r = await fetch('https://api.github.com/user', { headers: { authorization: `Bearer ${v}` }, signal: AbortSignal.timeout(10_000) }).catch(() => undefined); if (!r?.ok) return c.json({ error: 'GitHub didn\'t accept that token' }, 400) }
-  if (v && k === 'LINEAR_API_KEY') { const r = await fetch('https://api.linear.app/graphql', { method: 'POST', headers: { authorization: v, 'content-type': 'application/json' }, body: JSON.stringify({ query: '{ viewer { id } }' }), signal: AbortSignal.timeout(10_000) }).catch(() => undefined); if (!r?.ok) return c.json({ error: 'Linear didn\'t accept that key' }, 400) }
-  if (v && k === 'CLAUDE_CODE_OAUTH_TOKEN' && !/^sk-ant-oat/.test(v)) return c.json({ error: 'That isn\'t a claude setup-token token (it starts with sk-ant-oat)' }, 400)
+/** Who a key belongs to, or why it isn't accepted: checked before it is kept, since a wrong key would stop every machine at once. */
+async function whoseKey(k: SharedKey, v: string): Promise<{ who?: string; error?: string }> {
+  if (k === 'GITHUB_TOKEN') {
+    const r = await fetch('https://api.github.com/user', { headers: { authorization: `Bearer ${v}` }, signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
+    if (!r?.ok) return { error: 'GitHub didn\'t accept that token' }
+    const u = await r.json().catch(() => ({})) as { login?: string }
+    return { who: u.login }
+  }
+  if (k === 'LINEAR_API_KEY') {
+    const r = await fetch('https://api.linear.app/graphql', { method: 'POST', headers: { authorization: v, 'content-type': 'application/json' }, body: JSON.stringify({ query: '{ viewer { name } organization { name } }' }), signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
+    if (!r?.ok) return { error: 'Linear didn\'t accept that key' }
+    const d = (await r.json().catch(() => ({})) as { data?: { viewer?: { name?: string }; organization?: { name?: string } } }).data
+    return { who: [d?.viewer?.name, d?.organization?.name].filter(Boolean).join(', ') || undefined }
+  }
+  if (k === 'CLAUDE_CODE_OAUTH_TOKEN' && !/^sk-ant-oat/.test(v)) return { error: 'That isn\'t a claude setup-token token (it starts with sk-ant-oat)' }
+  return {}
+}
+/** Keep (or, with null, drop) a key every machine uses. */
+function keepKey(k: SharedKey, v: string | null) {
   const shared = { ...sharedNow() }
   if (v) shared[k] = { value: v, at: new Date().toISOString(), from: 'you' }; else delete shared[k]
   saveSecrets({ shared })
   sharedChanged(applyShared(true))
   if (k === 'CLAUDE_CODE_OAUTH_TOKEN') markLimited('claude', 0) // a limit the old token hit is its plan's, not this one's
   console.log(`shared keys: ${KEY_LABEL[k]} ${v ? 'set' : 'removed'}`)
-  return c.json({ ok: true })
+}
+app.post('/shared-keys', async (c) => {
+  const { name, value } = await c.req.json() as { name?: string; value?: string | null }
+  if (!SHARED_KEYS.includes(name as SharedKey)) return c.json({ error: 'Unknown key' }, 400)
+  const k = name as SharedKey
+  const v = typeof value === 'string' ? value.trim() : null
+  if (v !== null && (v.length < 20 || v.length > 4000 || /\s/.test(v))) return c.json({ error: 'That doesn\'t look like a key' }, 400)
+  const w = v ? await whoseKey(k, v) : {}
+  if (w.error) return c.json({ error: w.error }, 400)
+  keepKey(k, v)
+  return c.json({ ok: true, who: w.who })
 })
+// GitHub without a token to paste: the GitHub CLI's device sign-in (githubLogin.ts); the token it gets is kept as GITHUB_TOKEN
+app.post('/github/login', async (c) => {
+  try {
+    return c.json(await startGithubLogin(async (token) => { const w = await whoseKey('GITHUB_TOKEN', token); if (w.error) throw new Error(w.error); keepKey('GITHUB_TOKEN', token); return w.who }))
+  } catch (e) { return c.json({ error: (e as Error).message }, 400) }
+})
+app.get('/github/login', (c) => c.json(githubLoginState() ?? null))
 /** Shared keys changed (here, or on another machine through the sync): the parts that keep their own copy pick them up. */
 function sharedChanged(changed: SharedKey[]) {
   if (!changed.length) return

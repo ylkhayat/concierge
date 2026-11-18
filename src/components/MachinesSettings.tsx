@@ -184,7 +184,7 @@ function SharedKeys() {
   useEffect(() => { void read() }, [])
   if (!v) return null
   const put = (name: string) => api('/shared-keys', { name, value: draft }).then(
-    () => { setOpen(undefined); setDraft(''); setMsg({ name, text: 'Replaced: every machine uses it within 30 seconds' }); return read() },
+    (r: { who?: string }) => { setOpen(undefined); setDraft(''); setMsg({ name, text: `${r.who ? `Connected as ${r.who}. ` : ''}Every machine uses it within 30 seconds` }); return read() },
     (e: Error) => setMsg({ name, text: e.message, bad: true }))
   return (
     <div className="space-y-2 pt-3">
@@ -209,10 +209,31 @@ function SharedKeys() {
                 <button disabled={!draft.trim()} onClick={() => void put(k.name)} className={quiet}>Save</button>
                 <button onClick={() => { setOpen(undefined); setDraft('') }} className={quiet}>Cancel</button>
               </span>
-            ) : <button onClick={() => { setOpen(k.name); setDraft(''); setMsg(undefined) }} className={quiet}>{k.shared ? 'Replace' : 'Paste'}</button>}
+            ) : <span className="flex items-center gap-1.5">
+                {k.name === 'GITHUB_TOKEN' && <GithubSignIn onDone={(text, bad) => { setMsg({ name: k.name, text, bad }); void read() }} />}
+                <button onClick={() => { setOpen(k.name); setDraft(''); setMsg(undefined) }} className={quiet}>{k.shared ? 'Replace' : 'Paste'}</button>
+              </span>}
           </li>
         ))}
       </ul>
     </div>
   )
+}
+
+/** GitHub's sign-in beside its token: a code to enter on github.com, then the token it gets is kept like a pasted one. */
+function GithubSignIn({ onDone }: { onDone: (text: string, bad?: boolean) => void }) {
+  const [code, setCode] = useState<{ code: string; url: string }>()
+  useEffect(() => {
+    if (!code) return
+    const t = setInterval(() => {
+      void api('/github/login').then((s: { done: boolean; ok: boolean; error?: string; login?: string } | null) => {
+        if (!s?.done) return
+        clearInterval(t); setCode(undefined)
+        onDone(s.ok ? `Signed in${s.login ? ` as ${s.login}` : ''}. Every machine uses it within 30 seconds` : s.error ?? 'The sign-in didn’t finish', !s.ok)
+      }, () => {})
+    }, 2000)
+    return () => clearInterval(t)
+  }, [code?.code]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (code) return <a href={code.url} target="_blank" rel="noreferrer" title="Open it and enter this code" className="rounded-md bg-fill px-2 py-0.5 font-mono text-small font-semibold tracking-wider text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}</a>
+  return <button onClick={() => void api('/github/login', {}).then(setCode, (e: Error) => onDone(e.message, true))} className={quiet}>Sign in</button>
 }
