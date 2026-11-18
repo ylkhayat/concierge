@@ -46,9 +46,9 @@ export const slotsHere = (cap: number) => Math.max(0, Number(process.env.DECK_SL
 export const capped = (name: string | undefined, slots: number) =>
   name && name === state.settings.workMachine ? Math.min(slots, state.settings.workSlots ?? 1) : slots
 
-let cameBack: ((name: string) => void) | undefined
+let cameBack: ((name: string, atStart: boolean) => void) | undefined
 /** Called when a machine starts answering (a new one, or one back from sleep): it gets what changed while it was away. */
-export const onCameBack = (f: (name: string) => void) => { cameBack = f }
+export const onCameBack = (f: (name: string, atStart: boolean) => void) => { cameBack = f }
 /** Ask every other machine (or one) a named thing (worker `extra`); one that doesn't answer is skipped. */
 export const ask = <T>(what: string, input: unknown, only?: string) => Promise.all([...machines.values()].filter((m) => m.status && (!only || m.name === only))
   .map((m) => call<T>(m.base, token(), 'POST', `/x/${what}`, input, 90_000).then((r) => [m.name, r] as const, (e: Error) => { console.warn(`machines: ${m.name} ${what}: ${e.message}`); return [m.name, undefined] as const })))
@@ -71,11 +71,13 @@ async function refresh() {
     const status = await call<WorkerStatus>(b.worker, token(), 'GET', '/status', undefined, 5000).catch(() => undefined)
     const was = machines.get(name)
     if (!!status !== !!was?.status) console.log(`machines: ${name} ${status ? `answers at ${b.worker} (${status.slots} slots)` : `doesn't answer at ${b.worker}`}`)
-    if (status && !was?.status) cameBack?.(name)
+    if (status && !was?.status) cameBack?.(name, !looked)
     machines.set(name, { name, base: b.worker, status, seen: status ? Date.now() : was?.seen ?? 0 })
   }
   for (const n of machines.keys()) if (!names.has(n)) machines.delete(n)
+  looked = true
 }
+let looked = false // the first look after a start: every machine is "new" then, not back
 if (fleet.machine) { void refresh(); setInterval(() => void refresh(), 15_000).unref() }
 
 /**

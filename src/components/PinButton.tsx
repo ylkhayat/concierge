@@ -33,7 +33,9 @@ export function usePinNotifications(alerts: Alert[], open: (a: Alert) => void) {
     if (from === undefined || !('Notification' in window) || Notification.permission !== 'granted' || !document.hidden || focusBlock()) return // a focus block skips them: they still wait in the alert dock
     for (const a of alerts) for (const u of a.updates) {
       if (!(u.pin || u.tone === 'you') || u.at <= from) continue
-      const n = new Notification(`${a.label} ${u.tone === 'you' ? 'needs you' : 'changed'}`, { body: `${a.title}\n${u.text}`, tag: `${a.key}|${u.at}` })
+      // Concierge's own news (a machine came online) reads as itself; an item says what changed about it
+      const n = a.kind === 'system' ? new Notification(a.title, { body: u.text, tag: `${a.key}|${u.at}` })
+        : new Notification(`${a.label} ${u.tone === 'you' ? 'needs you' : 'changed'}`, { body: `${a.title}\n${u.text}`, tag: `${a.key}|${u.at}` })
       n.onclick = () => { window.focus(); open(a); n.close() }
     }
   }, [alerts])

@@ -2623,7 +2623,11 @@ app.post('/machines/:name/signin', async (c) => {
 })
 /** Every other machine gets the control plane's connectors: after a change here, and when one comes back. */
 const pushConnectors = (only?: string) => { if (machines.size) void ask('connectors', { custom: state.customConnectors ?? {}, connected: state.connected ?? [] }, only) }
-onCameBack((name) => pushConnectors(name))
+onCameBack((name, atStart) => {
+  pushConnectors(name)
+  // a machine came online: said once, as a notification (pin), unless this one only just started and is seeing it for the first time
+  if (!atStart) alert({ kind: 'system', id: `machine:${name}`, label: 'Machines', title: `${name} is online` }, `${name} is online again and takes runs`, 'info', true)
+})
 /** An account's connectors on this machine: name → state. */
 async function connectorsHere(account = 'claude'): Promise<Record<string, string>> {
   const a = accounts().find((x) => x.id === account)
