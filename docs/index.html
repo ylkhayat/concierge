@@ -314,6 +314,8 @@ h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.03em; line-height: 1.
 .step { padding: 22px; border-radius: 16px; border: 1px dashed var(--line-2); }
 .step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-text); font-weight: 600; font-size: 12.5px; text-align: left; }
 .step h3 { font-size: 15px; font-weight: 600; margin-top: 14px; }
+/* things to keep in mind, not steps: no numbers, a warning mark instead */
+.steps.notes .step::before { content: '!'; counter-increment: none; background: color-mix(in oklch, #f59e0b 18%, transparent); color: #f59e0b; }
 .step p { color: var(--fg2); font-size: 14px; margin-top: 4px; }
 
 .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 44px; }
@@ -451,6 +453,7 @@ footer .theme button[aria-pressed="true"] { background: var(--s1); color: var(--
       <a class="hide-sm" href="#skills">Skills</a>
       <a class="hide-sm" href="#agents">Agents</a>
       <a class="hide-sm" href="#fleet">Fleet</a>
+      <a class="hide-sm" href="#careful">Careful</a>
       <a class="hide-sm" href="#install">Install</a>
       <a class="btn btn-quiet" href="https://github.com/ylkhayat/concierge">GitHub</a>
     </div>
@@ -724,6 +727,19 @@ footer .theme button[aria-pressed="true"] { background: var(--s1); color: var(--
       </div>
       <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>concierge.your-tailnet <span class="arrow">→</span> <b class="to">Desktop</b></div>
       <p class="fleet-cap"></p>
+    </div>
+  </section>
+
+  <section id="careful" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Before you start</p>
+      <h2>What to be careful with.</h2>
+      <p class="sub">Everything stays on your machine, in plain files your user account can read. The agents run as you, so they can read them too.</p>
+    </div>
+    <div class="steps notes">
+      <div class="step reveal"><h3>Keys are plain text</h3><p>In <code>~/.config/concierge/secrets.json</code> and your own <code>mcp.env</code>, scrubbed from logs but readable by the agents. Use the narrowest keys that work, keep disk encryption on, and rotate a key the moment it shows up where it shouldn't.</p></div>
+      <div class="step reveal"><h3>Runs go to their provider</h3><p>Code, tickets, PR discussions and whatever a connection returns are sent to the account that runs the agent. Use accounts your organisation has approved, and be careful with production data.</p></div>
+      <div class="step reveal"><h3>Agents act as you</h3><p>They push, comment and update tickets with your access, and their sessions keep what was said in <code>~/.local/state/concierge</code>. Nothing goes public without your click.</p></div>
     </div>
   </section>
 

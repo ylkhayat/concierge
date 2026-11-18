@@ -68,6 +68,44 @@ in. Your Tailscale policy must let your devices reach `tag:concierge:4748`.
 - **Joining a machine shares your keys** with it (GitHub, Linear, the machine key). A device signed in to Tailscale as
   you joins without asking; anyone else waits for your approval.
 
+## Where your data lives, and what to be careful with
+
+Concierge keeps everything on your machine, in plain files readable by your user account. Know where they are:
+
+| What | Where | Copied to your other machines? |
+|---|---|---|
+| Settings | `~/.config/concierge/config.json` | yes |
+| Keys you give it (GitHub, Linear, Claude, Sentry, the bank's) | `~/.config/concierge/secrets.json` | yes |
+| Your values for the bank's connections | `~/.config/concierge/mcp.env` | **no**: each machine has its own |
+| Runs, logs, explanations, drafts, reviews | `~/.local/state/concierge/` | yes (most of it) |
+| The agents' own folders: sign-ins, sessions, plugins | `~/.local/state/concierge/claude-home`, `codex-home`, `copilot-home` | Claude's sessions yes; sign-ins and the rest no |
+| Your skills, commands, Claude settings | `~/.claude` (read; written only when you install or remove a skill from the Skills page, or by the hourly pull of a skills repo you set) | no |
+
+(An install from before the rename uses `review-deck` instead of `concierge` in these paths.)
+
+Gotchas:
+
+- **Secrets are plain text on disk, and the agents can read them.** Agents run as you, so a run on your own work can
+  open `secrets.json` or `mcp.env` like any other file. Values are scrubbed from logs and the activity feed, not
+  hidden from the agent. Agents read text other people wrote (tickets, PR comments, error reports, web pages), and a
+  crafted instruction in any of it could try to get a key printed or sent somewhere. So:
+  - give it the **narrowest keys** that work: a fine-grained GitHub token limited to the repositories you watch, a
+    read-only database user, never an admin key;
+  - keep a secret in **`mcp.env` on the one machine that needs it** rather than in a connection (which is copied to
+    every machine);
+  - **rotate a key the moment it shows up anywhere** it shouldn't: a log, a transcript, a screenshot, a chat;
+  - keep your **disk encrypted** (FileVault, BitLocker), since all of this sits in your home folder.
+- **What the agents send goes to their provider.** Every run sends code, PR discussions, tickets and, through the
+  bank, whatever a connection returns (database rows included) to the account that runs it. Use accounts whose terms
+  your organisation has approved for its code and data, and think twice before giving agents a connection to
+  production data.
+- **Transcripts keep what was said.** Agent sessions (`claude-home/projects`) and run logs keep code, data and anything
+  pasted into them, for as long as the folder exists. Clear them if that matters to you.
+- **Agents act as you.** They push, comment and update tickets with your access. Nothing goes public without your
+  click, except in modes you switch on yourself (auto-review, autonomous runs).
+- **With several machines, everything but `mcp.env` and sign-ins is copied between them** over your tailnet. A machine
+  you join gets your keys.
+
 ## Make it yours
 
 Most changes need no fork: your commands, skills, skill rules and code areas are settings
