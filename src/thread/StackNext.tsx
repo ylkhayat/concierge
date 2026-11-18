@@ -3,7 +3,7 @@
 // checklist and your note, through its reply), so handovers, queued runs and the hashed "already handed over" work the
 // same. Shown on a stacked PR's page when two or more of the stack's PRs wait on you.
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { Check, CopyMinus, Layers, LoaderCircle, RefreshCw, Send, Sparkles, TriangleAlert, Upload } from 'lucide-react'
+import { Check, CircleCheck, CopyMinus, Layers, LoaderCircle, RefreshCw, Send, Sparkles, TriangleAlert, Upload } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { PlanItem, StackPlan } from '../../server/stackPlan.ts'
 import type { NextSteps as Steps } from '../../server/next.ts'
@@ -107,6 +107,13 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const stepOn = (st: StackPlan['steps'][number]) => st.items.some((id) => checked[keyById.get(id)!])
   const toggle = (st: StackPlan['steps'][number]) => setChecked((cur) => ({ ...cur, ...Object.fromEntries(st.items.map((id) => [keyById.get(id)!, !stepOn(st)])) }))
   const prsOf = (ids: string[]) => [...new Set(ids.map((id) => Number(id.split(':')[0])))]
+  // the stack realigned in one go, by Concierge rather than an agent per PR: each PR rebased on the one below it and
+  // force-pushed with lease (Smart rebase on the stack). After the pushes have landed; asks for a second click
+  const anchor = waiting[0]?.pr
+  const acts = useQuery({ queryKey: ['/actions', anchor?.id, anchor?.headSha], enabled: !!anchor, staleTime: 30_000,
+    queryFn: () => api(`/prs/${enc(anchor!.id)}/actions`) as Promise<{ id: string; counts: { stack?: number } }[]> })
+  const restackable = acts.data?.find((a) => a.id === 'smart-rebase')?.counts.stack ?? 0
+  const restack = () => arm('restack', () => void api(`/prs/${enc(anchor!.id)}/actions`, { action: 'smart-rebase', scope: 'stack' }).then((r: { count: number }) => toast(`Restacking ${r.count} PRs: each on the one below, pushed with lease`), (e: Error) => toast(e.message, 'error')))
   // a conflict still standing: Send waits until one side is left out (or its decision unpicked); its card keeps one side in a click
   // a conflict's sides as buttons: each side in its agent's words (a decision: the question and the option chosen now)
   const sideLabel = (id: string) => {
@@ -177,7 +184,8 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
           </div>
         </section>
       ))}
-      {showPlan && <PlanView p={p!} chosen={chosen} choose={choose} stepOn={stepOn} toggle={toggle} prsOf={prsOf} />}
+      {showPlan && <PlanView p={p!} chosen={chosen} choose={choose} stepOn={stepOn} toggle={toggle} prsOf={prsOf}
+        restack={restackable > 1 ? <button onClick={restack} title="Rebase each PR of the stack on the one below it and push it with lease, in one go (Smart rebase on the stack). Best once the pushes above have landed" className={`relative ml-auto inline-flex items-center gap-1 btn-outline btn-sm ${armed === 'restack' ? 'isolate overflow-hidden' : ''}`}>{armed === 'restack' ? <ArmLabel>{`Confirm: restack ${restackable} PRs`}</ArmLabel> : <><Layers className="size-3.5" />Restack all {restackable}</>}{armed === 'restack' && <ArmBar on="plain" />}</button> : null} />}
       {!showPlan && plan.isFetching && !raw && <p className="flex items-center gap-2 px-1 py-3 text-small text-fg-3"><LoaderCircle className="size-4 animate-spin" />Reading the {all.length} items of {waiting.length} PRs together…</p>}
       {!showPlan && plan.isError && !raw && <p className="px-1 text-meta text-wait-text">Couldn’t boil them down ({(plan.error as Error).message}): here is every item as the agents wrote it.</p>}
       {(raw || (!showPlan && !plan.isFetching)) && waiting.map((m) => (
@@ -260,11 +268,12 @@ function Flags({ id, copyOf, clashes, label }: { id: string; copyOf: Map<string,
  * The short plan: what needs your input on top (one decision per real question), then what will be done, and at the
  * bottom what becomes public (a push, a posted reply), so the things others will see are read last and on their own.
  */
-function PlanView({ p, chosen, choose, stepOn, toggle, prsOf }: {
+function PlanView({ p, chosen, choose, stepOn, toggle, prsOf, restack }: {
   p: StackPlan
   chosen: (d: StackPlan['decisions'][number]) => number; choose: (d: StackPlan['decisions'][number], j: number) => void
   stepOn: (s: StackPlan['steps'][number]) => boolean; toggle: (s: StackPlan['steps'][number]) => void
   prsOf: (ids: string[]) => number[]
+  restack?: ReactNode // realigning the whole stack in one go, offered with the public steps
 }) {
   const Prs = ({ ids }: { ids: string[] }) => <span className="ml-1.5 inline-flex gap-1 align-middle">{prsOf(ids).map((n) => <span key={n} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-3">#{n}</span>)}</span>
   const head = 'label text-fg-3'
@@ -276,7 +285,7 @@ function PlanView({ p, chosen, choose, stepOn, toggle, prsOf }: {
       </button>
     </li>
   )
-  const priv = p.steps.filter((s) => !s.public), pub = p.steps.filter((s) => s.public)
+  const checks = p.steps.filter((s) => !s.public && s.check), priv = p.steps.filter((s) => !s.public && !s.check), pub = p.steps.filter((s) => s.public)
   return (
     <div className="space-y-3">
       {p.summary && <details className="group/sum px-1"><summary className="cursor-pointer list-none text-small leading-relaxed text-fg-2 [&::-webkit-details-marker]:hidden"><span className="line-clamp-2 group-open/sum:line-clamp-none">{p.summary}</span></summary></details>}
@@ -300,10 +309,11 @@ function PlanView({ p, chosen, choose, stepOn, toggle, prsOf }: {
           </ul>
         </section>
       )}
-      {priv.length > 0 && <section className="rounded-xl bg-fill/40 p-2.5 ring-1 ring-line"><p className={`${head} mb-1`}>Then, on your machine</p><ul className="space-y-1">{priv.map(row)}</ul></section>}
+      {checks.length > 0 && <section className="rounded-xl bg-run/5 p-2.5 ring-1 ring-run/20"><p className={`${head} mb-1 flex items-center gap-1 !text-run-text`}><CircleCheck className="size-3" />Checks: the agents confirm these, nothing changes</p><ul className="space-y-1">{checks.map(row)}</ul></section>}
+      {priv.length > 0 && <section className="rounded-xl bg-fill/40 p-2.5 ring-1 ring-line"><p className={`${head} mb-1`}>Changes, on your machine</p><ul className="space-y-1">{priv.map(row)}</ul></section>}
       {pub.length > 0 && (
         <section className="rounded-xl bg-ok/5 p-2.5 ring-1 ring-ok/20">
-          <p className={`${head} mb-1 flex items-center gap-1 !text-ok-text`}><Upload className="size-3" />Public: others will see these</p>
+          <p className={`${head} mb-1 flex items-center gap-1 !text-ok-text`}><Upload className="size-3" />Public: others will see these{restack}</p>
           <ul className="space-y-1">{pub.map(row)}</ul>
         </section>
       )}

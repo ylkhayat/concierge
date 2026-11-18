@@ -14,7 +14,7 @@ export type PlanItem = { id: string; pr: number; kind: 'decide' | 'do' | 'publis
 export type StackPlan = {
   summary: string
   decisions: { question: string; why: string; suggested: number; options: { label: string; picks: { id: string; option: number }[] }[] }[]
-  steps: { text: string; why: string; items: string[]; public: boolean; on: boolean }[]
+  steps: { text: string; why: string; items: string[]; public: boolean; on: boolean; check?: boolean }[] // check: it only reads or waits (CI, a result): nothing changes
   skipped: { items: string[]; why: string }[]
 }
 
@@ -27,13 +27,13 @@ const SCHEMA = {
       options: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'picks'], properties: {
         label: { type: 'string' }, picks: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'option'], properties: { id: { type: 'string' }, option: { type: 'number' } } } } } } },
     } } },
-    steps: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['text', 'why', 'items', 'public', 'on'], properties: { text: { type: 'string' }, why: { type: 'string' }, items: { type: 'array', items: { type: 'string' } }, public: { type: 'boolean' }, on: { type: 'boolean' } } } },
+    steps: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['text', 'why', 'items', 'public', 'on', 'check'], properties: { text: { type: 'string' }, why: { type: 'string' }, items: { type: 'array', items: { type: 'string' } }, public: { type: 'boolean' }, on: { type: 'boolean' }, check: { type: 'boolean' } } } },
     skipped: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['items', 'why'], properties: { items: { type: 'array', items: { type: 'string' } }, why: { type: 'string' } } } },
   },
 }
 const FORMAT = `Return only the structured output.
 decisions: each option's \`picks\` names, for every decision item it settles, that item's id and the 0-based index of the option of THAT item it means. \`suggested\`: the 0-based index of the option you suggest, or -1 for none.
-steps: \`items\` are the ids of the do and publish items a step stands for. \`public\`: true when any of them is a publish item.
+steps: \`items\` are the ids of the do and publish items a step stands for. \`public\`: true when any of them is a publish item. \`check\`: true when the step only reads or waits (read a CI result, re-check a rebase, wait for a run) and changes nothing.
 skipped: ids of do and publish items left out. Every item id appears exactly once across decisions' picks (decision items), steps and skipped (the others).`
 
 /**
@@ -51,12 +51,12 @@ export function settle(items: PlanItem[], raw: StackPlan): StackPlan {
     const options = d.options.map((o) => ({ label: o.label, picks: o.picks.filter((p) => ids.includes(p.id)) }))
     return { question: d.question, why: d.why ?? '', suggested: Number.isInteger(d.suggested) && d.suggested >= 0 && d.suggested < options.length ? d.suggested : -1, options }
   }).filter((d) => d.options.length > 1 && d.options[0].picks.length > 0)
-  const steps = (raw.steps ?? []).map((s) => { const ids = take(s.items ?? [], ['do', 'publish']); return { text: s.text, why: s.why ?? '', items: ids, public: ids.some((id) => by.get(id)!.kind === 'publish'), on: !!s.on } }).filter((s) => s.items.length)
+  const steps = (raw.steps ?? []).map((s) => { const ids = take(s.items ?? [], ['do', 'publish']); const pub = ids.some((id) => by.get(id)!.kind === 'publish'); return { text: s.text, why: s.why ?? '', items: ids, public: pub, on: !!s.on, check: !pub && !!s.check } }).filter((s) => s.items.length)
   const skipped = (raw.skipped ?? []).map((s) => ({ items: take(s.items ?? [], ['do', 'publish']), why: s.why ?? '' })).filter((s) => s.items.length)
   for (const x of items) {
     if (used.has(x.id)) continue
     if (x.kind === 'decide') decisions.push({ question: `#${x.pr}: ${x.text}`, why: x.why ?? '', suggested: x.recommended ?? -1, options: (x.options ?? []).map((label, option) => ({ label, picks: [{ id: x.id, option }] })) })
-    else steps.push({ text: `#${x.pr}: ${x.text}`, why: x.why ?? '', items: [x.id], public: x.kind === 'publish', on: true })
+    else steps.push({ text: `#${x.pr}: ${x.text}`, why: x.why ?? '', items: [x.id], public: x.kind === 'publish', on: true, check: false })
   }
   return { summary: raw.summary ?? '', decisions: decisions.filter((d) => d.options.length > 0), steps, skipped }
 }
@@ -70,7 +70,7 @@ type Made = StackPlan & { costUsd: number; provider?: ProviderId; tokens?: { inp
 // again, or hand you a different plan than the one you were answering. One plan per set of items: the last one read,
 // with the steer it was read with
 const DIR = join(STATE_DIR, 'explain')
-const file = (items: PlanItem[]) => join(DIR, `stack-plan-${hashOf(JSON.stringify(items.map((x) => [x.id, x.kind, x.text, x.options])))}.json`)
+const file = (items: PlanItem[]) => join(DIR, `stack-plan2-${hashOf(JSON.stringify(items.map((x) => [x.id, x.kind, x.text, x.options])))}.json`)
 const reading = new Map<string, Promise<Made>>()
 /**
  * The plan for these items. With no steer and not `again`: the one last read for them, whatever steer that was read
