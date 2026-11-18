@@ -83,7 +83,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     setPicks(pk); setChecked(ck)
     // the plan kept from before a reload was read with a steer: it is yours, so it is back in the box (and still goes to the agents)
     if (p.steer && !note.trim()) setNote(p.steer)
-  }, [plan.data?.sig]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [plan.data?.sig, plan.dataUpdatedAt]) // eslint-disable-line react-hooks/exhaustive-deps (a plan read again, with your steer: its picks replace the ones before)
 
   // (every hook above the early return: React needs the same hooks on every render)
   const anchor = waiting[0]?.pr
@@ -102,10 +102,16 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const publishing = all.filter(({ m, s, i }) => s.kind === 'publish' && on(m, i))
   // a conflict still standing: every side of it is still ticked (a step) or chosen (a decision)
   const active = (id: string) => { const x = all.find(({ m, i }) => idOf(m, i) === id); return !!x && (x.s.kind === 'decide' ? pickOf(x.m, x.i) >= 0 : on(x.m, x.i)) }
-  const standing = (review.data?.conflicts ?? []).filter((g) => g.items.every(active))
+  const standingAll = (review.data?.conflicts ?? []).filter((g) => g.items.every(active))
 
   // the plan's view of the answer: which option of a decision is chosen (the one whose picks are all in place), whether a step is on
   const p = plan.data, showPlan = !!p && !raw
+  // decisions that clash (one agent asks "keep A or B?", another the opposite) are what a merged decision in the plan is
+  // for: answered there, every one of them gets the same answer, so they no longer clash. Only clashes the plan didn't
+  // merge stand, and only those hold Send back
+  const isDecide = (id: string) => all.some(({ m, i, s: st }) => idOf(m, i) === id && st.kind === 'decide')
+  const merged = (g: { items: string[] }) => !!p && g.items.every(isDecide) && p.decisions.some((d) => g.items.every((id) => d.options.some((o) => o.picks.some((x) => x.id === id))))
+  const standing = standingAll.filter((g) => !merged(g))
   const chosen = (d: StackPlan['decisions'][number]) => d.options.findIndex((o) => o.picks.length > 0 && o.picks.every((x) => (picks[keyById.get(x.id)!] ?? -1) === x.option))
   const choose = (d: StackPlan['decisions'][number], j: number) => setPicks((cur) => ({ ...cur, ...Object.fromEntries(d.options.flatMap((o) => o.picks.map((x) => [keyById.get(x.id)!, -1]))), ...(chosen(d) === j ? {} : Object.fromEntries(d.options[j].picks.map((x) => [keyById.get(x.id)!, x.option]))) }))
   const stepOn = (st: StackPlan['steps'][number]) => st.items.some((id) => checked[keyById.get(id)!])
@@ -151,6 +157,11 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         sent++; handed += r?.handedOver?.length ?? 0
       }
       for (const m of waiting) refresh(`${m.url}/next`)
+      // what you decided (and your steer) becomes part of the stack's direction: every agent on it is told from now on,
+      // and the next plan is read against it, so the same question isn't put to you again
+      const decided = (p?.decisions ?? []).map((d) => { const j = chosen(d); return j >= 0 ? `- ${d.question.replace(/[?:]+$/, '')}: ${d.options[j].label}` : '' }).filter(Boolean)
+      const kept = [...decided, ...(note.trim() ? [`- ${note.trim().replace(/\s+/g, ' ')}`] : [])]
+      if (kept.length && waiting[0]) await api(`/prs/${enc(waiting[0].pr.id)}/stack-direction`, { append: kept.join('\n') }).catch(() => {})
       setNote(''); setPicks({}); setChecked({})
       toast(`Sent to ${sent} agent${sent === 1 ? '' : 's'} of the stack${handed ? `; ${handed} step${handed === 1 ? '' : 's'} handed to another PR's agent` : ''}`)
     } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }

@@ -2073,9 +2073,12 @@ app.post('/prs/:id/stack-check', async (c) => {
 // the stack's direction in your own words (none: it is dropped, and the next check writes one again)
 app.post('/prs/:id/stack-direction', async (c) => {
   const p = pr(c.req.param('id'))
-  const { text } = await c.req.json<{ text?: string }>()
+  const { text, append } = await c.req.json<{ text?: string; append?: string }>()
   if (!p?.stack) return c.json({ error: 'not in a stack' }, 404)
-  setDirection(treeChain(p), String(text ?? ''), 'you')
+  // append: what you just decided for the stack, kept on top of the direction it had, so no agent of it asks again
+  const had = directionOf(p)?.text ?? ''
+  const next = append !== undefined ? [had, ...String(append).split('\n').map((l) => l.trim()).filter((l) => l && !had.includes(l))].filter(Boolean).join('\n') : String(text ?? '')
+  setDirection(treeChain(p), next, 'you')
   return c.json({ direction: directionOf(p) ?? null })
 })
 // what a stack's agents wait on, boiled down to a few decisions and steps (stackPlan.ts); `again`: read afresh
