@@ -102,3 +102,18 @@ test('accounts: one you add runs in its own sign-in folder, and takes work like 
   assert.equal(codexArgs('openai', ['-p', 'x']).args[0], 'exec')
   delete config.accounts; delete config.providers
 })
+
+test('each kind of work runs on the Claude model picked for it; nothing picked, its default (agents: your own)', async () => {
+  const { claudeModels } = await import('./providers.ts')
+  const { config } = await import('./store.ts')
+  delete config.providers
+  assert.deepEqual(claudeModels(['-p', 'x']), ['-p', 'x']) // an agent run: your Claude Code default
+  assert.deepEqual(claudeModels(['--model', 'planner']), ['--model', 'opus'])
+  assert.deepEqual(claudeModels(['--model', 'sonnet']), ['--model', 'sonnet'])
+  config.providers = { tiers: { agents: 'sonnet', planner: 'claude-fable-5-2', quick: 'sonnet' } }
+  assert.deepEqual(claudeModels(['-p', 'x']), ['-p', 'x', '--model', 'sonnet'])
+  assert.deepEqual(claudeModels(['--model', 'planner']), ['--model', 'claude-fable-5-2'])
+  assert.deepEqual(claudeModels(['--model', 'haiku']), ['--model', 'sonnet'])
+  assert.deepEqual(claudeModels(['--model', 'claude-opus-5-5']), ['--model', 'claude-opus-5-5']) // a model named outright stays
+  delete config.providers
+})

@@ -148,7 +148,7 @@ Mark the ticket that covers one with "covers":["id"]. Uncovered ones belong in y
     '-p', prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--append-system-prompt', `${PROTOCOL}\n\nMethod: ${p.method}${p.method === 'waterfall' ? ' (phases as milestones, in order)' : ' (epics of thin slices)'}. How to break it down, from the planning skill:\n${skill}`,
     '--tools', '', '--strict-mcp-config', '--disable-slash-commands', '--setting-sources', '',
-    '--model', 'claude-fable-5-2', '--max-budget-usd', '3', // the planner thinks wide: Fable
+    '--model', 'planner', '--max-budget-usd', '3', // the planner's model (Settings → Models)
     ...(first ? ['--session-id', sessionId] : ['--resume', sessionId]),
   ], { cwd: tmpdir() })
   // the text as it streams: each finished line is an op (applied now) or part of the reply

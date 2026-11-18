@@ -41,6 +41,29 @@ const MODELS: Record<Kind, { large?: string; small: string }> = {
 }
 export const modelOf = (p: ProviderId, size: 'large' | 'small') => config.providers?.models?.[p]?.[size] ?? MODELS[kindOf(p)][size]
 
+/**
+ * Which Claude model does each kind of work (Settings → Accounts, "Models"). Every call names its tier by a word, and
+ * the word becomes the model you picked when a Claude account runs it (the other tools pick theirs: modelOf).
+ *   agents    reviews, revisions, Ship runs, explanations: no word, so they used whatever your Claude Code defaults
+ *             to (your /model). Picked here, they run on that whatever your own default is
+ *   planner   breaking a brief into a project (Plans)
+ *   reading   deeper structured reads: the stack's check and answer, the business lens, discussions, skill reviews
+ *   quick     small structured calls: next steps, turns, briefs, the standup, the stack tour
+ */
+export type Tier = 'agents' | 'planner' | 'reading' | 'quick'
+export const TIERS: Record<Tier, { word?: string; default?: string }> = {
+  agents: { default: undefined }, planner: { word: 'planner', default: 'opus' }, reading: { word: 'sonnet', default: 'sonnet' }, quick: { word: 'haiku', default: 'haiku' },
+}
+export const tierModel = (t: Tier) => config.providers?.tiers?.[t]?.trim() || TIERS[t].default
+/** Claude Code's flags with each tier word turned into the model picked for it (and the agents' model added when picked). */
+export function claudeModels(args: string[]): string[] {
+  const out = [...args], at = out.indexOf('--model')
+  if (at < 0) { const m = tierModel('agents'); return m ? [...out, '--model', m] : out }
+  const t = (Object.keys(TIERS) as Tier[]).find((k) => TIERS[k].word === out[at + 1])
+  if (t) out[at + 1] = tierModel(t)!
+  return out
+}
+
 // dollars per million tokens, for OpenAI on an API key (a ChatGPT sign-in and Llama cost nothing per token)
 const PRICES: Record<string, { in: number; cached: number; out: number }> = {
   'gpt-5': { in: 1.25, cached: 0.125, out: 10 }, 'gpt-5-mini': { in: 0.25, cached: 0.025, out: 2 }, 'gpt-5-codex': { in: 1.25, cached: 0.125, out: 10 },
@@ -436,7 +459,7 @@ export function spawnAgent(p: ProviderId, args: string[], opts: { cwd: string; e
   // stdin stays open only for a run that takes messages mid-way (runAgent): `claude -p` otherwise waits for it to end
   const stdio: ['pipe' | 'ignore', 'pipe', 'pipe'] = [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe']
   const kind = kindOf(p), env = envOf(p, opts.env)
-  if (kind === 'claude') return spawn('claude', args, { cwd: opts.cwd, env, signal: opts.signal, stdio }) as AgentProcess
+  if (kind === 'claude') return spawn('claude', claudeModels(args), { cwd: opts.cwd, env, signal: opts.signal, stdio }) as AgentProcess
   if (kind === 'llama') return llama(p, args, { ...opts, env }, stdio)
   if (kind === 'copilot') {
     const c = copilotArgs(p, args)

@@ -1,6 +1,6 @@
 import {
   ArrowLeft, ArrowRight, ChevronRight, BookOpen, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
-  CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon,
+  CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon, Cpu
 } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
 import { label, sha, VERSION } from '../version.ts'
@@ -529,12 +529,20 @@ export type AccountView = {
   openai?: 'chatgpt' | 'api-key' | 'none'; llama?: { up: boolean; models: string[]; pulling?: string[] }; today?: Spend
 }
 export type ProvidersView = {
-  use: Partial<Record<string, string>>; fallback: string[]; budgets: Record<string, number>
+  use: Partial<Record<string, string>>; fallback: string[]; budgets: Record<string, number>; tiers?: Record<string, string | null>
   stopAt: number // percent of a Claude plan window at which its agents pause
   login: { claude?: { done: boolean; ok: boolean }; openai?: { done: boolean; ok: boolean } }
   routing: { work: string; chosen: string; using: string; label: string; chosenLabel: string; why?: string; until?: number; stuck: boolean }[]
   accounts: AccountView[]
 }
+// the Claude models each kind of work can run on, cheapest last: [tier, title, hint, options, what "no pick" means]
+const MODEL_OPTIONS: [string, string][] = [['claude-fable-5-2', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']]
+const TIER_ROWS: [string, string, string, [string, string][], string][] = [
+  ['agents', 'Agents run on', 'Reviews, revisions, Ship runs and explanations: most of the tokens. Unpicked, they follow your own Claude Code default.', MODEL_OPTIONS.slice(0, 3), 'Your default'],
+  ['planner', 'Plans run on', 'Breaking a brief down into a project.', MODEL_OPTIONS.slice(0, 3), 'Opus'],
+  ['reading', 'Deeper reads run on', 'The stack’s check and answer, the business lens, discussions, skill reviews.', MODEL_OPTIONS.slice(1), 'Sonnet'],
+  ['quick', 'Quick calls run on', 'Next steps, turns, briefs, the standup, the stack tour.', MODEL_OPTIONS.slice(2), 'Haiku'],
+]
 const KINDS: [Kind, string][] = [['claude', 'Claude'], ['openai', 'OpenAI'], ['llama', 'Llama'], ['copilot', 'Copilot']]
 const WORKS: [string, string, string][] = [
   ['review', 'Reviews', 'Reviewing PRs you were asked to look at, and explaining them'],
@@ -747,6 +755,16 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
 
       {!compact && <>
       <Group title="The order" hint="Work goes to the first account here that can take it, unless you picked one for that kind of work above; when that one can't run, the next here does. Agents pause when a Claude plan window is this full.">
+        {/* which Claude model does each kind of work: the biggest models cost the most tokens, so each is picked here */}
+        {TIER_ROWS.map(([t, title, hint, options, none]) => {
+          const cur = v.tiers?.[t] ?? null
+          return (
+            <Row key={t} icon={Cpu} title={title} hint={hint}>
+              <Tabs size="sm" label={title} value={cur ?? ''} onChange={(m) => void set({ tiers: { [t]: m || null } } as never, `${title}: ${options.find(([id]) => id === m)?.[1] ?? none}`)}
+                    options={[{ id: '', label: none, title: t === 'agents' ? 'What your own Claude Code uses (your /model)' : 'The default' }, ...options.map(([id, label]) => ({ id, label }))]} />
+            </Row>
+          )
+        })}
         <Row icon={Gauge} title="Pause agents at" hint="Lower leaves room for your own Claude use. At 100%, a run stops wherever Claude refuses.">
           <Tabs size="sm" label="Pause agents at" value={String(v.stopAt)} onChange={(n) => void set({ stopAt: Number(n) }, `Agents now pause at ${n}% of a plan window`)}
                 options={[...new Set([80, 90, 95, 99, 100, v.stopAt])].sort((a, b) => a - b).map((n) => ({ id: String(n), label: `${n}%`, title: n === 95 ? 'The default' : n === 100 ? 'Until Claude refuses' : undefined }))} />
