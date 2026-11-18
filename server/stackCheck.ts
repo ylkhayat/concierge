@@ -8,7 +8,8 @@ import { join } from 'node:path'
 import { loadOverlay } from './explain.ts'
 import { method } from './method.ts'
 import { providerFor, spawnAgent, tokensOf, type ProviderId } from './providers.ts'
-import { state, STATE_DIR, type Pr, type StackRef } from './store.ts'
+import { git } from './atlas.ts'
+import { config, state, STATE_DIR, type Pr, type StackRef } from './store.ts'
 
 export type StackIssue = { prs: number[]; title: string; why: string; fix: string }
 export type StackCheck = {
@@ -58,9 +59,17 @@ export function checkStack(chain: StackRef[], written = '') {
 
 async function read(chain: StackRef[], written: string): Promise<StackCheck> {
   const sig = checkSignature(chain)
-  const parts = chain.map((s, i) => { const p = tracked(s), o = p && loadOverlay(p); return { n: s.number, ...partOf(s, i, p, o?.business) } })
+  // a PR no agent has reported on is read from its own commits and the files it changes: every PR counts
+  const parts = await Promise.all(chain.map(async (s, i) => {
+    const p = tracked(s), o = p && loadOverlay(p), part = partOf(s, i, p, o?.business), dir = config.repos[s.repo]
+    if (part.has || !p || !dir) return { n: s.number, ...part }
+    const range = `origin/${s.base}...origin/${s.head}`
+    const [log, stat] = await Promise.all([git(dir, 'log', '--format=- %s', '-30', range), git(dir, 'diff', '--stat=120', range)]).catch(() => ['', ''])
+    if (!log.trim() && !stat.trim()) return { n: s.number, ...part }
+    return { n: s.number, has: true, text: `${part.text.replace('(no agent has finished on it yet)', '')}\nIts commits:\n${log.trim().slice(0, 2000)}\nWhat it changes:\n${stat.trim().split('\n').slice(-40).join('\n')}` }
+  }))
   const readNums = parts.filter((x) => x.has).map((x) => x.n), unread = parts.filter((x) => !x.has).map((x) => x.n)
-  if (readNums.length < 2) throw new Error('Fewer than two PRs of this stack have a finished run: there is nothing to compare yet')
+  if (readNums.length < 2) throw new Error('Fewer than two PRs of this stack have anything to read yet (no run, and no commits found locally: fetch the repository)')
   const system = await method('stackCheck', 'Return only the structured output. Fields: issues (each: prs as PR numbers, title, why, fix; an empty array when the PRs agree), direction (lines separated by a newline, each starting with "- ") and agrees.')
   const prompt = ['These pull requests form one stack. Each is built on the branch it merges into ("into"), so one listed earlier merges first; several can be built on the same one. Below is what there is on each.', ...(written.trim() ? ['', `The direction the person has written for this stack (keep it, add only what is new):\n${written.trim()}`] : []), '', ...parts.map((x) => x.text)].join('\n\n')
   const p = providerFor('small')

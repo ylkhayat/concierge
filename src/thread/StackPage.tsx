@@ -1,3 +1,4 @@
+import { ActivityFeed } from '../components/ActivityFeed.tsx'
 // A stack as one thing: its pull requests in a compact table (bottom first), what waits on you across all of them as
 // one answer, the actions that make sense for the whole stack, and the tickets it carries. Nothing is stored for a
 // stack: every number here is rolled up from its PRs as they are now, so unstacking or restacking just changes what the
@@ -7,7 +8,7 @@ import { useState } from 'react'
 import { askLine } from '../../server/reply.ts'
 import type { StackCheck } from '../../server/stackCheck.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
-import { api, type PrView, type TicketView } from '../lib.ts'
+import { api, type Activity, type PrView, type TicketView } from '../lib.ts'
 import { refresh, remember, useApi } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 import { plain } from '../components/StackNav.tsx'
@@ -59,7 +60,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
   const drivePath = anchor ? `/stacks/drive?pr=${enc(anchor.id)}` : undefined
   const driven = useApi<{ run: { id: string; state: string; summary?: string; costUsd?: number } | null }>(drivePath, { refetchInterval: 15_000 })
   const driveRun = driven.data?.run, driving = driveRun?.state === 'running' || driveRun?.state === 'queued'
-  const drive = (text = '') => api('/stacks/drive', { pr: anchor?.id, text }).then(() => { toast('One agent resolves the whole stack now, bottom first'); if (drivePath) refresh(drivePath); return true }, (e: Error) => { toast(e.message, 'error'); return false })
+  const drive = (text = '') => api('/stacks/drive', { pr: anchor?.id, text, push: true }).then(() => { toast('One agent resolves the whole stack now, bottom first'); if (drivePath) refresh(drivePath); return true }, (e: Error) => { toast(e.message, 'error'); return false })
   const driveEnd = driveRun?.summary?.match(/STACK (done|needs you:.*)$/m)?.[1]
   const say = () => {
     if (!words.trim() || !to.length || sending) return
@@ -171,13 +172,25 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
           </ul>
         </div>
       ))}
+      {/* the stack's own run (Resolve the stack): its feed live, here where the stack is */}
+      {driveRun && <DriveFeed id={driveRun.id} live={driving} toast={toast} />}
       {justSent.filter((m) => !talks.has(m.words)).map((m) => (
         <div key={m.at} className="border-t border-line px-4 py-3 text-small">
           <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-accent-soft/70 px-3 py-1.5 text-fg-1">{m.words}</p>
-          <p className="mt-1 text-right text-meta text-fg-3">Delivered to {m.n} agent{m.n === 1 ? '' : 's'}: each reads it between its steps, or the moment it starts</p>
+          <p className="mt-1 text-right text-meta text-fg-3">One agent works it through the stack, bottom first: its work shows below</p>
         </div>
       ))}
     </ThreadLayout>
+  )
+}
+
+function DriveFeed({ id, live, toast }: { id: string; live: boolean; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+  const feed = useApi<Activity[]>(`/exec/${id}/activity`, { refetchInterval: live ? 4_000 : false })
+  return (
+    <div className="border-t border-line px-4 py-3">
+      <p className="label mb-2 flex items-center gap-1.5 text-fg-3"><Layers className="size-3.5" />Resolving the stack{live ? '…' : ''}</p>
+      <ActivityFeed feed={feed.data ?? []} live={live} toast={toast} />
+    </div>
   )
 }
 
@@ -203,7 +216,6 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
   const q = useApi<Got>(`${path}?v=${sig}`, { placeholderData: (prev) => prev })
   const [busyNow, setBusy] = useState(false)
   const c = q.data?.check, checking = busyNow || !!q.data?.checking
-  const finished = members.filter((p) => p.job && p.job.state !== 'running' && p.job.state !== 'queued').length
   const run = () => { setBusy(true); api(path, {}).then((r: Got) => remember(`${path}?v=${sig}`, { ...r, direction: r.direction ?? q.data?.direction }), (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
   const open = (n: number) => { const p = members.find((m) => m.number === n); if (p) onSelect(p.id) }
   // the direction the stack follows: written by the check, yours to change, given to every agent on these PRs
@@ -216,7 +228,7 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
     if (!ids.length) return toast('None of its PRs is tracked here', 'error')
     const text = `The stack's agreement check found ${issues.length === 1 ? 'this' : 'these'} across its pull requests. Fix what belongs to your PR, and say what you changed.\n\n${issues.map((x) => `- ${x.title} (${x.prs.map((n) => `#${n}`).join(', ')}): ${x.why}\n  Fix: ${x.fix}`).join('\n')}`
     setFixing((f) => [...f, ...issues.map((x) => x.title)])
-    api('/stacks/drive', { pr: ids[0], text }).then(() => { toast('One agent resolves these across the stack now'); refresh('/stacks/drive') }, (e: Error) => { toast(e.message, 'error'); setFixing((f) => f.filter((t) => !issues.some((x) => x.title === t))) })
+    api('/stacks/drive', { pr: ids[0], text, push: true }).then(() => { toast('One agent resolves these across the stack now'); refresh('/stacks/drive') }, (e: Error) => { toast(e.message, 'error'); setFixing((f) => f.filter((t) => !issues.some((x) => x.title === t))) })
   }
   const saveDir = () => api(path.replace(/stack-check$/, 'stack-direction'), { text: draft ?? '' }).then((r: { direction: Dir | null }) => { remember(`${path}?v=${sig}`, { ...q.data, direction: r.direction } as Got); setDraft(undefined); toast(r.direction ? 'The stack follows this direction now' : 'Direction dropped') }, (e: Error) => toast(e.message, 'error'))
   const [openIssue, setOpenIssue] = useState<number>()
@@ -229,7 +241,7 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
         <span className={`rounded-full px-2 py-0.5 text-meta font-medium ${state.cls}`}>{state.label}</span>
         {c && <span className="min-w-0 truncate text-meta text-fg-4" title={c.stale ? 'Read before the last push or run: check again to read what changed' : undefined}>{c.stale ? 'out of date' : `${c.read.length} of ${members.length} PRs read`}</span>}
         <span className="flex-1" />
-        <button onClick={run} disabled={checking || finished < 2} title={finished < 2 ? 'Needs a finished run on two of its PRs' : 'Read across what each PR’s agent found and decided'} className={`inline-flex shrink-0 items-center gap-1.5 btn-sm ${c && !c.stale ? 'btn-ghost' : 'btn-outline'}`}>
+        <button onClick={run} disabled={checking || members.length < 2} title={members.length < 2 ? 'Needs two PRs' : 'Read across what each PR’s agent found and decided'} className={`inline-flex shrink-0 items-center gap-1.5 btn-sm ${c && !c.stale ? 'btn-ghost' : 'btn-outline'}`}>
           {checking ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{checking ? 'Reading…' : c ? 'Check again' : 'Check'}
         </button>
       </div>
@@ -287,7 +299,7 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
             {c.agrees && <p className="px-0.5 pt-1 text-meta text-fg-3">{c.agrees}</p>}
           </div>
         )}
-      {c && c.unread.length > 0 && <p className="px-0.5 text-meta text-fg-4">Not checked (no finished run yet): {c.unread.map((n) => `#${n}`).join(', ')}</p>}
+      {c && c.unread.length > 0 && <p className="px-0.5 text-meta text-fg-4">Not checked (nothing to read yet: no run, and no commits found): {c.unread.map((n) => `#${n}`).join(', ')}</p>}
     </section>
   )
 }
