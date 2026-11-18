@@ -11,3 +11,9 @@ test('it can\'t print its environment, hand out the token, or read credential fi
   for (const rule of ['Bash(printenv:*)', 'Bash(gh auth token:*)', 'Bash(gh gist:*)', 'Read(~/.config/gh/**)', 'Read(~/.claude/.credentials.json)', 'Read(**/.env)']) assert.ok(UNTRUSTED_ARGS.includes(rule), rule)
   assert.equal(UNTRUSTED_ARGS[0], '--disallowedTools')
 })
+
+test("a review of someone else's PR keeps crit's settings (it won't start without them) and still loses every secret", async () => {
+  const { untrustedEnv } = await import('./untrusted.ts')
+  const env = untrustedEnv({ CRIT_HOST: '0.0.0.0', CRIT_ALLOW_UNAUTHENTICATED_NETWORK: '1', LINEAR_API_KEY: 'k', BASIC_AUTH: 'x', AUTH_HEADER: 'y', MDB_MCP_CONNECTION_STRING: 'z', PATH: '/bin', GITHUB_TOKEN: 'g' })
+  assert.deepEqual(Object.keys(env).sort(), ['CRIT_ALLOW_UNAUTHENTICATED_NETWORK', 'CRIT_HOST', 'GITHUB_TOKEN', 'PATH'])
+})

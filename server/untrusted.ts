@@ -7,8 +7,11 @@
 // to your repositories (the README's Security section says so) to keep that small.
 
 // what a review run keeps: its provider's sign-in, GitHub's token, and the plain environment (no other secret)
-const KEEP = new Set(['GITHUB_TOKEN', 'GH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME', 'COPILOT_SKILLS_DIRS', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'])
-const SECRET = /(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|_KEY$|^KEY_|CREDENTIAL|CONNECTION_STRING|DSN|PRIVATE|AUTH|COOKIE|SESSION|WEBHOOK)/i
+const KEEP = new Set(['GITHUB_TOKEN', 'GH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'COPILOT_HOME', 'COPILOT_SKILLS_DIRS', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN',
+  // crit's own settings: where it listens and whether it may on your network. Settings, not secrets (a name like
+  // CRIT_ALLOW_UNAUTHENTICATED_NETWORK only looks like one): without them a review's crit refuses to start
+  'CRIT_HOST', 'CRIT_PORT', 'CRIT_DIR', 'CRIT_ALLOW_UNAUTHENTICATED_NETWORK'])
+const SECRET = /(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|_KEY$|^KEY_|CREDENTIAL|CONNECTION_STRING|DSN|PRIVATE|(^|_)AUTH(_|$)|COOKIE|SESSION|WEBHOOK)/i
 
 /** The environment for a run that reads someone else's work: every secret it doesn't need, gone. */
 export function untrustedEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
