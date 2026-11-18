@@ -67,15 +67,18 @@ async function pullState() {
 }
 
 // --- files: an index of what may travel, and a pull of what is newer elsewhere --------------------------------------
-type Root = { id: string; dir: string; walk: string[] } // walk: the top-level files and folders that travel ('' : all)
+type Root = { id: string; dir: string; walk: string[]; keep?: (rel: string) => boolean } // walk: the top-level files and folders that travel ('' : all); keep: which of what is under them
+// the session folders of runs Concierge started: Claude names one after the run's working directory, every other character a dash
+const SESSION_DIRS = [process.env.DECK_CODE || process.env.CODE_DIR, STATE_DIR].filter((x): x is string => !!x).map(sessionDir)
 const CODE = process.env.DECK_CODE || process.env.CODE_DIR
 const ROOTS: Root[] = [
   { id: 'state', dir: STATE_DIR, walk: ['logs', 'explain', 'domain', 'drafts', 'devlogs', 'atlas', 'crit', 'evals', 'review-records', 'review-pr-records', 'review-pr', 'revise', 'norms.json', 'events.jsonl'] },
   { id: 'config', dir: CONFIG_DIR, walk: [''] },
   // Claude files a session under its working directory with every other character a dash: Concierge's agents all work
   // under the clones folder, the same path on every machine. Your own sessions elsewhere stay where they are
-  // Only those sessions travel. Your Claude settings never do: they are yours, and each machine's own
-  { id: 'claude', dir: CLAUDE_HOME, walk: CODE ? [`projects/${sessionDir(CODE)}`] : [] },
+  // Only those sessions travel, by the folder each run worked in: your clones (and their worktrees) and Concierge's own
+  // worktrees in its state folder. Your Claude settings never do: they are yours, and each machine's own
+  { id: 'claude', dir: CLAUDE_HOME, walk: ['projects'], keep: (rel: string) => { const d = rel.split('/')[1]; return !d || SESSION_DIRS.some((p) => d.startsWith(p)) } },
 ]
 // never: checkouts and what they rebuild, scratch, conflict copies, and the sign-ins (each machine signs in itself)
 const SKIP_DIR = new Set(['node_modules', '.venv', 'venv', '.pnpm-store', 'uv-cache', '__pycache__', '.git', '.nx', '.turbo', '.next', 'coverage', 'worktrees'])
@@ -96,10 +99,11 @@ function travels(rootId: string, rel: string): Root | undefined {
   const root = ROOTS.find((r) => r.id === rootId)
   if (!root || !rel || rel.includes('\0') || rel.split('/').some((p) => p === '..' || p === '' || SKIP_DIR.has(p)) || skipFile(rootId, rel)) return undefined
   const top = root.walk.some((w) => w === '' || rel === w || rel.startsWith(w + '/') || (w === 'events.jsonl' && /^events(\.[\w-]+)?\.jsonl$/.test(rel)))
-  return top ? root : undefined
+  return top && (!root.keep || root.keep(rel)) ? root : undefined
 }
 
 async function walk(root: Root, rel: string, depth = 0): Promise<void> {
+  if (root.keep && rel && !root.keep(rel)) return
   const abs = join(root.dir, rel)
   const st = await lstat(abs).catch(() => undefined)
   if (!st || st.isSymbolicLink()) return // a link points somewhere of that machine's own (a skills folder, a cache): never followed

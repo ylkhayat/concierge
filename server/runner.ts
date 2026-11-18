@@ -1042,6 +1042,13 @@ function start(pr: Pr) {
         if (!isFollowUp(job.kind)) {
           ev('queued', 'session gone', { sessionId: randomUUID(), resumed: false, continuing: false, sessionCostBefore: 0, error: undefined })
           told('event', 'Its agent session is gone (Claude cleaned it up): starting over in a new one.')
+        } else if (job.resumed !== false) {
+          // a follow-up whose conversation isn't on this machine (cleaned up, or kept on the machine that ran it before):
+          // a new one, handed what the agent last said, instead of a failure you have to re-run
+          const last = job.lastWords ?? pr.lastSaid?.summary
+          job.prompt = `(Your earlier conversation on this PR isn't available any more, so this is a new one.${last ? ` What you said last:\n\n${last.trim().slice(0, 4000)}\n\n` : ' '}Read the current state (the PR, its threads, the ticket) before you act.)\n\n${job.prompt ?? ''}`
+          ev('queued', 'session gone', { sessionId: randomUUID(), resumed: false, continuing: false, sessionCostBefore: 0, error: undefined })
+          told('event', 'Its earlier conversation is gone: it starts a new one, handed what the agent said last.')
         } else {
           job.error = 'The agent session is gone (Claude cleaned it up). Re-run to start a new one.'
           ev('failed', 'session gone', { continuing: false }); told('error', job.error)
@@ -1190,6 +1197,8 @@ export function runAgain(key: string): string | undefined {
   const pr = state.prs[key], job = pr?.job
   if (!pr || !job || !STOPPED.has(job.state)) return 'That run is not stopped'
   const lost = GONE_SAID.test(job.error ?? '')
+  // its conversation is gone: the new one is handed what the agent said last, so a reply still lands in context
+  if (lost && isFollowUp(job.kind)) { const last = job.lastWords ?? pr.lastSaid?.summary; job.prompt = `(Your earlier conversation on this PR isn't available any more, so this is a new one.${last ? ` What you said last:\n\n${last.trim().slice(0, 4000)}\n\n` : ' '}Read the current state (the PR, its threads, the ticket) before you act.)\n\n${job.prompt ?? ''}` }
   transition('job', pr.id, job.queuedAt, job, 'queued', 'you ran it again', { ...again, continuing: !lost && !!job.startedAt, ...(lost && { sessionId: randomUUID(), resumed: false, sessionCostBefore: 0 }) }, { kind: job.kind })
   note(pr.id, { at: new Date().toISOString(), kind: 'event', text: 'You ran it again.' })
   save(); bus.emit('change'); pump()

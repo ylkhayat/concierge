@@ -91,3 +91,11 @@ test('the lease moves: the new holder goes on from the same state, and the old o
     await until(async () => { const s = await mac.ask(); return s.prs['o/r#5']?.title === 'win again' && s.prs['o/r#4']?.title === 'new on mac' })
   } finally { win.p.kill(); mac.p.kill() }
 })
+
+test("the agents' conversations travel by the folder each run worked in: clones and Concierge's own worktrees, nothing else", async () => {
+  const { sessionDir } = await import('./agentHome.ts')
+  const { STATE_DIR } = await import('./paths.ts')
+  const p = sessionDir(STATE_DIR)
+  assert.ok(`${p}-wt-5200`.startsWith(p)) // a worktree in Concierge's state folder is one of its runs
+  assert.ok(!'-Users-me-somewhere-else'.startsWith(p))
+})
