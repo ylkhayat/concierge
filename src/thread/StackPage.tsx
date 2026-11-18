@@ -2,7 +2,7 @@
 // one answer, the actions that make sense for the whole stack, and the tickets it carries. Nothing is stored for a
 // stack: every number here is rolled up from its PRs as they are now, so unstacking or restacking just changes what the
 // page shows. A single PR is a stack of one. Each PR keeps its own conversation, one click away.
-import { ArrowRight, CircleCheck, GitCompareArrows, Layers, LoaderCircle, Play, Send, TriangleAlert } from 'lucide-react'
+import { ArrowRight, ChevronRight, CircleCheck, Compass, GitCompareArrows, Layers, LoaderCircle, Pencil, Play, RefreshCw, Send, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { askLine } from '../../server/reply.ts'
 import type { StackCheck } from '../../server/stackCheck.ts'
@@ -214,51 +214,75 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
     api('/stacks/say', { ids, text }).then((r: { sent: { number: number }[] }) => toast(`Sent to the agent${r.sent.length === 1 ? '' : 's'} of ${r.sent.map((x) => `#${x.number}`).join(', ')}`), (e: Error) => { toast(e.message, 'error'); setFixing((f) => f.filter((t) => !issues.some((x) => x.title === t))) })
   }
   const saveDir = () => api(path.replace(/stack-check$/, 'stack-direction'), { text: draft ?? '' }).then((r: { direction: Dir | null }) => { remember(`${path}?v=${sig}`, { ...q.data, direction: r.direction } as Got); setDraft(undefined); toast(r.direction ? 'The stack follows this direction now' : 'Direction dropped') }, (e: Error) => toast(e.message, 'error'))
+  const [openIssue, setOpenIssue] = useState<number>()
+  const state = !c ? { label: 'Not checked yet', cls: 'bg-fill text-fg-3' } : c.issues.length ? { label: `${c.issues.length} disagreement${c.issues.length === 1 ? '' : 's'}`, cls: 'bg-wait/15 text-wait-text' } : { label: 'They agree', cls: 'bg-ok/12 text-ok-text' }
   return (
-    <section>
-      <div className="flex items-center gap-2 border-b border-line px-3.5 py-2">
+    <section className="space-y-3 p-3.5 text-small">
+      {/* where the stack stands: one line, the check's state and how fresh it is, and the way to read it again */}
+      <div className="flex items-center gap-2">
         <GitCompareArrows className="size-4 shrink-0 text-accent-text" />
-        <h2 className="min-w-0 flex-1 text-small font-semibold text-fg-1">Do the pull requests agree with each other?</h2>
-        {c && <span className="text-meta text-fg-3">{c.stale ? 'read before the last push or run' : `${c.read.length} of ${members.length} read`}</span>}
-        <button onClick={run} disabled={checking || finished < 2} title={finished < 2 ? 'Needs a finished run on two of its PRs' : 'One read across what each PR’s agent found and decided'} className={`inline-flex items-center gap-1.5 btn-sm ${c && !c.stale ? 'btn-ghost' : 'btn-outline'}`}>
-          {checking && <LoaderCircle className="size-3.5 animate-spin" />}{checking ? 'Reading…' : c ? 'Check again' : 'Check'}
+        <span className={`rounded-full px-2 py-0.5 text-meta font-medium ${state.cls}`}>{state.label}</span>
+        {c && <span className="min-w-0 truncate text-meta text-fg-4" title={c.stale ? 'Read before the last push or run: check again to read what changed' : undefined}>{c.stale ? 'out of date' : `${c.read.length} of ${members.length} PRs read`}</span>}
+        <span className="flex-1" />
+        <button onClick={run} disabled={checking || finished < 2} title={finished < 2 ? 'Needs a finished run on two of its PRs' : 'Read across what each PR’s agent found and decided'} className={`inline-flex shrink-0 items-center gap-1.5 btn-sm ${c && !c.stale ? 'btn-ghost' : 'btn-outline'}`}>
+          {checking ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{checking ? 'Reading…' : c ? 'Check again' : 'Check'}
         </button>
       </div>
-      <div className="border-b border-line px-3.5 py-3 text-small">
+
+      {/* the direction: a callout of its own, since every agent on these PRs holds to it */}
+      <div className="rounded-xl bg-accent-soft/40 px-3 py-2.5 ring-1 ring-accent/20">
         <div className="flex items-center gap-2">
-          <h3 className="label text-fg-3">The direction this stack follows</h3>
-          {dir && <span className="text-meta text-fg-4">{dir.by === 'you' ? 'yours' : 'from the check'}</span>}
+          <Compass className="size-3.5 shrink-0 text-accent-text" />
+          <h3 className="label text-accent-text" title="Every agent on these PRs is told to hold to it, and the stack’s answer is read against it">Direction</h3>
+          {dir && <span className="text-micro text-fg-4">{dir.by === 'you' ? 'yours' : 'from the check'}</span>}
           <span className="flex-1" />
-          {draft === undefined ? <button onClick={() => setDraft(dir?.text ?? '')} className="btn-ghost btn-sm">{dir ? 'Edit' : 'Write one'}</button>
-            : <><button onClick={() => setDraft(undefined)} className="btn-ghost btn-sm">Cancel</button><button onClick={() => void saveDir()} className="btn-primary btn-sm">Save</button></>}
+          {draft === undefined ? <button onClick={() => setDraft(dir?.text ?? '')} title={dir ? 'Edit the direction' : 'Write the direction'} aria-label={dir ? 'Edit the direction' : 'Write the direction'} className="rounded-md p-1 text-fg-3 transition-colors hover:bg-hover hover:text-fg-1"><Pencil className="size-3.5" /></button>
+            : <span className="flex gap-1"><button onClick={() => setDraft(undefined)} className="btn-ghost btn-sm">Cancel</button><button onClick={() => void saveDir()} className="btn-primary btn-sm">Save</button></span>}
         </div>
-        {draft !== undefined ? <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} rows={6} placeholder={'- one rule or decision per line, that every PR of the stack holds to'} className="field mt-1.5 w-full resize-y font-mono text-meta leading-relaxed" />
-          : dir ? <p className="mt-1.5 whitespace-pre-wrap leading-relaxed text-fg-2">{dir.text}</p>
-          : <p className="mt-1.5 text-fg-3">None yet. The check writes one from what the PRs show; you can write it yourself.</p>}
-        <p className="mt-1.5 text-meta text-fg-4">Every agent on these PRs is told to hold to it, and the stack’s answer is read against it.</p>
+        {draft !== undefined ? <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} rows={5} placeholder={'- one rule or decision per line, that every PR of the stack holds to'} className="field mt-2 w-full resize-y font-mono text-meta leading-relaxed" />
+          : dir ? <p className="mt-1.5 whitespace-pre-wrap leading-relaxed text-fg-1">{dir.text}</p>
+          : <p className="mt-1.5 text-fg-3">None yet. The check writes one from what the PRs show, or write it yourself.</p>}
       </div>
-      <div className="px-3.5 py-3 text-small">
-        {!c ? <p className="text-fg-3">Each PR was reviewed on its own. This reads what every PR’s agent found and decided, and reports only what crosses PRs: one question decided two ways, a change above that a PR below contradicts, the same fix twice.</p>
-          : c.issues.length === 0 ? <p className="flex items-start gap-2 text-fg-2"><CircleCheck className="mt-0.5 size-4 shrink-0 text-ok" /><span>Nothing crosses PRs. {c.agrees}</span></p>
-          : (
-            <ul className="space-y-3">
-              {c.issues.map((x, i) => (
-                <li key={i} className="flex items-start gap-2.5">
-                  <TriangleAlert className="mt-0.5 size-4 shrink-0 text-wait" />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-fg-1">{x.title} <span className="ml-1 inline-flex gap-1 align-middle">{x.prs.map((n) => <button key={n} onClick={() => open(n)} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-2 transition-colors hover:bg-accent-soft hover:text-accent-text">#{n}</button>)}</span></p>
-                    <p className="mt-0.5 leading-relaxed text-fg-2">{x.why}</p>
-                    <p className="mt-0.5 leading-relaxed text-fg-3"><span className="font-medium text-fg-2">Fix:</span> {x.fix}</p>
-                    <button onClick={() => fix([x])} disabled={fixing.includes(x.title)} title={`Tell the agent${x.prs.length === 1 ? '' : 's'} of ${x.prs.map((n) => `#${n}`).join(', ')} what was found and the fix: each does its PR's part`} className="mt-1.5 btn-outline btn-sm">{fixing.includes(x.title) ? 'Sent to the agents' : `Have the agent${x.prs.length === 1 ? '' : 's'} fix it`}</button>
-                  </div>
-                </li>
-              ))}
-              {c.issues.length > 1 && <li><button onClick={() => fix(c.issues)} disabled={c.issues.every((x) => fixing.includes(x.title))} className="btn-primary btn-sm">Have the agents fix all {c.issues.length}</button></li>}
-              {c.agrees && <li className="border-t border-line pt-2 text-meta text-fg-3">{c.agrees}</li>}
-            </ul>
-          )}
-        {c && c.unread.length > 0 && <p className="mt-2 text-meta text-fg-4">Not checked (no finished run yet): {c.unread.map((n) => `#${n}`).join(', ')}</p>}
-      </div>
+
+      {!c ? <p className="px-0.5 text-fg-3">Each PR was reviewed on its own. The check reads what every PR’s agent found and decided, and reports only what crosses PRs: one question decided two ways, a change above that a PR below contradicts, the same fix twice.</p>
+        : c.issues.length === 0 ? <p className="flex items-start gap-2 px-0.5 text-fg-2"><CircleCheck className="mt-0.5 size-4 shrink-0 text-ok" /><span>Nothing crosses PRs. {c.agrees}</span></p>
+        : (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 px-0.5">
+              <h3 className="label flex-1 text-fg-3">Where they disagree</h3>
+              {c.issues.length > 1 && <button onClick={() => fix(c.issues)} disabled={c.issues.every((x) => fixing.includes(x.title))} className="btn-outline btn-sm">Have the agents fix all {c.issues.length}</button>}
+            </div>
+            {/* one row each, folded to its claim; open for why and the fix */}
+            {c.issues.map((x, i) => {
+              const isOpen = openIssue === i, sent = fixing.includes(x.title)
+              return (
+                <div key={i} className="overflow-hidden rounded-xl ring-1 ring-line">
+                  <button onClick={() => setOpenIssue(isOpen ? undefined : i)} aria-expanded={isOpen} className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-hover">
+                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-wait" />
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium text-fg-1">{x.title}</span>
+                      {!isOpen && <span className="mt-0.5 block truncate text-meta text-fg-3">{x.why}</span>}
+                    </span>
+                    <span className="flex shrink-0 gap-1">{x.prs.map((n) => <span key={n} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-3">#{n}</span>)}</span>
+                    <ChevronRight className={`mt-0.5 size-3.5 shrink-0 text-fg-4 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                  </button>
+                  {isOpen && (
+                    <div className="space-y-1.5 border-t border-line px-3 py-2.5 pl-8">
+                      <p className="leading-relaxed text-fg-2">{x.why}</p>
+                      <p className="leading-relaxed text-fg-2"><span className="font-medium text-fg-1">Fix: </span>{x.fix}</p>
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <button onClick={() => fix([x])} disabled={sent} className="btn-primary btn-sm">{sent ? 'Sent to the agents' : `Have the agent${x.prs.length === 1 ? '' : 's'} fix it`}</button>
+                        {x.prs.map((n) => <button key={n} onClick={() => open(n)} className="btn-ghost btn-sm">Open #{n}</button>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {c.agrees && <p className="px-0.5 pt-1 text-meta text-fg-3">{c.agrees}</p>}
+          </div>
+        )}
+      {c && c.unread.length > 0 && <p className="px-0.5 text-meta text-fg-4">Not checked (no finished run yet): {c.unread.map((n) => `#${n}`).join(', ')}</p>}
     </section>
   )
 }

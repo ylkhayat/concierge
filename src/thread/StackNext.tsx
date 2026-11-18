@@ -13,6 +13,8 @@ import { api, type PrView } from '../lib.ts'
 import { refresh } from '../query.ts'
 
 type Member = { pr: PrView; url: string; steps: Step[] }
+// what "and push when done" adds to each agent's answer: this round's go-ahead to publish what it was asked to fix
+const PUSH_WHEN_DONE = 'Push when done: once the changes for this answer are made and checked, push them to this PR\'s branch with a plain push (never --force or --force-with-lease: a rebase that needs one still waits for me) and post the replies you drafted for them. This is my go-ahead for this round only; anything I didn\'t ask for, and anything that fails, still waits for me.'
 const enc = encodeURIComponent
 
 /**
@@ -50,6 +52,10 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const [picks, setPicks] = useState<Record<string, number>>({}) // "<pr id>:<step>" → option
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [note, setNote] = useState('')
+  // this round may go all the way: each agent pushes what it fixes for this answer and posts the replies it drafted for
+  // it, instead of stopping to ask. Only for this answer; a force-push and anything not asked still wait
+  const [pushDone, setPushDone] = useState(() => { try { return localStorage.getItem('stack-push-done') === '1' } catch { return false } })
+  const setPush = (on: boolean) => { setPushDone(on); try { localStorage.setItem('stack-push-done', on ? '1' : '0') } catch { /* private window */ } }
   const [sending, setSending] = useState(false)
   const { armed, arm } = useArm()
   // --- the short plan: the same items read together and boiled down to a few decisions and steps (server/stackPlan.ts).
@@ -130,7 +136,8 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
       for (const m of waiting) {
         const p = Object.fromEntries(m.steps.map((_, i) => [i, pickOf(m, i)]).filter(([, j]) => (j as number) >= 0))
         const c = Object.fromEntries(m.steps.map((_, i) => [i, on(m, i)]))
-        const msg = composeChecklist(m.steps, p, c, note.trim() ? `For the whole stack: ${note.trim()}` : '')
+        const said = [note.trim() && `For the whole stack: ${note.trim()}`, pushDone && PUSH_WHEN_DONE].filter(Boolean).join('\n\n')
+        const msg = composeChecklist(m.steps, p, c, said)
         if (!msg) continue
         const r = await api(`${m.url}/reply`, { text: msg }) as { handedOver?: number[] }
         sent++; handed += r?.handedOver?.length ?? 0
@@ -145,8 +152,9 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     // the list scrolls inside the space under the chat; the note and Send stay in view
     <section className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex items-center gap-2">
-        <p className="flex min-w-0 flex-1 items-center gap-2 text-small font-semibold text-fg-1"><Layers className="size-4 shrink-0 text-accent-text" /><span className="shrink-0">The stack waits on you</span>
-          <span className="truncate font-normal text-fg-3">· {waiting.length} PRs, {showPlan ? `${all.length} items boiled down to ${p!.decisions.length + p!.steps.length}` : `${all.length} item${all.length === 1 ? '' : 's'}`}</span></p>
+        <Layers className="size-4 shrink-0 text-accent-text" />
+        <p className="min-w-0 flex-1 leading-tight"><span className="block text-small font-semibold text-fg-1">The stack waits on you</span>
+          <span className="block truncate text-meta text-fg-3">{waiting.length} PRs · {showPlan ? `${all.length} items boiled down to ${p!.decisions.length + p!.steps.length}` : `${all.length} item${all.length === 1 ? '' : 's'}`}</span></p>
         {(p || raw) && <button onClick={() => setRaw(!raw)} className="shrink-0 text-meta font-medium text-fg-3 hover:text-fg-1">{raw ? 'The short plan' : `Every item (${all.length})`}</button>}
         <button onClick={() => { setRaw(false); setAgain((n) => n + 1) }} disabled={plan.isFetching} title="Read every PR's suggestions together again" className="inline-flex shrink-0 items-center gap-1 btn-ghost btn-sm">
           <RefreshCw className={`size-3.5 ${plan.isFetching ? 'animate-spin' : ''}`} />{plan.isFetching ? 'Reading…' : 'Reanalyze'}
@@ -216,6 +224,10 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         {standing.length > 0 && <span className="text-meta text-wait-text" title="Two lines that can't both happen are both ticked: each is marked ⚠ above. Untick one, or press Keep this one on the side you want">{standing.length} conflict{standing.length === 1 ? '' : 's'}: keep one side of each (above)</span>}
         {unanswered.length > 0 && <span className="text-meta text-wait-text">Decide {unanswered.length} first</span>}
         <span className="flex-1" />
+        <button type="button" role="switch" aria-checked={pushDone} onClick={() => setPush(!pushDone)} title="Each agent pushes what it fixes for this answer (a plain push, never a force-push) and posts the replies it drafted for it, instead of stopping to ask. Only for this answer"
+                className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-meta font-medium transition-colors ${pushDone ? 'bg-ok/15 text-ok-text ring-1 ring-ok/30' : 'text-fg-3 ring-1 ring-line hover:text-fg-1'}`}>
+          <span className={`flex size-3.5 items-center justify-center rounded ${pushDone ? 'bg-ok text-white' : 'ring-1 ring-line-strong'}`}>{pushDone && <Check className="size-2.5" strokeWidth={3} />}</span>and push when done
+        </button>
         {note.trim() && note.trim() !== (plan.data?.steer ?? steer) && <button onClick={() => { setRaw(false); setSteer(note.trim()) }} disabled={plan.isFetching} title="Read the PRs' suggestions again with your steer: it settles what it can and suggests the rest" className="inline-flex items-center gap-1.5 btn-outline btn-sm"><RefreshCw className="size-3.5" />Reanalyze with this steer</button>}
         <button disabled={sending || unanswered.length > 0 || standing.length > 0} onClick={() => void send()}
                 title={standing.length ? 'Two ticked lines can’t both happen: keep one side of each (marked ⚠)' : unanswered.length ? `Decide ${unanswered.length} first` : undefined}
@@ -266,7 +278,7 @@ function PlanView({ p, chosen, choose, stepOn, toggle, prsOf }: {
   const priv = p.steps.filter((s) => !s.public), pub = p.steps.filter((s) => s.public)
   return (
     <div className="space-y-3">
-      {p.summary && <p className="px-1 text-small leading-relaxed text-fg-2">{p.summary}</p>}
+      {p.summary && <details className="group/sum px-1"><summary className="cursor-pointer list-none text-small leading-relaxed text-fg-2 [&::-webkit-details-marker]:hidden"><span className="line-clamp-2 group-open/sum:line-clamp-none">{p.summary}</span></summary></details>}
       {p.decisions.length > 0 && (
         <section className="rounded-xl bg-wait/6 p-2.5 ring-1 ring-wait/20">
           <p className={`${head} mb-1.5 !text-wait-text`}>Needs your input</p>
