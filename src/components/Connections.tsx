@@ -35,7 +35,7 @@ type BankView = { only: boolean; servers: { name: string; service: string; how: 
  */
 function Bank({ toast }: { toast: Toast }) {
   const [b, setB] = useState<BankView>()
-  const [form, setForm] = useState<{ name: string; url: string; key: string }>()
+  const [form, setForm] = useState<{ kind: 'address' | 'command'; name: string; url: string; key: string; command: string; env: string }>()
   useEffect(() => { api('/bank').then(setB, () => setB({ only: false, servers: [] })) }, [])
   const post = (path: string, body: object, said: string) => api(path, body).then((v: BankView) => { setB(v); toast(said); return true }, (e: Error) => { toast(e.message, 'error'); return false })
   if (!b) return <Skeleton rows={2} />
@@ -43,7 +43,7 @@ function Bank({ toast }: { toast: Toast }) {
   return (
     <div className="space-y-2">
       <div className="card divide-y divide-line">
-        {b.servers.length === 0 && <p className="px-3.5 py-3 text-small text-fg-3">Nothing in it yet. A service Concierge has a key for (Linear, Sentry) is in it by itself; add any other by its MCP address and its key.</p>}
+        {b.servers.length === 0 && <p className="px-3.5 py-3 text-small text-fg-3">Nothing in it yet. A service Concierge has a key for (Linear, Sentry) is in it by itself; add any other by its MCP address and key, or by the command that starts it.</p>}
         {b.servers.map((s) => (
           <div key={s.name} className="flex items-center gap-2.5 px-3.5 py-2 text-small">
             <span className={`size-1.5 shrink-0 rounded-full ${s.how === 'key' ? 'bg-ok' : 'bg-wait'}`} />
@@ -58,15 +58,34 @@ function Bank({ toast }: { toast: Toast }) {
         <Tabs size="sm" label="What a run gets" value={b.only ? 'only' : 'gaps'} onChange={(v) => void post('/bank', { only: v === 'only' }, v === 'only' ? 'Every run now gets only the bank' : 'The bank now fills what an account lacks')}
               options={[{ id: 'gaps', label: 'Fill the gaps', title: 'An account that has a service through its own sign-in keeps that one; the bank adds what it lacks' }, { id: 'only', label: 'Bank only', title: 'Every run gets exactly the bank and nothing of the account’s own, so its tools no longer depend on where it landed' }]} />
         <span className="min-w-0 flex-1 text-meta text-fg-3">{b.only ? 'Every run gets exactly the bank: nothing from claude.ai or plugins.' : 'An account keeps what its own sign-in brings; the bank adds the rest.'}</span>
-        {!form && <button onClick={() => setForm({ name: '', url: '', key: '' })} className="btn-outline btn-sm"><PlugZap className="mr-1 size-3.5" />Put one in</button>}
+        {!form && <button onClick={() => setForm({ kind: 'address', name: '', url: '', key: '', command: '', env: '' })} className="btn-outline btn-sm"><PlugZap className="mr-1 size-3.5" />Put one in</button>}
       </div>
       {form && (
-        <div className="card flex flex-wrap items-center gap-2 px-3.5 py-3">
-          <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="name" aria-label="Name" className={`${field} max-w-36 font-mono`} />
-          <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://… its MCP address" aria-label="MCP address" className={`${field} font-mono`} />
-          <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder="its key or token" aria-label="Key" className={`${field} max-w-64`} />
-          <button disabled={!form.name.trim() || !form.url.trim() || !form.key.trim()} onClick={() => void post('/bank/add', form, `${form.name} is in the bank`).then((ok) => ok && setForm(undefined))} className="btn-primary btn-sm">Add</button>
-          <button onClick={() => setForm(undefined)} className="btn-ghost btn-sm">Cancel</button>
+        <div className="card space-y-2 px-3.5 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Tabs size="sm" label="What it is" value={form.kind} onChange={(k) => setForm({ ...form, kind: k as 'address' | 'command' })}
+                  options={[{ id: 'address', label: 'An address', title: 'An MCP server on the web, reached with a key' }, { id: 'command', label: 'A command', title: 'An MCP server Concierge starts itself, with the values it needs' }]} />
+            <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="name" aria-label="Name" className={`${field} max-w-36 font-mono`} />
+          </div>
+          {form.kind === 'address' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://… its MCP address" aria-label="MCP address" className={`${field} font-mono`} />
+              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder="its key or token" aria-label="Key" className={`${field} max-w-64`} />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <input value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="npx -y mongodb-mcp-server@latest" aria-label="Command" className={`${field} w-full font-mono`} />
+              <textarea value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} rows={3} placeholder={'MDB_MCP_CONNECTION_STRING=mongodb+srv://…\nMDB_MCP_READ_ONLY=true'} aria-label="Values, one NAME=value per line" className={`${field} w-full resize-y font-mono text-meta`} />
+              <p className="text-meta text-fg-4">Kept with Concierge’s secrets and handed to it only as it starts: never on its command line, never shown again.</p>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setForm(undefined)} className="btn-ghost btn-sm">Cancel</button>
+            <button disabled={!form.name.trim() || (form.kind === 'address' ? !form.url.trim() || !form.key.trim() : !form.command.trim())}
+                    onClick={() => void post('/bank/add', form.kind === 'address' ? { name: form.name, url: form.url, key: form.key }
+                      : { name: form.name, command: form.command, env: Object.fromEntries(form.env.split('\n').map((l) => l.trim()).filter((l) => l.includes('=')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])) }, `${form.name} is in the bank`).then((ok) => ok && setForm(undefined))}
+                    className="btn-primary btn-sm">Add</button>
+          </div>
         </div>
       )}
     </div>

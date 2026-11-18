@@ -55,7 +55,8 @@ export function bankFor(servers: McpServer[], kind: string, first: boolean, only
   // a connector that needs a browser sign-in lives in a Claude account's own login store: no other tool can use it
   const usable = (s: McpServer) => kind === 'claude' || kind === 'llama' || !s.login
   if (only) return { set: 'all', servers: servers.filter(usable) }
-  if (kind === 'claude' && first) return { set: 'none', servers: [] }
+  // the first Claude account has your connectors and its claude.ai ones its own way: the bank adds the rest
+  if (kind === 'claude' && first) { const extra = servers.filter((s) => !s.coveredByClaudeAi && !s.inAccount); return { set: extra.length ? 'extra' : 'none', servers: extra } }
   if (kind === 'claude' && viaLogin) { const extra = servers.filter((s) => !s.coveredByClaudeAi); return { set: 'extra', servers: extra } }
   return { set: 'all', servers: servers.filter(usable) }
 }
@@ -91,4 +92,4 @@ export const copilotBank = (claudeFile: string) => claudeFile.replace(/\.claude\
 /** The servers behind a bank file, for Codex (it takes them as overrides, not a file). */
 export const codexBank = (p: ProviderId) => forCodex(pick(p).servers)
 /** The names in the bank now, with how each signs in: the Connections page. */
-export const bankView = () => ({ only: bankOnly(), servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, mine: !!s.mine, target: s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim() })) })
+export const bankView = () => ({ only: bankOnly(), servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, mine: !!s.mine, target: s.shown ?? s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim() })) })

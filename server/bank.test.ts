@@ -9,7 +9,7 @@ const mine: McpServer = { name: 'wiki', service: 'wiki', url: 'https://wiki.exam
 const all = [linear, sentry, mine], names = (x: { servers: McpServer[] }) => x.servers.map((s) => s.name)
 
 test('the bank fills gaps: each run gets what its account does not already have its own way', () => {
-  assert.deepEqual(bankFor(all, 'claude', true, false, true).set, 'none') // the first Claude account has all of it already
+  assert.deepEqual(names(bankFor(all, 'claude', true, false, true)), ['wiki']) // the first Claude account: its login brings Linear and Sentry; the rest is added
   assert.deepEqual(names(bankFor(all, 'claude', false, false, true)), ['wiki']) // another Claude login: its claude.ai brings Linear and Sentry
   assert.deepEqual(names(bankFor(all, 'copilot', false, false, true)), ['linear-key', 'sentry-token']) // no way to sign in to a browser-login one
   assert.deepEqual(names(bankFor(all, 'openai', false, false, true)), ['linear-key', 'sentry-token'])
@@ -29,4 +29,14 @@ test("Codex takes the bank as overrides, an address's key by the name of a varia
   ])
   assert.deepEqual(env, { CONCIERGE_BANK_LINEAR_KEY: 'K' })
   assert.ok(!conf.join(' ').includes('Bearer')) // the address's key itself is only in the environment
+})
+
+test("the first Claude account gets what neither its login nor its own configuration brings; a command connection reaches every tool", () => {
+  const cmd: McpServer = { name: 'mongo', service: 'mongo', command: 'node', args: ['bank-env.mjs', 'secrets.json', 'mongo', '--', 'npx', '-y', 'mongodb-mcp-server'], mine: true }
+  const added: McpServer = { ...mine, inAccount: true }
+  assert.deepEqual(names(bankFor([linear, sentry, added, cmd], 'claude', true, false, true)), ['mongo'])
+  assert.equal(bankFor([linear, sentry, added], 'claude', true, false, true).set, 'none')
+  assert.deepEqual(names(bankFor([linear, cmd], 'copilot', false, false, true)), ['linear-key', 'mongo'])
+  const { conf, env } = forCodex([cmd])
+  assert.deepEqual([conf, env], [['mcp_servers.mongo.command="node"', 'mcp_servers.mongo.args=["bank-env.mjs","secrets.json","mongo","--","npx","-y","mongodb-mcp-server"]'], {}]) // no value on its command line
 })

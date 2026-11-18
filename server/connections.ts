@@ -4,7 +4,10 @@
 import { execFile, spawn as spawnChild } from 'node:child_process'
 import { promisify } from 'node:util'
 import { saveConfig } from './config.ts'
-import { readSecrets, rereadSecrets, saveSecrets, scrub } from './scrub.ts'
+import { readSecrets, rereadSecrets, saveSecrets, scrub, SECRETS_FILE } from './scrub.ts'
+import { fileURLToPath } from 'node:url'
+// the launcher a bank command starts through (bin/bank-env.mjs)
+const BANK_ENV = fileURLToPath(new URL('../bin/bank-env.mjs', import.meta.url))
 import { config, save, state } from './store.ts'
 
 const run = promisify(execFile)
@@ -54,6 +57,8 @@ export type McpServer = {
   login?: boolean // it signs in in the browser, into one Claude account's own store: no key to hand to another tool
   coveredByClaudeAi?: boolean // a claude.ai login brings the same service itself
   mine?: boolean // you put it in the bank yourself (it can be taken out there)
+  shown?: string // what the page shows for it, when that differs from what starts it
+  inAccount?: boolean // also added to the first Claude account's own configuration (a connector you added by its address)
 }
 /** What Concierge itself holds: a service it has the key for, and each connector you added by its address (the bank, bank.ts). */
 export function ownServers(): McpServer[] {
@@ -62,9 +67,15 @@ export function ownServers(): McpServer[] {
   if (linear) out.push({ name: 'linear-key', service: 'Linear', url: 'https://mcp.linear.app/mcp', headers: { Authorization: `Bearer ${linear}` }, coveredByClaudeAi: true })
   const s = secrets()
   if (s.sentryToken) out.push({ name: 'sentry-token', service: 'Sentry', command: 'npx', args: ['-y', '@sentry/mcp-server@latest'], env: { SENTRY_ACCESS_TOKEN: s.sentryToken, SENTRY_HOST: s.sentryHost ?? 'sentry.io' }, coveredByClaudeAi: true })
-  for (const [name, url] of Object.entries(state.customConnectors ?? {})) out.push({ name, service: name, url, login: true })
+  for (const [name, url] of Object.entries(state.customConnectors ?? {})) out.push({ name, service: name, url, login: true, inAccount: true })
   // the ones you put in the bank yourself: with a key every tool can use it; without one it signs in in the browser
-  for (const [name, b] of Object.entries(s.bank ?? {})) if (!out.some((x) => x.name === name)) out.push({ name, service: name, url: b.url, ...(b.key ? { headers: { Authorization: `Bearer ${b.key}` } } : { login: true }), mine: true })
+  for (const [name, b] of Object.entries(s.bank ?? {})) {
+    if (out.some((x) => x.name === name)) continue
+    // a command starts through bin/bank-env, which hands it its environment from the secrets file as it starts: no value
+    // is ever on its command line
+    if (b.command?.length) out.push({ name, service: name, command: process.execPath, args: [BANK_ENV, SECRETS_FILE, name, '--', ...b.command], mine: true, shown: b.command.join(' ') })
+    else if (b.url) out.push({ name, service: name, url: b.url, ...(b.key ? { headers: { Authorization: `Bearer ${b.key}` } } : { login: true }), mine: true })
+  }
   return out
 }
 /** The `claude mcp add` arguments for a fix (tests check their order). */
