@@ -1392,27 +1392,33 @@ void bankNow(); setInterval(() => void bankNow(), 30_000).unref()
 app.get('/bank', (c) => c.json(bankView()))
 // a connection of your own in the bank: a name, its MCP address, and its key when it has one (kept with the secrets)
 app.post('/bank/add', async (c) => {
-  const b = await c.req.json<{ name?: string; url?: string; key?: string; command?: string; env?: Record<string, string> }>()
+  const b = await c.req.json<{ name?: string; url?: string; key?: string; command?: string; env?: Record<string, string>; was?: string }>()
   const name = String(b.name ?? '').trim()
   if (!customName(name)) return c.json({ error: 'A name: letters, digits, - and _' }, 400)
   if (ownServers().some((s) => s.name === name && !s.mine)) return c.json({ error: `${name} is already in the bank` }, 400)
+  // editing one of yours (`was`: its name before): a key or a value left empty keeps the one kept, so nothing has to be pasted again
+  const before = b.was ? readSecrets().bank?.[b.was] : undefined
+  if (b.was && !before) return c.json({ error: `${b.was} isn't in the bank any more` }, 400)
+  if (b.was !== name && readSecrets().bank?.[name]) return c.json({ error: `${name} is already in the bank${b.was ? '' : ': edit it instead'}` }, 400)
   let entry: { url?: string; key?: string; command?: string[]; env?: Record<string, string> }
   if (b.command !== undefined) {
     // a command Concierge starts (an MCP server over stdio): split like a shell would, without one (no pipes, no $), and its
     // values handed to it as it starts (bin/bank-env.mjs), never on its command line
     const command = (String(b.command).match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((x) => x.replace(/^(["'])(.*)\1$/, '$2'))
-    const env = Object.fromEntries(Object.entries(b.env ?? {}).map(([k, v]) => [k.trim(), String(v)]).filter(([k]) => k))
+    const env = Object.fromEntries(Object.entries(b.env ?? {}).map(([k, v]) => [k.trim(), String(v) || before?.env?.[k.trim()] || '']).filter(([k, v]) => k && v))
     if (!command.length) return c.json({ error: 'The command that starts it' }, 400)
     if (Object.keys(env).some((k) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k))) return c.json({ error: 'Each value needs a name like MDB_MCP_CONNECTION_STRING' }, 400)
     entry = { command, env }
   } else {
-    const url = String(b.url ?? '').trim(), key = String(b.key ?? '').trim()
+    const url = String(b.url ?? '').trim(), key = String(b.key ?? '').trim() || before?.key || ''
     if (!/^https:\/\/\S+$/.test(url)) return c.json({ error: 'An https:// address' }, 400)
     // one without a key signs in in the browser, into one tool's own store: there is no shared sign-in for those
     if (!key) return c.json({ error: 'It needs a key (an API key or token of that service): a connection that signs in in the browser can’t be shared between tools' }, 400)
     entry = { url, key }
   }
-  saveSecrets({ bank: { ...readSecrets().bank, [name]: entry } })
+  const { [b.was ?? name]: _, ...rest } = readSecrets().bank ?? {}
+  saveSecrets({ bank: { ...rest, [name]: entry } })
+  if (b.was && b.was !== name) saveConfig({ exec: { allowedTools: config.exec.allowedTools.filter((t) => t !== `mcp__${b.was}`) } })
   const tools = `mcp__${name}`
   if (!config.exec.allowedTools.includes(tools)) saveConfig({ exec: { allowedTools: [...config.exec.allowedTools, tools] } })
   await bankNow()

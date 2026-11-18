@@ -17,6 +17,7 @@
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ownServers, type McpServer } from './connections.ts'
+import { readSecrets } from './scrub.ts'
 import { STATE_DIR } from './paths.ts'
 import { accountOf, type ProviderId } from './providers.ts'
 import { config, state } from './store.ts'
@@ -92,4 +93,9 @@ export const copilotBank = (claudeFile: string) => claudeFile.replace(/\.claude\
 /** The servers behind a bank file, for Codex (it takes them as overrides, not a file). */
 export const codexBank = (p: ProviderId) => forCodex(pick(p).servers)
 /** The names in the bank now, with how each signs in: the Connections page. */
-export const bankView = () => ({ only: bankOnly(), servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, mine: !!s.mine, target: s.shown ?? s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim() })) })
+export const bankView = () => {
+  const mine = readSecrets().bank ?? {}
+  return { only: bankOnly(), servers: ownServers().map((s) => ({ name: s.name, service: s.service, how: s.login ? 'login' as const : 'key' as const, mine: !!s.mine, target: s.shown ?? s.url ?? `${s.command} ${(s.args ?? []).join(' ')}`.trim(),
+    // yours, for editing: what it is, never a value (a key or a value left empty keeps the one kept)
+    ...(s.mine && mine[s.name] && { edit: mine[s.name].command ? { kind: 'command' as const, command: mine[s.name].command!.join(' '), env: Object.keys(mine[s.name].env ?? {}) } : { kind: 'address' as const, url: mine[s.name].url ?? '' } }) })) }
+}

@@ -28,14 +28,14 @@ export function Connections({ toast }: { toast: Toast }) {
   )
 }
 
-type BankView = { only: boolean; servers: { name: string; service: string; how: 'key' | 'login'; mine: boolean; target: string }[] }
+type BankView = { only: boolean; servers: { name: string; service: string; how: 'key' | 'login'; mine: boolean; target: string; edit?: { kind: 'address'; url: string } | { kind: 'command'; command: string; env: string[] } }[] }
 /**
  * The connection bank: what is in it, how each signs in, whether runs get only the bank, and a way to put one in.
  * An account's own connections (below) differ per account; these are the same for every run.
  */
 function Bank({ toast }: { toast: Toast }) {
   const [b, setB] = useState<BankView>()
-  const [form, setForm] = useState<{ kind: 'address' | 'command'; name: string; url: string; key: string; command: string; env: string }>()
+  const [form, setForm] = useState<{ kind: 'address' | 'command'; name: string; url: string; key: string; command: string; env: string; was?: string }>()
   useEffect(() => { api('/bank').then(setB, () => setB({ only: false, servers: [] })) }, [])
   const post = (path: string, body: object, said: string) => api(path, body).then((v: BankView) => { setB(v); toast(said); return true }, (e: Error) => { toast(e.message, 'error'); return false })
   if (!b) return <Skeleton rows={2} />
@@ -50,6 +50,7 @@ function Bank({ toast }: { toast: Toast }) {
             <span className="font-medium text-fg-1">{s.service}</span>
             <span className="min-w-0 flex-1 truncate font-mono text-meta text-fg-4" title={s.target}>{s.target.replace(/^https:\/\//, '')}</span>
             <span className="shrink-0 text-meta text-fg-3" title={s.how === 'key' ? 'It signs in with a key Concierge holds: every tool can use it' : 'It signs in in the browser, into a Claude account: Codex and Copilot can’t use it'}>{s.how === 'key' ? 'Every tool' : 'Claude accounts only'}</span>
+            {s.mine && s.edit && <button onClick={() => setForm(s.edit!.kind === 'command' ? { kind: 'command', name: s.name, url: '', key: '', command: s.edit!.command, env: s.edit!.env.map((k) => `${k}=`).join('\n'), was: s.name } : { kind: 'address', name: s.name, url: s.edit!.url, key: '', command: '', env: '', was: s.name })} className="shrink-0 text-meta text-fg-3 hover:text-fg-1">Edit</button>}
             {s.mine && <button onClick={() => void post('/bank/remove', { name: s.name }, `${s.name} taken out of the bank`)} className="shrink-0 text-meta text-fg-4 hover:text-fail-text">Remove</button>}
           </div>
         ))}
@@ -63,28 +64,28 @@ function Bank({ toast }: { toast: Toast }) {
       {form && (
         <div className="card space-y-2 px-3.5 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Tabs size="sm" label="What it is" value={form.kind} onChange={(k) => setForm({ ...form, kind: k as 'address' | 'command' })}
-                  options={[{ id: 'address', label: 'An address', title: 'An MCP server on the web, reached with a key' }, { id: 'command', label: 'A command', title: 'An MCP server Concierge starts itself, with the values it needs' }]} />
+            {form.was ? <span className="text-small font-medium text-fg-1">Editing {form.was}</span> : <Tabs size="sm" label="What it is" value={form.kind} onChange={(k) => setForm({ ...form, kind: k as 'address' | 'command' })}
+                  options={[{ id: 'address', label: 'An address', title: 'An MCP server on the web, reached with a key' }, { id: 'command', label: 'A command', title: 'An MCP server Concierge starts itself, with the values it needs' }]} />}
             <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="name" aria-label="Name" className={`${field} max-w-36 font-mono`} />
           </div>
           {form.kind === 'address' ? (
             <div className="flex flex-wrap items-center gap-2">
               <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://… its MCP address" aria-label="MCP address" className={`${field} font-mono`} />
-              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder="its key or token" aria-label="Key" className={`${field} max-w-64`} />
+              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder={form.was ? 'its key (empty: keep the one kept)' : 'its key or token'} aria-label="Key" className={`${field} max-w-64`} />
             </div>
           ) : (
             <div className="space-y-2">
               <input value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="npx -y mongodb-mcp-server@latest" aria-label="Command" className={`${field} w-full font-mono`} />
               <textarea value={form.env} onChange={(e) => setForm({ ...form, env: e.target.value })} rows={3} placeholder={'MDB_MCP_CONNECTION_STRING=mongodb+srv://…\nMDB_MCP_READ_ONLY=true'} aria-label="Values, one NAME=value per line" className={`${field} w-full resize-y font-mono text-meta`} />
-              <p className="text-meta text-fg-4">Kept with Concierge’s secrets and handed to it only as it starts: never on its command line, never shown again.</p>
+              <p className="text-meta text-fg-4">Kept with Concierge’s secrets and handed to it only as it starts: never on its command line, never shown again.{form.was && ' A value left empty keeps the one kept; a line you delete is dropped.'}</p>
             </div>
           )}
           <div className="flex justify-end gap-2">
             <button onClick={() => setForm(undefined)} className="btn-ghost btn-sm">Cancel</button>
-            <button disabled={!form.name.trim() || (form.kind === 'address' ? !form.url.trim() || !form.key.trim() : !form.command.trim())}
-                    onClick={() => void post('/bank/add', form.kind === 'address' ? { name: form.name, url: form.url, key: form.key }
-                      : { name: form.name, command: form.command, env: Object.fromEntries(form.env.split('\n').map((l) => l.trim()).filter((l) => l.includes('=')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])) }, `${form.name} is in the bank`).then((ok) => ok && setForm(undefined))}
-                    className="btn-primary btn-sm">Add</button>
+            <button disabled={!form.name.trim() || (form.kind === 'address' ? !form.url.trim() || (!form.key.trim() && !form.was) : !form.command.trim())}
+                    onClick={() => void post('/bank/add', form.kind === 'address' ? { name: form.name, url: form.url, key: form.key, was: form.was }
+                      : { name: form.name, command: form.command, was: form.was, env: Object.fromEntries(form.env.split('\n').map((l) => l.trim()).filter((l) => l.includes('=')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])) }, form.was ? `${form.name} saved` : `${form.name} is in the bank`).then((ok) => ok && setForm(undefined))}
+                    className="btn-primary btn-sm">{form.was ? 'Save' : 'Add'}</button>
           </div>
         </div>
       )}
