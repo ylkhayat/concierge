@@ -219,11 +219,12 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
       </div>
       <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000} placeholder="Steer the stack: say which way to go. Reanalyze reads it, and every agent gets it with your answer…"
                 className="w-full resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60" />
-      <div className="flex items-center gap-2">
+      {(review.isFetching || standing.length > 0 || unanswered.length > 0) && <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {review.isFetching && <span className="flex items-center gap-1 text-meta text-fg-3"><LoaderCircle className="size-3 animate-spin" />Checking for duplicates and conflicts…</span>}
         {standing.length > 0 && <span className="text-meta text-wait-text" title="Two lines that can't both happen are both ticked: each is marked ⚠ above. Untick one, or press Keep this one on the side you want">{standing.length} conflict{standing.length === 1 ? '' : 's'}: keep one side of each (above)</span>}
         {unanswered.length > 0 && <span className="text-meta text-wait-text">Decide {unanswered.length} first</span>}
-        <span className="flex-1" />
+      </div>}
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button type="button" role="switch" aria-checked={pushDone} onClick={() => setPush(!pushDone)} title="Each agent pushes what it fixes for this answer (a plain push, never a force-push) and posts the replies it drafted for it, instead of stopping to ask. Only for this answer"
                 className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-meta font-medium transition-colors ${pushDone ? 'bg-ok/15 text-ok-text ring-1 ring-ok/30' : 'text-fg-3 ring-1 ring-line hover:text-fg-1'}`}>
           <span className={`flex size-3.5 items-center justify-center rounded ${pushDone ? 'bg-ok text-white' : 'ring-1 ring-line-strong'}`}>{pushDone && <Check className="size-2.5" strokeWidth={3} />}</span>and push when done

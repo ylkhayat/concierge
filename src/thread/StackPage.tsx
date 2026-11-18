@@ -25,6 +25,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
 }) {
   const { members, all, tickets } = stack
   const { card } = useStackNext({ stack: all, prs, toast })
+  // the panel opens on what waits on you, when anything does; you move between them, never both at once
   const asks = members.filter((p) => waiting(p) || !!askOf(p)), working = members.filter(busy)
   // no agent has looked at them yet: started bottom first, each after the one below it (it reads what that one found)
   const fresh = members.filter((p) => p.flow.next === 'run' && !p.job && !p.missing.length)
@@ -45,7 +46,8 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
   const { armed, arm } = useArm()
   const act = (a: Action) => { const go = () => api(`/prs/${enc(anchor.id)}/actions`, { action: a.id, scope: 'stack' }).then((r: { label: string; count: number }) => toast(`${r.label}: ${r.count} PR${r.count === 1 ? '' : 's'}`), (e: Error) => toast(e.message, 'error')); return a.confirm ? arm(a.id, go) : go() }
   const add = members.reduce((n, p) => n + p.additions, 0), del = members.reduce((n, p) => n + p.deletions, 0)
-  const [tab, setTab] = useState<'check' | 'tickets'>('check')
+  const [tabPicked, setTab] = useState<'answer' | 'check' | 'tickets'>()
+  const tab = tabPicked === 'answer' && !card ? 'check' : tabPicked ?? (card ? 'answer' : 'check')
   // the stack's own chat: one message, sent to each PR's agent in its own conversation (each told it is one of several).
   // What was said and what came back is read from the PRs themselves, so there is nothing to keep for the stack
   const [words, setWords] = useState('')
@@ -94,7 +96,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
             </button>
           ))}
         </>} />}
-      next={card ? <section aria-label="The stack waits on you" className="flex max-h-full min-h-0 flex-col overflow-y-auto card p-3">{card}</section>
+      next={card ? undefined
         : asks.length === 1 ? (
           <button onClick={() => onSelect(asks[0].id)} className="card flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-small transition-colors hover:bg-hover">
             <span className="size-1.5 shrink-0 rounded-full bg-wait" /><span className="min-w-0 flex-1 truncate text-fg-1">Only #{asks[0].number} waits on you: {askOf(asks[0]) ?? asks[0].flow.why}</span>
@@ -118,8 +120,8 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
           </div>
         </Composer>
       )}
-      tabs={[{ id: 'check' as const, label: 'Agreement', rail: true }, { id: 'tickets' as const, label: 'Tickets', badge: tickets.length ? <span className="ml-1.5 rounded-full bg-fill px-1.5 text-micro font-semibold tabular-nums text-fg-2">{tickets.length}</span> : undefined, rail: true }]}
-      pane={tab === 'tickets'
+      tabs={[...(card ? [{ id: 'answer' as const, label: 'Waits on you', badge: <span className="ml-1.5 rounded-full bg-wait/15 px-1.5 text-micro font-semibold tabular-nums text-wait-text">{asks.length}</span> }] : []), { id: 'check' as const, label: 'Agreement', rail: true }, { id: 'tickets' as const, label: 'Tickets', badge: tickets.length ? <span className="ml-1.5 rounded-full bg-fill px-1.5 text-micro font-semibold tabular-nums text-fg-2">{tickets.length}</span> : undefined, rail: true }]}
+      pane={tab === 'answer' && card ? <div className="flex h-full min-h-0 flex-col p-3.5">{card}</div> : tab === 'tickets'
         ? (tickets.length ? <ul className="divide-y divide-line">{tickets.map((t) => <TicketRow key={t.id} t={t} onOpen={() => onTicket(t.id)} />)}</ul> : <p className="p-4 text-small text-fg-3">No ticket of yours is linked to these pull requests.</p>)
         : all.length > 1 && anchor ? <Check path={`/prs/${enc(anchor.id)}/stack-check`} sig={members.map((p) => `${p.headSha.slice(0, 5)}${p.job?.endedAt ?? ''}`).join('')} members={members} onSelect={onSelect} toast={toast} />
         : <p className="p-4 text-small text-fg-3">A stack of one has nothing to compare with.</p>}>
