@@ -35,7 +35,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const items = waiting.flatMap((m) => m.steps.map((s, i) => ({ id: `${m.pr.number}:${i}`, pr: m.pr.number, text: s.text, kind: s.kind, options: s.options?.map((o) => o.label) })))
   const review = useQuery({
     queryKey: ['/stacks/steps-review', items.map((x) => `${x.id}|${x.text}`).join('\n')], enabled: items.length > 1, staleTime: Infinity,
-    queryFn: () => api('/stacks/steps-review', { items }) as Promise<{ duplicates: { items: string[]; why: string }[]; conflicts: { items: string[]; why: string }[] }>,
+    queryFn: () => api('/stacks/steps-review', { items }) as Promise<{ duplicates: { items: string[]; why: string }[]; conflicts: { items: string[]; why: string; title?: string; keep?: string }[] }>,
   })
   // a duplicate is kept where it is the PR's own work (its step names no other PR: no handover needed), else on the first
   // PR it appears on (bottom of the stack first); the other copies start unticked
@@ -101,10 +101,20 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const stepOn = (st: StackPlan['steps'][number]) => st.items.some((id) => checked[keyById.get(id)!])
   const toggle = (st: StackPlan['steps'][number]) => setChecked((cur) => ({ ...cur, ...Object.fromEntries(st.items.map((id) => [keyById.get(id)!, !stepOn(st)])) }))
   const prsOf = (ids: string[]) => [...new Set(ids.map((id) => Number(id.split(':')[0])))]
-  // a conflict still standing, as the plan shows it: the other plan line(s) it is with, and why. Send waits until one
-  // side is unticked (or its decision unpicked); "Keep this one" drops the others in one click
-  const lineOf = (id: string) => p?.steps.find((st) => st.items.includes(id))?.text ?? p?.decisions.find((d) => d.options.some((o) => o.picks.some((x) => x.id === id)))?.question
-  const clashOf = (ids: string[]) => standing.filter((g) => g.items.some((id) => ids.includes(id))).map((g) => ({ why: g.why.replace(/\b(\d{2,6}):\d+\b/g, '#$1'), others: [...new Set(g.items.filter((id) => !ids.includes(id)).map((id) => lineOf(id) ?? `#${id.split(':')[0]}`))], ids: g.items.filter((id) => !ids.includes(id)) }))
+  // a conflict still standing: Send waits until one side is left out (or its decision unpicked); its card keeps one side in a click
+  // a conflict's sides as buttons: each side in its agent's words (a decision: the question and the option chosen now)
+  const sideLabel = (id: string) => {
+    const x = all.find(({ m, i }) => idOf(m, i) === id)
+    if (!x) return `#${id.split(':')[0]}`
+    const pick = x.s.kind === 'decide' ? x.s.options?.[pickOf(x.m, x.i)]?.label ?? x.s.options?.find((o) => o.recommended)?.label : undefined
+    return pick ? `${x.s.text}: ${pick}` : x.s.text
+  }
+  const keepSide = (g: { items: string[] }, id: string) => {
+    drop(g.items.filter((x) => x !== id))
+    const x = all.find(({ m, i }) => idOf(m, i) === id)
+    if (x && x.s.kind !== 'decide') setChecked((cur) => ({ ...cur, [key(x.m, x.i)]: true }))
+    if (x && x.s.kind === 'decide' && pickOf(x.m, x.i) < 0) { const r = (x.s.options ?? []).findIndex((o) => o.recommended); setPicks((cur) => ({ ...cur, [key(x.m, x.i)]: r >= 0 ? r : 0 })) }
+  }
   const drop = (ids: string[]) => {
     setChecked((cur) => ({ ...cur, ...Object.fromEntries(ids.filter((id) => all.some(({ m, i }) => idOf(m, i) === id && m.steps[i].kind !== 'decide')).map((id) => [keyById.get(id)!, false])) }))
     setPicks((cur) => ({ ...cur, ...Object.fromEntries(ids.filter((id) => all.some(({ m, i }) => idOf(m, i) === id && m.steps[i].kind === 'decide')).map((id) => [keyById.get(id)!, -1])) }))
@@ -143,7 +153,23 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         </button>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
-      {showPlan && <PlanView p={p!} chosen={chosen} choose={choose} stepOn={stepOn} toggle={toggle} prsOf={prsOf} clashOf={clashOf} drop={drop} />}
+      {showPlan && standing.map((g, k) => (
+        // one card per conflict still standing: what it is, why, and each side as a button (the agents' favourite marked)
+        <section key={k} className="rounded-xl bg-wait/8 p-2.5 ring-1 ring-wait/25">
+          <p className="flex items-center gap-1.5 text-small font-medium text-fg-1"><TriangleAlert className="size-3.5 shrink-0 text-wait" />{g.title?.trim() || 'These can’t both happen'}<span className="ml-1 inline-flex gap-1">{prsOf(g.items).map((n) => <span key={n} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-3">#{n}</span>)}</span></p>
+          <p className="mt-0.5 text-meta text-fg-3">{g.why.replace(/\b(\d{2,6}):\d+\b/g, '#$1')}</p>
+          <div role="radiogroup" aria-label={g.title || 'Keep one'} className="mt-1.5 flex flex-col gap-1">
+            {g.items.map((id) => (
+              <button key={id} role="radio" aria-checked={false} onClick={() => keepSide(g, id)} title="Keep this one: the other side is left out"
+                      className="flex items-start gap-1.5 rounded-ctl bg-surface-1 px-2.5 py-1 text-left text-small text-fg-2 ring-1 ring-line transition-colors hover:bg-fill hover:text-fg-1">
+                {g.keep === id ? <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent-text" /> : <span className="mt-0.5 size-3.5 shrink-0" />}
+                <span className="min-w-0"><span className="mr-1 font-mono text-micro text-fg-4">#{id.split(':')[0]}</span>{sideLabel(id)}{g.keep === id && <span className="ml-1.5 text-micro font-medium text-accent-text">the agents’ pick</span>}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+      {showPlan && <PlanView p={p!} chosen={chosen} choose={choose} stepOn={stepOn} toggle={toggle} prsOf={prsOf} />}
       {!showPlan && plan.isFetching && !raw && <p className="flex items-center gap-2 px-1 py-3 text-small text-fg-3"><LoaderCircle className="size-4 animate-spin" />Reading the {all.length} items of {waiting.length} PRs together…</p>}
       {!showPlan && plan.isError && !raw && <p className="px-1 text-meta text-wait-text">Couldn’t boil them down ({(plan.error as Error).message}): here is every item as the agents wrote it.</p>}
       {(raw || (!showPlan && !plan.isFetching)) && waiting.map((m) => (
@@ -187,7 +213,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
                 className="w-full resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60" />
       <div className="flex items-center gap-2">
         {review.isFetching && <span className="flex items-center gap-1 text-meta text-fg-3"><LoaderCircle className="size-3 animate-spin" />Checking for duplicates and conflicts…</span>}
-        {standing.length > 0 && <span className="text-meta text-wait-text" title="Two lines that can't both happen are both ticked: each is marked ⚠ above. Untick one, or press Keep this one on the side you want">{standing.length} conflict{standing.length === 1 ? '' : 's'}: keep one side of each (marked ⚠ above)</span>}
+        {standing.length > 0 && <span className="text-meta text-wait-text" title="Two lines that can't both happen are both ticked: each is marked ⚠ above. Untick one, or press Keep this one on the side you want">{standing.length} conflict{standing.length === 1 ? '' : 's'}: keep one side of each (above)</span>}
         {unanswered.length > 0 && <span className="text-meta text-wait-text">Decide {unanswered.length} first</span>}
         <span className="flex-1" />
         {note.trim() && note.trim() !== (plan.data?.steer ?? steer) && <button onClick={() => { setRaw(false); setSteer(note.trim()) }} disabled={plan.isFetching} title="Read the PRs' suggestions again with your steer: it settles what it can and suggests the rest" className="inline-flex items-center gap-1.5 btn-outline btn-sm"><RefreshCw className="size-3.5" />Reanalyze with this steer</button>}
@@ -221,26 +247,19 @@ function Flags({ id, copyOf, clashes, label }: { id: string; copyOf: Map<string,
  * The short plan: what needs your input on top (one decision per real question), then what will be done, and at the
  * bottom what becomes public (a push, a posted reply), so the things others will see are read last and on their own.
  */
-function PlanView({ p, chosen, choose, stepOn, toggle, prsOf, clashOf, drop }: {
+function PlanView({ p, chosen, choose, stepOn, toggle, prsOf }: {
   p: StackPlan
   chosen: (d: StackPlan['decisions'][number]) => number; choose: (d: StackPlan['decisions'][number], j: number) => void
   stepOn: (s: StackPlan['steps'][number]) => boolean; toggle: (s: StackPlan['steps'][number]) => void
   prsOf: (ids: string[]) => number[]
-  clashOf: (ids: string[]) => { why: string; others: string[]; ids: string[] }[]; drop: (ids: string[]) => void
 }) {
-  const Clash = ({ ids }: { ids: string[] }) => <>{clashOf(ids).map((c, k) => (
-    <span key={k} className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-wait/10 px-2 py-1 text-meta text-wait-text">
-      <TriangleAlert className="size-3 shrink-0" /><span className="min-w-0 flex-1">Can’t happen together with “{c.others.join('”, “')}”: {c.why}</span>
-      <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); drop(c.ids) }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); drop(c.ids) } }} className="shrink-0 cursor-pointer rounded-md px-1.5 font-medium ring-1 ring-wait/30 hover:bg-wait/15">Keep this one</span>
-    </span>
-  ))}</>
   const Prs = ({ ids }: { ids: string[] }) => <span className="ml-1.5 inline-flex gap-1 align-middle">{prsOf(ids).map((n) => <span key={n} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-3">#{n}</span>)}</span>
   const head = 'label text-fg-3'
   const row = (st: StackPlan['steps'][number], i: number) => (
     <li key={i}>
       <button role="checkbox" aria-checked={stepOn(st)} onClick={() => toggle(st)} className="flex w-full items-start gap-2 rounded-ctl px-1 py-0.5 text-left hover:bg-hover">
         <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded ${stepOn(st) ? 'bg-accent text-on-accent' : 'ring-1 ring-line-strong'}`}>{stepOn(st) && <Check className="size-3" strokeWidth={3} />}</span>
-        <span className="min-w-0"><span className={`text-small ${stepOn(st) ? 'text-fg-1' : 'text-fg-3'}`}>{st.text}</span><Prs ids={st.items} />{st.why && <span className="block text-meta text-fg-3">{st.why}</span>}{stepOn(st) && <Clash ids={st.items} />}</span>
+        <span className="min-w-0"><span className={`text-small ${stepOn(st) ? 'text-fg-1' : 'text-fg-3'}`}>{st.text}</span><Prs ids={st.items} />{st.why && <span className="block text-meta text-fg-3">{st.why}</span>}</span>
       </button>
     </li>
   )
@@ -256,7 +275,6 @@ function PlanView({ p, chosen, choose, stepOn, toggle, prsOf, clashOf, drop }: {
               <li key={i}>
                 <p className="text-small font-medium text-fg-1">{d.question}<Prs ids={d.options.flatMap((o) => o.picks.map((x) => x.id))} />{chosen(d) < 0 && <span className="ml-1.5 rounded-full bg-wait/15 px-1.5 label text-wait-text">needed</span>}</p>
                 {d.why && <p className="text-meta text-fg-3">{d.why}</p>}
-                {chosen(d) >= 0 && <Clash ids={d.options.flatMap((o) => o.picks.map((x) => x.id))} />}
                 <div role="radiogroup" aria-label={d.question} className="mt-1 flex flex-wrap gap-1.5">
                   {d.options.map((o, j) => { const sel = chosen(d) === j; return (
                     <button key={j} role="radio" aria-checked={sel} onClick={() => choose(d, j)} className={`flex items-start gap-1.5 rounded-ctl px-2.5 py-1 text-left text-small transition-colors ${sel ? 'bg-accent font-medium text-on-accent' : 'bg-surface-1 text-fg-2 ring-1 ring-line hover:bg-fill'}`}>
