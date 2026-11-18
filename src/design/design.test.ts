@@ -21,3 +21,10 @@ test('a screen takes its buttons from the recipes (btn-*), not from a look of it
     .filter((m) => !/\bbtn-(primary|quiet|outline|ghost)\b/.test(m[2])).map((m) => `${f}: ${m[1]}`))
   assert.deepEqual(own, [], 'Use btn-primary, btn-quiet, btn-outline or btn-ghost from src/design/recipes.css')
 })
+
+test('no React hook after an early return in the stack card (it crashes the page when the number of waiting PRs changes)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const s = readFileSync(new URL('../thread/StackNext.tsx', import.meta.url), 'utf8')
+  const after = s.slice(s.indexOf('if (waiting.length < 2) return'), s.indexOf('function Flags('))
+  assert.deepEqual(after.match(/\buse(?:State|Effect|Query|Queries|Memo|Callback|Ref|Arm|Api)\(/g) ?? [], [])
+})

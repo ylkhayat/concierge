@@ -85,6 +85,10 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     if (p.steer && !note.trim()) setNote(p.steer)
   }, [plan.data?.sig]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // (every hook above the early return: React needs the same hooks on every render)
+  const anchor = waiting[0]?.pr
+  const acts = useQuery({ queryKey: ['/actions', anchor?.id, anchor?.headSha], enabled: waiting.length >= 2 && !!anchor, staleTime: 30_000,
+    queryFn: () => api(`/prs/${enc(anchor!.id)}/actions`) as Promise<{ id: string; counts: { stack?: number } }[]> })
   if (waiting.length < 2) return { card: null, covers: [] }
 
   const key = (m: Member, i: number) => `${m.pr.id}:${i}`
@@ -109,9 +113,6 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const prsOf = (ids: string[]) => [...new Set(ids.map((id) => Number(id.split(':')[0])))]
   // the stack realigned in one go, by Concierge rather than an agent per PR: each PR rebased on the one below it and
   // force-pushed with lease (Smart rebase on the stack). After the pushes have landed; asks for a second click
-  const anchor = waiting[0]?.pr
-  const acts = useQuery({ queryKey: ['/actions', anchor?.id, anchor?.headSha], enabled: !!anchor, staleTime: 30_000,
-    queryFn: () => api(`/prs/${enc(anchor!.id)}/actions`) as Promise<{ id: string; counts: { stack?: number } }[]> })
   const restackable = acts.data?.find((a) => a.id === 'smart-rebase')?.counts.stack ?? 0
   const restack = () => arm('restack', () => void api(`/prs/${enc(anchor!.id)}/actions`, { action: 'smart-rebase', scope: 'stack' }).then((r: { count: number }) => toast(`Restacking ${r.count} PRs: each on the one below, pushed with lease`), (e: Error) => toast(e.message, 'error')))
   // a conflict still standing: Send waits until one side is left out (or its decision unpicked); its card keeps one side in a click
