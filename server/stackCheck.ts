@@ -59,19 +59,23 @@ export function checkStack(chain: StackRef[], written = '') {
 
 async function read(chain: StackRef[], written: string): Promise<StackCheck> {
   const sig = checkSignature(chain)
-  // a PR no agent has reported on is read from its own commits and the files it changes: every PR counts
+  // what each PR's code is now: its diff on the branches as pushed (fetched first). Its agent's report and its commit
+  // messages are older notes; judged from them, a stack its run had just fixed still showed the old disagreements
+  const dir0 = config.repos[chain[0].repo]
+  if (dir0) await git(dir0, 'fetch', '--quiet', 'origin', ...chain.flatMap((s) => [s.head, s.base]).filter((b, i, all) => all.indexOf(b) === i)).catch(() => {})
   const parts = await Promise.all(chain.map(async (s, i) => {
     const p = tracked(s), o = p && loadOverlay(p), part = partOf(s, i, p, o?.business), dir = config.repos[s.repo]
-    if (part.has || !p || !dir) return { n: s.number, ...part }
     const range = `origin/${s.base}...origin/${s.head}`
-    const [log, stat] = await Promise.all([git(dir, 'log', '--format=- %s', '-30', range), git(dir, 'diff', '--stat=120', range)]).catch(() => ['', ''])
-    if (!log.trim() && !stat.trim()) return { n: s.number, ...part }
-    return { n: s.number, has: true, text: `${part.text.replace('(no agent has finished on it yet)', '')}\nIts commits:\n${log.trim().slice(0, 2000)}\nWhat it changes:\n${stat.trim().split('\n').slice(-40).join('\n')}` }
+    const diff = dir ? await git(dir, 'diff', '-U2', '--no-color', range, '--', '.', ':(exclude)*.lock', ':(exclude)*lock.json', ':(exclude)*.snap').catch(() => '') : ''
+    const code = diff.trim() ? `\nIts code now (the diff against its base; this is what counts):\n${diff.length > 9000 ? diff.slice(0, 9000) + '\n… (cut)' : diff}` : ''
+    return { n: s.number, has: part.has || !!code, text: part.text.replace('What its agent found and did:', "Its agent's earlier notes (may be out of date: the code below wins):") + code }
   }))
+  const k = `STACK-${chain[0].repo.split('/')[1]}-${chain[0].number}`
+  const drove = Object.values(state.execs).filter((r) => r.ids[0] === k && r.summary).sort((x, y) => (y.endedAt ?? '').localeCompare(x.endedAt ?? ''))[0]
   const readNums = parts.filter((x) => x.has).map((x) => x.n), unread = parts.filter((x) => !x.has).map((x) => x.n)
   if (readNums.length < 2) throw new Error('Fewer than two PRs of this stack have anything to read yet (no run, and no commits found locally: fetch the repository)')
   const system = await method('stackCheck', 'Return only the structured output. Fields: issues (each: prs as PR numbers, title, why, fix; an empty array when the PRs agree), direction (lines separated by a newline, each starting with "- ") and agrees.')
-  const prompt = ['These pull requests form one stack. Each is built on the branch it merges into ("into"), so one listed earlier merges first; several can be built on the same one. Below is what there is on each.', ...(written.trim() ? ['', `The direction the person has written for this stack (keep it, add only what is new):\n${written.trim()}`] : []), '', ...parts.map((x) => x.text)].join('\n\n')
+  const prompt = ['These pull requests form one stack. Each is built on the branch it merges into ("into"), so one listed earlier merges first; several can be built on the same one. Below is what there is on each.', ...(written.trim() ? ['', `The direction the person has written for this stack (keep it, add only what is new):\n${written.trim()}`] : []), '', ...(drove?.summary ? [`The last run over the whole stack reported this (newer than the PR agents' notes):\n${drove.summary.slice(-4000)}`] : []), 'Judge the code, not commit messages or old notes. A stack touching the same files in several PRs is normal, and so is small deviation in naming or structure: report only what contradicts across PRs (one question decided two ways, a change one PR adds and another undoes, a rename not followed), each once.', ...parts.map((x) => x.text)].join('\n\n')
   const p = providerFor('small')
   const r = await new Promise<any>((resolve, reject) => {
     const child = spawnAgent(p, ['-p', prompt, '--json-schema', JSON.stringify(schema), '--output-format', 'json', '--model', 'sonnet', '--max-budget-usd', '0.5',
