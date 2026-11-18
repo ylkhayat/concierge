@@ -2300,6 +2300,7 @@ app.post('/stacks/drive', async (c) => {
   const prompt = [`Use the drive-stack skill. The stack in ${p.repo}, bottom first:\n${lines.join('\n')}`,
     dir && `The direction the stack follows:\n${dir}`,
     words && `What the person says now (their answers and steer; it wins over the PRs' own notes):\n${words}`,
+    driveOf(key)?.summary && `The last stack run ended with this (continue from its worktree and branches; don't redo what it did):\n${driveOf(key)!.summary!.slice(-6000)}`,
     check?.issues.length ? `The agreement check found (it may be out of date: verify against the branches):\n${check.issues.map((x) => `- ${x.title} (${x.prs.map((n) => `#${n}`).join(', ')}): ${x.why} Fix: ${x.fix}`).join('\n')}` : '',
     `What each PR's own agent last found and left open:\n${parts.join('\n\n')}`,
     b.push ? 'Push each changed branch when its part is done (with lease).' : 'Do not push: commit in the worktrees and report the shas.',
