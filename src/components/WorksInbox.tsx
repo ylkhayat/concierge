@@ -37,9 +37,11 @@ export function useWorkRows(prs: PrView[] | undefined, tickets: TicketView[], ru
         return t ? [{ id: t.id, kind: 'ticket', label: t.id, title: t.title, needs: ASKS.includes(rules.ticketGroup(t)), working: !!t.busy }] : []
       })
       if (!parts.length) return []
+      // no ticket: a repo that works without them is one Work, named after the repo
+      const repos = [...new Set(w.members.flatMap((k) => byPr.get(k)?.repo ?? []))]
       const ticket = parts.find((x) => x.kind === 'ticket'), lead = parts.find((x) => x.needs) ?? parts.find((x) => x.working) ?? parts[0]
       const at = w.members.map((k) => byPr.get(k)?.updatedAt ?? byTicket.get(k)?.updatedAt ?? '').sort().at(-1) ?? ''
-      return [{ key: `work:${w.id}`, title: (ticket ?? parts[0]).title, parts, needs: parts.filter((x) => x.needs).length, working: parts.filter((x) => x.working).length, lead: lead.id, at, later: offUntil(`work:${w.id}`) }]
+      return [{ key: `work:${w.id}`, title: ticket?.title ?? (parts.length > 1 && repos.length === 1 ? repos[0].split('/').pop()! : parts[0].title), parts, needs: parts.filter((x) => x.needs).length, working: parts.filter((x) => x.working).length, lead: lead.id, at, later: offUntil(`work:${w.id}`) }]
     })
     // what needs you first, then what an agent is working on, then the rest; newest first within each
     const rank = (r: WorkRow) => (r.later ? 3 : r.needs ? 0 : r.working ? 1 : 2)

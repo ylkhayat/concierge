@@ -392,13 +392,24 @@ export const linksOfTicket = (t: Ticket, said = ''): Linked[] => {
 }
 // an agent starting while its counterpart works (or has just left a word) is told, so they don't work over each other
 // --- Works (work.ts): what is linked shares one memory ------------------------------------------------------
+// a repo none of whose PRs ever named a ticket works without tickets: its open PRs are one Work, so one memory and one
+// chat look after all of it (ponytail: read again at most once a minute; a first PR naming a ticket splits it up)
+let noTickets: { at: number; repos: Set<string> } = { at: 0, repos: new Set() }
+function ticketless(repo: string) {
+  if (Date.now() - noTickets.at > 60_000) {
+    const named = new Set(Object.values(state.prs).filter((p) => ticketsOf(p).length).map((p) => p.repo))
+    noTickets = { at: Date.now(), repos: new Set(Object.values(state.prs).map((p) => p.repo).filter((r) => !named.has(r))) }
+  }
+  return noTickets.repos.has(repo)
+}
 function workEdges(k: string): string[] {
   const manual = Object.values(state.works ?? {}).flatMap((w) => w.links).flatMap(([a, b]) => (a === k ? [b] : b === k ? [a] : []))
   const open = (id: string) => !!state.prs[id] && !state.prs[id].closed
   if (k.startsWith('pr:')) {
     const p = state.prs[k.slice(3)]
     if (!p) return manual
-    return [...ticketsOf(p).map((t) => `ticket:${t.id}`), ...(p.stack ?? []).map((x) => `${x.repo}#${x.number}`).filter((id) => id !== p.id && open(id)).map((id) => `pr:${id}`), ...manual]
+    const repoMates = !p.closed && ticketless(p.repo) ? Object.values(state.prs).filter((x) => x.repo === p.repo && x.id !== p.id && !x.closed).map((x) => `pr:${x.id}`) : []
+    return [...ticketsOf(p).map((t) => `ticket:${t.id}`), ...(p.stack ?? []).map((x) => `${x.repo}#${x.number}`).filter((id) => id !== p.id && open(id)).map((id) => `pr:${id}`), ...repoMates, ...manual]
   }
   const id = k.slice(7)
   return [...Object.values(state.prs).filter((p) => !p.closed && ticketsOf(p).some((t) => t.id === id)).map((p) => `pr:${p.id}`), ...manual]
