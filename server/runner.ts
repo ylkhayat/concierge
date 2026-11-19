@@ -288,7 +288,9 @@ const GONE = /No conversation found|session .* not found/i
 export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?: string, after?: string) {
   // your words for a PR whose run is back in the queue (it was requeued just as they were due): kept with it, never dropped
   if (pr.job?.state === 'queued' && kind === 'reply' && said) { (pr.job.heldWords ??= []).push(said); save(); return }
-  if (children.has(pr.id) || pr.job?.state === 'queued') return
+  // a run still working: words reach it another way (tell). One that finished but whose process is still closing
+  // (a background task like a crit wait): queued, it starts once that process is gone instead of being dropped
+  if ((children.has(pr.id) && pr.job?.state === 'running') || pr.job?.state === 'queued') return
   const now = new Date().toISOString()
   const prev = pr.job
   // who runs it: a follow-up stays with its session's provider; fresh work goes to the one set for it (providers.ts)
@@ -566,6 +568,9 @@ export function pump() {
   if (!homeReady) return
   // another machine runs it now (fleet.ts), and this one stops shortly
   if (fleet.elsewhere()) return bus.emit('health')
+  // a finished run whose process is still closing (a background task held it open) blocks the next run of its PR:
+  // after two minutes of that, it is ended, so your words never wait on it for long
+  for (const p of Object.values(state.prs)) if (p.job?.state === "queued" && children.has(p.id) && Date.now() - Date.parse(p.job.queuedAt) > 120_000) children.get(p.id)?.kill("SIGTERM")
   if (overBudget()) return bus.emit('health') // queued jobs wait for tomorrow or a higher cap
   const drain = draining() // an update waits for this machine to be quiet: nothing new starts here, other machines still take runs
   // each waits on its own provider: fresh work can go to another one (fallback); a session waits for the one it is on
@@ -580,7 +585,7 @@ export function pump() {
   const waiting: { prio: number; at: string; go: () => void; exec?: ExecRun }[] = [
     ...Object.values(state.prs).flatMap((p) => [
       // a planned review waits while the one below it in its stack is still queued or running
-      ...(p.job?.state === 'queued' && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review', p.repo) && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: () => start(p) }] : []),
+      ...(p.job?.state === 'queued' && !children.has(p.id) && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review', p.repo) && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: () => start(p) }] : []),
       // an explanation waits while one below it in the stack is still being written: it reads theirs
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
         && available(providerFor('review', p.repo)) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
