@@ -32,7 +32,7 @@ const savedSplits = (): Record<string, number> => { try { return JSON.parse(loca
 export function ThreadLayout<Id extends string>({ header, children, next, composer, follow, tabs, tab, onTab, pane, onAsk, subject, vitals }: {
   subject?: string // the PR or ticket shown: opening another one shows it at once, with nothing animating in
   header: ReactNode
-  vitals?: ReactNode // its vitals (shipping, intent, understanding): always in sight, over the panel (narrow: over the chat, smaller)
+  vitals?: ReactNode // its vitals (shipping, intent, understanding): always in sight, at the head of the chat
   children: ReactNode // the conversation
   next?: ReactNode // its latest message: what comes next (under both columns, with the composer)
   composer?: ReactNode // the open chat's box: under both columns
@@ -100,6 +100,8 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
         {/* the chat's own column, top to bottom: the conversation, then its box on the floor. One piece, so the height of
             what sits under the panel (the next step can be tall) never pushes the box up or takes room from the chat */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col @[1100px]/thread:col-start-1 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1">
+          {/* wide: the vitals head the chat, the frame for reading it (narrow: they are above, for both) */}
+          {vitals && <div className="relative z-30 hidden shrink-0 border-b border-line @[1100px]/thread:block">{vitals}</div>}
           <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Transcript follow={follow}>{children}</Transcript>
           </section>
@@ -113,7 +115,6 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           <span className="absolute inset-y-0 -left-1.5 -right-1.5 group-hover:bg-accent/20" />
         </div>
         <section aria-label={current.label} className={`${open ? 'flex' : 'hidden'} absolute inset-0 z-20 min-h-0 min-w-0 flex-col bg-bg-app @[1100px]/thread:static @[1100px]/thread:z-auto @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-1 @[1100px]/thread:flex @[1100px]/thread:bg-surface-2/40 ${under ? '' : '@[1100px]/thread:row-span-2'}`}>
-          {vitals && <div className="relative z-30 hidden shrink-0 border-b border-line @[1100px]/thread:block">{vitals}</div>}
           <div className="hidden shrink-0 border-b border-line px-4 @[1100px]/thread:block"><TabBar tabs={tabs} tab={tab} onTab={onTab} /></div>
           <Quotable onAsk={ask} fill={current.fill} key={current.id}>{pane}</Quotable>
         </section>

@@ -57,7 +57,7 @@ import { CONFIG_FILE, WORK_DIR, configured, reloadConfig, repoPath, fill, saveCo
 import { accountOf, accounts, available, modelsOf, spawnAgent, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
 import { orgSkills, setMode, syncOrgSkills } from './orgSkills.ts'
 import { improveSkill, removeSkill, skillsView, suggestSkills } from './skills.ts'
-import { discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
+import { ask as askCard, discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
 import { domainOf, writeDomain, writingDomain } from './domain.ts'
 import { peers as replicaPeers, replicaExtras, replicaStatus } from './replica.ts'
 import { laneByModel } from './laneModel.ts'
@@ -760,7 +760,14 @@ function discussionPrs(target: string): { repo: string; number: number }[] | und
   if (target.startsWith('ticket:')) { const t = ticketViews().find((x) => x.id === target.slice(7)); return t && t.prs.length > 1 ? t.prs.map((x) => ({ repo: x.repo, number: x.number })) : undefined }
   return undefined
 }
-async function discussionContext(target: string, topic: Topic): Promise<{ context: string; cwd?: string }> {
+/** The version of the work a card was written for: a PR's head and its feedback (every PR's, for a stack), a ticket's last run. */
+function versionOf(target: string): string | undefined {
+  if (target.startsWith('stack:')) return stackOfTarget(target)?.map((x) => { const p = state.prs[`${x.repo}#${x.number}`]; return `${p?.headSha ?? ''}:${p?.feedbackAt ?? ''}` }).join()
+  if (target.startsWith('pr:')) { const p = state.prs[target.slice(3)]; return p && `${p.headSha}:${p.feedbackAt ?? ''}` }
+  const run = ticketViews().find((x) => x.id === target.slice(7))?.run
+  return `${run?.id ?? ''}:${run?.endedAt ?? ''}`
+}
+async function discussionContext(target: string, topic: Topic): Promise<{ context: string; cwd?: string; version: string }> {
   if (target.startsWith('stack:')) {
     const stack = stackOfTarget(target)
     if (!stack) throw new Error('That stack is no longer open')
@@ -772,6 +779,7 @@ async function discussionContext(target: string, topic: Topic): Promise<{ contex
     const tickets = [...new Map(stack.flatMap((x) => { const p = state.prs[`${x.repo}#${x.number}`]; return p ? ticketsOf(p) : [] }).map((t) => [t.id, t])).values()]
       .map((t) => `- ${t.id} ${t.title}\n${t.description.slice(0, 1200)}`).join('\n') || '(none)'
     return {
+      version: stack.map((x) => { const p = state.prs[`${x.repo}#${x.number}`]; return `${p?.headSha ?? ''}:${p?.feedbackAt ?? ''}` }).join(),
       cwd: config.repos[stack[0].repo],
       context: `The work: a stack of ${stack.length} pull requests in ${stack[0].repo}, bottom first (each builds on the one before):\n${each}`
         + '\n(git fetch origin first if a branch is missing.)'
@@ -782,12 +790,17 @@ async function discussionContext(target: string, topic: Topic): Promise<{ contex
     const p = state.prs[target.slice(3)]
     if (!p) throw new Error('No such PR')
     const tickets = ticketsOf(p).map((t) => `- ${t.id} ${t.title}\n${t.description.slice(0, 1500)}`).join('\n') || '(none)'
+    // the change itself, cut: the card is written without tools, so what it says about the code comes from here
+    const dir = config.repos[p.repo]
+    const diff = topic === 'understanding' && dir ? await git(dir, 'diff', '-U1', '--no-color', `origin/${p.base}...origin/${p.head}`, '--', '.', ':!*lock*', ':!*.snap').then((t) => t.slice(0, 9000), () => '') : ''
     return {
+      version: `${p.headSha}:${p.feedbackAt ?? ''}`,
       cwd: config.repos[p.repo],
       context: `The work: pull request ${p.repo}#${p.number} "${p.title}" by ${p.author.login}${p.mine ? ' (the developer\'s own, revised by an agent)' : ' (the developer reviews it, helped by an agent)'}: ${p.head} into ${p.base}, ${p.changedFiles} files, +${p.additions} −${p.deletions}.`
         + `\nIts diff: git diff origin/${p.base}...origin/${p.head} (git fetch origin first if a branch is missing).`
         + `\n\nThe PR's description:\n${(p.body ?? '').slice(0, 4000) || '(none)'}\n\nThe tickets it names:\n${tickets}\n\nWhat the main agent said last:\n${await lastWord(p.id)}`
-        + (topic === 'understanding' ? `\n\nIts explanation (what the Explain view shows: the tour, the business and technical views):\n${await explainedOf(p.id)}` : ''),
+        + (topic === 'understanding' ? `\n\nIts explanation (what the Explain view shows: the tour, the business and technical views):\n${await explainedOf(p.id)}` : '')
+        + (diff ? `\n\nThe diff (cut at 9000 characters):\n${diff}` : ''),
     }
   }
   const id = target.slice(7)
@@ -795,6 +808,7 @@ async function discussionContext(target: string, topic: Topic): Promise<{ contex
   if (!t) throw new Error('No such ticket')
   const run = t.run
   return {
+    version: `${run?.id ?? ''}:${run?.endedAt ?? ''}`,
     cwd: t.repo ? config.repos[t.repo] : undefined,
     context: `The work: the Linear ticket ${t.id} "${t.title}"${t.labels.length ? ` (${t.labels.join(', ')})` : ''}, shipped by a coding agent.`
       + `\n\nThe ticket:\n${t.description.slice(0, 5000) || '(no description)'}`
@@ -803,13 +817,27 @@ async function discussionContext(target: string, topic: Topic): Promise<{ contex
       + `\n\nWhat the main agent said last:\n${run ? await lastWord(`exec:${run.id}`) : '(no run yet)'}`,
   }
 }
-app.get('/discussions', (c) => c.json(discussionsOf(String(c.req.query('target')))))
+// each card says whether the work moved on since it was written (it is written again when next asked)
+app.get('/discussions', (c) => {
+  const target = String(c.req.query('target')), v = versionOf(target), d = discussionsOf(target)
+  return c.json(Object.fromEntries(Object.entries(d).map(([k, x]) => [k, { ...x, stale: !!x.brief && !!v && x.brief.version !== v }])))
+})
 app.post('/discussions/say', async (c) => {
   const { target, topic, text } = await c.req.json<{ target: string; topic: Topic; text: string }>()
   if (!text?.trim() || !['intent', 'understanding'].includes(topic)) return c.json({ error: 'Nothing to say' }, 400)
   try {
     const { context, cwd } = await discussionContext(target, topic)
     say(target, topic, text.trim(), context, cwd, settled(discussionsOf(target)[topic === 'intent' ? 'understanding' : 'intent']), discussionPrs(target))
+    return c.json(discussionsOf(target))
+  } catch (e) { return c.json({ error: (e as Error).message }, 400) }
+})
+// a card asked (or, with no words, written): answered from the card, which is written again first when the work moved on
+app.post('/discussions/ask', async (c) => {
+  const { target, topic, text } = await c.req.json<{ target: string; topic: Topic; text?: string }>()
+  if (!['intent', 'understanding'].includes(topic)) return c.json({ error: 'No such card' }, 400)
+  try {
+    const { context, cwd, version } = await discussionContext(target, topic)
+    askCard(target, topic, (text ?? '').trim().slice(0, 4000), { context, cwd, version, shared: settled(discussionsOf(target)[topic === 'intent' ? 'understanding' : 'intent']), prs: discussionPrs(target) })
     return c.json(discussionsOf(target))
   } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })

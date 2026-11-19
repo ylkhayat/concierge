@@ -7,6 +7,7 @@ import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } fr
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Action, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
 import { api } from '../lib.ts'
+import { Md } from '../components/Md.tsx'
 import { TOPIC, type Discussions, type View } from './Discussion.tsx'
 import type { Tone } from '../ui/Thread.tsx'
 
@@ -23,14 +24,15 @@ const STEP: Record<Stage, number> = { new: 0, open: 1, converging: 2, concluded:
  *  and shows how far along it is on a hairline at its foot. A faint tint of its colour drifts across it, faster while
  *  something works on it. Under the pointer (or the focus) its line gives way to the one thing worth knowing or doing;
  *  the name and the hairline stay. A click opens what it holds, under the row. */
-export function Vital({ name, status, lane, meter, busy, idle, flag, back, open, onOpen }: { icon?: ReactNode; name: string; status: string; lane: string; meter: ReactNode; busy?: boolean; idle?: boolean; flag?: boolean; back?: ReactNode; open?: boolean; onOpen?: () => void }) {
+export function Vital({ name, status, lane, meter, busy, idle, flag, back, open, onOpen, peek, glow, stale }: { icon?: ReactNode; name: string; status: string; lane: string; meter: ReactNode; busy?: boolean; idle?: boolean; flag?: boolean; back?: ReactNode; open?: boolean; onOpen?: () => void; peek?: ReactNode; glow?: boolean; stale?: boolean }) {
   return (
     <section tabIndex={0} aria-label={`${name}: ${status}`} aria-expanded={onOpen ? open : undefined} style={{ '--lane': lane } as React.CSSProperties}
              onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) onOpen?.() }} onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) onOpen?.() }}
-             className={`group/v vital flex h-[68px] min-w-0 flex-col ${onOpen ? 'cursor-pointer' : ''} ${busy ? 'vital-busy' : ''} ${idle ? 'vital-idle' : ''} ${open ? 'vital-open' : ''}`}>
+             className={`group/v vital relative flex h-[68px] min-w-0 flex-col transition-[transform,box-shadow] duration-300 ease-[var(--ease-snappy)] ${onOpen ? 'cursor-pointer hover:-translate-y-px' : ''} ${busy ? 'vital-busy' : ''} ${idle ? 'vital-idle' : ''} ${open ? 'vital-open' : ''} ${glow ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_28px_-6px_var(--lane)]' : ''}`}>
       <div className="flex items-center gap-1.5">
         <span className={`size-1.5 shrink-0 rounded-full bg-[var(--lane)] ${busy ? 'animate-pulse' : ''}`} />
         <span className="label truncate !tracking-[0.03em] text-fg-3">{name}</span>
+        {stale && !busy && <span className="ml-auto rounded-full bg-wait/12 px-1.5 text-micro font-medium text-wait-text" title="The work moved on since this card was written: it catches up the next time you ask it (or click Refresh)">new push</span>}
         {flag && <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-micro font-medium text-fg-2" title="It has something for the agent: point at it, or open it, to send"><Send className="size-3" /><span className="sr-only">has something for the agent</span></span>}
       </div>
       {/* what is going on now, and under the pointer the one thing worth knowing or doing (same place, same size) */}
@@ -39,6 +41,12 @@ export function Vital({ name, status, lane, meter, busy, idle, flag, back, open,
         {back && <div className="pointer-events-none relative z-10 col-start-1 row-start-1 flex min-w-0 items-start gap-2 opacity-0 transition-opacity duration-200 group-hover/v:pointer-events-auto group-hover/v:opacity-100 group-focus-within/v:pointer-events-auto group-focus-within/v:opacity-100">{back}</div>}
       </div>
       <div className="mt-auto">{meter}</div>
+      {/* under the pointer: its gist, floating, so a glance is enough (closed while its full card is open) */}
+      {peek && !open && (
+        <div role="tooltip" className="pointer-events-none invisible absolute left-0 top-full z-40 mt-2 w-[min(380px,85vw)] translate-y-1 rounded-card bg-surface-1 p-3 text-left opacity-0 shadow-[var(--e3)] ring-1 ring-[color-mix(in_oklch,var(--lane)_35%,transparent)] transition-all delay-150 duration-200 group-hover/v:visible group-hover/v:translate-y-0 group-hover/v:opacity-100">
+          {peek}
+        </div>
+      )}
     </section>
   )
 }
@@ -114,59 +122,81 @@ export function ShippingVital({ title, tone, why, at, of = 4, busy }: { title: s
   )
 }
 
-/** Intent or Understanding: where the discussion stands, what it settled, and what it has for the agent. */
+// what a card is doing while busy, in its own words
+const PHASE: Record<NonNullable<D['phase']>, string> = { refreshing: 'Catching up on the latest work…', answering: 'Answering from the card…', reading: 'Reading the code for this one…' }
+
+/** Intent or Understanding: a card that knows one side of the work. Its few words on the tile, its gist on hover, the
+ *  whole page when clicked; asked from the chat's box (Send to Intent / Understanding), it lights up and answers here. */
 export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen }: {
   target: string; topic: Topic; d?: D; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>
   onSteerPr?: (number: number, text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast; here?: number
   open?: boolean; onOpen?: () => void
 }): { tile: ReactNode; details: ReactNode } {
-
-  const t = TOPIC[topic], started = !!d?.messages.length
+  const t = TOPIC[topic], b = d?.brief, started = !!b || !!d?.messages.length, busy = !!d?.busy
   const fail = (e: Error) => toast(e.message, 'error')
-  const say = (text: string) => api('/discussions/say', { target, topic, text }).then(onChange, fail)
+  // written (or caught up) without a question: one short call
+  const write = () => { if (!open) onOpen?.(); return api('/discussions/ask', { target, topic }).then(onChange, fail) }
   const sendSteer = () => d?.steer && onSteer(d.steer).then(() => api('/discussions/sent', { target, topic }).then(onChange)).then(() => toast('Sent to the agent'), fail)
   const sendPr = (n: number, text: string) => onSteerPr?.(n, text).then(() => api('/discussions/sent', { target, topic, number: n }).then(onChange)).then(() => toast(`Sent to #${n}'s agent`), fail)
-  const act = (a: Action) => { onOpen && open && onOpen(); return actOn(a, { target, topic, onChange, onSteer, onView, toast }) }
+  const act = (a: Action) => actOn(a, { target, topic, onChange, onSteer, onView, toast })
   const chip = 'inline-flex max-w-full items-center gap-1.5 rounded-ctl bg-fill px-2.5 py-1 text-left text-small text-fg-2 transition-colors hover:bg-fill-strong hover:text-fg-1'
-  const status = d?.busy ? 'Thinking it through…' : !started ? 'Not assessed yet' : d!.status || (d!.stage === 'concluded' ? (topic === 'intent' ? 'Agreed' : 'Understood') : 'Open')
+  const status = busy ? PHASE[d!.phase ?? 'answering'] : b ? b.status : started ? d!.status || 'Open' : 'Not written yet'
   const lane = d?.stage === 'concluded' ? 'var(--st-ok)' : `var(--vital-${topic})`
   const unsent = !!d?.steer && !d.sentAt
-  const act1 = 'ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-meta font-semibold text-fg-1 bg-[color-mix(in_oklch,var(--lane)_18%,transparent)] hover:bg-[color-mix(in_oklch,var(--lane)_28%,transparent)]'
   const tile = (
-    <Vital name={t.label} icon={<t.icon className="size-3.5" style={{ color: lane }} />} status={status} lane={lane} busy={d?.busy} idle={!started && !d?.busy} flag={unsent}
-           open={open && started} onOpen={started ? onOpen : d?.busy ? undefined : () => say(START[topic])}
-           meter={<Meter of={3} at={started ? STEP[d!.stage] : 0} color={lane} pulse={d?.busy} />}
-           back={!started ? (
-             // not assessed: one click (anywhere on it) starts it from where the conversation stands
-             <><p className="min-w-0 flex-1 truncate text-meta leading-snug text-fg-2">{t.question}</p><span className={act1}>Start</span></>
-           ) : unsent ? (
-             <><p className="min-w-0 flex-1 truncate text-meta leading-snug text-fg-2">{d!.steer}</p><button onClick={sendSteer} className={act1}><Send className="size-3" />Send</button></>
-           ) : (
-             <p className="min-w-0 flex-1 truncate text-meta leading-snug text-fg-2">{d!.adr ? `${d!.adr.title}. ${d!.adr.decision}` : d!.summary || status}</p>
-           )} />
+    <Vital name={t.label} icon={<t.icon className="size-3.5" style={{ color: lane }} />} status={status} lane={lane} busy={busy} idle={!started && !busy} flag={unsent}
+           glow={busy && d?.phase !== 'refreshing'} stale={d?.stale} open={open} onOpen={started || busy ? onOpen : write}
+           meter={<Meter of={3} at={started ? Math.max(1, STEP[d!.stage]) : 0} color={lane} pulse={busy} />}
+           peek={b ? (
+             <>
+               <p className="flex items-center gap-1.5 text-meta font-semibold text-fg-1"><t.icon className="size-3.5" style={{ color: lane }} />{t.label} · {b.status}</p>
+               <p className="mt-1.5 whitespace-pre-line text-small leading-snug text-fg-1">{b.short}</p>
+               <p className="mt-2 text-meta text-fg-3">{d?.stale ? 'New work since: it catches up when you ask. ' : ''}Click for the whole card · ask it from the box (Send to {t.label})</p>
+             </>
+           ) : !busy ? (
+             <>
+               <p className="text-small font-medium text-fg-1">{t.question}</p>
+               <p className="mt-1 text-meta text-fg-3">{topic === 'intent' ? 'Why it was built this way: the problem, the decision, what was set aside.' : 'What it does now: before and after, the path through the code, what to check.'} Click to write it.</p>
+             </>
+           ) : undefined} />
   )
-  // everything it holds, under the row, when its box is clicked
-  const details = open && started ? (
-    <div className="card space-y-2.5 p-3.5 animate-[detail-in_200ms_var(--ease-snappy)]" style={{ '--lane': lane } as React.CSSProperties}>
-      <p className="flex items-center gap-2 text-small font-semibold text-fg-1"><t.icon className="size-4" style={{ color: lane }} />{t.label}<span className="font-normal text-fg-3">· {status}</span></p>
-      {d!.error && <p className="rounded-ctl bg-fail/10 px-2.5 py-1.5 text-small text-fail-text">{d!.error}</p>}
-      {d!.adr ? (
-        <dl className="space-y-1.5 text-small">
-          <div><dt className="label text-fg-4">Decision · {d!.adr.status}</dt><dd className="text-fg-1"><b className="font-medium">{d!.adr.title}.</b> {d!.adr.decision}</dd></div>
-          <div><dt className="label text-fg-4">Context</dt><dd className="text-fg-2">{d!.adr.context}</dd></div>
-          <div><dt className="label text-fg-4">Consequences</dt><dd className="text-fg-2">{d!.adr.consequences}</dd></div>
-          {d!.adr.alternatives && <div><dt className="label text-fg-4">Set aside</dt><dd className="text-fg-2">{d!.adr.alternatives}</dd></div>}
-        </dl>
-      ) : d!.summary && <p className="text-small leading-relaxed text-fg-2">{d!.summary}</p>}
-      {d!.steer && (
-        <div className="flex items-start gap-2 rounded-ctl bg-fill px-2.5 py-2">
-          <span className="min-w-0 flex-1 text-small text-fg-1"><b className="font-semibold">For the agent:</b> {d!.steer}</span>
-          {d!.sentAt ? <span className="inline-flex shrink-0 items-center gap-1 text-meta text-fg-3"><CheckCircle2 className="size-3.5 text-ok" />Sent</span> : <button onClick={sendSteer} className="btn-primary btn-sm inline-flex shrink-0 items-center gap-1.5"><Send className="size-3.5" />Send</button>}
+  // the whole card, under the row, when its tile is clicked: what it knows, then what you asked it
+  const asked = (d?.messages ?? []).slice(-6)
+  const details = open ? (
+    <div className={`card space-y-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
+      <div className="flex flex-wrap items-center gap-2">
+        <t.icon className="size-4" style={{ color: lane }} />
+        <span className="text-small font-semibold text-fg-1">{t.label}</span>
+        <span className="text-small text-fg-3">· {status}</span>
+        <span className="ml-auto inline-flex items-center gap-3 text-meta text-fg-3">
+          {d && d.costUsd > 0 && <span className="tabular-nums text-fg-4" title="What this card has cost so far">${d.costUsd.toFixed(2)}</span>}
+          {(d?.stale || !b) && !busy && <button onClick={write} className="inline-flex items-center gap-1 font-medium text-accent-text hover:underline"><RotateCcw className="size-3" />{b ? 'Catch up' : 'Write it'}</button>}
+          {started && <button onClick={() => api('/discussions/reset', { target, topic }).then(onChange, fail)} className="inline-flex items-center gap-1 hover:text-fg-1" title="Forget this card and what was asked">Start over</button>}
+        </span>
+      </div>
+      {busy && <p className="flex items-center gap-2 text-small text-fg-2"><LoaderCircle className="size-3.5 animate-spin" style={{ color: lane }} />{status}</p>}
+      {d?.error && <p className="rounded-ctl bg-fail/10 px-2.5 py-1.5 text-small text-fail-text">{d.error}</p>}
+      {b ? <Md text={b.long} className="text-small leading-relaxed" /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}
+      {asked.length > 0 && (
+        <div className="space-y-2 border-t border-line pt-3">
+          {asked.map((m, i) => (
+            <div key={`${m.at}:${i}`} className={m.who === 'you'
+              ? 'ml-auto w-fit max-w-[85%] rounded-card rounded-br-md bg-fill px-3 py-1.5 text-small text-fg-1'
+              : `max-w-full rounded-card rounded-bl-md bg-[color-mix(in_oklch,var(--lane)_9%,transparent)] px-3 py-2 ring-1 ring-[color-mix(in_oklch,var(--lane)_22%,transparent)] ${i === asked.length - 1 ? 'animate-[detail-in_400ms_var(--ease-out)]' : ''}`}>
+              {m.who === 'you' ? m.text : <Md text={m.text} className="text-small" />}
+            </div>
+          ))}
         </div>
       )}
-      {!!d!.perPr?.length && (
+      {d?.steer && (
+        <div className="flex items-start gap-2 rounded-ctl bg-fill px-2.5 py-2">
+          <span className="min-w-0 flex-1 text-small text-fg-1"><b className="font-semibold">For the agent:</b> {d.steer}</span>
+          {d.sentAt ? <span className="inline-flex shrink-0 items-center gap-1 text-meta text-fg-3"><CheckCircle2 className="size-3.5 text-ok" />Sent</span> : <button onClick={sendSteer} className="btn-primary btn-sm inline-flex shrink-0 items-center gap-1.5"><Send className="size-3.5" />Send</button>}
+        </div>
+      )}
+      {!!d?.perPr?.length && (
         <ul className="divide-y divide-line overflow-hidden rounded-ctl ring-1 ring-line">
-          {d!.perPr!.map((x) => (
+          {d.perPr.map((x) => (
             <li key={x.number} className={`flex items-start gap-2.5 px-2.5 py-1.5 text-small ${x.number === here ? 'bg-accent-soft' : ''}`}>
               <span className="shrink-0 font-mono font-medium text-fg-1">#{x.number}</span>
               <span className="min-w-0 flex-1 text-fg-2">{x.decision}{x.steer && <span className="mt-0.5 block text-meta text-fg-3"><b className="font-medium text-fg-1">Its agent:</b> {x.steer}</span>}</span>
@@ -175,17 +205,16 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
           ))}
         </ul>
       )}
-      <div className="flex flex-wrap items-center gap-1.5">
-        {(d!.actions ?? []).map((a, i) => (
-          <button key={i} onClick={() => act(a)} title={a.text} className={chip}>
-            {a.kind === 'steer' ? <Send className="size-3.5 shrink-0" /> : a.kind.startsWith('ask') ? <Copy className="size-3.5 shrink-0" /> : <Compass className="size-3.5 shrink-0" />}<span className="truncate">{a.label}</span>
-          </button>
-        ))}
-        <span className="ml-auto inline-flex items-center gap-3 text-meta text-fg-3">
-          {d!.costUsd > 0 && <span className="tabular-nums text-fg-4">${d!.costUsd.toFixed(2)}</span>}
-          <button onClick={() => api('/discussions/reset', { target, topic }).then(onChange, fail)} className="inline-flex items-center gap-1 hover:text-fg-1"><RotateCcw className="size-3" />Start over</button>
-        </span>
-      </div>
+      {!!d?.actions?.length && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {d.actions.map((a, i) => (
+            <button key={i} onClick={() => act(a)} title={a.text} className={chip}>
+              {a.kind === 'steer' ? <Send className="size-3.5 shrink-0" /> : a.kind.startsWith('ask') ? <Copy className="size-3.5 shrink-0" /> : <Compass className="size-3.5 shrink-0" />}<span className="truncate">{a.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="text-meta text-fg-4">Ask it from the box below: pick <b className="font-medium text-fg-3">{t.label}</b> in Send to. It answers from this card, and reads the code only when the card doesn't say.</p>
     </div>
   ) : null
   return { tile, details }
@@ -196,6 +225,8 @@ type TopicProps = Omit<Parameters<typeof topicVital>[0], 'topic' | 'd' | 'open' 
  *  and Understanding are about this PR or all of them. A click on one not assessed yet starts it. */
 export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNode; topics: TopicProps; scope?: { size: number; stack: boolean; set: (stack: boolean) => void }; inline?: boolean }) {
   const [open, setOpen] = useState<Topic>()
+  // asked from the chat's box: that card opens, to light up and answer where you can see it
+  useEffect(() => { const on = (e: Event) => setOpen((e as CustomEvent<Topic>).detail); addEventListener('vital-ask', on); return () => removeEventListener('vital-ask', on) }, [])
   // the floating details close on Esc or a click anywhere else
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {

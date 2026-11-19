@@ -8,6 +8,7 @@ import { keptBody, missing } from './method.ts'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { providerFor, spawnAgent } from './providers.ts'
+import { haiku } from './next.ts'
 import { save, state } from './store.ts'
 
 export type Topic = 'intent' | 'understanding'
@@ -27,7 +28,13 @@ export type Discussion = {
   actions?: Action[] // what it suggests doing next: a tour or view of Explain, a question for the author or the team
   prs?: { repo: string; number: number }[] // a discussion over several PRs (a stack, a ticket's PRs): which
   perPr?: PerPr[] // and what it settled for each of them
+  brief?: Brief // the card: what it knows, written once per version of the work, answered from
+  stale?: boolean // computed when read: the work moved on since the card was written
+  phase?: 'refreshing' | 'answering' | 'reading' // while busy: writing the card, answering from it, or reading the code
 }
+/** A card's knowledge of the work at one version (a PR's head and its feedback): a few words, three lines for the
+ *  hover, and the full page. Questions are answered from it; a newer version writes it again first. */
+export type Brief = { version: string; status: string; short: string; long: string; at: string }
 /** What a discussion over several PRs settled for one of them: the decision as it applies there, and its agent's steer. */
 export type PerPr = { number: number; decision: string; steer?: string | null; sentAt?: string }
 export type Adr = { title: string; status: 'proposed' | 'accepted'; context: string; decision: string; consequences: string; alternatives?: string }
@@ -72,6 +79,69 @@ const FORMAT: Record<Topic, string> = {
 }
 
 const keyOf = (target: string, topic: Topic) => `${target}|${topic}`
+
+// --- the cards: cheap and fast. One short call (mid-size model, no tools) writes a card from what is already known;
+// a question is answered from the card by the small model; only one the card can't answer reads the code (say).
+const LINE = 'The line between the two cards: a sentence that would stay true with different code is Intent; one that describes the code is Understanding.'
+const CARD: Record<Topic, string> = {
+  intent: `You write the Intent card of a code change, for its developer: WHY it was built this way, and whether it is what was meant. ${LINE}
+status: 2 to 5 words on where the intent stands ("Decided: no fallback", "2 decisions open").
+short: at most 3 short plain lines, the gist a developer reads on hover.
+long: markdown, at most 250 words, these bold-labelled parts, each a line or a few bullets: **Problem** (what asked for it: ticket, review, incident), **Decision** (what was chosen), **Set aside** (alternatives and why), **Constraints** (the stack's direction, what reviewers agreed), **Open** (decisions nobody made yet, or "none").
+Only what the material says; never retell what the code does.`,
+  understanding: `You write the Understanding card of a code change, for its developer: WHAT the change does now. ${LINE}
+status: 2 to 5 words on what it does ("Calls read one envelope").
+short: at most 3 short plain lines, the gist a developer reads on hover.
+long: markdown, at most 250 words, these bold-labelled parts: **Before → after** (behaviour), **The path** (entry point → data → side effects, naming the files), **Check this** (the one part to verify before trusting it), **Edges** (failure modes, what it doesn't cover).
+Never retell why it was decided.`,
+}
+const CARD_SCHEMA = { type: 'object', additionalProperties: false, required: ['status', 'short', 'long'], properties: { status: { type: 'string' }, short: { type: 'string' }, long: { type: 'string' } } }
+const ANSWER = { type: 'object', additionalProperties: false, required: ['fromCard', 'answer'], properties: { fromCard: { type: 'boolean' }, answer: { type: 'string' } } }
+const ANSWER_SYSTEM = 'You answer a developer\'s question from one card about a code change, and only from it. fromCard: true when the card holds the answer; then answer in at most 80 words of plain markdown, direct, no preamble. When the card does not hold it (it needs the code itself, or something the card never says), fromCard false and answer empty. Return only the structured output.'
+const repoOf = (target: string) => /^(?:pr|stack):([^#]+)#/.exec(target)?.[1]
+
+/**
+ * Ask a card (or, with no words, have it written): written again first when the work moved on since (`version`), then
+ * answered from it. A question it can't answer goes to the discussion agent that reads the code (say), whose answer is
+ * added to the card so the next one like it is cheap.
+ */
+export function ask(target: string, topic: Topic, text: string, ctx: { context: string; version: string; cwd?: string; shared?: string; prs?: { repo: string; number: number }[] }) {
+  const k = keyOf(target, topic)
+  const d = all()[k] ?? discussionsOf(target)[topic]
+  if (d.busy) { if (text) { d.messages.push({ who: 'you', text, at: new Date().toISOString() }); (d.queued ??= []).push(text) } all()[k] = d; save(); return }
+  const stale = !d.brief || d.brief.version !== ctx.version
+  if (!text && !stale) return
+  if (text) d.messages.push({ who: 'you', text, at: new Date().toISOString() })
+  Object.assign(d, { busy: true, error: undefined, phase: stale ? 'refreshing' : 'answering', stage: d.stage === 'new' ? 'open' : d.stage })
+  all()[k] = d; save()
+  const small = providerFor('small', repoOf(target))
+  void (async () => {
+    try {
+      if (stale) {
+        const { out, costUsd } = await haiku<{ status: string; short: string; long: string }>(`${ctx.context}${ctx.shared ? `\n\n---\nSettled in the other card:\n${ctx.shared}` : ''}`, CARD_SCHEMA, CARD[topic], 0.4, 'sonnet', small)
+        d.brief = { version: ctx.version, status: out.status, short: out.short, long: out.long, at: new Date().toISOString() }
+        Object.assign(d, { status: out.status, summary: out.short, costUsd: d.costUsd + costUsd, phase: 'answering' })
+        save()
+      }
+      if (text) {
+        const { out, costUsd } = await haiku<{ fromCard: boolean; answer: string }>(`The ${topic} card:\n${d.brief!.long}\n\nThe developer asks:\n${text}`, ANSWER, ANSWER_SYSTEM, 0.05, 'haiku', small)
+        d.costUsd += costUsd
+        if (out.fromCard && out.answer.trim()) d.messages.push({ who: 'agent', text: out.answer.trim(), at: new Date().toISOString() })
+        else {
+          // beyond the card: the agent that reads the code answers, and what it says joins the card
+          Object.assign(d, { busy: false, phase: undefined }); save()
+          say(target, topic, text, ctx.context, ctx.cwd, ctx.shared, ctx.prs, false, (reply) => {
+            if (d.brief && reply) d.brief.long = `${d.brief.long}\n\n**Asked:** ${text.slice(0, 200)}\n${reply}`
+          })
+          all()[k] = d; save(); return
+        }
+      }
+    } catch (e) { d.error = `The card couldn't be written: ${(e as Error).message}`.slice(0, 300) }
+    Object.assign(d, { busy: false, phase: undefined }); save()
+    const next = d.queued?.splice(0)
+    if (next?.length) { d.messages.splice(-next.length); ask(target, topic, next.join('\n\n'), ctx) }
+  })()
+}
 const all = () => (state.discussions ??= {})
 
 /** A target's discussions, as they stand: one per topic, empty when not started. */
@@ -84,7 +154,7 @@ export function discussionsOf(target: string): Record<Topic, Discussion> {
  * Your words to a discussion; the agent answers in the background (the page polls). `context` (what the work is: the
  * ticket, the PR, the main agent's last word) goes with the first message, and again when it changed since.
  */
-export function say(target: string, topic: Topic, text: string, context: string, cwd?: string, shared = '', prs?: { repo: string; number: number }[], echo = true) {
+export function say(target: string, topic: Topic, text: string, context: string, cwd?: string, shared = '', prs?: { repo: string; number: number }[], echo = true, then?: (reply: string) => void) {
   const k = keyOf(target, topic)
   const d = all()[k] ?? discussionsOf(target)[topic]
   // still answering: this waits its turn and goes right after (the other discussion is not held up either way)
@@ -93,7 +163,7 @@ export function say(target: string, topic: Topic, text: string, context: string,
   const multi = !!prs && prs.length > 1
   if (multi) d.prs = prs
   if (echo) d.messages.push({ who: 'you', text, at: new Date().toISOString() })
-  Object.assign(d, { busy: true, error: undefined, stage: d.stage === 'new' ? 'open' : d.stage })
+  Object.assign(d, { busy: true, phase: 'reading', error: undefined, stage: d.stage === 'new' ? 'open' : d.stage })
   all()[k] = d; save()
   const how = keptBody(topic)
   if (!how) { d.busy = false; d.error = missing(topic); save(); return }
@@ -112,13 +182,14 @@ export function say(target: string, topic: Topic, text: string, context: string,
   child.stdout.on('data', (c: Buffer) => { out += c })
   child.stderr.on('data', (c: Buffer) => { err = (err + c).slice(-400) })
   const finish = (fail?: string) => {
-    d.busy = false
+    d.busy = false; d.phase = undefined
     if (fail) { d.error = fail; save(); return }
     try {
       const m = JSON.parse(out.trim().split('\n').pop()!) as { structured_output?: { reply: string; stage: Stage; status: string; summary: string; steer?: string | null; actions?: Action[]; adr?: Adr; perPr?: PerPr[] }; total_cost_usd?: number; result?: string }
       const o = m.structured_output
       if (!o) throw new Error(m.result || 'no answer')
       d.messages.push({ who: 'agent', text: o.reply, at: new Date().toISOString() })
+      then?.(o.reply)
       Object.assign(d, { sessionId, stage: o.stage, status: o.status, summary: o.summary, actions: o.actions ?? [], costUsd: d.costUsd + (m.total_cost_usd ?? 0), ...(o.adr && { adr: o.adr }) })
       // a new steer is a new thing to send; the same one already sent stays sent
       if (o.steer && o.steer !== d.steer) Object.assign(d, { steer: o.steer, sentAt: undefined })

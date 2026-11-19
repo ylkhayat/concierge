@@ -1,5 +1,5 @@
-// The Intent and Understanding discussions of a PR or ticket (server/discussions.ts): their turns sit in the one chat,
-// in their lane's colour (ActivityFeed), and where each stands is a card of the panel's Vitals tab (Vitals.tsx).
+// The Intent and Understanding cards of a PR or ticket (server/discussions.ts): asked from the chat's box, answered
+// inside the card (Vitals.tsx), so the chat stays the work with the agent.
 import { Compass, Target, type LucideIcon } from 'lucide-react'
 import type { Discussion as D, Topic } from '../../server/discussions.ts'
 import { api, type Activity } from '../lib.ts'
@@ -22,22 +22,12 @@ export function useDiscussions(target: string | undefined) {
   return { d: q.data, set: (v: Discussions | undefined) => { if (path) remember(path, v) }, read: () => q.refetch() }
 }
 
-/** A target's discussions as turns of the main conversation, each tagged with its lane (merged in by time). */
-export function laneTurns(d?: Discussions): Activity[] {
-  if (!d) return []
-  return (Object.values(d) as D[]).flatMap((x) => [
-    ...x.messages.map((m): Activity => ({ at: m.at, kind: m.who === 'you' ? 'you' : 'text', text: m.text, lane: x.topic })),
-    ...(x.busy ? [{ at: new Date().toISOString(), kind: 'text' as const, text: '_Thinking it through…_', lane: x.topic }] : []),
-    ...(x.error ? [{ at: x.messages.at(-1)?.at ?? new Date().toISOString(), kind: 'text' as const, text: `**Couldn't answer:** ${x.error}`, lane: x.topic }] : []),
-  ])
+/** The chat is the work with the agent: the cards' questions and answers live in the cards (Vitals.tsx), not here. */
+export const withTurns = (feed: Activity[], ..._ds: (Discussions | undefined)[]) => feed
+/** The box's words for a card: answered from the card (written again first if the work moved on); the card lights up. */
+export const sayTo = (target: string, set: (d: Discussions) => void) => (topic: Topic, text: string) => {
+  dispatchEvent(new CustomEvent('vital-ask', { detail: topic }))
+  return api('/discussions/ask', { target, topic, text }).then((r: Discussions) => set(r))
 }
-/** The conversation and the discussions' turns, in the order they happened. */
-export const withTurns = (feed: Activity[], ...ds: (Discussions | undefined)[]) => {
-  const turns = ds.flatMap(laneTurns)
-  return turns.length ? [...feed, ...turns].sort((a, b) => a.at.localeCompare(b.at)) : feed
-}
-/** Words the box routed to a discussion. */
-export const sayTo = (target: string, set: (d: Discussions) => void) => (topic: Topic, text: string) =>
-  api('/discussions/say', { target, topic, text }).then((r: Discussions) => set(r))
 
 export type View = 'tour' | 'business' | 'technical' | 'norms'
