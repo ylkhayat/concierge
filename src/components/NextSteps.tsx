@@ -6,7 +6,7 @@ import { laneOf, type Lane } from '../../server/lanes.ts'
 import { api } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
-import { useSlash, type Command } from '../ui/Slash.tsx'
+import { useMention, useSlash, type Command } from '../ui/Slash.tsx'
 import { refresh, useApi } from '../query.ts'
 
 /**
@@ -40,6 +40,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   const [open, setOpen] = useState(false)
   const { armed, arm } = useArm()
   const slash = useSlash(commands, text, () => setText(''))
+  const mention = useMention(text, setText)
   const [sentTo, setSentTo] = useState<{ lane: Lane; text: string; at: number }>() // where your last words went, to send them elsewhere
   // where your words go: Auto (read to find the lane) or one you picked, kept for this box until you change it
   const [pin, setPinState] = useState<Lane | 'auto'>(() => { try { return (localStorage.getItem('send-lane') as Lane | 'auto' | null) ?? 'auto' } catch { return 'auto' } })
@@ -233,13 +234,13 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
           <div className={inline ? 'sticky bottom-0 -mx-1 space-y-2 bg-gradient-to-t from-surface-1 from-80% to-transparent px-1 pb-1 pt-3' : 'space-y-3'}>
           {attach?.chips}
           {route && !route.force && <LanePicker pin={pin} onPin={setPin} />}
-          <div className="relative" style={slash.anchor}>
-          {slash.menu}
+          <div className="relative" style={mention.open ? mention.anchor : slash.anchor}>
+          {slash.menu}{mention.menu}
           <textarea ref={box} data-composer value={text} onChange={(e) => setText(e.target.value)} rows={stepper ? 2 : 3}
                     onKeyDown={(e) => {
-                      if (slash.onKeyDown(e)) return
+                      if (mention.onKeyDown(e) || slash.onKeyDown(e)) return
                       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!blocked) send() } }} maxLength={6000}
-                    placeholder={`${nothing ? placeholder ?? 'Tell the agent what to do next…' : 'Steer: anything else, or a change of plan (optional)…'}${commands ? '  ( / for actions )' : ''}`}
+                    placeholder={`${nothing ? placeholder ?? 'Tell the agent what to do next…' : 'Steer: anything else, or a change of plan (optional)…'}${commands ? '  ( / for actions, @ to link a ticket or PR )' : ''}`}
                     className={`max-h-[240px] w-full resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 transition-all duration-300 placeholder:text-fg-3 focus:ring-2 ring-line hover:ring-line-strong focus:ring-accent/50`} />
           </div>
 

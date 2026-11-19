@@ -34,5 +34,26 @@ export const sayTo = (target: string, set: (d: Discussions) => void) => (topic: 
 export type View = 'tour' | 'business' | 'technical' | 'norms'
 
 /** The Work a PR or ticket is part of (server/work.ts): linked parts share one memory and one pair of cards. */
-export type WorkView = { id: string; target: string; members: { key: string; kind: 'pr' | 'ticket'; label: string; title: string }[] }
+export type WorkView = { id: string; target: string; members: { key: string; kind: 'pr' | 'ticket'; label: string; title: string }[]; links: [string, string][] }
 export const useWork = (member: string) => useApi<WorkView>(`/works?member=${encodeURIComponent(member)}`, { staleTime: 60_000 }).data
+
+/** The parts of this work, over its cards: each opens its own page; one you linked (with @) can be unlinked here. */
+export function WorkStrip({ work, here, onOpen, toast }: { work?: WorkView; here: string; onOpen: (key: string) => void; toast: Toast }) {
+  if (!work || work.members.length < 2) return null
+  const pair = (k: string) => work.links.find(([a, b]) => a === k || b === k)
+  const unlink = (k: string) => { const p = pair(k)!; api('/works/unlink', { a: p[0] === k ? p[1] : p[0], b: k }).then(() => toast(`Unlinked ${k.replace(/^\w+:/, '')}: it keeps a copy of what was said`), (e: Error) => toast(e.message, 'error')) }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5 text-meta" aria-label="This work's parts">
+      <span className="mr-0.5 text-fg-3">One work, shared memory:</span>
+      {work.members.map((m) => (
+        <span key={m.key} className={`group/m inline-flex max-w-[240px] items-center gap-1 rounded-full py-0.5 pl-2 ring-1 ${m.key === here ? 'bg-accent-soft pr-2 ring-accent/30 text-fg-1' : 'pr-1 ring-line text-fg-2 hover:text-fg-1'}`}>
+          <button type="button" onClick={() => m.key !== here && onOpen(m.key)} title={m.title} className="flex min-w-0 items-center gap-1">
+            <span className={`shrink-0 font-mono ${m.kind === 'ticket' ? 'text-accent-text' : ''}`}>{m.label}</span>
+            <span className="truncate">{m.title}</span>
+          </button>
+          {m.key !== here && pair(m.key) && <button type="button" onClick={() => unlink(m.key)} title="Unlink: it leaves this work, with a copy of what was said" className="rounded-full px-1 text-fg-4 opacity-0 transition-opacity hover:text-fail-text group-hover/m:opacity-100">×</button>}
+        </span>
+      ))}
+    </div>
+  )
+}

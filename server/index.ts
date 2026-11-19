@@ -13,7 +13,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { live } from './live.ts'
+import { live, stale } from './live.ts'
 import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
 import { basicAuth } from 'hono/basic-auth'
@@ -417,6 +417,28 @@ export function workOfMember(key: string) {
 /** Your words on a member: kept in its Work's memory, so every run on any part of it follows them. */
 function rememberSaid(key: string, text: string) { const { w } = workOfMember(key); rememberWork(w, key, text); save() }
 (state as { works?: unknown }).works ??= {}; (state as { workOf?: unknown }).workOf ??= {}
+
+/** The parts your words name with @ (a ticket @AI-1500, a PR @#5201 of this repository or @owner/repo#12): linked into
+ *  `here`'s Work. Returns what the agent should be told about the ones that are new to it. */
+function linkMentions(here: string, text: string, repo?: string): string {
+  const named = [
+    ...[...text.matchAll(/@([A-Z]{2,5}-\d{1,6})\b/g)].map((m) => `ticket:${m[1]}`),
+    ...[...text.matchAll(/@(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g)].map((m) => `pr:${m[1] ?? repo}#${m[2]}`).filter((k) => !!state.prs[k.slice(3)]),
+  ]
+  const before = new Set(workOfMember(here).members.map((m) => m.key))
+  const fresh = [...new Set(named)].filter((k) => k !== here && !before.has(k))
+  if (!fresh.length) return ''
+  const { w } = workOfMember(here)
+  for (const k of fresh) w.links.push([here, k])
+  workOfMember(here) // merges their Works into this one
+  save(); stale('/works')
+  const about = fresh.map((k) => {
+    if (k.startsWith('pr:')) { const x = state.prs[k.slice(3)]!; return `- PR #${x.number} "${x.title}" (${x.head} into ${x.base})${x.job?.summary ? `; its agent last said: ${firstLine(x.job.summary)}` : ''}` }
+    const t = execBoard.tickets.find((x) => x.id === k.slice(7))
+    return `- Linear ticket ${k.slice(7)}${t ? ` "${t.title}"\n${t.description.slice(0, 2500)}` : ' (not on your board: read it in Linear)'}`
+  })
+  return `\n\n(Linked to this work just now, as the developer asked with @: it shares this work's memory from here on.\n${about.join('\n')}\nIf the message asks to bring one of them into this work (integrate a ticket into the stack, take over a PR), plan where it fits and do it as part of this work.)`
+}
 
 setLinkNote(({ pr: p, ticketIds }) => {
   const here = p ? `pr:${p.id}` : ticketIds?.[0] && execBoard.tickets.some((t) => t.id === ticketIds[0]) ? `ticket:${ticketIds[0]}` : undefined
@@ -878,13 +900,30 @@ app.post('/discussions/say', async (c) => {
     return c.json(discussionsOf(target))
   } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })
+// what @ in the box can name: the tickets on your board and the PRs being tracked
+app.get('/works/candidates', (c) => c.json([
+  ...execBoard.tickets.map((t) => ({ key: `ticket:${t.id}`, kind: 'ticket', label: t.id, title: t.title })),
+  ...Object.values(state.prs).filter((p) => !p.closed).map((p) => ({ key: `pr:${p.id}`, kind: 'pr', label: `#${p.number}`, repo: p.repo, title: p.title })),
+]))
+// a link you made, undone: the part that comes apart takes a copy of the memory with it
+app.post('/works/unlink', async (c) => {
+  const { a, b } = await c.req.json<{ a: string; b: string }>()
+  const { w } = workOfMember(a)
+  const had = w.links.length
+  w.links = w.links.filter(([x, y]) => !((x === a && y === b) || (x === b && y === a)))
+  if (w.links.length === had) return c.json({ error: 'Linked by name or by its stack, not by you: rename the PR, or move it out of the stack, to separate them' }, 400)
+  const keep = new Set(component(a, workEdges)), apart = component(b, workEdges)
+  if (!keep.has(b)) { const id = randomUUID().slice(0, 8); state.works![id] = { id, at: new Date().toISOString(), said: [...w.said], links: [] }; for (const k of apart) state.workOf![k] = id }
+  save(); stale('/works')
+  return c.json({ ok: true })
+})
 // a member's Work: its id, the target its cards live under, and its parts
 app.get('/works', (c) => {
   const key = String(c.req.query('member') ?? '')
   if (!/^(pr|ticket):/.test(key)) return c.json({ error: 'member is pr:… or ticket:…' }, 400)
   const { w, members } = workOfMember(key)
   save()
-  return c.json({ id: w.id, target: `work:${w.id}`, members, said: w.said.slice(-20) })
+  return c.json({ id: w.id, target: `work:${w.id}`, members, links: w.links, said: w.said.slice(-20) })
 })
 // a card asked (or, with no words, written): answered from the card, which is written again first when the work moved on
 app.post('/discussions/ask', async (c) => {
@@ -2304,6 +2343,7 @@ app.post('/prs/:id/reply', async (c) => {
   if (!p) return c.json({ error: 'Unknown PR' }, 404)
   if (!msg) return c.json({ error: 'Pick something or write your answer' }, 400)
   rememberSaid(`pr:${p.id}`, msg)
+  const linked = linkMentions(`pr:${p.id}`, msg, p.repo)
   // steps that name another open PR of the same repo go to that PR's agent, as a handover with this one's last word
   // only my own PRs have an agent of mine to take work; a review PR's agent reviews, and someone else's branch isn't ours
   const peers = new Map(Object.values(state.prs).filter((x) => x.repo === p.repo && !x.closed && x.id !== p.id && x.mine).map((x) => [x.number, x]))
@@ -2330,7 +2370,7 @@ app.post('/prs/:id/reply', async (c) => {
   }
   if (there.size || foreign.there.size) save()
   const handedOver = [...there.keys()]
-  return c.json({ ok: true, handedOver, askAuthor: [...foreign.there.keys()], sent: here ? sendReply(p, here + handedNote(p)) : undefined })
+  return c.json({ ok: true, handedOver, askAuthor: [...foreign.there.keys()], sent: here ? sendReply(p, here + linked + handedNote(p)) : undefined })
 })
 /**
  * Your words for work still in the queue: kept on it (they survive a restart) and shown in its feed now, then told to
@@ -2425,7 +2465,7 @@ app.post('/exec/:run/reply', async (c) => {
   const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
   if (!run) return c.json({ error: 'Unknown run' }, 404)
   if (!msg) return c.json({ error: 'Pick something or write your answer' }, 400)
-  for (const id of run.ids) if (execBoard.tickets.some((t) => t.id === id)) { rememberSaid(`ticket:${id}`, msg); break }
+  for (const id of run.ids) if (execBoard.tickets.some((t) => t.id === id)) { rememberSaid(`ticket:${id}`, msg); linkMentions(`ticket:${id}`, msg, run.repo); break }
   // still at it: a running one reads your words between steps; a queued one, the moment it starts
   if (run.state === 'queued') { holdWords(run, `exec:${run.id}`, msg); return c.json({ ok: true, sent: 'queued' }) }
   if (run.state === 'running') { const sent = tell(`exec:${run.id}`, msg, continueExec(run)); if (sent !== 'idle') return c.json({ ok: true, sent }) }

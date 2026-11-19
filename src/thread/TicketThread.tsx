@@ -13,7 +13,7 @@ import { PHASE_LABEL } from '../components/ExecList.tsx'
 import { api, param, setParam, type TicketView } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
-import { sayTo, useDiscussions, useWork, withTurns } from './Discussion.tsx'
+import { sayTo, useDiscussions, useWork, withTurns, WorkStrip } from './Discussion.tsx'
 import { ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useRole } from '../role.ts'
 import { DomainView } from './DomainView.tsx'
@@ -95,12 +95,13 @@ export function TicketThread(props: TicketThreadProps) {
       tabs={panes.map((p) => ({ id: p, label: p === 'overview' ? 'Overview' : p === 'ticket' ? 'Ticket' : role === 'design' ? 'Experience' : 'Domain', rail: p === 'overview' }))}
       tab={pane} onTab={setPane}
       onAsk={(q) => appendDraft(`ticket:${t.id}`, q)}
-      vitals={(
+      vitals={(<>
+          <WorkStrip work={work} here={`ticket:${t.id}`} toast={toast} onOpen={(k) => onOpenLinked(k.startsWith('pr:') ? { kind: 'pr', id: k.slice(3), label: work?.members.find((m) => m.key === k)?.label ?? k, title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' } : { kind: 'ticket', id: k.slice(7), label: k.slice(7), title: '', agent: 'none' })} />
           <Vitals shipping={<ShippingVital title={t.queued ? 'Queued' : t.busy ? 'The agent is working' : runAsks ? 'The agent asks you' : next ? TITLE[next](t) : 'All clear'} tone={t.busy ? 'run' : runAsks || asking ? 'wait' : next ? 'run' : 'ok'} busy={t.busy}
                                            at={t.busy ? 1 : next === 'run' ? (run ? 2 : 1) : next === 'dock' ? 2 : next ? 3 : 4}
                                            why={t.queued ? queuedText(t.queued) : t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}
                   topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: t.prs.length > 1 ? steerPr : undefined, toast }} />
-      )}
+      </>)}
       pane={pane === 'overview' ? <TicketOverview t={t} why={!t.busy && next ? TITLE[next](t) : undefined} onPr={openPr} onOpen={() => setPane('ticket')} onStack={props.onSelect} /> : pane === 'domain' ? <DomainView path={`/exec/tickets/${encodeURIComponent(t.id)}/domain`} focus={role === 'design' ? 'design' : 'product'} />
         : ticketBody}
     >

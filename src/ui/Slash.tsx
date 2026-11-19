@@ -96,3 +96,46 @@ export function useToolCommands(base: string, version: string, toast: (m: string
     run: () => api(`${base}/actions`, { action: a.id, scope: s }).then((r: { label: string; count: number }) => toast(`${r.label}: ${r.count === 1 ? 'started' : `started on ${r.count}`}`), (e: Error) => toast(e.message, 'error')),
   })))
 }
+
+// --- @ in the composer: name a ticket or PR to link it into this work (server: linkMentions) ------------------
+type Candidate = { key: string; kind: 'pr' | 'ticket'; label: string; title: string; repo?: string }
+/** The menu for an `@` being typed at the end of the box: the tickets on your board and the tracked PRs, filtered as
+ *  you type; ↑↓ Enter picks (it becomes @AI-1500 or @#5201 in your words), Esc closes. Sent, the server links it. */
+export function useMention(text: string, setText: (t: string) => void, repo?: string) {
+  const m = /(^|\s)@([\w#/.-]*)$/.exec(text)
+  const all = useApi<Candidate[]>(m ? '/works/candidates' : undefined, { staleTime: 120_000 }).data ?? []
+  const q = m ? m[2].toLowerCase().replace(/^#/, '') : ''
+  const items = m ? all.filter((c) => `${c.label} ${c.title}`.toLowerCase().includes(q)).slice(0, 8) : []
+  const [at, setAt] = useState(0)
+  const [closed, setClosed] = useState<string>()
+  useEffect(() => { setAt(0) }, [q])
+  const open = !!m && items.length > 0 && closed !== text
+  const token = (c: Candidate) => (c.kind === 'ticket' ? c.label : c.repo && c.repo !== repo ? `${c.repo}${c.label}` : c.label)
+  const pick = (c: Candidate) => setText(`${text.slice(0, text.length - m![2].length - 1)}@${token(c)} `)
+  const onKeyDown = (e: KeyboardEvent): boolean => {
+    if (!open) return false
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setAt((i) => (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length); return true }
+    if ((e.key === 'Enter' && !e.metaKey && !e.ctrlKey) || e.key === 'Tab') { e.preventDefault(); pick(items[Math.min(at, items.length - 1)]); return true }
+    if (e.key === 'Escape') { e.preventDefault(); setClosed(text); return true }
+    return false
+  }
+  const name = `--mention-${useId().replace(/[^\w-]/g, '')}`
+  const menu = open ? (
+    <Floating anchor={name}>
+      <ul role="listbox" aria-label="Link to this work" className={FRAME}>
+        <li role="presentation" className="px-3 pb-1 pt-2.5 label text-fg-4">Link to this work</li>
+        {items.map((c, i) => (
+          <li key={c.key} role="option" aria-selected={i === at}>
+            <button type="button" onMouseDown={(e) => { e.preventDefault(); pick(c) }} onMouseEnter={() => setAt(i)}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left ${i === at ? 'bg-hover' : ''}`}>
+              <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-meta ${c.kind === 'ticket' ? 'bg-accent-soft text-accent-text' : 'bg-fill text-fg-2'}`}>{token(c)}</span>
+              <span className="min-w-0 flex-1 truncate text-body text-fg-1">{c.title}</span>
+              {i === at && <CornerDownLeft aria-hidden className="size-3.5 shrink-0 text-fg-4" />}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Floating>
+  ) : null
+  return { open, onKeyDown, menu, anchor: { anchorName: name } as CSSProperties }
+}
