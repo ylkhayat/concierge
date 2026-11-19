@@ -71,19 +71,26 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     queryFn: () => api('/stacks/plan', { items: planItems, steer, again: again > 0, pr: waiting[0]?.pr.id }) as Promise<StackPlan & { sig: string; steer: string }>,
   })
   const keyById = new Map<string, string>(waiting.flatMap((m) => m.steps.map((_, i) => [`${m.pr.number}:${i}`, `${m.pr.id}:${i}`] as const)))
-  // a new plan sets the answer: its suggested option for each decision (none: you choose), its steps on or off
+  // the plan's answer, read on every render: its suggested option for each decision (none: you choose), its steps on or
+  // off. `picks` and `checked` hold only what you changed on top of it (copying the plan into them in an effect lost your
+  // first click whenever the plan or the items arrived a render apart)
+  const planPk: Record<string, number> = {}, planCk: Record<string, boolean> = {}
+  if (plan.data) {
+    const p = plan.data, k = (id: string) => keyById.get(id) ?? `?${id}`
+    for (const d of p.decisions) for (const o of d.options) for (const x of o.picks) planPk[k(x.id)] = -1
+    for (const d of p.decisions) if (d.suggested >= 0) for (const x of d.options[d.suggested].picks) planPk[k(x.id)] = x.option
+    for (const st of p.steps) for (const id of st.items) planCk[k(id)] = st.on
+    for (const sk of p.skipped) for (const id of sk.items) planCk[k(id)] = false
+  }
+  // a new plan (new items, your steer, Reanalyze) starts from its own answer again
   useEffect(() => {
-    const p = plan.data
-    if (!p) return
-    const pk: Record<string, number> = {}, ck: Record<string, boolean> = {}
-    for (const d of p.decisions) for (const o of d.options) for (const x of o.picks) pk[keyById.get(x.id)!] = -1
-    for (const d of p.decisions) if (d.suggested >= 0) for (const x of d.options[d.suggested].picks) pk[keyById.get(x.id)!] = x.option
-    for (const st of p.steps) for (const id of st.items) ck[keyById.get(id)!] = st.on
-    for (const sk of p.skipped) for (const id of sk.items) ck[keyById.get(id)!] = false
-    setPicks(pk); setChecked(ck)
+    if (!plan.data) return
+    setPicks({}); setChecked({})
     // the plan kept from before a reload was read with a steer: it is yours, so it is back in the box (and still goes to the agents)
-    if (p.steer && !note.trim()) setNote(p.steer)
-  }, [plan.data?.sig, plan.dataUpdatedAt]) // eslint-disable-line react-hooks/exhaustive-deps (a plan read again, with your steer: its picks replace the ones before)
+    if (plan.data.steer && !note.trim()) setNote(plan.data.steer)
+  }, [plan.data?.sig]) // eslint-disable-line react-hooks/exhaustive-deps
+  const pickK = (k: string): number | undefined => picks[k] ?? planPk[k]
+  const onK = (k: string): boolean | undefined => checked[k] ?? planCk[k]
 
   // (every hook above the early return: React needs the same hooks on every render)
   const anchor = waiting[0]?.pr
@@ -95,8 +102,8 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const idOf = (m: Member, i: number) => `${m.pr.number}:${i}`
   const label = (id: string) => `#${id.split(':')[0]}'s`
   // the agent's own picks start chosen, its recommended steps ticked: you change only what you disagree with
-  const pickOf = (m: Member, i: number) => picks[key(m, i)] ?? (m.steps[i].options ?? []).findIndex((o) => o.recommended)
-  const on = (m: Member, i: number) => checked[key(m, i)] ?? (!!m.steps[i].checked && !copyOf.has(idOf(m, i)))
+  const pickOf = (m: Member, i: number) => pickK(key(m, i)) ?? (m.steps[i].options ?? []).findIndex((o) => o.recommended)
+  const on = (m: Member, i: number) => onK(key(m, i)) ?? (!!m.steps[i].checked && !copyOf.has(idOf(m, i)))
   const all = waiting.flatMap((m) => m.steps.map((s, i) => ({ m, s, i })))
   const unanswered = all.filter(({ m, s, i }) => s.kind === 'decide' && s.blocking && pickOf(m, i) < 0)
   const publishing = all.filter(({ m, s, i }) => s.kind === 'publish' && on(m, i))
@@ -112,9 +119,9 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   const isDecide = (id: string) => all.some(({ m, i, s: st }) => idOf(m, i) === id && st.kind === 'decide')
   const merged = (g: { items: string[] }) => !!p && g.items.every(isDecide) && p.decisions.some((d) => g.items.every((id) => d.options.some((o) => o.picks.some((x) => x.id === id))))
   const standing = standingAll.filter((g) => !merged(g))
-  const chosen = (d: StackPlan['decisions'][number]) => d.options.findIndex((o) => o.picks.length > 0 && o.picks.every((x) => (picks[keyById.get(x.id)!] ?? -1) === x.option))
+  const chosen = (d: StackPlan['decisions'][number]) => d.options.findIndex((o) => o.picks.length > 0 && o.picks.every((x) => (pickK(keyById.get(x.id)!) ?? -1) === x.option))
   const choose = (d: StackPlan['decisions'][number], j: number) => setPicks((cur) => ({ ...cur, ...Object.fromEntries(d.options.flatMap((o) => o.picks.map((x) => [keyById.get(x.id)!, -1]))), ...(chosen(d) === j ? {} : Object.fromEntries(d.options[j].picks.map((x) => [keyById.get(x.id)!, x.option]))) }))
-  const stepOn = (st: StackPlan['steps'][number]) => st.items.some((id) => checked[keyById.get(id)!])
+  const stepOn = (st: StackPlan['steps'][number]) => st.items.some((id) => !!onK(keyById.get(id)!))
   const toggle = (st: StackPlan['steps'][number]) => setChecked((cur) => ({ ...cur, ...Object.fromEntries(st.items.map((id) => [keyById.get(id)!, !stepOn(st)])) }))
   const prsOf = (ids: string[]) => [...new Set(ids.map((id) => Number(id.split(':')[0])))]
   // the stack realigned in one go, by Concierge rather than an agent per PR: each PR rebased on the one below it and
