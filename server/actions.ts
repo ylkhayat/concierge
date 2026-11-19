@@ -2,7 +2,8 @@
 // or every PR it fits at once. Every one reports into the PR's activity feed, step by step.
 import { missingError, missingFor } from './setup.ts'
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 import { promisify } from 'node:util'
 import { critOfPr, refreshCrit } from './crit.ts'
@@ -22,6 +23,22 @@ export type Log = (a: Omit<Activity, 'at'>) => void
 const feedLog = (ids: string[]): Log => (a) => { const at = new Date().toISOString(); for (const id of ids) note(id, { at, ...a }) }
 /** A command run as a step: shown in the feed like the agent's own Bash calls, then run. */
 const step = (log: Log, cmd: string, args: string[], cwd?: string) => { log({ kind: 'tool', tool: 'Bash', text: [cmd, ...args].join(' ').slice(0, 300) }); return sh(cmd, args, cwd) }
+/**
+ * Our own worktree for a rebase or an alignment, made fresh. One stopped halfway (a restart, a crash) leaves git's lock
+ * and its unfinished merge or rebase in it: cleared first, so the next run doesn't fail on "remove the file manually".
+ */
+async function clearWorktree(git: (args: string[], cwd?: string) => Promise<string>, dir: string) {
+  // a main checkout (its .git a folder, not a worktree's file) is never ours to clear
+  if (existsSync(join(dir, '.git')) && statSync(join(dir, '.git')).isDirectory()) throw new Error(`${dir} is a checkout, not a worktree of ours`)
+  if (existsSync(dir)) {
+    const gitdir = await git(['rev-parse', '--absolute-git-dir'], dir).then((t) => t.trim(), () => '')
+    if (gitdir) await Promise.all(['index.lock', 'HEAD.lock', 'AUTO_MERGE.lock'].map((f) => rm(join(gitdir, f), { force: true })))
+    await git(['merge', '--abort'], dir).catch(() => {}); await git(['rebase', '--abort'], dir).catch(() => {})
+  }
+  await git(['worktree', 'remove', '--force', '--force', dir]).catch(() => {})
+  await rm(dir, { recursive: true, force: true })
+  await git(['worktree', 'prune']).catch(() => {})
+}
 
 export type Scope = 'this' | 'stack' | 'all'
 export type Op = { action: string; label: string; state: 'running' | 'done' | 'failed'; at: string; endedAt?: string; result?: string; error?: string; scope?: Scope }
@@ -409,7 +426,7 @@ export async function rebaseChain(repo: string, dir: string, chain: { number: nu
   await git(['fetch', '-q', 'origin', ...new Set(chain.flatMap((p) => [p.base, p.head]))])
   const old = await Promise.all(chain.map((p) => git(['rev-parse', `origin/${p.head}`])))
   mkdirSync(dirname(dir), { recursive: true })
-  await git(['worktree', 'remove', '--force', dir]).catch(() => {})
+  await clearWorktree(git, dir)
   await git(['worktree', 'add', '-q', '--detach', dir, old[0]])
   try {
     const fresh: string[] = []
@@ -461,7 +478,7 @@ export async function alignChain(repo: string, dir: string, chain: { number: num
   await git(['fetch', '-q', 'origin', ...new Set(chain.map((p) => p.head))])
   const old = await Promise.all(chain.map((p) => git(['rev-parse', `origin/${p.head}`])))
   mkdirSync(dirname(dir), { recursive: true })
-  await git(['worktree', 'remove', '--force', dir]).catch(() => {})
+  await clearWorktree(git, dir)
   await git(['worktree', 'add', '-q', '--detach', dir, old[0]])
   try {
     const fresh = [old[0]]
