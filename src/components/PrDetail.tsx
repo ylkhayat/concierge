@@ -81,8 +81,14 @@ export type PrThreadProps = {
 
 /** Everything the PR page knows and can do, for either design to lay out: the flow's next step and its actions,
  *  the status chips, the agent's questions, the tabs' content and the dialogs. */
-export function usePrThread({ pr, feed, now, onBack, toast, prs, onSelect, sync, onOpenLinked, compact }: PrThreadProps) {
+export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSelect, sync, onOpenLinked, compact }: PrThreadProps) {
   const [copied, setCopied] = useState(false)
+  // the Next button you just clicked: a spinner at once, until the PR's state moves (or it failed, or 20s passed)
+  const [pending, setPending] = useState<FlowAction>()
+  const toast = (msg: string, tone?: 'ok' | 'error') => { if (tone === 'error') setPending(undefined); toastIn(msg, tone) }
+  const moved = `${pr.flow.state}|${pr.job?.state}|${pr.job?.queuedAt}|${pr.op?.state}|${pr.op?.at}`
+  useEffect(() => setPending(undefined), [moved])
+  useEffect(() => { if (!pending) return; const t = setTimeout(() => setPending(undefined), 20_000); return () => clearTimeout(t) }, [pending])
     const act = (path: string, ok: string) => api(`/prs/${enc(pr.id)}/${path}`, {}).then(resumed(ok, toast), (e: Error) => toast(e.message, 'error'))
 
   const url = critUrl(pr)
@@ -263,14 +269,15 @@ export function usePrThread({ pr, feed, now, onBack, toast, prs, onSelect, sync,
   const dismissOp = () => api(`/prs/${enc(pr.id)}/op/dismiss`, {}).catch(() => {})
   const rerequest = () => arm('rerequest', () => api(`/prs/${enc(pr.id)}/rerequest`, {}).then(() => toast(`Asked ${pr.reviewers!.join(', ')} to review again`), (e: Error) => toast(e.message, 'error')))
   const retry = () => job?.kind === 'publish' ? publish() : job?.kind === 'post' || job?.kind === 'approve' ? setSubmit({ event: job.kind === 'approve' ? 'APPROVE' : 'COMMENT' }) : act('run', pr.mine ? 'Revise queued' : 'Review queued')
+  const go = (a: FlowAction, fn: () => unknown) => () => { if (!((a === 'publish' || a === 'rerequest') && armed !== a)) setPending(a); void fn() }
   // each action the flow can name: its main button, and its quiet "Also:" link
   const BIG: Partial<Record<FlowAction, ReactNode>> = {
     cancel: <button className={`${secondary} ${big} hover:text-fail-text`} onClick={() => act('cancel', 'Cancelled')}><Square className="size-3.5 fill-current" />Cancel</button>,
-    retry: <button className={`${primary} ${big}`} onClick={retry}><RotateCcw className="size-4" />Try again</button>,
+    retry: <button className={`${primary} ${big}`} onClick={go('retry', retry)}><RotateCcw className="size-4" />Try again</button>,
     crit: <a href={url} target="_blank" rel="noreferrer" className={`${primary} ${big}`}><MessagesSquare className="size-4" />{pr.mine ? 'Fix in crit' : 'Review in crit'}</a>,
-    fix: <button className={`${primary} ${big}`} onClick={fixThreads}><Wand className="size-4" />Fix the {waiting === 1 ? 'thread' : `${waiting} threads`}</button>,
+    fix: <button className={`${primary} ${big}`} onClick={go('fix', fixThreads)}><Wand className="size-4" />Fix the {waiting === 1 ? 'thread' : `${waiting} threads`}</button>,
     publish: <>
-      <button className={`${green} ${big} ${armed === 'publish' ? armedCls : ''}`} onClick={publish}><Upload className="size-4" />{armed === 'publish' ? <ArmLabel>Confirm push &amp; reply</ArmLabel> : 'Push & reply'}{armed === 'publish' && <ArmBar />}</button>
+      <button className={`${green} ${big} ${armed === 'publish' ? armedCls : ''}`} onClick={go('publish', publish)}><Upload className="size-4" />{armed === 'publish' ? <ArmLabel>Confirm push &amp; reply</ArmLabel> : 'Push & reply'}{armed === 'publish' && <ArmBar />}</button>
       {pr.behindBase && below && (
         <button className={`${secondary} ${big} ${armed === 'publish-rebased' ? armedCls : ''}`} onClick={publishRebased}
                 title={`#${below.number} below moved past this branch. Rebase onto it first (a force-push with lease of this branch only), then push and reply.`}>
@@ -279,23 +286,26 @@ export function usePrThread({ pr, feed, now, onBack, toast, prs, onSelect, sync,
       )}
     </>,
     post: <Findings pr={pr} critUrl={url} onSubmit={(event, drop) => setSubmit({ event, drop })} onRestartCrit={critDown ? restartCrit : undefined} />,
-    finalize: <button className={`${primary} ${big}`} onClick={runFinalize} disabled={!!pr.missing.length} title={pr.missing.length ? missingTitle(pr.missing) : undefined}><Wand className="size-4" />Finish the last {waiting === 1 ? 'comment' : `${waiting} comments`}</button>,
-    run: <button className={`${primary} ${big}`} onClick={() => act('run', pr.mine ? 'Revise queued' : 'Review queued')} disabled={!!pr.missing.length} title={pr.missing.length ? missingTitle(pr.missing) : undefined}>{pr.mine ? <><Wand className="size-4" />{job ? 'Revise the new feedback' : 'Run revise'}</> : <><Play className="size-4 fill-current" />{job ? 'Review the new push' : 'Run review'}</>}</button>,
+    finalize: <button className={`${primary} ${big}`} onClick={go('finalize', runFinalize)} disabled={!!pr.missing.length} title={pr.missing.length ? missingTitle(pr.missing) : undefined}><Wand className="size-4" />Finish the last {waiting === 1 ? 'comment' : `${waiting} comments`}</button>,
+    run: <button className={`${primary} ${big}`} onClick={go('run', () => act('run', pr.mine ? 'Revise queued' : 'Review queued'))} disabled={!!pr.missing.length} title={pr.missing.length ? missingTitle(pr.missing) : undefined}>{pr.mine ? <><Wand className="size-4" />{job ? 'Revise the new feedback' : 'Run revise'}</> : <><Play className="size-4 fill-current" />{job ? 'Review the new push' : 'Run review'}</>}</button>,
     merge: <a href={pr.url} target="_blank" rel="noreferrer" className={`${green} ${big}`}><GitPullRequest className="size-4" />Merge on GitHub</a>,
-    rerequest: pr.reviewers?.length ? <button className={`${primary} ${big} ${armed === 'rerequest' ? armedCls : ''}`} onClick={rerequest}><Send className="size-4" />{armed === 'rerequest' ? <ArmLabel>{`Confirm: ask ${pr.reviewers.join(', ')}`}</ArmLabel> : `Ask ${pr.reviewers.join(', ')} to re-review`}{armed === 'rerequest' && <ArmBar />}</button> : null,
-    'restart-crit': <button className={`${secondary} ${big}`} onClick={restartCrit}><RotateCcw className="size-4" />Restart crit</button>,
-    'retry-op': pr.op && <button className={`${primary} ${big}`} onClick={retryOp}><RotateCcw className="size-4" />Try {pr.op.label.replace(/ \(.*\)$/, '').toLowerCase()} again</button>,
+    rerequest: pr.reviewers?.length ? <button className={`${primary} ${big} ${armed === 'rerequest' ? armedCls : ''}`} onClick={go('rerequest', rerequest)}><Send className="size-4" />{armed === 'rerequest' ? <ArmLabel>{`Confirm: ask ${pr.reviewers.join(', ')}`}</ArmLabel> : `Ask ${pr.reviewers.join(', ')} to re-review`}{armed === 'rerequest' && <ArmBar />}</button> : null,
+    'restart-crit': <button className={`${secondary} ${big}`} onClick={go('restart-crit', restartCrit)}><RotateCcw className="size-4" />Restart crit</button>,
+    'retry-op': pr.op && <button className={`${primary} ${big}`} onClick={go('retry-op', retryOp)}><RotateCcw className="size-4" />Try {pr.op.label.replace(/ \(.*\)$/, '').toLowerCase()} again</button>,
   }
+  // while one is starting, the main button says so (in both the panel and the thread's Next card)
+  const STARTING: Partial<Record<FlowAction, string>> = { fix: 'Starting the fix round', run: pr.mine ? 'Starting the revise' : 'Starting the review', finalize: 'Starting', retry: 'Starting again', 'retry-op': 'Starting again', publish: 'Pushing and replying', rerequest: 'Asking them', 'restart-crit': 'Restarting crit' }
+  if (pending && next && BIG[next] !== undefined) BIG[next] = <button disabled aria-busy className={`${primary} ${big} cursor-wait opacity-90`}><LoaderCircle className="size-4 animate-spin" />{STARTING[pending] ?? 'Starting'}…</button>
   const LINK: Partial<Record<FlowAction, ReactNode>> = {
     crit: url && <a key="crit" href={url} target="_blank" rel="noreferrer" className={linkCls}>Open crit</a>,
-    fix: <button key="fix" className={linkCls} onClick={fixThreads}>Fix the threads</button>,
+    fix: <button key="fix" className={linkCls} onClick={go('fix', fixThreads)}>Fix the threads</button>,
     publish: <button key="publish" className={armed === 'publish' ? 'font-semibold text-accent-text' : linkCls} onClick={publish}>{armed === 'publish' ? <ArmLabel>Confirm push &amp; reply</ArmLabel> : 'Push & reply'}</button>,
     post: <button key="post" className={linkCls} onClick={() => setSubmit({ event: 'COMMENT' })}>Post review</button>,
     'restart-crit': <button key="rc" className={linkCls} onClick={restartCrit}>Restart crit to go through them yourself</button>,
     'dismiss-op': <button key="dismiss" className={linkCls} onClick={dismissOp}>Dismiss</button>,
     read: <button key="read" className={linkCls} onClick={markRead} title="None of it needs an answer (a status note): it stops waiting on you, without a run">Nothing to answer</button>,
-    run: <button key="run" className={linkCls} onClick={() => act('run', pr.mine ? 'Revise queued' : 'Review queued')}>{pr.mine ? 'Revise' : 'Review'}</button>,
-    finalize: <button key="finalize" className={linkCls} onClick={runFinalize}>Finish the last comments</button>,
+    run: <button key="run" className={linkCls} onClick={go('run', () => act('run', pr.mine ? 'Revise queued' : 'Review queued'))}>{pr.mine ? 'Revise' : 'Review'}</button>,
+    finalize: <button key="finalize" className={linkCls} onClick={go('finalize', runFinalize)}>Finish the last comments</button>,
     merge: <a key="merge" href={pr.url} target="_blank" rel="noreferrer" className={linkCls}>Merge on GitHub</a>,
   }
   const also = flow.also.map((a) => LINK[a]).filter(Boolean)
