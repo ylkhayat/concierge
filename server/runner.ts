@@ -21,6 +21,7 @@ import { normsNote } from './norms.ts'
 import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
 import { bankArgs } from './bank.ts'
 import { directionNote } from './stackDirection.ts'
+import { brief, capOf, GATHER_S, keepSession, modelOf, routeReply } from './replyRoute.ts'
 import { accountOf, accounts, available, chosenFor, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
 import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
@@ -305,6 +306,7 @@ export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?
     : !prev ? { kind, prompt, sessionId: own?.id ?? randomUUID(), resumed: !!own, sessionCostBefore: own?.total ?? 0, state: 'queued', headSha: pr.headSha, queuedAt: now, roundAt: now }
     : {
       kind, prompt, sessionId: prev!.sessionId, reviewDone: prev!.reviewDone, roundAt: prev!.roundAt, critPort: prev!.critPort, critKey: prev!.critKey, lastWords: prev!.summary,
+      lastEndedAt: prev!.endedAt, lastSteps: prev!.next?.steps.map((x) => x.text).filter(Boolean),
       state: 'queued', headSha: prev!.headSha, queuedAt: now,
       // what the session had cost before this run: its total as last reported (a run that ended with no result reported none)
       sessionCostBefore: (own?.id === prev!.sessionId ? own.total : undefined) ?? prev!.sessionCostUsd ?? prev!.sessionCostBefore ?? 0,
@@ -313,6 +315,8 @@ export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?
   if (said) pr.job.said = said
   if (currentRole() !== 'developer') pr.job.as = currentRole()
   if (after) pr.job.after = after
+  // your words wait a moment for the rest of what you are typing, so a burst of messages is one run (replyRoute.ts)
+  if (kind === 'reply' && said) Object.assign(pr.job, { gathering: true, notBefore: new Date(Date.now() + GATHER_S * 1000).toISOString() })
   transition('job', pr.id, now, pr.job, 'queued', said ? 'you asked' : 'queued', {}, { kind })
   save()
   bus.emit('change')
@@ -547,7 +551,7 @@ export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: str
   const acct = waitingOn(t, work)
   if (acct) return { why: `${acct.label} can't take it now: ${acct.why}`, until: acct.until }
   if (below) return { why: `it starts after ${below}, below it in its stack` }
-  if (t.notBefore && t.notBefore > new Date().toISOString()) return { why: 'it tries again shortly', until: Date.parse(t.notBefore) }
+  if (t.notBefore && t.notBefore > new Date().toISOString()) return { why: (t as { gathering?: boolean }).gathering ? 'it waits a moment for more of your messages' : 'it tries again shortly', until: Date.parse(t.notBefore) }
   const since = draining()
   if (since && !fleet.elsewhere()) return { why: 'an update waits for the running agents to finish, then it starts', until: since + 30 * 60_000 }
   return { why: waitReason() ?? 'it starts in a moment' }
@@ -941,6 +945,12 @@ function start(pr: Pr) {
     if (isFollowUp(job.kind)) job.prompt = `${handoffNote(prev, job.lastWords)}\n\n${job.prompt ?? ''}`
     Object.assign(job, { sessionId: randomUUID(), resumed: false, continuing: false, sessionCostBefore: 0 })
   })
+  // the messages that came while it gathered: one run reads them all (they are in the feed already)
+  if (job.kind === 'reply' && !job.continuing && job.heldWords?.length) {
+    job.prompt = `${job.prompt ?? ''}\n\nAnd then I added:\n${job.heldWords.join('\n\n')}`
+    delete job.heldWords
+  }
+  delete job.gathering; delete job.notBefore
   const ev = (to: JobState, cause: string, extra: Partial<Job> = {}) => {
     if (to === 'running' && cause !== 'continued') useFrom(pr.id)
     const cmd = job.kind === 'review' || job.kind === 'revise' ? slot(job.kind, job.as ?? 'developer') : undefined
@@ -949,7 +959,7 @@ function start(pr: Pr) {
   let turns: number | undefined
   const startedAt = new Date().toISOString(), wasPaused = !!job.pausedAt
   ev('running', job.continuing ? 'continued' : 'started', { startedAt, endedAt: undefined, error: undefined, costUsd: undefined, refused: undefined, denials: [], pausedAt: undefined })
-  const asked = isFollowUp(job.kind) ? job.prompt! : fill(slot(job.kind as 'review' | 'revise', job.as ?? 'developer'), { number: pr.number, repo: pr.repo })
+  let asked = isFollowUp(job.kind) ? job.prompt! : fill(slot(job.kind as 'review' | 'revise', job.as ?? 'developer'), { number: pr.number, repo: pr.repo })
   if (wasPaused) note(pr.id, { at: startedAt, kind: 'event', text: "The plan's window has room again: it continues where it left off." })
   else if (job.continuing) note(pr.id, { at: startedAt, kind: 'event', text: `It continues where it left off${job.continued ? ` (restart ${job.continued} of ${MAX_CONTINUES})` : ''}.` })
   else {
@@ -961,7 +971,7 @@ function start(pr: Pr) {
   bus.emit('change')
   bus.emit('started', pr.id, job)
 
-  runAgent({
+  const go = () => runAgent({
     key: pr.id, label: `${LABEL[job.kind]} #${pr.number}`, cwd, provider: job.provider,
     onSession: (id) => { if (job.sessionId !== id) { job.sessionId = id; save() } },
     args: [
@@ -969,6 +979,9 @@ function start(pr: Pr) {
         : isFollowUp(job.kind) ? ['-p', asked, ...(job.resumed === false ? ['--session-id', job.sessionId] : ['--resume', job.sessionId])]
         : ['-p', asked, ...(job.resumed ? ['--resume', job.sessionId] : ['--session-id', job.sessionId])]),
       '--output-format', 'stream-json', '--verbose',
+      // a reply: capped for its route, and the mid-size model for a small edit (replyRoute.ts)
+      ...(job.kind === 'reply' && job.route ? ['--max-budget-usd', String((job.resumed === false && !job.continuing ? 0 : job.sessionCostBefore ?? 0) + capOf(job.route)),
+        ...(modelOf(job.route) && accountOf(job.provider ?? 'claude').kind === 'claude' ? ['--model', modelOf(job.route)!] : [])] : []),
       '--allowedTools', ...config.agent.allowedTools, ...(pr.mine ? RUN_TESTS : []),
       // its goal: reach you (crit up with its findings or replies, and next steps for you), not stop on the way
       ...((job.kind === 'review' || job.kind === 'revise') && accountOf(job.provider ?? 'claude').kind === 'claude' ? ['--settings', handGoalSettings(job.kind)] : []),
@@ -980,6 +993,7 @@ function start(pr: Pr) {
       if (port && job.critPort !== Number(port)) { job.critPort = Number(port); save(); bus.emit('change') }
     },
     onResult: (r) => {
+      if (/budget/i.test(String(r.subtype ?? ''))) job.capped = true
       if (r.num_turns) job.continued = 0 // it got somewhere: the restarts before that no longer count as "in a row"
       // Claude reports a resumed session's running total, so this run cost the difference; Codex reports this run's own
       const total = r.provider ? (job.sessionCostBefore ?? 0) + (r.total_cost_usd ?? 0) : r.total_cost_usd ?? 0
@@ -1055,6 +1069,13 @@ function start(pr: Pr) {
         }
         save(); bus.emit('change'); pump(); return
       }
+      // a small edit that turned out bigger: once, on the large model, continuing the same conversation
+      if (job.kind === 'reply' && job.route === 'edit' && !job.escalated && (job.capped || job.error) && !e.signal) {
+        ev('queued', 'escalated', { continuing: true, route: 'change', escalated: true, capped: false, error: undefined, sessionCostBefore: e.resulted ? job.sessionCostUsd : job.sessionCostBefore })
+        told('event', 'More than a quick edit: it continues on the large model, in the same conversation.')
+        save(); bus.emit('change'); pump(); return
+      }
+      if (job.capped) job.error = `Stopped at its $${capOf(job.route ?? 'change')} limit for one reply, to keep costs down. Reply "continue" to let it go on.`
       job.continuing = false
       if (e.signal && !e.resulted) {
         // killed without a word (you stopping it was handled above): out of memory, or stopped from outside. A failure
@@ -1074,6 +1095,29 @@ function start(pr: Pr) {
       save(); bus.emit('change'); bus.emit('finished', pr.id, job); pump()
     },
     onError: (e) => { job.error = e.message },
+  })
+  if (job.kind !== 'reply' || job.continuing || job.route) return void go()
+  // a new reply: sorted (and answered, when the last report already answers it) before any agent starts
+  routeReply(pr, job.prompt ?? job.said ?? '', job).then((r) => {
+    if (job.state !== 'running') return // stopped while it was being sorted
+    job.route = r.route
+    if (r.costUsd) addSpend(r.costUsd, providerFor('small'))
+    if (r.answer) {
+      const at = new Date().toISOString()
+      Object.assign(job, { summary: r.answer, costUsd: r.costUsd, endedAt: at })
+      pr.lastSaid = { summary: r.answer, at, kind: job.kind }
+      note(pr.id, { at, kind: 'text', text: r.answer })
+      note(pr.id, { at, kind: 'event', text: 'Answered from its last report: no agent needed.' })
+      ev('done', 'answered')
+      save(); bus.emit('change'); bus.emit('finished', pr.id, job); pump(); return
+    }
+    if (job.resumed !== false && !keepSession(job)) {
+      // a long conversation gone cold costs its whole length again on every turn: a short one from its last report instead
+      asked = job.prompt = `${brief(pr, job)}\n\n${job.prompt ?? ''}`
+      Object.assign(job, { sessionId: randomUUID(), resumed: false, sessionCostBefore: 0 })
+      note(pr.id, { at: new Date().toISOString(), kind: 'event', text: 'A fresh, short conversation from its last report (the earlier one was long).' })
+    }
+    save(); go()
   })
 }
 

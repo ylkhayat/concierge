@@ -51,6 +51,12 @@ export type Job = {
   deployStop?: boolean // the server stopped it on purpose (a deploy): its pick-up doesn't count toward MAX_CONTINUES
   notBefore?: string // waits until then before it starts again (a network blip)
   lastWords?: string // a follow-up: what the session it continues last said (handed to a new one if it must move)
+  lastSteps?: string[] // a reply: the steps the last run left, handed to a fresh conversation (replyRoute.ts)
+  lastEndedAt?: string // a reply: when the run it follows ended (its conversation's cache is warm for a few minutes)
+  route?: import('./replyRoute.ts').Route // a reply: how it was sent (answered, mid-size model, large model)
+  capped?: boolean // it stopped at its spending cap
+  escalated?: boolean // an edit that continued on the large model
+  gathering?: boolean // a new reply waiting a moment for more of your messages
   pausedAt?: string // stopped near the end of the plan's window: it continues its session once the window resets
   after?: string // a planned review: it starts once this PR's (the one below it in its stack) has finished
   alerted?: boolean // stopped by restart after restart, and you were told
