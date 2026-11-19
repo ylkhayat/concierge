@@ -726,11 +726,11 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
                 title={`Iteration ${o.iteration}. ${o.nodesKnown ?? '?'} folders came from the codebase map, ${o.nodesAsked} were newly mapped. ${o.asked} changed files explained${o.reused ? `, ${o.reused} carried over from the previous push` : ''}.`}>
             <GitCommitVertical className="size-3" />#{o.iteration} · {o.nodesKnown ?? '–'} known · {o.nodesAsked} new{o.reused ? ` · ${o.reused} carried` : ''} · ${o.costUsd.toFixed(2)}
           </span>
-          <button onClick={() => api(`/prs/${enc(pr.id)}/explain-follow`, { on: pr.explainFollow === false }).catch((e: Error) => toast(e.message, 'error'))}
-                  aria-pressed={pr.explainFollow !== false}
-                  title={pr.explainFollow !== false ? 'Follows new commits: every push (yours, a rebase, a resolved conflict, someone else’s) updates it. Click to keep this version' : 'Kept as is: new commits don’t update it. Click to follow them'}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium transition-colors ${pr.explainFollow !== false ? 'text-accent-text hover:bg-accent/10' : 'text-fg-3 hov hover:text-fg-1'}`}>
-            <Radio className={`size-3.5 ${pr.explainFollow !== false && busy ? 'animate-pulse' : ''}`} />{pr.explainFollow !== false ? 'Following commits' : 'Paused'}
+          <button onClick={() => api(`/prs/${enc(pr.id)}/explain-follow`, { on: pr.explainFollow !== true }).catch((e: Error) => toast(e.message, 'error'))}
+                  aria-pressed={pr.explainFollow === true}
+                  title={pr.explainFollow === true ? 'Follows new commits: every push (yours, a rebase, a resolved conflict, someone else’s) updates it. Click to keep this version' : 'Kept as is: new commits don’t update it. Click to follow them'}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium transition-colors ${pr.explainFollow === true ? 'text-accent-text hover:bg-accent/10' : 'text-fg-3 hov hover:text-fg-1'}`}>
+            <Radio className={`size-3.5 ${pr.explainFollow === true && busy ? 'animate-pulse' : ''}`} />{pr.explainFollow === true ? 'Following commits' : 'Paused'}
           </button>
           <button onClick={() => run()} disabled={busy} title="Explain the latest push (incremental)"
                   className="group rounded-lg p-1.5 text-fg-3 transition-all hov hover:text-fg-1 disabled:opacity-40">

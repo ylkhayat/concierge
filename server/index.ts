@@ -184,10 +184,10 @@ async function doPoll(forced?: unknown) {
       if (state.autoStart && autoReviews(pr)) enqueue(pr)
     }
     // a new head on an explained PR (your push, a resolved conflict, a rebase, someone else's commit): explain it,
-    // building on the previous iteration, unless you switched following off for that PR
+    // building on the previous iteration, only for a PR you switched following on for (otherwise explain runs when you ask)
     for (const p of Object.values(state.prs)) {
       const e = p.explain
-      if (e && !p.closed && p.explainFollow !== false && e.headSha !== p.headSha && (e.state === 'done' || e.state === 'failed')) enqueueExplain(p)
+      if (e && !p.closed && p.explainFollow === true && e.headSha !== p.headSha && (e.state === 'done' || e.state === 'failed')) enqueueExplain(p)
     }
     refreshBaseMaps().catch((e) => console.error('codebase map:', e.message))
     // a stack of yours with a branch left behind (a push into its middle) is aligned at once; on the first poll after a
@@ -357,8 +357,8 @@ bus.on('finished', (id: string, job: Job) => {
     const sync = () => refreshOne(id).then(() => bus.emit('change')).catch((e) => console.error('refresh', id, e.message))
     sync(); setTimeout(sync, 5000); setTimeout(sync, 15000)
   }
-  // map the change while you open crit; if the repo is being mapped right now, wait for the richer map
-  else if (job.state === 'done' && pr.explainFollow !== false) mapping(pr.repo) ? explainAfterBase(pr, false) : enqueueExplain(pr)
+  // map the change while you open crit (only when following is on for this PR); if the repo is being mapped right now, wait for the richer map
+  else if (job.state === 'done' && pr.explainFollow === true) mapping(pr.repo) ? explainAfterBase(pr, false) : enqueueExplain(pr)
 })
 
 // a background skills check found something new missing (or back): the pages re-render their run buttons
@@ -2112,7 +2112,7 @@ app.post('/prs/:id/explain-follow', async (c) => {
   const p = pr(c.req.param('id'))
   if (!p) return c.json({ error: 'unknown PR' }, 404)
   const { on } = await c.req.json<{ on?: boolean }>()
-  p.explainFollow = on !== false
+  p.explainFollow = on === true
   // switched on behind the latest commit: catch up now
   if (p.explainFollow && p.explain && p.explain.headSha !== p.headSha && (p.explain.state === 'done' || p.explain.state === 'failed')) enqueueExplain(p)
   save(); bus.emit('change')

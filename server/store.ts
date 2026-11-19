@@ -184,7 +184,7 @@ export type Pr = {
   dismissed: boolean
   myReview?: { state: string; commitId: string; submittedAt: string }
   explain?: ExplainTask
-  explainFollow?: boolean // false: the explanation stays where it is when new commits land (default: it follows)
+  explainFollow?: boolean // true: the explanation follows new commits (default: it runs only when you ask)
   explainAfterBase?: boolean // explain once the repo's codebase map finishes
   behindBase?: boolean // stacked on another PR whose branch moved past this one (it was pushed or rebased): needs a smart rebase
   stack?: StackRef[] // its line through the open PRs it is stacked with, bottom (on the default branch) to top: what is below it, itself, and up along the oldest PR built on each; absent when alone. PRs built on the same one have different lines with the same bottom
