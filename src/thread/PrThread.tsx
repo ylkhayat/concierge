@@ -15,7 +15,7 @@ import { api, enc, param, setParam } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
 import { sayTo, useDiscussions, useWork, useWorkFeed, withTurns, WorkStrip, type View } from './Discussion.tsx'
-import { ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
+import { lastUpdate, ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useToolCommands, type Command } from '../ui/Slash.tsx'
 import { useRole, type Role } from '../role.ts'
 import { DomainView } from './DomainView.tsx'
@@ -192,7 +192,7 @@ export function PrThread(props: PrThreadProps) {
         vitals={(<>
             <WorkStrip work={work} here={`pr:${pr.id}`} toast={toast} onOpen={(k) => k.startsWith('pr:') ? props.onSelect(k.slice(3)) : x.onOpenLinked({ kind: 'ticket', id: k.slice(7), label: k.slice(7), title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' })} />
             <Vitals key={target} scope={stack && !shared ? { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } } : undefined}
-                    shipping={<ShippingVital title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
+                    shipping={<ShippingVital update={lastUpdate(feed)} title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
                     topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number }} />
         </>)}
         pane={pane === 'overview' ? <Overview pr={pr} prs={prs} onSelect={props.onSelect} toast={toast} onOpen={(t) => setPane(t === 'stack' && !stackNext ? 'overview' : t)} /> : pane === 'stack' && stackNext ? <div className="flex h-full min-h-0 flex-col p-4">{stackNext}</div> : pane === 'explain' ? (

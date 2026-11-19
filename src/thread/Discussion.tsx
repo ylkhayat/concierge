@@ -44,14 +44,11 @@ export function WorkStrip({ work, here, onOpen, toast }: { work?: WorkView; here
   const pair = (k: string) => work.links.find(([a, b]) => a === k || b === k)
   const unlink = (k: string) => { const p = pair(k)!; api('/works/unlink', { a: p[0] === k ? p[1] : p[0], b: k }).then(() => toast(`Unlinked ${k.replace(/^\w+:/, '')}: it keeps a copy of what was said`), (e: Error) => toast(e.message, 'error')) }
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5 text-meta" aria-label="This work's parts">
-      <span className="mr-0.5 text-fg-3">One work, shared memory:</span>
+    <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap px-3 pt-2 text-meta [scrollbar-width:none]" aria-label="This work's parts" title="One work: these share one memory, one pair of cards and one chat">
+      <span className="mr-1 shrink-0 text-fg-4">Work</span>
       {work.members.map((m) => (
-        <span key={m.key} className={`group/m inline-flex max-w-[240px] items-center gap-1 rounded-full py-0.5 pl-2 ring-1 ${m.key === here ? 'bg-accent-soft pr-2 ring-accent/30 text-fg-1' : 'pr-1 ring-line text-fg-2 hover:text-fg-1'}`}>
-          <button type="button" onClick={() => m.key !== here && onOpen(m.key)} title={m.title} className="flex min-w-0 items-center gap-1">
-            <span className={`shrink-0 font-mono ${m.kind === 'ticket' ? 'text-accent-text' : ''}`}>{m.label}</span>
-            <span className="truncate">{m.title}</span>
-          </button>
+        <span key={m.key} className={`group/m inline-flex shrink-0 items-center rounded-full py-px pl-1.5 ${m.key === here ? 'bg-accent-soft pr-1.5 text-fg-1' : 'pr-0.5 text-fg-3 hover:bg-hover hover:text-fg-1'}`}>
+          <button type="button" onClick={() => m.key !== here && onOpen(m.key)} title={`${m.label} ${m.title}`} className={`font-mono ${m.kind === 'ticket' ? 'text-accent-text' : ''}`}>{m.label}</button>
           {m.key !== here && pair(m.key) && <button type="button" onClick={() => unlink(m.key)} title="Unlink: it leaves this work, with a copy of what was said" className="rounded-full px-1 text-fg-4 opacity-0 transition-opacity hover:text-fail-text group-hover/m:opacity-100">×</button>}
         </span>
       ))}

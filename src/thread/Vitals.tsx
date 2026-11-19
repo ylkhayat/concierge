@@ -6,7 +6,8 @@
 import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Action, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
-import { api } from '../lib.ts'
+import { api, type Activity } from '../lib.ts'
+import { ago } from '../time.ts'
 import { Md } from '../components/Md.tsx'
 import { TOPIC, type Discussions, type View } from './Discussion.tsx'
 import type { Tone } from '../ui/Thread.tsx'
@@ -24,7 +25,7 @@ const STEP: Record<Stage, number> = { new: 0, open: 1, converging: 2, concluded:
  *  and shows how far along it is on a hairline at its foot. A faint tint of its colour drifts across it, faster while
  *  something works on it. Under the pointer (or the focus) its line gives way to the one thing worth knowing or doing;
  *  the name and the hairline stay. A click opens what it holds, under the row. */
-export function Vital({ name, status, lane, meter, busy, idle, flag, back, open, onOpen, peek, glow, stale }: { icon?: ReactNode; name: string; status: string; lane: string; meter: ReactNode; busy?: boolean; idle?: boolean; flag?: boolean; back?: ReactNode; open?: boolean; onOpen?: () => void; peek?: ReactNode; glow?: boolean; stale?: boolean }) {
+export function Vital({ name, status, lane, meter, foot, busy, idle, flag, back, open, onOpen, peek, glow, stale }: { icon?: ReactNode; name: string; status: string; lane: string; meter?: ReactNode; foot?: ReactNode; busy?: boolean; idle?: boolean; flag?: boolean; back?: ReactNode; open?: boolean; onOpen?: () => void; peek?: ReactNode; glow?: boolean; stale?: boolean }) {
   return (
     <section tabIndex={0} aria-label={`${name}: ${status}`} aria-expanded={onOpen ? open : undefined} style={{ '--lane': lane } as React.CSSProperties}
              onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) onOpen?.() }} onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) onOpen?.() }}
@@ -40,7 +41,7 @@ export function Vital({ name, status, lane, meter, busy, idle, flag, back, open,
         <p key={status} className={`col-start-1 row-start-1 truncate text-small font-medium text-fg-1 transition-opacity duration-200 animate-[detail-in_400ms_var(--ease-out)] ${back ? 'group-hover/v:pointer-events-none group-hover/v:opacity-0 group-focus-within/v:pointer-events-none group-focus-within/v:opacity-0' : ''}`}>{status}</p>
         {back && <div className="pointer-events-none relative z-10 col-start-1 row-start-1 flex min-w-0 items-start gap-2 opacity-0 transition-opacity duration-200 group-hover/v:pointer-events-auto group-hover/v:opacity-100 group-focus-within/v:pointer-events-auto group-focus-within/v:opacity-100">{back}</div>}
       </div>
-      <div className="mt-auto">{meter}</div>
+      <div className="mt-auto min-w-0">{meter ?? foot}</div>
       {/* under the pointer: its gist, floating, so a glance is enough (closed while its full card is open) */}
       {peek && !open && (
         <div role="tooltip" className="pointer-events-none invisible absolute left-0 top-full z-40 mt-2 w-[min(380px,85vw)] translate-y-1 rounded-card bg-surface-1 p-3 text-left opacity-0 shadow-[var(--e3)] ring-1 ring-[color-mix(in_oklch,var(--lane)_35%,transparent)] transition-all delay-150 duration-200 group-hover/v:visible group-hover/v:translate-y-0 group-hover/v:opacity-100">
@@ -113,11 +114,23 @@ export function useLaneActions({ d, target, onChange, onSteer, onView, toast }: 
   }
 }
 
-/** Shipping: what the work waits on, from its flow. `at` of `of`: how far along it is. */
-export function ShippingVital({ title, tone, why, at, of = 4, busy }: { title: string; tone: Tone; why?: ReactNode; at: number; of?: number; busy?: boolean }) {
+/** The latest thing that happened in a conversation, for Shipping's foot: an event, your words, a run's start or end. */
+export function lastUpdate(feed: Activity[]): { text: string; at: string } | undefined {
+  const a = [...feed].reverse().find((x) => x.kind === 'event' || x.kind === 'section' || x.kind === 'result' || x.kind === 'you' || x.kind === 'error')
+  if (!a) return undefined
+  const line = a.text.replace(/[#*_`>]/g, '').split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  return { at: a.at, text: a.kind === 'you' ? `you: ${line}` : a.kind === 'result' ? `done: ${line}` : line }
+}
+/** A vital's foot: the latest thing that happened to it, and how long ago. */
+function Update({ at, text }: { at?: string; text: string }) {
+  return <p className="flex min-w-0 items-center gap-1 text-micro text-fg-3" title={text}>{at && <span className="shrink-0 tabular-nums text-fg-4">{ago(at)}</span>}{at && <span className="text-fg-4">·</span>}<span className="truncate">{text}</span></p>
+}
+
+/** Shipping: what the work waits on, from its flow, and the latest thing that happened. */
+export function ShippingVital({ title, tone, why, busy, update }: { title: string; tone: Tone; why?: ReactNode; at?: number; of?: number; busy?: boolean; update?: { text: string; at: string } }) {
   return (
-    <Vital name="Shipping" icon={<Rocket className="size-3.5 text-[var(--vital-ship)]" />} status={title} lane="var(--vital-ship)" busy={busy}
-           meter={<Meter of={of} at={at} color={tone === 'ok' ? 'var(--st-ok)' : tone === 'fail' ? 'var(--st-fail)' : 'var(--vital-ship)'} pulse={busy} />}
+    <Vital name="Shipping" icon={<Rocket className="size-3.5 text-[var(--vital-ship)]" />} status={title} lane={tone === 'fail' ? 'var(--st-fail)' : tone === 'ok' ? 'var(--st-ok)' : 'var(--vital-ship)'} busy={busy}
+           foot={update && <Update at={update.at} text={update.text} />}
            back={why ? <p className="truncate text-meta leading-snug text-fg-2" title={typeof why === "string" ? why : undefined}>{why}</p> : undefined} />
   )
 }
@@ -133,6 +146,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
   open?: boolean; onOpen?: () => void
 }): { tile: ReactNode; details: ReactNode } {
   const t = TOPIC[topic], b = d?.brief, started = !!b || !!d?.messages.length, busy = !!d?.busy
+  const asked = (d?.messages ?? []).slice(-6)
   const fail = (e: Error) => toast(e.message, 'error')
   // written (or caught up) without a question: one short call
   const write = () => { if (!open) onOpen?.(); return api('/discussions/ask', { target, topic }).then(onChange, fail) }
@@ -146,7 +160,8 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
   const tile = (
     <Vital name={t.label} icon={<t.icon className="size-3.5" style={{ color: lane }} />} status={status} lane={lane} busy={busy} idle={!started && !busy} flag={unsent}
            glow={busy && d?.phase !== 'refreshing'} stale={d?.stale} open={open} onOpen={started || busy ? onOpen : write}
-           meter={<Meter of={3} at={started ? Math.max(1, STEP[d!.stage]) : 0} color={lane} pulse={busy} />}
+           foot={busy ? undefined : b ? <Update at={d!.messages.at(-1)?.at && d!.messages.at(-1)!.at > b.at ? d!.messages.at(-1)!.at : b.at} text={d!.messages.at(-1)?.who === 'agent' ? `answered: ${d!.messages.at(-1)!.text.replace(/[#*_`>]/g, '').slice(0, 80)}` : `written${asked.length ? ` · ${asked.filter((m) => m.who === 'you').length} asked` : ''}`} />
+             : <p className="truncate text-micro text-fg-4">{started ? 'asked before cards' : 'click to write it'}</p>}
            peek={b ? (
              <>
                <p className="flex items-center gap-1.5 text-meta font-semibold text-fg-1"><t.icon className="size-3.5" style={{ color: lane }} />{t.label} · {b.status}</p>
@@ -161,7 +176,6 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
            ) : undefined} />
   )
   // the whole card, under the row, when its tile is clicked: what it knows, then what you asked it
-  const asked = (d?.messages ?? []).slice(-6)
   const details = open ? (
     <div className={`card space-y-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
       <div className="flex flex-wrap items-center gap-2">
