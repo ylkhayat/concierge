@@ -47,7 +47,7 @@ test('status machine', () => {
   assert.equal(statusOf({ ...base, job: job('done') }, crit, true), 'ready')
   assert.equal(statusOf({ ...base, job: job('done') }, { finishes: 1, myComments: 0 } as any, true), 'in-review')
   assert.equal(statusOf({ ...base, job: job('done', 'h1') }, crit, true), 'new') // pushed since the run
-  assert.equal(statusOf({ ...base, myReview: { commitId: 'h2' } }, crit, true), 'reviewed')
+  assert.equal(statusOf({ ...base, myReview: { commitId: 'h2', state: 'APPROVED' } }, crit, true), 'reviewed')
   assert.equal(statusOf({ ...base, myReview: { commitId: 'h1' } }, crit, true), 'new') // re-review
   assert.equal(statusOf({ ...base, closed: true }, crit, true), 'closed')
   assert.equal(statusOf(base, { ...crit, live: true }, true), 'ready') // started by hand

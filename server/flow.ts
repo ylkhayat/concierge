@@ -39,13 +39,17 @@ export type FlowIn = {
   unresolved: number
   reviewers: number // people you can ask to review again
   feedbackAt?: string
-  reviewed: boolean // theirs: you already submitted a review on this head
+  reviewed: boolean // theirs: your review stands (on this head, or on an earlier one and they haven't asked you again)
+  myVerdict?: string // theirs: your last review's verdict (APPROVED, CHANGES_REQUESTED, COMMENTED)
+  pushedSince?: boolean // theirs: the author pushed after your last review
+  askedAgain?: boolean // theirs: they asked for your review again after it
   job?: Pick<Job, 'kind' | 'state' | 'headSha' | 'reviewDone' | 'roundAt'> & { asks: boolean }
   crit?: { live: boolean; finishes: number; known: boolean; findings?: number; open?: number; blocking?: number } // known: there is a crit session to open or restart; findings: the AI review's comments, open: unresolved
   op?: { label: string; state: 'running' | 'done' | 'failed'; result?: string } // the latest tool run
 }
 
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`
+const verdictWord = (v?: string) => (v === 'APPROVED' ? 'approved' : v === 'CHANGES_REQUESTED' ? 'requested changes on' : v === 'COMMENTED' ? 'commented on' : 'reviewed')
 
 export function flowOf(f: FlowIn): Flow {
   const j = f.job
@@ -67,10 +71,13 @@ export function flowOf(f: FlowIn): Flow {
 
 /** The facts flowOf reads, from a PR as state keeps it, its crit, and its latest tool run. */
 export function flowInOf(p: Pr, crit: Pick<Crit, 'live' | 'finishes' | 'port' | 'sessionKey'> & Partial<Pick<Crit, 'aiComments' | 'unresolved' | 'blocking'>> | undefined, hasCheckout: boolean, op?: FlowIn['op']): FlowIn {
+  const mineR = !p.mine && p.myReview && ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'].includes(p.myReview.state) ? p.myReview : undefined
   return {
     mine: !!p.mine, closed: !!p.closed, hasCheckout, headSha: p.headSha, reviewDecision: p.reviewDecision,
     awaiting: p.awaiting ?? p.unresolved ?? 0, unresolved: p.unresolved ?? 0, reviewers: p.reviewers?.length ?? 0, feedbackAt: p.feedbackAt,
-    reviewed: !p.mine && !!p.myReview && p.myReview.commitId === p.headSha,
+    // a review you gave stands across later pushes (a rebase, a fix of what you said) until they ask you again
+    reviewed: !!mineR && (mineR.commitId === p.headSha || !p.requested),
+    myVerdict: mineR?.state, pushedSince: !!mineR && mineR.commitId !== p.headSha, askedAgain: !!mineR && mineR.commitId !== p.headSha && !!p.requested,
     job: p.job && { ...p.job, asks: pendingOf(p.job.next) > 0 },
     crit: crit && { live: crit.live, finishes: crit.finishes, known: !!crit.port && !!crit.sessionKey, findings: crit.aiComments, open: crit.unresolved, blocking: crit.blocking },
     op,
@@ -140,9 +147,9 @@ function theirs(f: FlowIn): Flow {
   const j = f.job
   const critUp = !!f.crit?.live
   const finished = (f.crit?.finishes ?? 0) > 0
-  if (f.reviewed) return { state: 'reviewed', step: 4, why: 'You reviewed this head. Nothing waits on you until the author pushes again.', also: [] }
+  if (f.reviewed) return { state: 'reviewed', step: 4, why: `You ${verdictWord(f.myVerdict)} it${f.pushedSince ? ', and the author pushed since' : ''}. Nothing waits on you until they ask for your review again.`, also: [] }
   const current = !!j?.reviewDone && j.headSha === f.headSha
-  if (!current) return { state: 'to-review', step: 0, why: j ? 'The author pushed since your review. A review of the new head, in the same session.' : 'Your review was requested.', next: 'run', also: [] }
+  if (!current) return { state: 'to-review', step: 0, why: f.askedAgain ? `They asked for your review again since you ${verdictWord(f.myVerdict)} it.` : j ? 'The author pushed since your review. A review of the new head, in the same session.' : 'Your review was requested.', next: 'run', also: [] }
   // the review is ready: what to do with its findings is the decision, so it is the next move whether or not crit is
   // open; which verdict is yours (or the review skill's next steps propose one)
   const k = f.crit?.findings ?? 0, open = f.crit?.open ?? 0, b = f.crit?.blocking ?? 0

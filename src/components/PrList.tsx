@@ -1,6 +1,6 @@
 import { appColor } from '../appColor.ts'
 import { askLine } from '../../server/reply.ts'
-import { Bookmark, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
+import { Bookmark, ChevronRight, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { api, type PrView } from '../lib.ts'
 import { treeOf } from '../desk.ts'
@@ -10,19 +10,19 @@ import { statusMeta, StatusBadge } from './StatusBadge.tsx'
 import { short } from '../time.ts'
 import { plain } from './StackNav.tsx'
 import { useFlip } from '../flip.ts'
-import { recent, takeRecent, useTouch } from '../recent.ts'
+import { recent, useTouch } from '../recent.ts'
 
 export type Tab = 'review' | 'mine'
 type Group = { title: string; statuses: PrView['status'][]; recent?: boolean; pinned?: boolean }
-const RECENT: Group = { title: 'Recent', statuses: [], recent: true }
 const PINNED: Group = { title: 'Bookmarked', statuses: [], pinned: true }
 
 const GROUPS: Record<Tab, Group[]> = {
   review: [
     { title: 'Needs you', statuses: ['ready', 'in-review', 'failed', 'interrupted'] },
     { title: 'Working', statuses: ['preparing', 'posting', 'queued'] },
-    { title: 'Not started', statuses: ['new', 'no-checkout'] },
-    { title: 'Done', statuses: ['reviewed', 'closed'] },
+    { title: 'To review', statuses: ['new', 'no-checkout'] },
+    { title: 'Reviewed by you', statuses: ['reviewed'] },
+    { title: 'Closed', statuses: ['closed'] },
   ],
   mine: [
     { title: 'Approved · ready to merge', statuses: ['approved'] },
@@ -57,12 +57,10 @@ export function grouped(prs: PrView[], q: string, tab: Tab): { group: Group; uni
   const units = new Map<string, PrView[]>() // in the order of each unit's first (most pressing) member
   for (const p of hits) { const k = stackKey(p) ?? p.id; units.set(k, [...(units.get(k) ?? []), p]) }
   const every = [...units.values()].map((u) => { if (u.length < 2) return u; const at = new Map(treeOf(u).map((x, i) => [x.number, i])); return u.sort((a, b) => (at.get(a.number) ?? 0) - (at.get(b.number) ?? 0)) })
-  // bookmarked ones lead, whatever their state; then what you opened last
+  // bookmarked ones lead, whatever their state; the rest sit in the group that says where they stand (no "recent"
+  // group: it pulled PRs out of their state and read as if they needed you)
   const pinned = every.filter((u) => u.some((p) => p.pinned)), all = every.filter((u) => !pinned.includes(u))
-  // what you opened last comes first, except what already leads (the first group stays where it is)
-  const lead = all.filter((u) => Math.min(...u.map(gi)) === 0)
-  const { recent: rec, rest } = takeRecent(all.filter((u) => !lead.includes(u)), (p) => p.id, recent('review'))
-  return [...(pinned.length ? [{ group: PINNED, units: pinned }] : []), ...(rec.length ? [{ group: RECENT, units: rec }] : []), ...GROUPS[tab].map((group, i) => ({ group, units: (i ? rest : lead).filter((u) => Math.min(...u.map(gi)) === i) }))]
+  return [...(pinned.length ? [{ group: PINNED, units: pinned }] : []), ...GROUPS[tab].map((group, i) => ({ group, units: all.filter((u) => Math.min(...u.map(gi)) === i) }))]
 }
 
 /** List order for one tab, also used for j/k navigation. */
@@ -100,6 +98,9 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
       (e: Error) => { setOver((o) => ({ ...o, [p.id]: { ...o[p.id], pinned: !on } })); toast(e.message, 'error') })
   }
   const groups = grouped(prs, query, tab), list = groups.flatMap((g) => g.units.flat())
+  // folded groups, kept per browser; what's finished starts folded
+  const [shut, setShut] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('prlist-shut') ?? '') } catch { return { 'Reviewed by you': true, Closed: true, Done: true } } })
+  const fold = (t: string) => setShut((s) => { const n = { ...s, [t]: !s[t] }; try { localStorage.setItem('prlist-shut', JSON.stringify(n)) } catch {} return n })
   useTouch('review', selected)
   const seen = recent('review', 5, now)
   const byNumber = new Map(prs.map((p) => [`${p.repo}#${p.number}`, p]))
@@ -162,11 +163,14 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
           if (!units.length) return null
           return (
             <section key={g.title} className="mb-1.5 reading:mb-0 reading:border-b reading:border-zinc-200/80 reading:py-1 reading:last:border-0 dark:reading:border-zinc-800/80">
-              <h2 className="sticky top-0 z-10 flex items-center gap-2 reading:hidden px-2.5 pb-1.5 pt-3 label text-fg-4 backdrop-blur-xl">
+              <h2 className="sticky top-0 z-10 reading:hidden backdrop-blur-xl">
+                <button type="button" onClick={() => fold(g.title)} aria-expanded={!shut[g.title]} className="flex w-full items-center gap-2 px-2.5 pb-1.5 pt-3 label text-fg-4 hover:text-fg-2">
+                <ChevronRight className={`size-3.5 transition-transform ${shut[g.title] ? '' : 'rotate-90'}`} aria-hidden />
                 {g.recent && <History className="size-3.5" aria-hidden />}{g.pinned && <Bookmark className="size-3.5 fill-current text-accent" aria-hidden />}{g.title}
                 <span className="rounded-full bg-hover px-1.5 py-px text-micro font-medium normal-case tabular-nums tracking-normal text-fg-3">{g.recent || g.pinned ? units.length : units.flat().filter((p) => g.statuses.includes(p.status)).length}</span>
+                </button>
               </h2>
-              {units.map((u) => u[0].stack && u.length > 1
+              {!shut[g.title] && units.map((u) => u[0].stack && u.length > 1
                 ? <Stack key={stackKey(u[0])} prs={u} here={g.recent || g.pinned ? u.map((p) => p.status) : g.statuses} byNumber={byNumber} selected={selected} onSelect={onSelect} now={now} activeRef={activeRef} pick={pick} act={act} />
                 : <Row key={u[0].id} p={u[0]} seen={g.recent ? seen.get(u[0].id) : undefined} active={u[0].id === selected} onSelect={onSelect} now={now} activeRef={activeRef} pick={pick} act={act} />)}
             </section>
@@ -325,12 +329,22 @@ const Num = ({ p, active }: { p: PrView; active: boolean }) => (
 )
 
 /** The line under a title: where (passed in), size, outdated, threads, age. */
+const VERDICT: Record<string, { label: string; tone: string }> = {
+  APPROVED: { label: 'You approved', tone: 'bg-ok/10 text-ok-text' },
+  CHANGES_REQUESTED: { label: 'You requested changes', tone: 'bg-fail/10 text-fail-text' },
+  COMMENTED: { label: 'You commented', tone: 'bg-fill/70 text-fg-3' },
+}
 function Facts({ p, now, seen, children }: { p: PrView; now: number; seen?: number; children: ReactNode }) {
   return (
     <span className="mt-0.5 flex items-center gap-2 whitespace-nowrap text-meta text-fg-3">
       {children}
       <span className="shrink-0 font-mono tabular-nums"><span className="text-ok-text">+{p.additions}</span> <span className="text-fail-text">−{p.deletions}</span></span>
       {p.behindBase && <span className="shrink-0 rounded-full bg-wait/10 px-1.5 font-medium text-wait-text" title="The PR below moved past this one: needs a smart rebase">outdated</span>}
+      {!p.mine && p.myReview && VERDICT[p.myReview.state] && (
+        <span className={`shrink-0 rounded-full px-1.5 font-medium ${VERDICT[p.myReview.state].tone}`} title={`Your review, ${short(p.myReview.submittedAt)}${p.myReview.commitId !== p.headSha ? ': the author pushed since' : ''}`}>
+          {VERDICT[p.myReview.state].label}{p.myReview.commitId !== p.headSha ? ' · pushed since' : ''}
+        </span>
+      )}
       {/* threads waiting on you in amber; ones you already answered, quietly */}
       {p.mine && !!(p.awaiting ?? p.unresolved) && (
         <span className="flex items-center gap-0.5 rounded-full bg-wait/10 px-1.5 font-medium text-wait-text" title={`${p.awaiting ?? p.unresolved} waiting on you · ${p.unresolved} open`}>
