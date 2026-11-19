@@ -14,7 +14,7 @@ import { Description, ghost, SubmitDialog, Turns, usePrThread, type PrThreadProp
 import { api, enc, param, setParam } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
-import { sayTo, useDiscussions, withTurns, type View } from './Discussion.tsx'
+import { sayTo, useDiscussions, useWork, withTurns, type View } from './Discussion.tsx'
 import { ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useToolCommands, type Command } from '../ui/Slash.tsx'
 import { useRole, type Role } from '../role.ts'
@@ -75,9 +75,11 @@ export function PrThread(props: PrThreadProps) {
   const [wholeState, setWhole] = useState(() => lastWhole)
   const [ownFor, setOwnFor] = useState<string>() // the PR whose own card you asked for while the Stack tab is open
   const whole = !!stack && wholeState
-  const prTalks = useDiscussions(`pr:${pr.id}`), stackTalks = useDiscussions(stackTarget)
-  const target = whole ? stackTarget! : `pr:${pr.id}`
-  const talks = whole ? stackTalks : prTalks
+  // linked to a ticket or other PRs: one Work, whose cards every part shares (no more this-PR / the-stack choice)
+  const work = useWork(`pr:${pr.id}`), shared = work && work.members.length > 1 ? work.target : undefined
+  const prTalks = useDiscussions(shared ?? `pr:${pr.id}`), stackTalks = useDiscussions(shared ? undefined : stackTarget)
+  const target = shared ?? (whole ? stackTarget! : `pr:${pr.id}`)
+  const talks = whole && !shared ? stackTalks : prTalks
   // a steer for one PR of the stack goes to that PR's own agent
   const steerPr = (n: number, text: string) => {
     const p = prs.find((x) => x.repo === pr.repo && x.number === n)
@@ -187,7 +189,7 @@ export function PrThread(props: PrThreadProps) {
         tab={pane === 'turns' ? 'explain' : pane} onTab={setPane}
         onAsk={(q) => appendDraft(`pr:${pr.id}`, q)}
         vitals={(
-            <Vitals key={target} scope={stack && { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } }}
+            <Vitals key={target} scope={stack && !shared ? { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } } : undefined}
                     shipping={<ShippingVital title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
                     topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number }} />
         )}

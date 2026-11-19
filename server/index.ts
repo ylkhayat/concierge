@@ -14,6 +14,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { live } from './live.ts'
+import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
 import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
@@ -390,11 +391,40 @@ export const linksOfTicket = (t: Ticket, said = ''): Linked[] => {
   return links.map(({ number, ...l }) => (number === pick?.number ? { ...l, suggest: pick.why } : l)).sort((a, b) => Number(!!b.suggest) - Number(!!a.suggest))
 }
 // an agent starting while its counterpart works (or has just left a word) is told, so they don't work over each other
+// --- Works (work.ts): what is linked shares one memory ------------------------------------------------------
+function workEdges(k: string): string[] {
+  const manual = Object.values(state.works ?? {}).flatMap((w) => w.links).flatMap(([a, b]) => (a === k ? [b] : b === k ? [a] : []))
+  const open = (id: string) => !!state.prs[id] && !state.prs[id].closed
+  if (k.startsWith('pr:')) {
+    const p = state.prs[k.slice(3)]
+    if (!p) return manual
+    return [...ticketsOf(p).map((t) => `ticket:${t.id}`), ...(p.stack ?? []).map((x) => `${x.repo}#${x.number}`).filter((id) => id !== p.id && open(id)).map((id) => `pr:${id}`), ...manual]
+  }
+  const id = k.slice(7)
+  return [...Object.values(state.prs).filter((p) => !p.closed && ticketsOf(p).some((t) => t.id === id)).map((p) => `pr:${p.id}`), ...manual]
+}
+/** A member's Work (merged with any other it is now linked to) and its members, labelled. */
+export function workOfMember(key: string) {
+  const keys = component(key, workEdges)
+  const w = workFor(state as unknown as WorkStore & typeof state, keys)
+  const members = keys.map((k) => {
+    if (k.startsWith('pr:')) { const p = state.prs[k.slice(3)]; return { key: k, kind: 'pr' as const, label: `#${p?.number ?? k.split('#')[1]}`, title: p?.title ?? '' } }
+    const t = execBoard.tickets.find((x) => x.id === k.slice(7))
+    return { key: k, kind: 'ticket' as const, label: k.slice(7), title: t?.title ?? '' }
+  }).sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label, undefined, { numeric: true }))
+  return { w, members }
+}
+/** Your words on a member: kept in its Work's memory, so every run on any part of it follows them. */
+function rememberSaid(key: string, text: string) { const { w } = workOfMember(key); rememberWork(w, key, text); save() }
+(state as { works?: unknown }).works ??= {}; (state as { workOf?: unknown }).workOf ??= {}
+
 setLinkNote(({ pr: p, ticketIds }) => {
+  const here = p ? `pr:${p.id}` : ticketIds?.[0] && execBoard.tickets.some((t) => t.id === ticketIds[0]) ? `ticket:${ticketIds[0]}` : undefined
+  const shared = here ? (() => { const { w, members } = workOfMember(here); return workBrief(w, members, here) })() : ''
   const others = p ? linksOfPr(p) : (ticketIds ?? []).flatMap((id) => { const t = execBoard.tickets.find((x) => x.id === id); return t ? linksOfTicket(t) : [] })
-  if (!others.length) return ''
+  if (!others.length) return shared
   const line = (l: Linked) => `- ${l.kind === 'ticket' ? `Linear ticket ${l.id}` : `PR ${l.label}`} "${l.title}": its agent is ${l.agent === 'working' ? 'WORKING on it right now' : l.agent === 'asks' ? 'waiting on the owner' : l.agent === 'idle' ? 'idle' : 'not started'}${l.said ? `; its last word: "${l.said}"` : ''}`
-  return '\n\nLinked work, handled by another agent of Concierge (the owner can hand the work between you):\n' + others.map(line).join('\n')
+  return shared + '\n\nLinked work, handled by another agent of Concierge (the owner can hand the work between you):\n' + others.map(line).join('\n')
     + '\nIf it is working right now, do not push to the same branch or post on the same threads; say in your final message what you left for it.'
 })
 
@@ -756,19 +786,35 @@ const stackOfTarget = (target: string) => {
   return m ? Object.values(state.prs).find((p) => p.repo === m[1] && p.stack?.[0].number === Number(m[2]))?.stack : undefined
 }
 /** The PRs a discussion covers when it covers several: a stack's, or the ones a ticket ships as. */
+const workMembers = (target: string) => { const w = state.works?.[target.slice(5)]; return w ? Object.entries(state.workOf ?? {}).filter(([, id]) => id === w.id).map(([k]) => k) : [] }
 function discussionPrs(target: string): { repo: string; number: number }[] | undefined {
+  if (target.startsWith('work:')) { const prs = workMembers(target).filter((k) => k.startsWith('pr:')).map((k) => state.prs[k.slice(3)]).filter((p): p is Pr => !!p); return prs.length > 1 ? prs.map((p) => ({ repo: p.repo, number: p.number })) : undefined }
   if (target.startsWith('stack:')) return stackOfTarget(target)?.map((x) => ({ repo: x.repo, number: x.number }))
   if (target.startsWith('ticket:')) { const t = ticketViews().find((x) => x.id === target.slice(7)); return t && t.prs.length > 1 ? t.prs.map((x) => ({ repo: x.repo, number: x.number })) : undefined }
   return undefined
 }
 /** The version of the work a card was written for: a PR's head and its feedback (every PR's, for a stack), a ticket's last run. */
 function versionOf(target: string): string | undefined {
+  if (target.startsWith('work:')) return workMembers(target).sort().map((k) => versionOf(k)).join()
   if (target.startsWith('stack:')) return stackOfTarget(target)?.map((x) => { const p = state.prs[`${x.repo}#${x.number}`]; return `${p?.headSha ?? ''}:${p?.feedbackAt ?? ''}` }).join()
   if (target.startsWith('pr:')) { const p = state.prs[target.slice(3)]; return p && `${p.headSha}:${p.feedbackAt ?? ''}` }
   const run = ticketViews().find((x) => x.id === target.slice(7))?.run
   return `${run?.id ?? ''}:${run?.endedAt ?? ''}`
 }
 async function discussionContext(target: string, topic: Topic): Promise<{ context: string; cwd?: string; version: string }> {
+  // a Work: each of its parts as it would be on its own, cut so the whole stays small
+  if (target.startsWith('work:')) {
+    const keys = workMembers(target).sort()
+    if (!keys.length) throw new Error('That piece of work is gone')
+    const parts = await Promise.all(keys.map((k) => discussionContext(k, topic).catch(() => undefined)))
+    const each = Math.floor(24_000 / keys.length)
+    return {
+      version: versionOf(target) ?? '',
+      cwd: parts.find((x) => x?.cwd)?.cwd,
+      context: `One piece of work in ${keys.length} parts (tickets and pull requests linked together, sharing one memory):\n\n`
+        + parts.map((x, i) => `### ${keys[i]}\n${x ? x.context.slice(0, each) : '(could not be read)'}`).join('\n\n'),
+    }
+  }
   if (target.startsWith('stack:')) {
     const stack = stackOfTarget(target)
     if (!stack) throw new Error('That stack is no longer open')
@@ -831,6 +877,14 @@ app.post('/discussions/say', async (c) => {
     say(target, topic, text.trim(), context, cwd, settled(discussionsOf(target)[topic === 'intent' ? 'understanding' : 'intent']), discussionPrs(target))
     return c.json(discussionsOf(target))
   } catch (e) { return c.json({ error: (e as Error).message }, 400) }
+})
+// a member's Work: its id, the target its cards live under, and its parts
+app.get('/works', (c) => {
+  const key = String(c.req.query('member') ?? '')
+  if (!/^(pr|ticket):/.test(key)) return c.json({ error: 'member is pr:… or ticket:…' }, 400)
+  const { w, members } = workOfMember(key)
+  save()
+  return c.json({ id: w.id, target: `work:${w.id}`, members, said: w.said.slice(-20) })
 })
 // a card asked (or, with no words, written): answered from the card, which is written again first when the work moved on
 app.post('/discussions/ask', async (c) => {
@@ -2249,6 +2303,7 @@ app.post('/prs/:id/reply', async (c) => {
   const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
   if (!p) return c.json({ error: 'Unknown PR' }, 404)
   if (!msg) return c.json({ error: 'Pick something or write your answer' }, 400)
+  rememberSaid(`pr:${p.id}`, msg)
   // steps that name another open PR of the same repo go to that PR's agent, as a handover with this one's last word
   // only my own PRs have an agent of mine to take work; a review PR's agent reviews, and someone else's branch isn't ours
   const peers = new Map(Object.values(state.prs).filter((x) => x.repo === p.repo && !x.closed && x.id !== p.id && x.mine).map((x) => [x.number, x]))
@@ -2328,6 +2383,7 @@ app.post('/stacks/drive', async (c) => {
   if (!p || !config.repos[p.repo]) return c.json({ error: 'Unknown pull request, or no local checkout for its repository' }, 400)
   const key = driveKey(p)
   if (ticketBusy(key)) return c.json({ error: 'The stack already has a run going: it reads new words once it ends' }, 409)
+  if (b.text?.trim()) rememberSaid(`pr:${p.id}`, b.text)
   const chain = treeChain(p), dir = directionOf(p)?.text, check = await cachedStackCheck(chain)
   const lines = chain.map((s, i) => { const t = state.prs[`${s.repo}#${s.number}`]; return `${i + 1}. #${s.number} "${s.title}" branch ${t?.head ?? '?'} into ${s.base}${t?.mine ? '' : " (not the person's: never change it)"}` })
   const parts = chain.map((s, i) => partOf(s, i, state.prs[`${s.repo}#${s.number}`]).text)
@@ -2338,6 +2394,8 @@ app.post('/stacks/drive', async (c) => {
     driveOf(key)?.summary && `The last stack run ended with this (continue from its worktree and branches; don't redo what it did):\n${driveOf(key)!.summary!.slice(-6000)}`,
     check?.issues.length ? `The agreement check found (it may be out of date: verify against the branches):\n${check.issues.map((x) => `- ${x.title} (${x.prs.map((n) => `#${n}`).join(', ')}): ${x.why} Fix: ${x.fix}`).join('\n')}` : '',
     `What each PR's own agent last found and left open:\n${parts.join('\n\n')}`,
+    // the Work's memory: what was said and decided on any of its parts (tickets included) holds for the whole stack
+    (() => { const { w, members } = workOfMember(`pr:${p.id}`); return workBrief(w, members, `pr:${p.id}`).trim() })(),
     b.push ? 'Push each changed branch when its part is done (with lease).' : 'Do not push: commit in the worktrees and report the shas.',
   ].filter(Boolean).join('\n\n')
   const run = enqueueExec([key], p.repo, false, { label: 'Resolve stack', prompt, said: words || 'Resolve the stack', role: 'stack' })
@@ -2367,6 +2425,7 @@ app.post('/exec/:run/reply', async (c) => {
   const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
   if (!run) return c.json({ error: 'Unknown run' }, 404)
   if (!msg) return c.json({ error: 'Pick something or write your answer' }, 400)
+  for (const id of run.ids) if (execBoard.tickets.some((t) => t.id === id)) { rememberSaid(`ticket:${id}`, msg); break }
   // still at it: a running one reads your words between steps; a queued one, the moment it starts
   if (run.state === 'queued') { holdWords(run, `exec:${run.id}`, msg); return c.json({ ok: true, sent: 'queued' }) }
   if (run.state === 'running') { const sent = tell(`exec:${run.id}`, msg, continueExec(run)); if (sent !== 'idle') return c.json({ ok: true, sent }) }

@@ -220,6 +220,8 @@ type State = {
   batches: Record<string, import('./exec.ts').Batch>
   stackDirections?: Record<string, import('./stackDirection.ts').Direction> // the direction each stack follows (stackDirection.ts)
   envs: Record<string, Env & { at: string }> // ticket id → the environment it is about, once read from Sentry
+  works?: Record<string, import('./work.ts').WorkMemory> // each Work's shared memory (work.ts)
+  workOf?: Record<string, string> // member (pr:… / ticket:…) → its Work's id
   sessions: Record<string, { id: string; total: number; provider?: import('./providers.ts').ProviderId }> // PR id or ticket id → its one agent session, and that session's cost so far
   autoClean: boolean // remove a PR's worktrees when it merges or closes, and sweep every night
   lastClean?: { at: string; removed: number; mb: number; why: string } // what the last automatic cleanup did

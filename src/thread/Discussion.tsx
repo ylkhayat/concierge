@@ -32,3 +32,7 @@ export const sayTo = (target: string, set: (d: Discussions) => void) => (topic: 
 }
 
 export type View = 'tour' | 'business' | 'technical' | 'norms'
+
+/** The Work a PR or ticket is part of (server/work.ts): linked parts share one memory and one pair of cards. */
+export type WorkView = { id: string; target: string; members: { key: string; kind: 'pr' | 'ticket'; label: string; title: string }[] }
+export const useWork = (member: string) => useApi<WorkView>(`/works?member=${encodeURIComponent(member)}`, { staleTime: 60_000 }).data

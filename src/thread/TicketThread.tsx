@@ -13,7 +13,7 @@ import { PHASE_LABEL } from '../components/ExecList.tsx'
 import { api, param, setParam, type TicketView } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
-import { sayTo, useDiscussions, withTurns } from './Discussion.tsx'
+import { sayTo, useDiscussions, useWork, withTurns } from './Discussion.tsx'
 import { ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useRole } from '../role.ts'
 import { DomainView } from './DomainView.tsx'
@@ -39,7 +39,9 @@ export function TicketThread(props: TicketThreadProps) {
   const pane: Pane = panes.includes(paneState) ? paneState : 'overview'
   const setPane = (p: Pane) => { lastPane = p; setPaneState(p); setParam('tpane', p === 'overview' ? null : p) }
   // the chat: the main conversation, or a discussion beside it, with the ticket in the panel
-  const target = `ticket:${t.id}`
+  // its PRs (and theirs, and their stack) are one Work with it: the same cards on every part
+  const work = useWork(`ticket:${t.id}`)
+  const target = work && work.members.length > 1 ? work.target : `ticket:${t.id}`
   const talks = useDiscussions(target)
   const all = withTurns(feed, talks.d) // one conversation: the run's work and the discussions' turns
   const count = all.filter((a) => a.kind !== 'section').length
