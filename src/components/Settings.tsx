@@ -210,7 +210,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
             {tab === 'accounts' && <Agents toast={toast} onConnections={() => go('connections')} />}
             {tab === 'compliance' && <ComplianceSettings setup={setup} saveConfig={saveConfig} />}
             {tab === 'spend' && <Usage health={health} setup={setup} save={save} saveConfig={saveConfig} />}
-            {tab === 'repos' && <Repositories setup={setup} health={health} toast={toast} saveConfig={saveConfig} />}
+            {tab === 'repos' && <Repositories setup={setup} health={health} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />}
             {tab === 'connections' && <Connections toast={toast} />}
             {tab === 'machines' && <><Access toast={toast} /><MachinesSettings /><Update />
               <details className="group/adv rounded-xl ring-1 ring-line [&[open]]:pb-3">
@@ -306,7 +306,10 @@ function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; 
 
 type Suggestion = { repo: string; prs: number; paths: string[]; watched: boolean }
 
-function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView; health?: Health; toast: Toast; saveConfig: SaveConfig }) {
+function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: SetupView; health?: Health; toast: Toast; saveConfig: SaveConfig; reload: () => Promise<unknown> }) {
+  // a repository being cloned onto this machine: looked at again until it is there
+  const cloning = Object.values(setup?.clones ?? {}).includes('cloning')
+  useEffect(() => { if (!cloning) return; const t = setInterval(() => void reload().catch(() => {}), 4000); return () => clearInterval(t) }, [cloning])
   const repos = setup?.config.repos ?? {}
   // which account each repository is kept to (none: the order in Accounts)
   const pins = setup?.config.repoAccounts ?? {}
@@ -379,7 +382,7 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
   const [plan, setPlan] = useState<Plan | { error: string }>()
   const { armed, arm } = useArm() // stop watching takes a second click
   const busy = task?.state === 'running' || task?.state === 'queued'
-  useEffect(() => { if (!busy) api(`/base/plan?repo=${encodeURIComponent(repo)}`).then(setPlan, (e: Error) => setPlan({ error: e.message })) }, [repo, busy, task?.endedAt])
+  useEffect(() => { if (!busy && !clone) api(`/base/plan?repo=${encodeURIComponent(repo)}`).then(setPlan, (e: Error) => setPlan({ error: e.message })) }, [repo, busy, task?.endedAt, clone])
   const act = (action: 'start' | 'cancel') => api('/base', { repo, action }).then(
     () => toast(action === 'start' ? `Mapping ${repo}` : 'Mapping stopped; finished folders are kept'), (e: Error) => toast(e.message, 'error'))
   const p = plan && !('error' in plan) ? plan : undefined

@@ -496,6 +496,8 @@ export function deepScope(tree: Map<string, Entry>, under: string): string[] {
 }
 
 export async function basePlan(repoName: string, repoPath: string, branch: string, under?: string) {
+  // a repository just added: this machine is still cloning it (setup.ts ensureClones)
+  if (!(await stat(repoPath).then(() => true, () => false))) throw new Error('Not on this machine yet: it is being cloned')
   await git(repoPath, 'fetch', '--quiet', 'origin', branch)
   const sha = (await git(repoPath, 'rev-parse', `origin/${branch}`)).trim()
   const tree = await listTree(repoPath, sha)

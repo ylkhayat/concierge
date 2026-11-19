@@ -121,6 +121,8 @@ const clones = new Map<string, string>() // repo → 'cloning', or why it failed
 export const cloneState = () => Object.fromEntries(clones)
 let cloningNow = false
 export async function ensureClones() {
+  // said at once, so the page that just saved it shows "cloning" rather than a git error from the missing folder
+  for (const [repo, path] of Object.entries(config.repos)) if (!clones.has(repo) && !existsSync(path)) clones.set(repo, 'cloning')
   if (cloningNow) return
   cloningNow = true
   try {
