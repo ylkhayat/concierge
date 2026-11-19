@@ -27,7 +27,7 @@ import { ExecHome } from './components/ExecHome.tsx'
 import { RepoPicker } from './components/RepoPicker.tsx'
 import { knowApps } from './appColor.ts'
 import { lazy, Suspense } from 'react'
-import { Desk } from './components/Desk.tsx'
+import { useWorkRows, WorksInbox } from './components/WorksInbox.tsx'
 import { Machine } from './components/Machine.tsx'
 import { Read } from './components/Read.tsx'
 import { Focus } from './components/Focus.tsx'
@@ -186,17 +186,13 @@ export function App() {
     } catch { /* no storage: nothing to compare */ }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useDeskTime() // a topic put off, a focus block started or over
-  const allUnits = mode === 'desk' && prs ? units(focusedPrs ?? [], scoped, RULES) : []
-  // a topic put off leaves the order until its time (the one open stays until you move on)
-  const holds = (u: Unit) => u.key === `ticket:${selected}` || u.members.some((p) => p.id === selected) || u.ticket?.id === selected
-  const deskUnits = allUnits.filter((u) => !offUntil(u.key) || holds(u))
-  const deskLater = allUnits.filter((u) => offUntil(u.key) && !holds(u))
-  const [deskKey, setDeskKey] = useState<string>() // the topic you opened: a PR it shares with another stays in this one
-  const unit = selected ? unitOf(deskUnits, selected, deskKey) : undefined
-  const nextUnit = unit && (deskUnits.find((u) => u.key !== unit.key && !finished(u)) ?? undefined)
-  const goUnit = (u = nextUnit) => { if (!u) return; setDeskKey(u.key); select(current(u, RULES)) }
-  // on the desk something is always open: the unit to do first, where it stands
-  useEffect(() => { if (mode === 'desk' && !unit && deskUnits.length) select(current(deskUnits[0], RULES)) }, [mode, !!unit, deskUnits[0]?.key]) // eslint-disable-line react-hooks/exhaustive-deps
+  // the Works inbox: one row per Work (a ticket, its PRs, their stack), by what waits on you across its parts
+  const workRows = useWorkRows(mode === 'desk' ? focusedPrs ?? prs : undefined, scoped, RULES)
+  const workNow = workRows.filter((r) => !r.later)
+  const workHere = workRows.find((r) => r.parts.some((x) => x.id === selected))
+  const goUnit = () => { const i = workNow.findIndex((r) => r === workHere); const n = workNow.slice(i + 1).find((r) => r.needs || r.working) ?? workNow[(i + 1) % workNow.length]; if (n) select(n.lead) }
+  // something is always open: the part that needs you most, in the Work that needs you most
+  useEffect(() => { if (mode === 'desk' && !selected && workNow.length) select(workNow[0].lead) }, [mode, !!selected, workNow[0]?.key]) // eslint-disable-line react-hooks/exhaustive-deps
   const deskWaiting = prs ? units(prs, tickets, RULES).filter((u) => u.needs).length : 0
   // explanations on PRs waiting on you: what Read's badge counts
   useEffect(() => { if ((mode === 'review' || mode === 'exec') && !spaces.includes(mode)) setMode(spaces[0]) }, [spaces.join()]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -204,7 +200,7 @@ export function App() {
   useEffect(() => { document.documentElement.dataset.mode = codebaseRepo ? 'codebase' : mode }, [mode, codebaseRepo])
   useEffect(() => {
     const n = mode === 'exec' ? execWaiting : mode === 'desk' ? deskWaiting : needsYou
-    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', desk: 'Desk', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans' }[mode]} · Concierge`
+    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', desk: 'Work', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans' }[mode]} · Concierge`
   }, [needsYou, execWaiting, deskWaiting, mode])
 
   // g then d / r / e / s / c: to a workspace. g alone (no second key within a moment) still opens the PR on GitHub
@@ -214,7 +210,7 @@ export function App() {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (document.querySelector('dialog[open]')) return // a modal is up: Esc closes it, list keys wait
       if (isTyping(e)) { if (e.key === 'Escape') (e.target as HTMLElement).blur(); return }
-      const ids = mode === 'exec' ? execList.map((t) => t.id) : mode === 'desk' ? [...(unit?.ticket ? [unit.ticket.id] : []), ...(unit?.members ?? []).map((p) => p.id)] : list.map((p) => p.id)
+      const ids = mode === 'exec' ? execList.map((t) => t.id) : mode === 'desk' ? workNow.map((r) => r.lead) : list.map((p) => p.id)
       const i = ids.indexOf(selected ?? '')
       if (e.key === 'j' || e.key === 'ArrowDown') select(ids[Math.min(i + 1, ids.length - 1)])
       else if (e.key === 'k' || e.key === 'ArrowUp') select(ids[Math.max(i - 1, 0)])
@@ -330,7 +326,7 @@ export function App() {
       <Head>Workspaces</Head>
       {/* the workspaces; one accent pill slides to the active one (railPill) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
-      {([['desk', Crosshair, 'Desk', deskWaiting, 'One stack or task at a time (g d; d from a PR, n for the next)'], ['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'desk' || m === 'standup' || m === 'skills' || m === 'plans' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
+      {([['desk', Crosshair, 'Work', deskWaiting, 'Your work, one row per ticket with its PRs and stack, by what waits on you (g d; n for the next)'], ['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'desk' || m === 'standup' || m === 'skills' || m === 'plans' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
         const on = mode === m && !(m === 'review' && codebaseRepo)
         return (
           <button key={m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}`} aria-current={on}
@@ -417,21 +413,24 @@ export function App() {
   // the desk: a stage, the unit you work on in the middle and the few you juggle at its side
   const deskFrame = (
     <main className="@container relative min-h-0 min-w-0 flex-1 overflow-hidden">
-      {unit && selected ? (
-        <Desk unit={unit} all={deskUnits} later={deskLater} selected={selected} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} onUnit={(u) => goUnit(u)} toast={toast}>
+      {selected ? (
+        <div className="flex h-full min-h-0">
+        <WorksInbox rows={workRows} selected={selected} onOpen={select} />
+        <div className="min-w-0 flex-1">
           {pr ? (
             <div key={pr.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
-              <PrPage compact ticket={unit.ticket} pr={pr} feed={feed} now={now} onBack={() => setMode('review')} toast={toast} prs={prs ?? []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} onOpenLinked={(l) => select(l.id)} sync={syncPr} />
+              <PrPage compact ticket={tickets.find((t) => workHere?.parts.some((x) => x.kind === 'ticket' && x.id === t.id))} pr={pr} feed={feed} now={now} onBack={() => setMode('review')} toast={toast} prs={prs ?? []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} onOpenLinked={(l) => select(l.id)} sync={syncPr} />
             </div>
           ) : ticket ? (
             <div key={ticket.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
               <TicketPage compact t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} toast={toast} onOpenLinked={(l) => select(l.id)} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
             </div>
           ) : null}
-        </Desk>
+        </div>
+        </div>
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-          {prs ? <><Crosshair className="size-7 text-ok" /><p className="text-reading text-fg-2 ">Nothing on the desk{focus ? ` for ${focus}` : ''}. New reviews and feedback land here as they arrive.</p></>
+          {prs ? <><Crosshair className="size-7 text-ok" /><p className="text-reading text-fg-2 ">Nothing needs you{focus ? ` in ${focus}` : ''}. New reviews, feedback and tickets land here, grouped by the work they belong to.</p></>
             : <LoaderCircle className="size-5 animate-spin text-fg-3" />}
         </div>
       )}
