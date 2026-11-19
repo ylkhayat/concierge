@@ -324,9 +324,10 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
     saveConfig({ repos: next }, `Stopped watching ${repo}`)
   }
   const addRepo = async (repo: string, path: string) => {
-    repo = repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
+    // its GitHub link as you copied it (https, ssh, or owner/repo): the folder is its name in the working directory
+    repo = repo.trim().replace(/^(?:https?:\/\/(?:www\.)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)/, '').replace(/(?:\.git)?\/?(?:[?#].*)?$/, '').split('/').slice(0, 2).join('/')
     path = path.trim() || repo.split('/')[1] || ''
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return setAdd((a) => ({ ...a, status: 'Use the owner/repo form, e.g. acme/api' }))
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return setAdd((a) => ({ ...a, status: 'Paste the repository\'s GitHub link, e.g. https://github.com/acme/api' }))
     setAdd((a) => ({ ...a, status: 'checking' }))
     const v = await api('/setup/validate', { repo, path }).catch(() => ({ ok: false, error: 'Could not check' }))
     if (!v.ok) return setAdd((a) => ({ ...a, status: v.error }))
@@ -345,7 +346,7 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
         ))}
       </Group>
 
-      <Group title="Add a repository" hint="Suggestions come from your recent PR activity and the clones found on this machine.">
+      <Group title="Add a repository" hint="Paste its GitHub link: every machine clones it into its own working directory. Or pick a suggestion from your recent PR activity.">
         {offers.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 py-3.5">
             {offers.slice(0, 6).map((s) => (
@@ -358,10 +359,9 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
           </div>
         )}
         <div className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row">
-          <input value={add.repo} onChange={(e) => setAdd({ ...add, repo: e.target.value, status: '' })} placeholder="owner/repo" className={`${input} font-mono sm:w-52`} />
-          <input value={add.path} onChange={(e) => setAdd({ ...add, path: e.target.value, status: '' })} placeholder={`folder (empty: ${add.repo.split('/')[1] || 'the repo name'} in the working directory, cloned if missing)`} className={`${input} flex-1 font-mono`}
-                 onKeyDown={(e) => e.key === 'Enter' && addRepo(add.repo, add.path)} />
-          <button onClick={() => addRepo(add.repo, add.path)} disabled={!add.repo || add.status === 'checking'} className={primary}>
+          <input value={add.repo} onChange={(e) => setAdd({ ...add, repo: e.target.value, status: '' })} placeholder="https://github.com/owner/repo" className={`${input} flex-1 font-mono`}
+                 onKeyDown={(e) => e.key === 'Enter' && addRepo(add.repo, '')} />
+          <button onClick={() => addRepo(add.repo, '')} disabled={!add.repo || add.status === 'checking'} className={primary}>
             {add.status === 'checking' ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Add
           </button>
         </div>
