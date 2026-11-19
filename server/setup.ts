@@ -5,7 +5,7 @@ import { access, cp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
-import { config } from './config.ts'
+import { config, repoPath, WORK_DIR } from './config.ts'
 import { STATE_DIR } from './paths.ts'
 import { getMe, searchRepos } from './github.ts'
 
@@ -86,9 +86,12 @@ export async function suggestions() {
 }
 
 /** Is `path` a checkout of `repo`? */
-export async function validate(repo: string, path: string): Promise<{ ok: boolean; error?: string }> {
-  const p = path.replace(/^~(?=\/|$)/, homedir())
-  if (!(await stat(p).then((x) => x.isDirectory(), () => false))) return { ok: false, error: 'No such folder' }
+export async function validate(repo: string, path: string): Promise<{ ok: boolean; error?: string; clone?: boolean }> {
+  const p = repoPath(path)
+  if (!(await stat(p).then((x) => x.isDirectory(), () => false))) {
+    // a folder name in the working directory that isn't there yet: each machine clones it (ensureClones)
+    return /^[\w.-]+$/.test(path) ? { ok: true, clone: true } : { ok: false, error: 'No such folder (give just a folder name to clone it into the working directory)' }
+  }
   const url = (await run('git', ['-C', p, 'remote', 'get-url', 'origin'], { timeout: 3000 }).catch(() => undefined))?.stdout.trim()
   if (!url) return { ok: false, error: 'Not a git checkout with an origin remote' }
   const m = url.match(GITHUB)
@@ -98,9 +101,9 @@ export async function validate(repo: string, path: string): Promise<{ ok: boolea
 
 /** Clone `repo` into the code folder (CODE_DIR, or ~/code), for a suggestion with no checkout yet. An existing folder of
  *  that name is used if it is that repo's checkout. */
-export async function cloneRepo(repo: string): Promise<{ path: string }> {
+export async function cloneRepo(repo: string, at?: string): Promise<{ path: string }> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Use the owner/repo form')
-  const path = join(ROOTS[0], repo.split('/')[1])
+  const path = at ?? join(WORK_DIR, repo.split('/')[1])
   if (await stat(path).then(() => true, () => false)) {
     const v = await validate(repo, path)
     if (!v.ok) throw new Error(`${path} already exists: ${v.error}`)
@@ -109,6 +112,25 @@ export async function cloneRepo(repo: string): Promise<{ path: string }> {
   }
   scanned = undefined
   return { path }
+}
+
+// --- every watched repository on this machine -------------------------------------------
+// config.json is shared, checkouts are not: a machine missing one clones it into its working directory. One at a time,
+// in the background; what is cloning or failed shows on the repository's card.
+const clones = new Map<string, string>() // repo → 'cloning', or why it failed
+export const cloneState = () => Object.fromEntries(clones)
+let cloningNow = false
+export async function ensureClones() {
+  if (cloningNow) return
+  cloningNow = true
+  try {
+    for (const [repo, path] of Object.entries(config.repos)) {
+      if (await stat(path).then(() => true, () => false)) { clones.delete(repo); continue }
+      clones.set(repo, 'cloning')
+      console.log(`repos: cloning ${repo} into ${path}`)
+      await cloneRepo(repo, path).then(() => { clones.delete(repo); console.log(`repos: cloned ${repo}`) }, (e: Error) => { clones.set(repo, e.message); console.error(`repos: ${e.message}`) })
+    }
+  } finally { cloningNow = false }
 }
 
 // --- skills --------------------------------------------------------------------------------

@@ -1,8 +1,9 @@
 // Settings: built-in defaults, overridden by what the user saved (only `repos` is required).
 // Templates use {number} {repo} {event} {note} {gif}.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { fleet } from './fleet.ts'
 
@@ -11,7 +12,7 @@ import { fleet } from './fleet.ts'
 export type SkillRule = { skill: string; why: string; match?: string; unless?: string; bug?: boolean; env?: 'prod' | 'dev' }
 
 export type Config = {
-  repos: Record<string, string> // "owner/repo" → absolute path of a local checkout
+  repos: Record<string, string> // "owner/repo" → its checkout: a folder name in this machine's working directory (WORK_DIR), or an absolute path
   port: number
   pollSeconds: number
   maxJobs: number
@@ -169,6 +170,11 @@ function write(u: UserConfig) {
 }
 
 const expand = (p: string) => p.replace(/^~(?=\/|$)/, homedir())
+/** This machine's working directory: where its repositories live, and where a missing one is cloned (each machine's
+ *  CODE_DIR, mounted in the container at DECK_CODE; ~/code without either). */
+export const WORK_DIR = expand(process.env.DECK_CODE || process.env.CODE_DIR || '~/code')
+/** A repository's checkout on this machine: a bare folder name sits in the working directory. */
+export const repoPath = (v: string) => { const p = expand(v); return isAbsolute(p) ? p : join(WORK_DIR, p) }
 function resolve(u: UserConfig): Config {
   return {
     ...DEFAULTS, ...u,
@@ -180,7 +186,7 @@ function resolve(u: UserConfig): Config {
       review: { ...DEFAULTS.agent.review, ...u.agent?.review },
       revise: { ...DEFAULTS.agent.revise, ...u.agent?.revise },
     },
-    repos: Object.fromEntries(Object.entries(u.repos ?? {}).map(([k, v]) => [k, expand(v)])),
+    repos: Object.fromEntries(Object.entries(u.repos ?? {}).map(([k, v]) => [k, repoPath(v)])),
     ...(setting('PORT') && { port: Number(setting('PORT')) }),
   }
 }
@@ -213,3 +219,12 @@ export function saveConfig(patch: UserConfig) {
 export const fill = (t: string, vars: Record<string, string | number>) => t.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m))
 
 export const workspaces = (): Workspace[] => config.workspaces?.length ? config.workspaces : config.exec.command ? ['review', 'exec'] : ['review']
+
+let readAt = 0
+/** config.json as another machine saved it (the file syncs): read again when it changed. */
+export async function reloadConfig() {
+  const m = await stat(CONFIG_FILE).then((s) => s.mtimeMs, () => 0)
+  if (!m || m === readAt) return
+  readAt = m
+  try { user = JSON.parse(await readFile(CONFIG_FILE, 'utf8')); Object.assign(config, resolve(user)) } catch { /* mid-sync: next time */ }
+}

@@ -325,21 +325,22 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
   }
   const addRepo = async (repo: string, path: string) => {
     repo = repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
+    path = path.trim() || repo.split('/')[1] || ''
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return setAdd((a) => ({ ...a, status: 'Use the owner/repo form, e.g. acme/api' }))
     setAdd((a) => ({ ...a, status: 'checking' }))
     const v = await api('/setup/validate', { repo, path }).catch(() => ({ ok: false, error: 'Could not check' }))
     if (!v.ok) return setAdd((a) => ({ ...a, status: v.error }))
-    await saveConfig({ repos: { ...repos, [repo]: path } }, `Watching ${repo}`)
+    await saveConfig({ repos: { ...repos, [repo]: path } }, v.clone ? `Watching ${repo}: each machine clones it into its working directory` : `Watching ${repo}`)
     setAdd({ repo: '', path: '', status: '' })
   }
   const offers = (suggested ?? []).filter((s) => !Object.keys(repos).some((r) => r.toLowerCase() === s.repo.toLowerCase()) && s.paths.length)
 
   return (
     <>
-      <Group title="Watched repositories" hint="Reviews and your PRs come from these. Each keeps a codebase map for explanations.">
+      <Group title="Watched repositories" hint={`Reviews and your PRs come from these. Each machine keeps them in its own working directory (its CODE_DIR) and clones one it lacks. This machine: ${setup?.workDir ? home(setup.workDir) : '…'}`}>
         {Object.keys(repos).length === 0 && <div className="px-4 py-6 text-center text-body text-fg-3">No repositories yet. Add one below.</div>}
         {Object.entries(repos).map(([repo, path]) => (
-          <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)}
+          <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
                     accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
         ))}
       </Group>
@@ -358,9 +359,9 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
         )}
         <div className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row">
           <input value={add.repo} onChange={(e) => setAdd({ ...add, repo: e.target.value, status: '' })} placeholder="owner/repo" className={`${input} font-mono sm:w-52`} />
-          <input value={add.path} onChange={(e) => setAdd({ ...add, path: e.target.value, status: '' })} placeholder="~/code/repo" className={`${input} flex-1 font-mono`}
+          <input value={add.path} onChange={(e) => setAdd({ ...add, path: e.target.value, status: '' })} placeholder={`folder (empty: ${add.repo.split('/')[1] || 'the repo name'} in the working directory, cloned if missing)`} className={`${input} flex-1 font-mono`}
                  onKeyDown={(e) => e.key === 'Enter' && addRepo(add.repo, add.path)} />
-          <button onClick={() => addRepo(add.repo, add.path)} disabled={!add.repo || !add.path || add.status === 'checking'} className={primary}>
+          <button onClick={() => addRepo(add.repo, add.path)} disabled={!add.repo || add.status === 'checking'} className={primary}>
             {add.status === 'checking' ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Add
           </button>
         </div>
@@ -370,7 +371,8 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
   )
 }
 
-function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin }: {
+function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone }: {
+  clone?: string // not on this machine yet: 'cloning', or why the clone failed
   repo: string; path: string; meta?: BaseInfo['meta']; task?: NonNullable<Health['base']>[string]; toast: Toast; onRemove: () => void
   accounts: { id: string; label: string }[]; pin?: string; onPin: (account?: string) => void
 }) {
@@ -391,6 +393,7 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-body font-semibold">{repo}</div>
           <div className="truncate font-mono text-meta text-fg-3" title={path}>{home(path)}</div>
+          {clone && <div className={`mt-0.5 flex items-center gap-1.5 text-meta ${clone === 'cloning' ? 'text-run-text' : 'text-fail-text'}`}>{clone === 'cloning' ? <><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine…</> : `Not on this machine: ${clone}`}</div>}
         </div>
         <button onClick={() => arm('remove', onRemove)} title={armed ? 'Click again to stop watching (its codebase map is kept)' : 'Stop watching'} aria-label={`Stop watching ${repo}`}
                 className={`relative isolate flex items-center gap-1 overflow-hidden rounded-lg p-1.5 text-small font-medium transition-all hover:bg-fail/10 hover:text-fail-text focus:opacity-100 group-hover:opacity-100 ${armed ? 'text-fail-text opacity-100' : 'text-fg-4 opacity-0'}`}>

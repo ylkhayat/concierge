@@ -5,7 +5,7 @@ import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { execFile } from 'node:child_process'
 import { get as httpGet } from 'node:http'
 import { commandFor, scanSkills } from './skillScan.ts'
@@ -53,7 +53,7 @@ import { spentText } from './usage.ts'
 import { belongsTo, cleanWorktrees, sweepDue, worktrees } from './worktrees.ts'
 import { flowInOf, flowOf, type Flow } from './flow.ts'
 import { planStacks, valid, validPrep, type Prep } from './plan.ts'
-import { CONFIG_FILE, configured, fill, saveConfig, userConfig, workspaces, type Workspace } from './config.ts'
+import { CONFIG_FILE, WORK_DIR, configured, reloadConfig, repoPath, fill, saveConfig, userConfig, workspaces, type Workspace } from './config.ts'
 import { accountOf, accounts, available, modelsOf, spawnAgent, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
 import { orgSkills, setMode, syncOrgSkills } from './orgSkills.ts'
 import { improveSkill, removeSkill, skillsView, suggestSkills } from './skills.ts'
@@ -67,7 +67,7 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from '
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, type Op as PlanOp } from './plans.ts'
-import { checks, cloneRepo, installSourceSkills, DEFAULT_SOURCE, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
+import { checks, cloneRepo, cloneState, ensureClones, installSourceSkills, DEFAULT_SOURCE, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
@@ -1518,6 +1518,7 @@ app.post('/base', async (c) => {
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async () => ({
   configured: configured(), configFile: CONFIG_FILE, checks: await checks(), skills: await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
+  workDir: WORK_DIR, clones: cloneState(),
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
@@ -1598,7 +1599,8 @@ app.post('/config', async (c) => {
 
   const prev = userConfig().agent
   saveConfig({
-    ...(b.repos && { repos: b.repos }),
+    // kept as a folder name when it sits in the working directory: then each machine finds it in its own
+    ...(b.repos && { repos: Object.fromEntries(Object.entries(b.repos).map(([r, p]) => { const rel = relative(WORK_DIR, repoPath(p)); return [r, /^[\w-][\w.-]*$/.test(rel) ? rel : p] })) }),
     ...(b.repoAccounts && { repoAccounts: b.repoAccounts }),
     ...(b.terminal && { terminal: b.terminal as 'Terminal' | 'iTerm' }),
     ...(b.workspaces && { workspaces: [...new Set(b.workspaces)] }),
@@ -1619,6 +1621,7 @@ app.post('/config', async (c) => {
   doPoll() // pick up the newly watched repos right away
   if (b.exec) pollTickets()
   bus.emit('change')
+  if (b.repos) void ensureClones() // a repository new to this machine is cloned in the background
   return c.json(await setupView())
 })
 // who does the work: accounts (Claude, OpenAI, Llama; more of each, every one signed in on its own), one per kind of
@@ -2745,3 +2748,5 @@ afterMerge(() => { bus.emit('change'); bus.emit('exec'); pump() })
 const server = serve({ fetch: root.fetch, hostname: setting('HOST') ?? '127.0.0.1', port: config.port }, ({ port }) =>
   console.log(`Concierge on http://${setting('HOST') ?? '127.0.0.1'}:${port}`))
 if ((setting('HOST') ?? '127.0.0.1') !== '127.0.0.1' && !setting('PASSWORD')) console.warn('Concierge listens beyond this machine with no CONCIERGE_PASSWORD: only do this on a private network such as a tailnet')
+// every machine keeps a checkout of each watched repository: cloned at start, and again when config.json (synced) adds one
+setTimeout(() => void ensureClones(), 15_000).unref(); setInterval(() => void reloadConfig().then(ensureClones), 5 * 60_000).unref()
