@@ -77,10 +77,10 @@ html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 .prose input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--color-violet-600); }
 .prose .task-list-item { list-style: none; margin-left: -1.2em; }
 .prose summary { cursor: pointer; font-weight: 500; }
-.dark .prose { color: var(--color-zinc-300); }
-.dark .prose :where(h1, h2, h3, h4) { color: var(--color-zinc-100); }
+.dark .prose { color: var(--fg-2); }
+.dark .prose :where(h1, h2, h3, h4) { color: var(--fg-1); }
 .dark .prose a { color: var(--color-violet-400); }
-.dark .prose :where(code, pre) { background: var(--color-zinc-800); }
+.dark .prose :where(code, pre) { background: var(--fill); }
 .dark .prose blockquote { border-color: var(--color-zinc-700); color: var(--color-zinc-400); }
 .dark .prose :where(th, td), .dark .prose hr { border-color: var(--color-zinc-800); }
 /* a verb that is happening now: a light sweeps across it */
