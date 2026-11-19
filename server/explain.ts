@@ -406,7 +406,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   })
   const prompt = buildPrompt({ pr, base, head: pr.headSha, facts, skeleton, needSkeleton, sig, nodes, asks, askTouched, prev, interdiff, tickets, builds })
   writeJson(join(OVERLAYS(pr), 'last-prompt.json'), { prompt }) // for debugging what was (not) asked
-  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress, SCHEMA, config.explainBudgetUsd ?? 1.5, await method('explainChange', FORMAT))
+  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress, SCHEMA, config.explainBudgetUsd ?? 1.5, await method('explainChange', FORMAT), undefined, pr.repo)
 
   // persist the shared knowledge first, so even a later failure leaves the atlas richer
   const now = new Date().toISOString()
@@ -431,9 +431,9 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   return overlay
 }
 
-export function callClaude<T = Result>(prompt: string, cwd: string, signal: AbortSignal | undefined, progress: Progress, schema: object = SCHEMA, budget = config.explainBudgetUsd ?? 1.5, system = FORMAT, model?: string): Promise<{ result: T; cost: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
-  // reading code is the review provider's; a small-model call goes to the one for quick calls
-  const provider = providerFor(model === 'haiku' ? 'small' : 'review')
+export function callClaude<T = Result>(prompt: string, cwd: string, signal: AbortSignal | undefined, progress: Progress, schema: object = SCHEMA, budget = config.explainBudgetUsd ?? 1.5, system = FORMAT, model?: string, repo?: string): Promise<{ result: T; cost: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
+  // reading code is the review provider's; a small-model call goes to the one for quick calls (a pinned repo: its account)
+  const provider = providerFor(model === 'haiku' ? 'small' : 'review', repo)
   return new Promise((resolve, reject) => {
     // Lean session: no MCP, skills, hooks or user settings. A bare call costs ~$0.01 instead of ~$1.50.
     const child = spawnAgent(provider, [
@@ -556,7 +556,7 @@ export async function mapBase(repoName: string, repoPath: string, branch: string
     const label = `Mapping ${areas.slice(0, 2).join(', ')}${areas.length > 2 ? ` and ${areas.length - 2} more` : ''}`
     opts.progress(label, done, asks.length, cost)
     const { result, cost: c } = await callClaude<{ nodes: Result['nodes'] }>(
-      lines.join('\n'), wt, opts.signal, () => opts.progress(label, done, asks.length, cost), BASE_SCHEMA, 2, await method('explainCodebase', FORMAT))
+      lines.join('\n'), wt, opts.signal, () => opts.progress(label, done, asks.length, cost), BASE_SCHEMA, 2, await method('explainCodebase', FORMAT), undefined, repoName)
     cost += c
     const fresh = loadNodes(repoName), now = new Date().toISOString()
     for (const n of result.nodes) {
@@ -602,7 +602,7 @@ export async function mapSystems(repoName: string, tree: Map<string, Entry>, cwd
   ].join('\n')
   let cost = 0
   for (let tries = 0; tries < 2; tries++) {
-    const { result, cost: c } = await callClaude<{ skeleton: Omit<Skeleton, 'signature'> }>(prompt, cwd, signal, progress, SYSTEMS_SCHEMA, 1.5, await method('explainCodebase', FORMAT))
+    const { result, cost: c } = await callClaude<{ skeleton: Omit<Skeleton, 'signature'> }>(prompt, cwd, signal, progress, SYSTEMS_SCHEMA, 1.5, await method('explainCodebase', FORMAT), undefined, repoName)
     cost += c
     if (goodSkeleton(result.skeleton, sig)) { writeJson(join(ATLAS(repoName), 'skeleton.json'), { signature: sig, ...result.skeleton }); return cost }
   }

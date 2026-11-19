@@ -142,10 +142,10 @@ function views(): PrView[] {
       const op = ops.get(p.id)
       // the description is fetched when you open it (/prs/:id/body): the live list stays small
       const { body, bodyHtml: _html, ...pr } = p
-      const waiting = p.job?.state === 'queued' ? waitingOn(p.job, p.mine ? 'revise' : 'review') : undefined
+      const waiting = p.job?.state === 'queued' ? waitingOn(p.job, p.mine ? 'revise' : 'review', p.repo) : undefined
       // queued: why it hasn't started (and when it should), shown on the PR
       const below = p.job?.state === 'queued' && p.job.after && ['queued', 'running'].includes(state.prs[p.job.after]?.job?.state ?? '') ? `#${state.prs[p.job.after].number}` : undefined
-      const queued = p.job?.state === 'queued' ? queuedWhy(p.job, p.mine ? 'revise' : 'review', below) : undefined
+      const queued = p.job?.state === 'queued' ? queuedWhy(p.job, p.mine ? 'revise' : 'review', below, p.repo) : undefined
       return { ...pr, waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
@@ -958,7 +958,7 @@ function ticketViews(): TicketView[] {
     const settled = settledIn(run, t.id), bucket = handedBack(ticketBusy(t.id) ? undefined : run, bucketOf(t, pr && { actionable: prs.some((p) => p.actionable) }))
     return {
       // the open ones (all of them when none is open); closed and merged ones apart, so they show but don't count
-      ...t, ...(waitsOn && !ticketBusy(t.id) && { waitsOn }), ...(run?.state === 'queued' && { queued: queuedWhy(run, 'exec') }), background: run ? openTasks(`exec:${run.id}`) : 0, prs: prs.length ? prs : all, closedPrs: prs.length ? all.filter((p) => !prs.includes(p)) : [], env: envOf(t), repo: repoFor(t.id, config.exec.repoByPrefix), run, busy: ticketBusy(t.id) && !settled,
+      ...t, ...(waitsOn && !ticketBusy(t.id) && { waitsOn }), ...(run?.state === 'queued' && { queued: queuedWhy(run, 'exec', undefined, run.repo) }), background: run ? openTasks(`exec:${run.id}`) : 0, prs: prs.length ? prs : all, closedPrs: prs.length ? all.filter((p) => !prs.includes(p)) : [], env: envOf(t), repo: repoFor(t.id, config.exec.repoByPrefix), run, busy: ticketBusy(t.id) && !settled,
       bucket: settled === 'parked' && bucket !== 'closed' && bucket !== 'handed' ? 'needs-you' as const : bucket, pr, linked: linksOfTicket(t, `${run?.summary ?? ''}\n${t.lastComment?.body ?? ''}`),
     }
   })
@@ -1518,7 +1518,7 @@ app.post('/base', async (c) => {
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async () => ({
   configured: configured(), configFile: CONFIG_FILE, checks: await checks(), skills: await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
-  config: { repos: config.repos, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
+  config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
   needed: await skillsNeeded([config.agent.review.command, config.agent.revise.command, config.agent.stack ?? '', config.exec.command, ...config.exec.actions.map((x) => x.prompt)]),
@@ -1560,7 +1560,7 @@ app.post('/access', async (c) => {
   return c.json({ logins: allowedLogins(), you })
 })
 app.post('/config', async (c) => {
-  const b = await c.req.json() as { repos?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string }
+  const b = await c.req.json() as { repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string }
   const errors: string[] = []
   if (b.repos) {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
@@ -1569,6 +1569,8 @@ app.post('/config', async (c) => {
       else { const v = await validate(repo, path); if (!v.ok) errors.push(`${repo}: ${v.error}`) }
     }
   }
+  // a repository kept to one account: a watched repository, and an account that exists
+  if (b.repoAccounts !== undefined && (typeof b.repoAccounts !== 'object' || Object.entries(b.repoAccounts).some(([r, a]) => !(r in (b.repos ?? config.repos)) || typeof a !== 'string' || !accounts().some((x) => x.id === a)))) errors.push('Each repository takes one of your accounts')
   for (const k of ['review', 'revise'] as const) {
     const v = b[k]
     if (v !== undefined && (typeof v !== 'string' || !v.trim() || v.length > 200)) errors.push(`The ${k} command can't be empty`)
@@ -1597,6 +1599,7 @@ app.post('/config', async (c) => {
   const prev = userConfig().agent
   saveConfig({
     ...(b.repos && { repos: b.repos }),
+    ...(b.repoAccounts && { repoAccounts: b.repoAccounts }),
     ...(b.terminal && { terminal: b.terminal as 'Terminal' | 'iTerm' }),
     ...(b.workspaces && { workspaces: [...new Set(b.workspaces)] }),
     ...(typeof b.linearDesktop === 'boolean' && { linearDesktop: b.linearDesktop }),

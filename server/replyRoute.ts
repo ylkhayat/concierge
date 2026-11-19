@@ -8,6 +8,7 @@
 // A reply also starts a fresh, short conversation from the agent's last report instead of replaying a long one, unless
 // that conversation is still small or was used a moment ago (its prompt cache is still warm, so continuing is cheap).
 import { haiku } from './next.ts'
+import { providerFor } from './providers.ts'
 import { config, type Job, type Pr } from './store.ts'
 
 export type Route = 'answer' | 'edit' | 'change'
@@ -52,7 +53,7 @@ export async function routeReply(pr: Pr, said: string, job: Pick<Job, 'lastWords
     + (job.lastSteps?.length ? `\n\nThe steps it asked about:\n${job.lastSteps.join('\n')}` : '')
     + `\n\nThe person's message:\n${said.slice(0, 3000)}`
   try {
-    const { out, costUsd } = await haiku<{ route: Route; answer?: string }>(prompt, SCHEMA, SYSTEM, 0.05)
+    const { out, costUsd } = await haiku<{ route: Route; answer?: string }>(prompt, SCHEMA, SYSTEM, 0.05, 'haiku', providerFor('small', pr.repo))
     const route = out.route === 'answer' && !out.answer?.trim() ? 'edit' : out.route
     return { route, ...(route === 'answer' && { answer: out.answer!.trim() }), costUsd }
   } catch { return { route: 'change', costUsd: 0 } }

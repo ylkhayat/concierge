@@ -160,8 +160,12 @@ export function setIdentity(p: ProviderId, who: string) {
  * window at the pause point, a limit, a budget, a lapsed sign-in), never left early for one further down.
  */
 /** The account a kind of work is meant for: the one picked for it, else the top of the order. */
-export const chosenFor = (work: Work): ProviderId => config.providers?.use?.[work] ?? config.providers?.fallback?.[0] ?? 'claude'
-export function providerFor(work: Work): ProviderId {
+/** A repository kept to one account (config.repoAccounts): all its work runs there, and waits for it rather than going elsewhere. */
+export const pinOf = (repo?: string): ProviderId | undefined => (repo && config.repoAccounts?.[repo]) || undefined
+export const chosenFor = (work: Work, repo?: string): ProviderId => pinOf(repo) ?? config.providers?.use?.[work] ?? config.providers?.fallback?.[0] ?? 'claude'
+export function providerFor(work: Work, repo?: string): ProviderId {
+  const pin = pinOf(repo)
+  if (pin) return pin
   const chosen = chosenFor(work)
   if (available(chosen)) return chosen
   return (config.providers?.fallback ?? []).find((p) => p !== chosen && available(p)) ?? chosen

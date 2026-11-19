@@ -292,7 +292,7 @@ export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?
   const now = new Date().toISOString()
   const prev = pr.job
   // who runs it: a follow-up stays with its session's provider; fresh work goes to the one set for it (providers.ts)
-  const provider = isFollowUp(kind) ? (prev?.provider ?? 'claude') : providerFor(pr.mine ? 'revise' : 'review')
+  const provider = isFollowUp(kind) ? (prev?.provider ?? 'claude') : providerFor(pr.mine ? 'revise' : 'review', pr.repo)
   const own = sessionOf(pr.id), mine = sameProvider(own, provider) ? own : undefined
   pr.job = !isFollowUp(kind)
     // a fresh review/revise still continues the PR's one session, when it has one on this provider
@@ -337,7 +337,7 @@ const moving = new Map<string, ProviderId>() // stopped to move: where to
 // Claude Code itself (a Claude account, or Llama through Ollama): takes its prompt on stdin and keeps a conversation as
 // a file that can be carried to another such account. Codex and Copilot take the prompt once, as an argument
 const isClaudeCode = (p: ProviderId) => kindOf(p) === 'claude' || kindOf(p) === 'llama'
-const rank = (p: ProviderId, work: Work) => { const order = [chosenFor(work), ...(config.providers?.fallback ?? [])]; const i = order.indexOf(p); return i < 0 ? order.length : i }
+const rank = (p: ProviderId, work: Work, repo?: string) => { const order = [chosenFor(work, repo), ...(config.providers?.fallback ?? [])]; const i = order.indexOf(p); return i < 0 ? order.length : i }
 const folderOf = (p: ProviderId) => accountOf(p).home ?? CLAUDE_HOME
 /** Copy a Claude Code conversation into another account's folder (its projects/<dir>/<id>.jsonl), so it resumes there. */
 async function carry(session: string, from: ProviderId, to: ProviderId): Promise<boolean> {
@@ -354,13 +354,13 @@ async function carry(session: string, from: ProviderId, to: ProviderId): Promise
   return false
 }
 async function rebalance() {
-  const items: { key: string; t: { provider?: ProviderId; sessionId: string; state: string; resumed?: boolean; resume?: string; replyTo?: string; continuing?: boolean; kind?: string }; work: Work; label: string }[] = [
-    ...Object.values(state.prs).filter((p) => p.job && (p.job.state === 'queued' || p.job.state === 'running')).map((p) => ({ key: p.id, t: p.job!, work: (p.mine ? 'revise' : 'review') as Work, label: `#${p.number}` })),
-    ...Object.values(state.execs).filter((r) => r.state === 'queued' || r.state === 'running').map((r) => ({ key: runKey(r), t: r, work: 'exec' as Work, label: r.ids.join(' → ') })),
+  const items: { key: string; repo?: string; t: { provider?: ProviderId; sessionId: string; state: string; resumed?: boolean; resume?: string; replyTo?: string; continuing?: boolean; kind?: string }; work: Work; label: string }[] = [
+    ...Object.values(state.prs).filter((p) => p.job && (p.job.state === 'queued' || p.job.state === 'running')).map((p) => ({ key: p.id, repo: p.repo, t: p.job!, work: (p.mine ? 'revise' : 'review') as Work, label: `#${p.number}` })),
+    ...Object.values(state.execs).filter((r) => r.state === 'queued' || r.state === 'running').map((r) => ({ key: runKey(r), repo: r.repo, t: r, work: 'exec' as Work, label: r.ids.join(' → ') })),
   ]
-  for (const { key, t, work, label } of items) {
-    const now = t.provider ?? 'claude', lead = providerFor(work)
-    if (lead === now || !available(lead) || rank(lead, work) >= rank(now, work) || moving.has(key)) continue
+  for (const { key, repo, t, work, label } of items) {
+    const now = t.provider ?? 'claude', lead = providerFor(work, repo)
+    if (lead === now || !available(lead) || rank(lead, work, repo) >= rank(now, work, repo) || moving.has(key)) continue
     const claudeCode = isClaudeCode(now) && isClaudeCode(lead)
     const started = !fresh(t) || t.state === 'running'
     if (started && !claudeCode) continue // a Codex or Copilot conversation can't move, and Claude's can't move to them: it finishes where it is
@@ -547,8 +547,8 @@ export function waitReason(): string | undefined {
  * then the PR below it in its stack, a retry it waits out, and then whatever holds every run (waitReason). `until`:
  * when it should start, when that is known.
  */
-export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: string }, work: Work, below?: string): { why: string; until?: number } {
-  const acct = waitingOn(t, work)
+export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: string }, work: Work, below?: string, repo?: string): { why: string; until?: number } {
+  const acct = waitingOn(t, work, repo)
   if (acct) return { why: `${acct.label} can't take it now: ${acct.why}`, until: acct.until }
   if (below) return { why: `it starts after ${below}, below it in its stack` }
   if (t.notBefore && t.notBefore > new Date().toISOString()) return { why: (t as { gathering?: boolean }).gathering ? 'it waits a moment for more of your messages' : 'it tries again shortly', until: Date.parse(t.notBefore) }
@@ -580,13 +580,13 @@ export function pump() {
   const waiting: { prio: number; at: string; go: () => void; exec?: ExecRun }[] = [
     ...Object.values(state.prs).flatMap((p) => [
       // a planned review waits while the one below it in its stack is still queued or running
-      ...(p.job?.state === 'queued' && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review') && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: () => start(p) }] : []),
+      ...(p.job?.state === 'queued' && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review', p.repo) && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: () => start(p) }] : []),
       // an explanation waits while one below it in the stack is still being written: it reads theirs
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
-        && available(providerFor('review')) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
+        && available(providerFor('review', p.repo)) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
     ]),
-    ...Object.values(state.execs).filter((r) => r.state === 'queued' && !r.planning && canRun(r, 'exec') && waited(r)).map((r) => ({ prio: 0, at: r.queuedAt, go: () => startExec(r), exec: r })),
-    ...Object.entries(state.base).filter(([, t]) => t.state === 'queued' && available(providerFor('review'))).map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: () => startBase(repo) })),
+    ...Object.values(state.execs).filter((r) => r.state === 'queued' && !r.planning && canRun(r, 'exec', r.repo) && waited(r)).map((r) => ({ prio: 0, at: r.queuedAt, go: () => startExec(r), exec: r })),
+    ...Object.entries(state.base).filter(([repo, t]) => t.state === 'queued' && available(providerFor('review', repo))).map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: () => startBase(repo) })),
   ].sort((a, b) => a.prio - b.prio || a.at.localeCompare(b.at))
   for (const w of waiting) {
     if (!w.exec) {
@@ -594,7 +594,7 @@ export function pump() {
       here++; w.go(); continue
     }
     // an exec run goes where there is room: the machine it ran on before first, else the one with the most room
-    const to = place(w.exec.machine, { running: here, slots: drain ? 0 : Math.min(state.settings.maxJobs, slotsHere(state.settings.maxJobs)), freeMb: short ? 0 : freemem() / 1048576 }, out, w.exec.provider ?? providerFor('exec'))
+    const to = place(w.exec.machine, { running: here, slots: drain ? 0 : Math.min(state.settings.maxJobs, slotsHere(state.settings.maxJobs)), freeMb: short ? 0 : freemem() / 1048576 }, out, w.exec.provider ?? providerFor('exec', w.exec.repo))
     if (to === undefined) continue
     if (!to || to === fleet.machine) { here++; startExec(w.exec) } else { out.set(to, (out.get(to) ?? 0) + 1); startExec(w.exec, to) }
   }
@@ -638,7 +638,7 @@ function startExplain(pr: Pr) {
       const ran = o.createdAt >= task.startedAt!
       task.costUsd = ran ? o.costUsd : 0
       ev('done', ran ? 'explained' : 'cached', { iteration: o.iteration, step: undefined })
-      if (ran && o.costUsd) addSpend(o.costUsd, providerFor('review'))
+      if (ran && o.costUsd) addSpend(o.costUsd, providerFor('review', pr.repo))
     })
     .catch((e: Error) => ctrl.signal.aborted ? ev('cancelled', 'cancelled', { step: undefined }) : ev('failed', 'error', { error: e.message.slice(0, 400), step: undefined }))
     .finally(() => {
@@ -681,11 +681,11 @@ function startBase(repo: string) {
   ev('running', 'started', { startedAt: new Date().toISOString(), endedAt: undefined, done: 0, total: undefined, costUsd: 0 })
   save(); bus.emit('health')
   let last = 0, charged = 0
-  const charge = (usd: number) => { addSpend(usd - charged, providerFor('review')); charged = usd } // spend counts as batches finish
+  const charge = (usd: number) => { addSpend(usd - charged, providerFor('review', repo)); charged = usd } // spend counts as batches finish
   defaultBranch(repo).then((branch) => {
     task.branch = branch
     return mapBase(repo, config.repos[repo], branch, {
-      signal: ctrl.signal, overBudget: () => overBudget() || !available(providerFor('review')), under: task.under,
+      signal: ctrl.signal, overBudget: () => overBudget() || !available(providerFor('review', repo)), under: task.under,
       progress: (step, done, total, cost) => {
         Object.assign(task, { step, done, total, costUsd: cost }); charge(cost)
         if (Date.now() - last > 400) { last = Date.now(); bus.emit('health'); bus.emit('change') }
@@ -897,11 +897,11 @@ const fresh = (t: { provider?: ProviderId; continuing?: boolean; resumed?: boole
  * Every run goes to the account the order picks now (providerFor), a reply as much as fresh work: the order you set is
  * the one that is used. May it start now: that account can take work.
  */
-const canRun = (_t: Parameters<typeof fresh>[0], work: Work) => available(providerFor(work))
+const canRun = (_t: Parameters<typeof fresh>[0], work: Work, repo?: string) => available(providerFor(work, repo))
 /** What queued work waits for, when it can't start: the account the order picks, why, and until when. */
-export function waitingOn(t: Parameters<typeof fresh>[0], work: Work) {
-  if (canRun(t, work)) return undefined
-  const p = providerFor(work), w = whyNot(p)
+export function waitingOn(t: Parameters<typeof fresh>[0], work: Work, repo?: string) {
+  if (canRun(t, work, repo)) return undefined
+  const p = providerFor(work, repo), w = whyNot(p)
   return { label: accountOf(p).label, why: w?.why ?? 'busy', until: w?.until }
 }
 /**
@@ -910,8 +910,8 @@ export function waitingOn(t: Parameters<typeof fresh>[0], work: Work) {
  * account it ran on. (Between two Claude Code accounts the orchestrator copies the conversation across instead, when it
  * gets there first: rebalance.)
  */
-function settle(t: Parameters<typeof fresh>[0], work: Work, key: string, handoff?: (prev: ProviderId) => void) {
-  const prev = t.provider ?? 'claude', p = providerFor(work)
+function settle(t: Parameters<typeof fresh>[0], work: Work, key: string, handoff?: (prev: ProviderId) => void, repo?: string) {
+  const prev = t.provider ?? 'claude', p = providerFor(work, repo)
   if (p === prev || !available(p)) return
   const why = available(prev) ? `${accountOf(p).label} is ahead of it in the order` : `${accountOf(prev).label} can't run now (${whyNot(prev)?.why ?? 'its limit or budget'})`
   note(key, { at: new Date().toISOString(), kind: 'event', text: `${why}: ${accountOf(p).label} takes it${fresh(t) ? '' : ', in a new session handed what the last one said'}.` })
@@ -944,7 +944,7 @@ function start(pr: Pr) {
     // a new session: a follow-up carries the last words and its own; a review or revise starts its command again
     if (isFollowUp(job.kind)) job.prompt = `${handoffNote(prev, job.lastWords)}\n\n${job.prompt ?? ''}`
     Object.assign(job, { sessionId: randomUUID(), resumed: false, continuing: false, sessionCostBefore: 0 })
-  })
+  }, pr.repo)
   // the messages that came while it gathered: one run reads them all (they are in the feed already)
   if (job.kind === 'reply' && !job.continuing && job.heldWords?.length) {
     job.prompt = `${job.prompt ?? ''}\n\nAnd then I added:\n${job.heldWords.join('\n\n')}`
@@ -1101,7 +1101,7 @@ function start(pr: Pr) {
   routeReply(pr, job.prompt ?? job.said ?? '', job).then((r) => {
     if (job.state !== 'running') return // stopped while it was being sorted
     job.route = r.route
-    if (r.costUsd) addSpend(r.costUsd, providerFor('small'))
+    if (r.costUsd) addSpend(r.costUsd, providerFor('small', pr.repo))
     if (r.answer) {
       const at = new Date().toISOString()
       Object.assign(job, { summary: r.answer, costUsd: r.costUsd, endedAt: at })
@@ -1177,7 +1177,7 @@ export function enqueueExec(ids: string[], repo: string, auto = false, action?: 
   if (!ids.length || ids.some(ticketBusy) || !config.repos[repo] || (!config.exec.command && !action)) return undefined
   // continue the first ticket's session; an explicit resume (a reply to a run) wins
   // a reply stays with its run's provider; fresh work goes to the one set for Exec, continuing its session if it has one there
-  const provider = action?.resume ? (Object.values(state.execs).find((r) => r.sessionId === action.resume)?.provider ?? 'claude') : providerFor('exec')
+  const provider = action?.resume ? (Object.values(state.execs).find((r) => r.sessionId === action.resume)?.provider ?? 'claude') : providerFor('exec', repo)
   const was = action?.resume ? undefined : sessionOf(ids[0]), own = sameProvider(was, provider) ? was : undefined
   const as = currentRole()
   const run: ExecRun = {
@@ -1276,7 +1276,7 @@ function startExec(run: ExecRun, on?: string) {
     if (run.prompt) run.prompt = `${handoffNote(prev, before?.summary)}\n\n${run.prompt}`
     Object.assign(run, { sessionId: randomUUID(), continuing: false, costBefore: 0 })
     delete run.resume; delete run.replyTo
-  })
+  }, run.repo)
   const now = new Date().toISOString(), wasPaused = !!run.pausedAt
   let turns: number | undefined
   const ev = (to: JobState, cause: string, extra: Partial<ExecRun> = {}) => {

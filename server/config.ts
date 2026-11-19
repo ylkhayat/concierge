@@ -17,6 +17,7 @@ export type Config = {
   maxJobs: number
   autoStart: boolean
   explainBudgetUsd: number // per explain run, passed as --max-budget-usd
+  repoAccounts?: Record<string, string> // "owner/repo" → the one account its work runs on (none: the order in Accounts)
   replyCaps?: Partial<Record<'answer' | 'edit' | 'change', number>> // most one reply run may spend, per route (replyRoute.ts)
   terminal: 'Terminal' | 'iTerm'
   vpns?: import('./vpn.ts').Vpn[] // VPNs some runs need: Concierge checks them and tells you which to connect

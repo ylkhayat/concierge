@@ -308,6 +308,10 @@ type Suggestion = { repo: string; prs: number; paths: string[]; watched: boolean
 
 function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView; health?: Health; toast: Toast; saveConfig: SaveConfig }) {
   const repos = setup?.config.repos ?? {}
+  // which account each repository is kept to (none: the order in Accounts)
+  const pins = setup?.config.repoAccounts ?? {}
+  const [accts, setAccts] = useState<{ id: string; label: string }[]>([])
+  useEffect(() => { api('/usage/accounts').then((a: { id: string; label: string }[]) => setAccts(a.map(({ id, label }) => ({ id, label })))).catch(() => {}) }, [])
   const [bases, setBases] = useState<BaseInfo[]>([])
   const [suggested, setSuggested] = useState<Suggestion[]>()
   const [add, setAdd] = useState({ repo: '', path: '', status: '' })
@@ -335,7 +339,8 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
       <Group title="Watched repositories" hint="Reviews and your PRs come from these. Each keeps a codebase map for explanations.">
         {Object.keys(repos).length === 0 && <div className="px-4 py-6 text-center text-body text-fg-3">No repositories yet. Add one below.</div>}
         {Object.entries(repos).map(([repo, path]) => (
-          <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} />
+          <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)}
+                    accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
         ))}
       </Group>
 
@@ -365,8 +370,9 @@ function Repositories({ setup, health, toast, saveConfig }: { setup?: SetupView;
   )
 }
 
-function RepoCard({ repo, path, meta, task, toast, onRemove }: {
+function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin }: {
   repo: string; path: string; meta?: BaseInfo['meta']; task?: NonNullable<Health['base']>[string]; toast: Toast; onRemove: () => void
+  accounts: { id: string; label: string }[]; pin?: string; onPin: (account?: string) => void
 }) {
   const [plan, setPlan] = useState<Plan | { error: string }>()
   const { armed, arm } = useArm() // stop watching takes a second click
@@ -391,6 +397,15 @@ function RepoCard({ repo, path, meta, task, toast, onRemove }: {
           <Trash2 className="size-4" />{armed && <><ArmLabel>Confirm: stop watching</ArmLabel><ArmBar on="plain" /></>}
         </button>
       </div>
+
+      {/* the one account its work runs on: none follows the order in Accounts; one waits for that account instead of moving */}
+      {accounts.length > 1 && (
+        <div className="ml-11 flex flex-wrap items-center gap-1.5" title="Kept to one account: every run on this repository (reviews, revises, tickets, explanations) uses only it, and waits when it is at its limit instead of moving to another">
+          <span className="mr-1 text-meta text-fg-3">Runs on</span>
+          <Chip on={!pin} onClick={() => onPin(undefined)}>Any (the order)</Chip>
+          {accounts.map((a) => <Chip key={a.id} on={pin === a.id} onClick={() => onPin(pin === a.id ? undefined : a.id)}>{a.label} only</Chip>)}
+        </div>
+      )}
 
       {/* the repo's codebase map */}
       <div className="ml-11 flex items-center gap-3 rounded-xl bg-fill/60 px-3 py-2.5 ring-1 ring-line ">

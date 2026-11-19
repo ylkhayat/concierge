@@ -145,8 +145,8 @@ function ask(message: string): Promise<Omit<NextSteps, 'for'>> {
 }
 
 /** One lean, tool-less small-model call that returns structured output: no tools, MCP, skills, hooks or settings. */
-export function haiku<T>(prompt: string, schema: object, system: string, budget = 0.2, model = 'haiku'): Promise<{ out: T; costUsd: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
-  const provider = providerFor('small') // the small model of whichever provider does the quick calls
+export function haiku<T>(prompt: string, schema: object, system: string, budget = 0.2, model = 'haiku', provider: ProviderId = providerFor('small')): Promise<{ out: T; costUsd: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
+  // the small model of whichever provider does the quick calls (or the one a repository is kept to)
   return new Promise((resolve, reject) => {
     const child = spawnAgent(provider, [
       '-p', prompt, '--json-schema', JSON.stringify(schema), '--output-format', 'stream-json', '--verbose',
