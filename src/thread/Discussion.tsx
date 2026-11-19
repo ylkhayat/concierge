@@ -18,7 +18,8 @@ export const TOPIC: Record<Topic, { label: string; icon: LucideIcon; question: s
 export function useDiscussions(target: string | undefined) {
   const path = target ? `/discussions?target=${encodeURIComponent(target)}` : undefined
   // cached per target (the main chat's summaries and both discussions share it): every 2s while one answers, else 20s
-  const q = useApi<Discussions>(path, { refetchInterval: (query) => (query.state.data && Object.values(query.state.data).some((x) => x.busy) ? 2000 : 20_000) })
+  // the server says when a card changed (live.ts); a slow read covers a missed message
+  const q = useApi<Discussions>(path, { refetchInterval: 60_000 })
   return { d: q.data, set: (v: Discussions | undefined) => { if (path) remember(path, v) }, read: () => q.refetch() }
 }
 

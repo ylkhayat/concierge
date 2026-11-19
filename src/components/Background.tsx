@@ -19,8 +19,12 @@ export function useBackground(base: string, count: number, live: boolean) {
     let on = true
     const get = () => api(`${base}/background`).then((x: View) => on && setV(x), () => {})
     void get()
-    const t = setInterval(get, 5000)
-    return () => { on = false; clearInterval(t) }
+    // its run's activity says when to look again (query.ts staleNow), and a slow read covers the rest
+    const mine = (e: Event) => (e as CustomEvent<string[]>).detail.some((p) => `${base}/background`.startsWith(p))
+    const on2 = (e: Event) => { if (mine(e)) void get() }
+    addEventListener('deck-stale', on2)
+    const t = setInterval(get, 30_000)
+    return () => { on = false; clearInterval(t); removeEventListener('deck-stale', on2) }
   }, [base, count, live])
   return v
 }

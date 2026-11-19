@@ -58,7 +58,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
   const to = members.filter((p) => !skip.includes(p.id))
   // one agent for the whole stack (drive-stack): your words, the check's issues and every PR's open work in one run
   const drivePath = anchor ? `/stacks/drive?pr=${enc(anchor.id)}` : undefined
-  const driven = useApi<{ run: { id: string; state: string; summary?: string; costUsd?: number } | null }>(drivePath, { refetchInterval: 15_000 })
+  const driven = useApi<{ run: { id: string; state: string; summary?: string; costUsd?: number } | null }>(drivePath, { refetchInterval: 60_000 }) // its run's changes refresh it at once (query.ts staleNow)
   const driveRun = driven.data?.run, driving = driveRun?.state === 'running' || driveRun?.state === 'queued'
   const drive = (text = '') => api('/stacks/drive', { pr: anchor?.id, text, push: true }).then(() => { toast('One agent resolves the whole stack now, bottom first'); if (drivePath) refresh(drivePath); return true }, (e: Error) => { toast(e.message, 'error'); return false })
   const driveEnd = driveRun?.summary?.match(/STACK (done|needs you:.*)$/m)?.[1]
@@ -185,7 +185,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
 }
 
 function DriveFeed({ id, live, toast }: { id: string; live: boolean; toast: (m: string, tone?: 'ok' | 'error') => void }) {
-  const feed = useApi<Activity[]>(`/exec/${id}/activity`, { refetchInterval: live ? 4_000 : false })
+  const feed = useApi<Activity[]>(`/exec/${id}/activity`, { refetchInterval: live ? 30_000 : false }) // each new step refreshes it at once; this covers a missed one
   return (
     <div className="border-t border-line px-4 py-3">
       <p className="label mb-2 flex items-center gap-1.5 text-fg-3"><Layers className="size-3.5" />Resolving the stack{live ? '…' : ''}</p>

@@ -776,7 +776,7 @@ function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProjec
 }
 
 export function PlansWorkspace({ toast }: { toast: Toast }) {
-  const list = useApi<{ plans: Summary[] }>('/plans', { refetchInterval: 5000 })
+  const list = useApi<{ plans: Summary[] }>('/plans', { refetchInterval: 60_000 }) // a saved plan refreshes it at once (live.ts)
   const [open, setOpen] = useState<string | 'new' | undefined>(() => new URLSearchParams(location.search).get('plan') ?? undefined)
   const plans = useMemo(() => list.data?.plans ?? [], [list.data])
   const current = open ?? (list.data ? (plans[0]?.id ?? 'new') : undefined)

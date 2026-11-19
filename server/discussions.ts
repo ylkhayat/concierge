@@ -9,7 +9,10 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { providerFor, spawnAgent } from './providers.ts'
 import { haiku } from './next.ts'
-import { save, state } from './store.ts'
+import { save as persist, state } from './store.ts'
+import { stale } from './live.ts'
+// kept, and every open page showing it reads it again (live.ts)
+const save = () => { persist(); stale('/discussions') }
 
 export type Topic = 'intent' | 'understanding'
 export type Stage = 'new' | 'open' | 'converging' | 'concluded'

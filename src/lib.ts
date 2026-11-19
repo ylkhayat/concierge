@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { Me } from '../server/github.ts'
 import type { ExecView, Health, PrView, TicketView } from '../server/index.ts'
 import type { Activity } from '../server/runner.ts'
+import { staleNow } from './query.ts' // used only inside the stream's handlers, so the two modules may import each other
 import type { Alert } from '../server/alerts.ts'
 import { reachable, reachableIn, serverHost, type Reach } from './hosts.ts'
 
@@ -53,6 +54,7 @@ export function useDeck(selected: string | undefined) {
     es.addEventListener('prs', (e) => setPrs(JSON.parse(e.data))) // the whole list, when this page connects
     // then only what changed: the PRs that did, the ones that went, and the list's order
     es.addEventListener('prs-patch', (e) => {
+      staleNow(['/load', '/runs'])
       const { set, del, order } = JSON.parse(e.data) as { set: PrView[]; del: string[]; order: string[] }
       setPrs((prev) => {
         const byId = new Map((prev ?? []).map((p) => [p.id, p]))
@@ -61,11 +63,14 @@ export function useDeck(selected: string | undefined) {
         return order.map((id) => byId.get(id)).filter((p): p is PrView => !!p)
       })
     })
-    es.addEventListener('health', (e) => setHealth(JSON.parse(e.data)))
-    es.addEventListener('exec', (e) => setExec(JSON.parse(e.data)))
+    // what the stream's own events imply changed elsewhere, and what the server says changed ('stale'): read again now
+    es.addEventListener('stale', (e) => staleNow(JSON.parse(e.data)))
+    es.addEventListener('health', (e) => { setHealth(JSON.parse(e.data)); staleNow(['/load', '/providers', '/usage/accounts', '/machines', '/infra', '/update']) })
+    es.addEventListener('exec', (e) => { setExec(JSON.parse(e.data)); staleNow(['/stacks/drive', '/load', '/runs']) })
     es.addEventListener('alerts', (e) => setAlerts(JSON.parse(e.data)))
     es.addEventListener('activity', (e) => {
       const { id, a } = JSON.parse(e.data)
+      staleNow([id.startsWith('exec:') ? `/exec/${id.slice(5)}/` : `/prs/${encodeURIComponent(id)}/background`])
       feedCache.set(id, [...(feedCache.get(id) ?? []).slice(-2999), a])
       if (id === selectedRef.current) setFeed((f) => [...f.slice(-2999), a])
     })

@@ -16,12 +16,15 @@ let last: LoadT | undefined
 const subs = new Set<(l: LoadT) => void>()
 let timer: ReturnType<typeof setInterval> | undefined
 const read = () => api('/load').then((l: LoadT) => { last = l; subs.forEach((f) => f(l)) }, () => {})
+let soon: ReturnType<typeof setTimeout> | undefined
+const onStale = (e: Event) => { if ((e as CustomEvent<string[]>).detail.includes('/load')) soon ??= setTimeout(() => { soon = undefined; void read() }, 150) }
 function useLoad() {
   const [load, setLoad] = useState(last)
   useEffect(() => {
     subs.add(setLoad)
-    if (subs.size === 1) { void read(); timer = setInterval(() => document.visibilityState === 'visible' && read(), 5000) }
-    return () => { subs.delete(setLoad); if (!subs.size) clearInterval(timer) }
+    // read when the server says the load moved (a run started or ended: query.ts staleNow), and once a minute besides
+    if (subs.size === 1) { void read(); timer = setInterval(() => document.visibilityState === 'visible' && read(), 60_000); addEventListener('deck-stale', onStale) }
+    return () => { subs.delete(setLoad); if (!subs.size) { clearInterval(timer); removeEventListener('deck-stale', onStale) } }
   }, [])
   return load
 }

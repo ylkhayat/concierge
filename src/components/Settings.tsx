@@ -10,7 +10,7 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compl
 import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
 import type { InfraView } from '../../server/infra.ts'
 import { api, type Health, type Theme } from '../lib.ts'
-import { refresh, remember, useApi } from '../query.ts'
+import { refresh, remember, useApi, useLive } from '../query.ts'
 import { ROLES, setRole, useRole, type Role, type RolesView } from '../role.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { ago, clock, weekday } from '../time.ts'
@@ -946,7 +946,7 @@ const resetsAt = (sec: number) => new Date(sec * 1000).toLocaleString('en-GB', n
 function AccountUsage() {
   const [all, setAll] = useState<AccountUse[]>()
   const [tab, setTab] = useState<string>()
-  useEffect(() => { const read = () => api('/usage/accounts').then((r: AccountUse[]) => { setAll(r); setTab((t) => t ?? r.find((a) => a.using)?.id ?? r[0]?.id) }, () => {}); void read(); const t = setInterval(read, 30_000); return () => clearInterval(t) }, [])
+  useLive(['/usage/accounts'], () => api('/usage/accounts').then((r: AccountUse[]) => { setAll(r); setTab((t) => t ?? r.find((a) => a.using)?.id ?? r[0]?.id) }, () => {}))
   if (!all?.length) return null
   const a = all.find((x) => x.id === tab) ?? all[0]
   const sum = (k: 'usd' | 'input' | 'output' | 'runs') => a.days.reduce((n, d) => n + d[k], 0)
@@ -1403,7 +1403,7 @@ type RunRow = { at: string; entity: string; id: string; kind?: string; to: strin
 type DayRow = { day: string; runs: number; done: number; failed: number; cancelled: number; interrupted: number; refused: number; costUsd: number }
 function Runs() {
   const [v, setV] = useState<{ runs: RunRow[]; totals: DayRow[] }>()
-  useEffect(() => { const read = () => api('/runs?days=7').then(setV, () => {}); void read(); const t = setInterval(read, 30_000); return () => clearInterval(t) }, [])
+  useLive(['/runs'], () => api('/runs?days=7').then(setV, () => {}))
   if (!v || (!v.runs.length && !v.totals.length)) return null
   const tone: Record<string, string> = { done: 'text-ok-text', failed: 'text-fail-text', interrupted: 'text-wait-text', cancelled: 'text-fg-3', running: 'text-run-text', queued: 'text-fg-3' }
   const cell = 'px-2 py-1.5 text-right tabular-nums'
@@ -1627,7 +1627,7 @@ function MachineKey() {
 
 function Machines() {
   const [v, setV] = useState<InfraView>()
-  useEffect(() => { const read = () => api('/infra').then(setV, () => {}); void read(); const t = setInterval(read, 10_000); return () => clearInterval(t) }, [])
+  useLive(['/infra'], () => api('/infra').then(setV, () => {}))
   if (!v) return null
   const since = `up since ${clock(v.startedAt)}${v.version ? ` · ${v.version}` : ''}`
   if (!v.role) return <Group title="Machine"><Row icon={Server} title="This machine runs it" hint={since} /></Group>

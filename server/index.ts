@@ -13,6 +13,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import { live } from './live.ts'
 import { compress } from 'hono/compress'
 import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
@@ -2509,6 +2510,10 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
     if (data !== lastExec) { lastExec = data; await stream.writeSSE({ event: 'exec', data }) }
   }
   const sendAlerts = () => stream.writeSSE({ event: 'alerts', data: JSON.stringify(alerts()) })
+  // what changed, by API path: gathered for a moment so a burst of saves is one message
+  let pending = new Set<string>(), flush: ReturnType<typeof setTimeout> | undefined
+  const onStale = (paths: string[]) => { for (const x of paths) pending.add(x); flush ??= setTimeout(() => { flush = undefined; const out = [...pending]; pending = new Set(); void stream.writeSSE({ event: 'stale', data: JSON.stringify(out) }) }, 250) }
+  live.on('stale', onStale)
   bus.on('alerts', sendAlerts)
   bus.on('exec', sendExec)
   bus.on('health', sendHealth)
@@ -2522,6 +2527,7 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   clearInterval(tick)
   prsHub.leave(patch)
   bus.off('alerts', sendAlerts)
+  live.off('stale', onStale); if (flush) clearTimeout(flush)
   bus.off('exec', sendExec)
   bus.off('health', sendHealth)
   bus.off('activity', onActivity)

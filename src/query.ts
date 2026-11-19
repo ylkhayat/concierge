@@ -3,6 +3,7 @@
 // once instead of a spinner. Live data (the PR list, the board, activity) still streams over /api/events, and its
 // events mark the reads that depend on it as stale (useLiveInvalidation).
 import { QueryClient, useQuery, type UseQueryOptions } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { api } from './lib.ts'
 
 export const queryClient = new QueryClient({
@@ -26,3 +27,28 @@ export const refresh = (prefix: string) => queryClient.invalidateQueries({ predi
 
 /** Put a known answer in the cache (a POST that returns the new state), so nothing waits for a refetch. */
 export const remember = <T,>(path: string, data: T) => queryClient.setQueryData([path], data)
+
+/**
+ * Something under these API paths changed (the server said so over /api/events, or one of the stream's own events
+ * implies it): every cached read under them is refetched if on screen, and the pages that read by hand (useLive) read again.
+ */
+export function staleNow(prefixes: string[]) {
+  for (const p of prefixes) void refresh(p)
+  dispatchEvent(new CustomEvent('deck-stale', { detail: prefixes }))
+}
+const touches = (said: string[], mine: string[]) => said.some((p) => mine.some((q) => q.startsWith(p) || p.startsWith(q)))
+/**
+ * Read now, and again whenever something under `prefixes` changes; a slow `fallback` read covers a change no event
+ * names. A burst of changes is one read.
+ */
+export function useLive(prefixes: string[], read: () => unknown, fallback = 60_000) {
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined
+    const soon = () => { t ??= setTimeout(() => { t = undefined; void read() }, 150) }
+    void read()
+    const on = (e: Event) => { if (touches((e as CustomEvent<string[]>).detail, prefixes)) soon() }
+    addEventListener('deck-stale', on)
+    const slow = setInterval(() => { if (document.visibilityState === 'visible') void read() }, fallback)
+    return () => { removeEventListener('deck-stale', on); clearInterval(slow); if (t) clearTimeout(t) }
+  }, [prefixes.join()])
+}

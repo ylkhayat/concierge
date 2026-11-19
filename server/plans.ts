@@ -11,7 +11,10 @@ import { gql } from './linear.ts'
 import { providerFor, spawnAgent } from './providers.ts'
 import { skillFile } from './setup.ts'
 import { slot } from './roles.ts'
-import { save, state } from './store.ts'
+import { save as persist, state } from './store.ts'
+import { stale } from './live.ts'
+// kept, and every open page showing it reads it again (live.ts)
+const save = () => { persist(); stale('/plans') }
 
 import { apply, applyAll, type Op, type Plan, type PlanNode } from './planOps.ts'
 import { impact } from '../src/planDiff.ts'
