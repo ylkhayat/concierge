@@ -183,6 +183,17 @@ export const actionsFor = (p: Pr) => DEFS.map(({ id, group, label, hint, confirm
 
 /** Run an action. `mirror`: feeds that also get its steps (an Exec ticket's run, when started from the ticket). */
 export async function runAction(p: Pr, id: string, scope: Scope, mirror: string[] = []) {
+  // the automatic alignment after a push (alignStacks) isn't a listed action: trying it again runs it now, same heads or not
+  if (id === 'align-stack') {
+    const stack = myStack(p)
+    if (!stack || !config.repos[p.repo]) throw new Error('Not a stack of yours with a local checkout: nothing to align')
+    alignTried.delete(`${p.repo}:${stack[0].number}`)
+    const chain = stack.map(tracked).filter((x): x is Pr => !!x && !x.closed)
+    if (!chain.some((x) => x.behindBase)) { ops.delete(p.id); save(); bus.emit('change'); return { label: 'Align the stack', count: 0 } } // already aligned
+    alignStacks(chain)
+    bus.emit('change')
+    return { label: 'Align the stack', count: chain.length }
+  }
   const d = DEFS.find((x) => x.id === id)
   if (!d || !d.scopes.includes(scope)) throw new Error('Unknown action')
   const missing = missingFor(commandOf(id, p))

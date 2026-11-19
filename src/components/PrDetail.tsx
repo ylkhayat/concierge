@@ -258,7 +258,7 @@ export function usePrThread({ pr, feed, now, onBack, toast, prs, onSelect, sync,
   const big = 'w-full justify-center py-2.5'
   const linkCls = 'hover:text-accent-text'
   // a failed tool run: the same run again (same scope), or put it away
-  const retryOp = () => pr.op && api(`/prs/${enc(pr.id)}/actions`, { action: pr.op.action, scope: pr.op.scope ?? 'this' }).then(() => toast(`${pr.op!.label}: started again`), (e: Error) => toast(e.message, 'error'))
+  const retryOp = () => pr.op && api(`/prs/${enc(pr.id)}/actions`, { action: pr.op.action, scope: pr.op.scope ?? 'this' }).then((r: { count?: number }) => toast(r.count === 0 ? 'Already aligned: nothing to do' : `${pr.op!.label}: started again`), (e: Error) => toast(e.message, 'error'))
   const markRead = () => api(`/prs/${enc(pr.id)}/read`, {}).then(() => toast('Nothing waits on you there now'), (e: Error) => toast(e.message, 'error'))
   const dismissOp = () => api(`/prs/${enc(pr.id)}/op/dismiss`, {}).catch(() => {})
   const rerequest = () => arm('rerequest', () => api(`/prs/${enc(pr.id)}/rerequest`, {}).then(() => toast(`Asked ${pr.reviewers!.join(', ')} to review again`), (e: Error) => toast(e.message, 'error')))
