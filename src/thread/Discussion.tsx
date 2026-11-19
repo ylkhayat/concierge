@@ -4,6 +4,7 @@ import { Compass, Target, type LucideIcon } from 'lucide-react'
 import type { Discussion as D, Topic } from '../../server/discussions.ts'
 import { api, type Activity } from '../lib.ts'
 import { remember, useApi } from '../query.ts'
+import { useMemo } from 'react'
 
 export type { Topic }
 type Toast = (m: string, tone?: 'ok' | 'error') => void
@@ -56,4 +57,23 @@ export function WorkStrip({ work, here, onOpen, toast }: { work?: WorkView; here
       ))}
     </div>
   )
+}
+
+/** One chat for the whole Work: this part's own conversation and the other parts', in the order things happened, with
+ *  a line wherever it moves from one part to another. Alone (no other parts), just its own. */
+export function useWorkFeed(member: string, work: WorkView | undefined, own: Activity[]): Activity[] {
+  const shared = !!work && work.members.length > 1
+  const others = useApi<(Activity & { part?: string })[]>(shared ? `/works/feed?member=${encodeURIComponent(member)}` : undefined, { refetchInterval: 60_000 }).data
+  return useMemo(() => {
+    if (!shared || !others?.length) return own
+    const here = work!.members.find((m) => m.key === member)?.label ?? 'here'
+    const all = [...own.map((a) => ({ ...a, part: here })), ...others].sort((a, b) => a.at.localeCompare(b.at))
+    const out: Activity[] = []
+    let last: string | undefined
+    for (const a of all) {
+      if (a.part !== last) { out.push({ at: a.at, kind: 'section', text: a.part === here ? `Here, on ${here}` : `On ${a.part}` }); last = a.part }
+      out.push(a)
+    }
+    return out
+  }, [own, others, member, shared])
 }

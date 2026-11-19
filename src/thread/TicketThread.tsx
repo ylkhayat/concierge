@@ -13,7 +13,7 @@ import { PHASE_LABEL } from '../components/ExecList.tsx'
 import { api, param, setParam, type TicketView } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
-import { sayTo, useDiscussions, useWork, withTurns, WorkStrip } from './Discussion.tsx'
+import { sayTo, useDiscussions, useWork, useWorkFeed, withTurns, WorkStrip } from './Discussion.tsx'
 import { ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useRole } from '../role.ts'
 import { DomainView } from './DomainView.tsx'
@@ -43,7 +43,7 @@ export function TicketThread(props: TicketThreadProps) {
   const work = useWork(`ticket:${t.id}`)
   const target = work && work.members.length > 1 ? work.target : `ticket:${t.id}`
   const talks = useDiscussions(target)
-  const all = withTurns(feed, talks.d) // one conversation: the run's work and the discussions' turns
+  const all = useWorkFeed(`ticket:${t.id}`, work, withTurns(feed, talks.d)) // one conversation: the run's work and the discussions' turns
   const count = all.filter((a) => a.kind !== 'section').length
   const intent = talks.d?.intent
   // the box: words are read once sent, with the agent's last reply, and routed; filtered to a discussion, they go there

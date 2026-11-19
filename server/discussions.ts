@@ -83,6 +83,26 @@ const FORMAT: Record<Topic, string> = {
 
 const keyOf = (target: string, topic: Topic) => `${target}|${topic}`
 
+/** A Work's cards, from the parts' own (before Works existed): their questions and answers together, in order, and
+ *  where the latest one stood. The card itself is written again, for the whole Work, when next asked. */
+export function adopt(target: string, from: string[]) {
+  for (const topic of ['intent', 'understanding'] as const) {
+    if (all()[keyOf(target, topic)]?.messages.length) continue
+    const had = from.map((f) => all()[keyOf(f, topic)]).filter((d): d is Discussion => !!d?.messages.length)
+    if (!had.length) continue
+    const last = [...had].sort((a, b) => (a.messages.at(-1)!.at).localeCompare(b.messages.at(-1)!.at)).at(-1)!
+    const order = ['new', 'open', 'converging', 'concluded']
+    all()[keyOf(target, topic)] = {
+      target, topic,
+      messages: had.flatMap((d) => d.messages).sort((a, b) => a.at.localeCompare(b.at)).slice(-60),
+      stage: had.map((d) => d.stage).sort((a, b) => order.indexOf(a) - order.indexOf(b)).at(-1)!,
+      status: last.status, summary: last.summary, steer: last.steer, sentAt: last.sentAt, adr: last.adr, actions: last.actions,
+      costUsd: had.reduce((n, d) => n + d.costUsd, 0),
+    }
+  }
+  save()
+}
+
 // --- the cards: cheap and fast. One short call (mid-size model, no tools) writes a card from what is already known;
 // a question is answered from the card by the small model; only one the card can't answer reads the code (say).
 const LINE = 'The line between the two cards: a sentence that would stay true with different code is Intent; one that describes the code is Understanding.'

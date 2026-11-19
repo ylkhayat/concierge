@@ -14,7 +14,7 @@ import { Description, ghost, SubmitDialog, Turns, usePrThread, type PrThreadProp
 import { api, enc, param, setParam } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
-import { sayTo, useDiscussions, useWork, withTurns, WorkStrip, type View } from './Discussion.tsx'
+import { sayTo, useDiscussions, useWork, useWorkFeed, withTurns, WorkStrip, type View } from './Discussion.tsx'
 import { ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useToolCommands, type Command } from '../ui/Slash.tsx'
 import { useRole, type Role } from '../role.ts'
@@ -95,7 +95,8 @@ export function PrThread(props: PrThreadProps) {
   // the discussions' suggestions: picked over the box, sent with your words in one go
   const lane = useLaneActions({ d: talks.d, target, onChange: talks.set, onSteer: steerMain, onView: openView, toast })
   // one conversation: the agent's work, and the discussions' turns in their lane's colour
-  const all = withTurns(feed, prTalks.d, stack ? stackTalks.d : undefined)
+  // one chat for the whole Work: this PR's conversation and its other parts' (its ticket, its stack)
+  const all = useWorkFeed(`pr:${pr.id}`, work, withTurns(feed, prTalks.d, stack ? stackTalks.d : undefined))
   const count = all.filter((a) => a.kind !== 'section').length
   const intent = talks.d?.intent
   // the box: words are read once sent, with the agent's last reply, and routed to the agent, Intent or Understanding

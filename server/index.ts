@@ -59,7 +59,7 @@ import { CONFIG_FILE, WORK_DIR, configured, reloadConfig, repoPath, fill, saveCo
 import { accountOf, accounts, available, modelsOf, spawnAgent, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
 import { orgSkills, setMode, syncOrgSkills } from './orgSkills.ts'
 import { improveSkill, removeSkill, skillsView, suggestSkills } from './skills.ts'
-import { ask as askCard, discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
+import { adopt as adoptCards, ask as askCard, discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
 import { domainOf, writeDomain, writingDomain } from './domain.ts'
 import { peers as replicaPeers, replicaExtras, replicaStatus } from './replica.ts'
 import { laneByModel } from './laneModel.ts'
@@ -417,6 +417,50 @@ export function workOfMember(key: string) {
 /** Your words on a member: kept in its Work's memory, so every run on any part of it follows them. */
 function rememberSaid(key: string, text: string) { const { w } = workOfMember(key); rememberWork(w, key, text); save() }
 (state as { works?: unknown }).works ??= {}; (state as { workOf?: unknown }).workOf ??= {}
+
+// a part's work moved on: pages showing the shared chat of a Work it is in read the others again (at most every 3s)
+let feedSoon: ReturnType<typeof setTimeout> | undefined
+bus.on('activity', (id: string) => {
+  const key = id.startsWith('exec:') ? state.execs[id.slice(5)]?.ids.map((t) => `ticket:${t}`).find((k) => state.workOf?.[k]) : `pr:${id}`
+  const w = key && state.workOf?.[key]
+  if (!w || Object.values(state.workOf ?? {}).filter((x) => x === w).length < 2) return
+  feedSoon ??= setTimeout(() => { feedSoon = undefined; stale('/works/feed') }, 3000)
+})
+
+/**
+ * Once: every Work filled from what its parts held before Works existed. What you said on each part (your words in
+ * its history), the stack's direction, and each part's Intent and Understanding cards, all into the Work's.
+ */
+async function seedWorks() {
+  if (state.worksSeeded || !fleet.mayWrite()) return
+  if (!execBoard.tickets.length) { setTimeout(() => void seedWorks(), 60_000).unref(); return } // the board isn't read yet
+  const done = new Set<string>()
+  const keys = [...Object.values(state.prs).filter((p) => !p.closed).map((p) => `pr:${p.id}`), ...execBoard.tickets.map((t) => `ticket:${t.id}`)]
+  let n = 0
+  for (const k of keys) {
+    if (done.has(k)) continue
+    const { w, members } = workOfMember(k)
+    for (const m of members) done.add(m.key)
+    if (members.length < 2) continue
+    for (const m of members) {
+      const feed = m.kind === 'pr' ? await loadActivity(m.key.slice(3)) : await ticketActivity(m.key.slice(7))
+      for (const a of feed.filter((x) => x.kind === 'you' && !x.lane).slice(-30)) w.said.push({ text: a.text.slice(0, 2000), at: a.at, on: m.key })
+    }
+    for (const d of Object.values(state.stackDirections ?? {})) {
+      const on = d.numbers.map((x) => `pr:${d.repo}#${x}`).find((x) => members.some((m) => m.key === x))
+      if (on) w.said.push({ text: `The direction the stack follows: ${d.text}`, at: d.at, on })
+    }
+    const seen = new Set<string>()
+    w.said = w.said.sort((a, b) => a.at.localeCompare(b.at)).filter((x) => { const id = `${x.on}|${x.text}`; return !seen.has(id) && !!seen.add(id) }).slice(-200)
+    // the cards: each part's own, and its stack's, into the Work's
+    const stacks = members.flatMap((m) => { const p = m.kind === 'pr' ? state.prs[m.key.slice(3)] : undefined; return p?.stack && p.stack.length > 1 ? [`stack:${p.stack[0].repo}#${p.stack[0].number}`] : [] })
+    adoptCards(`work:${w.id}`, [...new Set([...members.map((m) => m.key), ...stacks])])
+    n++
+  }
+  state.worksSeeded = true; save()
+  console.log(`works: filled ${n} from what their parts held`)
+}
+setTimeout(() => void seedWorks(), 30_000).unref()
 
 /** The parts your words name with @ (a ticket @AI-1500, a PR @#5201 of this repository or @owner/repo#12): linked into
  *  `here`'s Work. Returns what the agent should be told about the ones that are new to it. */
@@ -899,6 +943,14 @@ app.post('/discussions/say', async (c) => {
     say(target, topic, text.trim(), context, cwd, settled(discussionsOf(target)[topic === 'intent' ? 'understanding' : 'intent']), discussionPrs(target))
     return c.json(discussionsOf(target))
   } catch (e) { return c.json({ error: (e as Error).message }, 400) }
+})
+// the other parts' conversations, for one shared chat: each entry says which part it is from
+app.get('/works/feed', async (c) => {
+  const here = String(c.req.query('member') ?? '')
+  const { members } = workOfMember(here)
+  const feeds = await Promise.all(members.filter((m) => m.key !== here).map(async (m) =>
+    (m.kind === 'pr' ? await loadActivity(m.key.slice(3)) : await ticketActivity(m.key.slice(7))).slice(-600).map((a) => ({ ...a, part: m.label }))))
+  return c.json(feeds.flat().sort((a, b) => a.at.localeCompare(b.at)).slice(-1500))
 })
 // what @ in the box can name: the tickets on your board and the PRs being tracked
 app.get('/works/candidates', (c) => c.json([
