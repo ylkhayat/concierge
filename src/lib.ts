@@ -121,6 +121,29 @@ export const here = (url: string) => reachable(url, location.hostname, reach)
 export const hereIn = (text: string) => reachableIn(text, location.hostname, reach)
 
 export type Theme = 'system' | 'light' | 'dark'
+/** The palettes (design/tokens.css): each tints the neutrals and sets how deep they go, in light and in dark. `swatch`
+ *  is its look in a picker: page, card, tint, as [lightness, chroma, hue] for light and for dark. */
+export const PALETTES = [
+  { id: '', label: 'Concierge', hint: 'The default: a quiet violet grey', swatch: { h: 265, c: 0.013, d: 0.225, l: 0.975 } },
+  { id: 'dim', label: 'Dim', hint: 'Slightly dark: soft greys that are easy on the eyes all day', swatch: { h: 265, c: 0.01, d: 0.3, l: 0.945 } },
+  { id: 'midnight', label: 'Midnight', hint: 'Deep blue-black, for late hours', swatch: { h: 262, c: 0.022, d: 0.175, l: 0.975 } },
+  { id: 'graphite', label: 'Graphite', hint: 'Pure neutral grey, no tint at all', swatch: { h: 0, c: 0, d: 0.2, l: 0.975 } },
+  { id: 'nord', label: 'Nord', hint: 'Cool arctic blue-grey: calm and clear', swatch: { h: 232, c: 0.026, d: 0.255, l: 0.975 } },
+  { id: 'forest', label: 'Forest', hint: 'Green and low: for focus', swatch: { h: 165, c: 0.02, d: 0.215, l: 0.975 } },
+  { id: 'ember', label: 'Ember', hint: 'Warm amber: for getting things done', swatch: { h: 55, c: 0.018, d: 0.22, l: 0.975 } },
+  { id: 'paper', label: 'Paper', hint: 'Warm cream and sepia: for long reading', swatch: { h: 80, c: 0.02, d: 0.235, l: 0.965 } },
+  { id: 'plum', label: 'Plum', hint: 'Dusky purple, with character', swatch: { h: 320, c: 0.022, d: 0.21, l: 0.975 } },
+] as const
+export type Palette = (typeof PALETTES)[number]['id']
+export const paletteNow = (): Palette => { try { return (localStorage.getItem('palette') ?? '') as Palette } catch { return '' } }
+export function setPalette(p: Palette) {
+  const root = document.documentElement
+  root.classList.add('theming')
+  if (p) root.dataset.palette = p; else delete root.dataset.palette
+  try { localStorage.setItem('palette', p) } catch { /* private window */ }
+  setTimeout(() => root.classList.remove('theming'), 300)
+}
+if (paletteNow()) document.documentElement.dataset.palette = paletteNow() // before the first paint
 const dark = matchMedia('(prefers-color-scheme: dark)')
 
 /** Per-browser preference, so localStorage (guarded: it can throw in private windows). */

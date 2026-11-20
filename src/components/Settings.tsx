@@ -9,7 +9,7 @@ import type { SetupView } from '../../server/index.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
 import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
 import type { InfraView } from '../../server/infra.ts'
-import { api, type Health, type Theme } from '../lib.ts'
+import { api, PALETTES, paletteNow, setPalette, type Health, type Theme } from '../lib.ts'
 import { refresh, remember, useApi, useLive } from '../query.ts'
 import { ROLES, setRole, useRole, type Role, type RolesView } from '../role.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
@@ -272,6 +272,35 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
   )
 }
 
+/** The palettes as cards: each shows its page, a card on it and its text, in the theme you are in now. */
+function Palettes({ dark }: { dark: boolean }) {
+  const [now, setNow] = useState(paletteNow)
+  return (
+    <div role="radiogroup" aria-label="Palette" className="grid grid-cols-2 gap-2 px-3 pb-3 sm:grid-cols-3">
+      {PALETTES.map((p) => {
+        const { h, c, d, l } = p.swatch, on = now === p.id
+        const page = dark ? `oklch(${d} ${c} ${h})` : `oklch(${l} ${c * 0.8} ${h})`, card = dark ? `oklch(${d + 0.05} ${c} ${h})` : `oklch(0.995 ${c * 0.4} ${h})`
+        const ink = dark ? `oklch(0.88 ${c} ${h})` : `oklch(0.3 ${c * 2} ${h})`
+        return (
+          <button key={p.id || 'default'} role="radio" aria-checked={on} onClick={() => { setPalette(p.id); setNow(p.id) }} title={p.hint}
+                  className={`overflow-hidden rounded-card text-left ring-1 transition-shadow ${on ? 'ring-2 ring-accent' : 'ring-line hover:ring-line-strong'}`}>
+            <span className="block p-2" style={{ background: page }}>
+              <span className="block rounded-md p-1.5" style={{ background: card }}>
+                <span className="block h-1.5 w-3/4 rounded-full" style={{ background: ink, opacity: 0.8 }} />
+                <span className="mt-1 block h-1.5 w-1/2 rounded-full" style={{ background: ink, opacity: 0.35 }} />
+              </span>
+            </span>
+            <span className="block bg-surface-1 px-2 py-1.5">
+              <span className="flex items-center gap-1 text-small font-medium text-fg-1">{on && <Check className="size-3 text-accent-text" />}{p.label}</span>
+              <span className="line-clamp-2 text-micro text-fg-3">{p.hint}</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; theme: Theme; onTheme: (t: Theme) => void; saveConfig: SaveConfig }) {
   const [scale, setScale] = useState(() => { try { return localStorage.getItem('ui-scale') ?? 'auto' } catch { return 'auto' } })
   return (
@@ -280,6 +309,8 @@ function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; 
         <Row icon={Sun} title="Theme">
           <Segmented value={theme} options={THEMES} onChange={onTheme} />
         </Row>
+        <Row icon={Palette} title="Palette" hint="The tint and depth of every surface, in light and in dark. Each workspace keeps its accent." />
+        <Palettes dark={theme === 'dark' || (theme === 'system' && document.documentElement.classList.contains('dark'))} />
         <Row icon={Maximize} title="Interface size" hint="Auto grows it on very wide screens; or pick a size.">
           <Segmented value={scale} options={SCALES} onChange={(v) => {
             setScale(v)
