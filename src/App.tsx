@@ -265,6 +265,9 @@ export function App() {
 
   // the two workspaces: Review reads and judges (list + detail), Exec ships (board + console)
   // what the focus picker counts: the current workspace's work in each application
+  // which application the open item is in: switching to another one closes it, so the new one's list (empty or not) is what shows
+  const repoOfSelected = () => selected?.startsWith('codebase:') ? selected.slice(9)
+    : (prs ?? []).find((p) => p.id === selected?.replace(/^stack:/, ''))?.repo ?? tickets.find((t) => t.id === selected)?.repo
   const focusCounts = focusRepos.map((r) => mode === 'exec'
     ? { repo: r, tickets: tickets.filter((t) => t.repo === r).length, waiting: tickets.filter((t) => t.repo === r && ['needs-you', 'tend'].includes(groupOf(t).id)).length }
     : { repo: r, tickets: (prs ?? []).filter((p) => p.repo === r).length, waiting: (prs ?? []).filter((p) => p.repo === r && waiting(p)).length })
@@ -306,7 +309,7 @@ export function App() {
         <span className="hidden md:contents">
           <Head>Application</Head>
           <RepoPicker wide={wide} value={focus} repos={focusCounts} total={mode === 'exec' ? tickets.length : prs?.length ?? 0} unit={mode === 'exec' ? 'ticket' : 'PR'}
-                      onChange={(r) => { setFocus(r); if (codebaseRepo && r) select(`codebase:${r}`) }} />
+                      onChange={(r) => { setFocus(r); if (codebaseRepo && r) select(`codebase:${r}`); else if (r && selected && repoOfSelected() !== r) select(undefined) }} />
           <span className={`my-2 hidden h-px bg-line md:block ${W('w-10', 'mx-2')}`} />
         </span>
       )}
