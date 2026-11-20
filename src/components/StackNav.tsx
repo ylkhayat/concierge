@@ -1,8 +1,8 @@
-import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Ellipsis, GitPullRequest, Layers, MessageSquare, SquareKanban } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, GitPullRequest, Layers, MessageSquare, SquareKanban } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { Linked } from '../../server/index.ts'
 import { isTyping } from '../lib.ts'
-import { DOT, LinkedCard, STATE, type Me } from './Linked.tsx'
+import { DOT, STATE, type Me } from './Linked.tsx'
 
 /** One place in a stack: a PR (or the ticket a desk unit is about), how it stands, and its agent. */
 export type NavItem = {
@@ -88,7 +88,6 @@ export function StackNav({ items, current, onOpen, me, toast, keys, noun = 'PR' 
 
 /** The stack, bottom to top: ↑/↓ move, Enter opens. */
 function List({ items, at, onOpen, me, toast }: { items: NavItem[]; at: number; onOpen: (x: NavItem) => void; me?: Me; toast?: (m: string, tone?: 'ok' | 'error') => void }) {
-  const [card, setCard] = useState<string>()
   const move = (e: KeyboardEvent<HTMLUListElement>) => {
     const rows = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[data-row]')]
     const i = rows.indexOf(document.activeElement as HTMLButtonElement)
@@ -112,13 +111,8 @@ function List({ items, at, onOpen, me, toast }: { items: NavItem[]; at: number; 
               </button>
               {!!x.threads && <span className="inline-flex shrink-0 items-center gap-0.5 text-meta tabular-nums text-wait-text" title={`${x.threads} open thread${x.threads === 1 ? '' : 's'}`}><MessageSquare className="size-3" />{x.threads}</span>}
               {x.linked && x.linked.agent !== 'none' && <span className={`size-1.5 shrink-0 rounded-full ${DOT[x.linked.agent]}`} title={STATE[x.linked.agent]} />}
-              {x.linked && me && toast && (
-                <button onClick={() => setCard(card === x.id ? undefined : x.id)} aria-expanded={card === x.id} title="Its agent: hand over or take over"
-                        className="shrink-0 rounded-md p-0.5 text-fg-3 opacity-0 transition-opacity hover:text-fg-1 group-hover:opacity-100 aria-expanded:opacity-100"><Ellipsis className="size-3.5" /></button>
-              )}
               {x.url && <a href={x.url} target="_blank" rel="noreferrer" title={x.kind === 'ticket' ? 'Open in Linear' : 'Open on GitHub'} className="shrink-0 rounded-md p-0.5 text-fg-3 opacity-0 transition-opacity hover:text-fg-1 group-hover:opacity-100"><ArrowUpRight className="size-3.5" /></a>}
             </div>
-            {card === x.id && x.linked && me && toast && <div className="mx-2 mb-1 mt-0.5 rounded-xl bg-fill/60 p-2.5 ring-1 ring-line "><LinkedCard me={me} l={x.linked} onOpen={() => onOpen(x)} toast={toast} flat /></div>}
           </li>
         )
       })}

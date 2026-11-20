@@ -279,7 +279,10 @@ function Worked({ items, until, open: start, live, render }: { items: Activity[]
 function YouSaid({ a, clamp }: { a: Activity; clamp?: boolean }) {
   return (
     <li className="group/you flex list-none flex-col items-end gap-0.5 py-0.5">
-      <p className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-body leading-relaxed text-fg-1 ${clamp ? 'line-clamp-3' : ''}`}>{a.text}</p>
+      {/* the clamp on the text, not the bubble: on the bubble the next line shows through its padding */}
+      <p className="max-w-[85%] rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-body leading-relaxed text-fg-1">
+        <span className={`block whitespace-pre-wrap break-words ${clamp ? 'line-clamp-3' : ''}`}>{a.text}</span>
+      </p>
       <time className="font-mono text-micro tabular-nums text-fg-4 opacity-0 transition-opacity group-hover/you:opacity-100" title={stamp(a.at)}>{clock(a.at, true)}</time>
     </li>
   )

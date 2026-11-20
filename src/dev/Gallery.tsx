@@ -2,6 +2,7 @@
 // npx vite --config dev/preview/vite.config.mjs, then /?gallery). Never in a build.
 import { ShippingVital, Vitals } from '../thread/Vitals.tsx'
 import { CardDiagram } from '../thread/CardDiagram.tsx'
+import { LinkedPills } from '../components/Linked.tsx'
 import { MessageCircleQuestion } from 'lucide-react'
 import { NextSteps } from '../components/NextSteps.tsx'
 import { NextCard, ThreadHeader, ThreadLayout } from '../ui/Thread.tsx'
@@ -14,7 +15,7 @@ export function Gallery() {
   return (
     <div className="h-[100dvh] bg-bg-app text-fg-1">
       <ThreadLayout
-        header={<ThreadHeader crumb={<span>AC-1492</span>} title="Exports fail to save after a long upload" />}
+        header={<ThreadHeader crumb={<span className="flex items-center gap-1.5"><LinkedPills onOpen={() => {}} linked={[{ kind: 'ticket', id: 'AI-1447', label: 'AI-1447', title: 'GPT-Live parity', url: 'https://linear.app/x', agent: 'asks' }, { kind: 'pr', id: 'r#5456', label: '#5456', title: 'feat', url: 'https://github.com/x', agent: 'working' }]} />AC-1492</span>} title="Exports fail to save after a long upload" />}
         tabs={[{ id: 'ticket', label: 'Ticket' }]} tab="ticket" onTab={() => {}}
         pane={<div className="space-y-6 p-5" style={{ '--lane': 'var(--vital-understanding)' } as React.CSSProperties}>
           <CardDiagram d={{ kind: 'path', before: 'Export lost after long upload', after: 'Saved, with a link in the toast', steps: [

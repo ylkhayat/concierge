@@ -375,7 +375,7 @@ bus.on('finished', (id: string, job: Job) => {
 whenMissingChanges(() => { bus.emit('exec'); bus.emit('change') })
 
 // --- linked work: a PR and the Linear ticket it ships (named in its title, branch or description) ------------
-export type Linked = { kind: 'pr' | 'ticket'; id: string; label: string; title: string; agent: 'working' | 'asks' | 'idle' | 'none'; said?: string; area?: string; suggest?: string }
+export type Linked = { kind: 'pr' | 'ticket'; id: string; label: string; title: string; url?: string; agent: 'working' | 'asks' | 'idle' | 'none'; said?: string; area?: string; suggest?: string }
 const firstLine = (t?: string) => t?.replace(/[#*_`>]/g, '').split('\n').map((l) => l.trim()).find(Boolean)?.slice(0, 180)
 /** The tickets a PR names that are on your Exec board. */
 const ticketsOf = (p: Pr) => {
@@ -386,11 +386,11 @@ const ticketLink = (id: string, views: TicketView[]): Linked | undefined => {
   const t = views.find((x) => x.id === id)
   if (!t) return undefined
   const asks = t.agentWaiting || pendingOf(t.run?.next) > 0
-  return { kind: 'ticket', id: t.id, label: t.id, title: t.title, agent: t.busy ? 'working' : asks ? 'asks' : t.run ? 'idle' : 'none', said: firstLine(t.run?.summary) }
+  return { kind: 'ticket', id: t.id, label: t.id, title: t.title, url: t.url, agent: t.busy ? 'working' : asks ? 'asks' : t.run ? 'idle' : 'none', said: firstLine(t.run?.summary) }
 }
 const prLink = (p: Pr): Linked => {
   const j = p.job, busy = j?.state === 'running' || j?.state === 'queued'
-  return { kind: 'pr', id: p.id, label: `#${p.number}`, title: p.title, agent: busy ? 'working' : pendingOf(j?.next) ? 'asks' : j ? 'idle' : 'none', said: firstLine(j?.summary) }
+  return { kind: 'pr', id: p.id, label: `#${p.number}`, title: p.title, url: p.url, agent: busy ? 'working' : pendingOf(j?.next) ? 'asks' : j ? 'idle' : 'none', said: firstLine(j?.summary) }
 }
 export const linksOfPr = (p: Pr, views = ticketViews()): Linked[] => ticketsOf(p).flatMap((t) => ticketLink(t.id, views) ?? [])
 export const linksOfTicket = (t: Ticket, said = ''): Linked[] => {

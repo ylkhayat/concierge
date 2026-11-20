@@ -327,7 +327,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
                                   steps={steps} at={flow.step >= 4 ? steps.length : flow.step} broken={flow.broken} />
             })()
   const parentLinks = <>
-              <LinkedPills me={{ kind: 'pr', id: pr.id }} linked={pr.linked} onOpen={onOpenLinked} toast={toast} />
+              <LinkedPills linked={pr.linked} onOpen={onOpenLinked} />
               <a href={pr.url} target="_blank" rel="noreferrer" title="Open on GitHub (g)" className="group/link inline-flex items-center gap-0.5 font-mono transition-colors hover:text-accent-text">
                 {pr.repo.split('/')[1]}#{pr.number}<ArrowUpRight className="size-3.5 -translate-x-0.5 opacity-0 transition-all group-hover/link:translate-x-0 group-hover/link:opacity-100" />
               </a>
