@@ -152,8 +152,10 @@ function views(): PrView[] {
       const queued = p.job?.state === 'queued' ? queuedWhy(p.job, p.mine ? 'revise' : 'review', below, p.repo) : undefined
       const stackRun = driving.size && p.stack && p.stack.length > 1 && !p.closed ? driving.get(driveKey(p)) : undefined
       const stackAnswered = answeredAt(p)
-      if (stackAnswered && pr.job) pr.job = { ...pr.job, next: undefined } // answered with the stack: nothing asked any more
-      return { ...pr, ...(stackRun && { stackRun }), ...(stackAnswered && { stackAnswered }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
+      if (stackAnswered && pr.job) pr.job = { ...pr.job, next: undefined }
+      // and its flow and status read it so too: the agent no longer "asks you" what the stack's answer covered
+      const q = stackAnswered && p.job ? { ...p, job: { ...p.job, next: undefined } } : p // answered with the stack: nothing asked any more
+      return { ...pr, ...(stackRun && { stackRun }), ...(stackAnswered && { stackAnswered }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(q, crit, !!repoPath, op), flow: flowOf(flowInOf(q, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
 }

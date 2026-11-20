@@ -337,7 +337,7 @@ const VERDICT: Record<string, { label: string; tone: string }> = {
 }
 function Facts({ p, now, seen, children }: { p: PrView; now: number; seen?: number; children: ReactNode }) {
   return (
-    <span className="mt-0.5 flex items-center gap-2 whitespace-nowrap text-meta text-fg-3">
+    <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 whitespace-nowrap text-meta text-fg-3">
       {children}
       <span className="shrink-0 font-mono tabular-nums"><span className="text-ok-text">+{p.additions}</span> <span className="text-fail-text">−{p.deletions}</span></span>
       {p.behindBase && <span className="shrink-0 rounded-full bg-wait/10 px-1.5 font-medium text-wait-text" title="The PR below moved past this one: needs a smart rebase">outdated</span>}
