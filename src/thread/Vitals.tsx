@@ -178,6 +178,19 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
              </>
            ) : undefined} />
   )
+  // what it decided for each PR of the work, three to a slide
+  const per = d?.perPr ?? [], perPrSlides: Slide[] = []
+  for (let k = 0; k < per.length; k += 3) perPrSlides.push({ key: `per${k}`, label: per.length > 3 ? `Each PR · ${k / 3 + 1} of ${Math.ceil(per.length / 3)}` : 'Each PR', body: (
+    <ul className="divide-y divide-line overflow-hidden rounded-ctl ring-1 ring-line">
+      {per.slice(k, k + 3).map((x) => (
+        <li key={x.number} className={`flex items-start gap-2.5 px-2.5 py-1.5 text-small ${x.number === here ? 'bg-accent-soft' : ''}`}>
+          <span className="shrink-0 font-mono font-medium text-fg-1">#{x.number}</span>
+          <span className="min-w-0 flex-1 text-fg-2"><span className="line-clamp-2">{x.decision}</span>{x.steer && <span className="mt-0.5 line-clamp-1 text-meta text-fg-3"><b className="font-medium text-fg-1">Its agent:</b> {x.steer}</span>}</span>
+          {x.steer && (x.sentAt ? <span className="shrink-0 text-meta text-fg-4">Sent</span> : <button onClick={() => sendPr(x.number, x.steer!)} className="shrink-0 rounded-md px-2 py-0.5 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft">Send</button>)}
+        </li>
+      ))}
+    </ul>
+  ) })
   // the whole card, under the row, when its tile is clicked: what it knows, then what you asked it
   const details = open ? (
     <div className={`card space-y-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
@@ -193,34 +206,12 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
       </div>
       {busy && <p className="flex items-center gap-2 text-small text-fg-2"><LoaderCircle className="size-3.5 animate-spin" style={{ color: lane }} />{status}</p>}
       {d?.error && <p className="rounded-ctl bg-fail/10 px-2.5 py-1.5 text-small text-fail-text">{d.error}</p>}
-      {b ? <Md text={b.long} className="text-small leading-relaxed" /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}
-      {asked.length > 0 && (
-        <div className="space-y-2 border-t border-line pt-3">
-          {asked.map((m, i) => (
-            <div key={`${m.at}:${i}`} className={m.who === 'you'
-              ? 'ml-auto w-fit max-w-[85%] rounded-card rounded-br-md bg-fill px-3 py-1.5 text-small text-fg-1'
-              : `max-w-full rounded-card rounded-bl-md bg-[color-mix(in_oklch,var(--lane)_9%,transparent)] px-3 py-2 ring-1 ring-[color-mix(in_oklch,var(--lane)_22%,transparent)] ${i === asked.length - 1 ? 'animate-[detail-in_400ms_var(--ease-out)]' : ''}`}>
-              {m.who === 'you' ? m.text : <Md text={m.text} className="text-small" />}
-            </div>
-          ))}
-        </div>
-      )}
+      {b || d?.messages.length ? <Slides slides={[...slidesOf(b, d?.messages ?? []), ...perPrSlides]} /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}
       {d?.steer && (
         <div className="flex items-start gap-2 rounded-ctl bg-fill px-2.5 py-2">
           <span className="min-w-0 flex-1 text-small text-fg-1"><b className="font-semibold">For the agent:</b> {d.steer}</span>
           {d.sentAt ? <span className="inline-flex shrink-0 items-center gap-1 text-meta text-fg-3"><CheckCircle2 className="size-3.5 text-ok" />Sent</span> : <button onClick={sendSteer} className="btn-primary btn-sm inline-flex shrink-0 items-center gap-1.5"><Send className="size-3.5" />Send</button>}
         </div>
-      )}
-      {!!d?.perPr?.length && (
-        <ul className="divide-y divide-line overflow-hidden rounded-ctl ring-1 ring-line">
-          {d.perPr.map((x) => (
-            <li key={x.number} className={`flex items-start gap-2.5 px-2.5 py-1.5 text-small ${x.number === here ? 'bg-accent-soft' : ''}`}>
-              <span className="shrink-0 font-mono font-medium text-fg-1">#{x.number}</span>
-              <span className="min-w-0 flex-1 text-fg-2">{x.decision}{x.steer && <span className="mt-0.5 block text-meta text-fg-3"><b className="font-medium text-fg-1">Its agent:</b> {x.steer}</span>}</span>
-              {x.steer && (x.sentAt ? <span className="shrink-0 text-meta text-fg-4">Sent</span> : <button onClick={() => sendPr(x.number, x.steer!)} className="shrink-0 rounded-md px-2 py-0.5 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft">Send</button>)}
-            </li>
-          ))}
-        </ul>
       )}
       {!!d?.actions?.length && (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -231,7 +222,6 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
           ))}
         </div>
       )}
-      <p className="text-meta text-fg-4">Ask it from the box below: pick <b className="font-medium text-fg-3">{t.label}</b> in Send to. It answers from this card, and reads the code only when the card doesn't say.</p>
     </div>
   ) : null
   return { tile, details }
@@ -271,6 +261,66 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
       {/* what a clicked one holds: floating over the panel under the row, so nothing below it moves */}
       {(v[0].details || v[1].details) && (
         <div className={inline ? '' : 'absolute inset-x-3 top-full z-30 -mt-1 max-h-[min(55vh,480px)] overflow-y-auto rounded-card shadow-[var(--e3)]'}>{v[0].details}{v[1].details}</div>
+      )}
+    </div>
+  )
+}
+
+type Slide = { key: string; label: string; at?: string; body: ReactNode }
+/**
+ * The card as slides, newest first: each answer to what you asked after the card was written, then the card's parts
+ * (its bold-labelled sections, one each), then what was asked before it.
+ */
+export function slidesOf(b: { long: string; at: string } | undefined, messages: { who: string; text: string; at: string }[]): Slide[] {
+  const qa: { q?: string; a?: string; at: string }[] = []
+  for (const m of messages) {
+    if (m.who === 'you') qa.push({ q: m.text, at: m.at })
+    else if (qa.at(-1) && !qa.at(-1)!.a) qa.at(-1)!.a = m.text
+    else qa.push({ a: m.text, at: m.at })
+  }
+  const asked = (x: (typeof qa)[number], i: number): Slide => ({ key: `qa${i}:${x.at}`, label: 'You asked', at: x.at, body: (
+    <>
+      {x.q && <p className="mb-2 ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-accent-soft px-3 py-1.5 text-small text-fg-1">{x.q}</p>}
+      {x.a ? <Md text={x.a} className="text-small leading-relaxed [&>*:first-child]:!mt-0" /> : <p className="text-small text-fg-4">Answering…</p>}
+    </>
+  ) })
+  // the card's parts: "**Problem** …" up to the next bold label at a line's start
+  const parts = b ? [...b.long.matchAll(/(?:^|\n)\s*(?:[-*]\s*)?\*\*([^*\n]+?)\*\*:?\s*([\s\S]*?)(?=\n\s*(?:[-*]\s*)?\*\*[^*\n]+\*\*|$)/g)]
+    .map((m, i): Slide => ({ key: `part${i}`, label: m[1].replace(/:$/, ''), at: b.at, body: <Md text={m[2].trim()} className="text-small leading-relaxed [&>*:first-child]:!mt-0" /> })) : []
+  const card = parts.length ? parts : b ? [{ key: 'card', label: 'The card', at: b.at, body: <Md text={b.long} className="text-small leading-relaxed" /> }] : []
+  const after = qa.map((x, i) => [x, i] as const).filter(([x]) => !b || x.at > b.at).reverse().map(([x, i]) => asked(x, i))
+  const before = qa.map((x, i) => [x, i] as const).filter(([x]) => b && x.at <= b.at).reverse().map(([x, i]) => asked(x, i))
+  return [...after, ...card, ...before]
+}
+
+/** A vertical carousel of a fixed height: one slide at a time, snapping (no animation), dots for where you are. */
+function Slides({ slides }: { slides: Slide[] }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [at, setAt] = useState(0)
+  // a new first slide (an answer just came in): back to the top, where it is
+  useEffect(() => { box.current?.scrollTo({ top: 0, behavior: 'instant' }); setAt(0) }, [slides[0]?.key])
+  const go = (i: number) => box.current?.scrollTo({ top: i * box.current.clientHeight, behavior: 'instant' })
+  return (
+    <div className="relative">
+      <div ref={box} onScroll={(e) => setAt(Math.round(e.currentTarget.scrollTop / e.currentTarget.clientHeight))} tabIndex={0} aria-roledescription="carousel"
+           className="h-44 snap-y snap-mandatory overflow-y-auto overscroll-contain pr-6 outline-none [scrollbar-width:none]">
+        {slides.map((x, i) => (
+          <section key={x.key} aria-roledescription="slide" aria-label={`${i + 1} of ${slides.length}: ${x.label}`} className="flex h-full snap-start snap-always flex-col overflow-hidden">
+            <p className="mb-1.5 flex items-center gap-1.5 text-micro">
+              <span className="font-semibold uppercase tracking-wide text-[var(--lane)]">{x.label}</span>
+              {x.at && <span className="text-fg-4">· {ago(x.at)}</span>}
+            </p>
+            <div className="min-h-0 flex-1 overflow-hidden [mask-image:linear-gradient(to_bottom,black_80%,transparent)]">{x.body}</div>
+          </section>
+        ))}
+      </div>
+      {slides.length > 1 && (
+        <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1" role="tablist" aria-label="Slides">
+          {slides.map((x, i) => (
+            <button key={x.key} role="tab" aria-selected={i === at} title={x.label} onClick={() => go(i)}
+                    className={`w-1.5 rounded-full transition-[height,background-color] duration-150 ${i === at ? 'h-4 bg-[var(--lane)]' : 'h-1.5 bg-fg-4/40 hover:bg-fg-3'}`} />
+          ))}
+        </div>
       )}
     </div>
   )

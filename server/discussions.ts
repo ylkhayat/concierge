@@ -73,11 +73,11 @@ const FORMAT: Record<Topic, string> = {
   intent: [
     'Draft the decision record early with status proposed; when the developer agrees with it, set its status to accepted and the stage to concluded.',
     'actions: what to do next, when it helps: ask-author (text: the question for the PR author or ticket reporter), ask-community (text: the question for the team), steer (text: what the coding agent should change). Empty when nothing fits.',
-    'Return: reply (markdown, at most 60 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage; status (at most 6 words on where the developer stands, e.g. "2 open questions", "record agreed"); summary (1 or 2 plain sentences); steer (the instruction for the coding agent if the decision changes the work, else null); actions; adr.',
+    'Return: reply (markdown, at most 30 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage; status (at most 6 words on where the developer stands, e.g. "2 open questions", "record agreed"); summary (1 or 2 plain sentences); steer (the instruction for the coding agent if the decision changes the work, else null); actions; adr.',
   ].join('\n'),
   understanding: [
     'actions: tour (take the guided tour), business, technical or norms (open that view of Explain; label says what to look at there), ask-author or ask-community (text: the question to ask), steer (text: a change for the coding agent, such as a missing test).',
-    'Return: reply (markdown, at most 60 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage (concluded once they understand what matters); status (at most 6 words on their grasp, e.g. "knows the flow, not the retries"); summary (what they understand and what is still unclear, 1 to 3 sentences); steer (the changes collected for the coding agent, as one instruction, else null); actions.',
+    'Return: reply (markdown, at most 30 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage (concluded once they understand what matters); status (at most 6 words on their grasp, e.g. "knows the flow, not the retries"); summary (what they understand and what is still unclear, 1 to 3 sentences); steer (the changes collected for the coding agent, as one instruction, else null); actions.',
   ].join('\n'),
 }
 
@@ -110,17 +110,17 @@ const CARD: Record<Topic, string> = {
   intent: `You write the Intent card of a code change, for its developer: WHY it was built this way, and whether it is what was meant. ${LINE}
 status: 2 to 5 words on where the intent stands ("Decided: no fallback", "2 decisions open").
 short: at most 3 short plain lines, the gist a developer reads on hover.
-long: markdown, at most 250 words, these bold-labelled parts, each a line or a few bullets: **Problem** (what asked for it: ticket, review, incident), **Decision** (what was chosen), **Set aside** (alternatives and why), **Constraints** (the stack's direction, what reviewers agreed), **Open** (decisions nobody made yet, or "none").
+long: markdown, at most 120 words, these bold-labelled parts, each one or two short lines (each part is read alone, as one slide): **Problem** (what asked for it: ticket, review, incident), **Decision** (what was chosen), **Set aside** (alternatives and why), **Constraints** (the stack's direction, what reviewers agreed), **Open** (decisions nobody made yet, or "none").
 Only what the material says; never retell what the code does.`,
   understanding: `You write the Understanding card of a code change, for its developer: WHAT the change does now. ${LINE}
 status: 2 to 5 words on what it does ("Calls read one envelope").
 short: at most 3 short plain lines, the gist a developer reads on hover.
-long: markdown, at most 250 words, these bold-labelled parts: **Before → after** (behaviour), **The path** (entry point → data → side effects, naming the files), **Check this** (the one part to verify before trusting it), **Edges** (failure modes, what it doesn't cover).
+long: markdown, at most 120 words, these bold-labelled parts, each one or two short lines (each part is read alone, as one slide): **Before → after** (behaviour), **The path** (entry point → data → side effects, naming the files), **Check this** (the one part to verify before trusting it), **Edges** (failure modes, what it doesn't cover).
 Never retell why it was decided.`,
 }
 const CARD_SCHEMA = { type: 'object', additionalProperties: false, required: ['status', 'short', 'long'], properties: { status: { type: 'string' }, short: { type: 'string' }, long: { type: 'string' } } }
 const ANSWER = { type: 'object', additionalProperties: false, required: ['fromCard', 'answer'], properties: { fromCard: { type: 'boolean' }, answer: { type: 'string' } } }
-const ANSWER_SYSTEM = 'You answer a developer\'s question from one card about a code change, and only from it. fromCard: true when the card holds the answer; then answer in at most 80 words of plain markdown, direct, no preamble. When the card does not hold it (it needs the code itself, or something the card never says), fromCard false and answer empty. Return only the structured output.'
+const ANSWER_SYSTEM = 'You answer a developer\'s question from one card about a code change, and only from it. fromCard: true when the card holds the answer; then answer in at most 40 words of plain markdown, direct, no preamble. When the card does not hold it (it needs the code itself, or something the card never says), fromCard false and answer empty. Return only the structured output.'
 const repoOf = (target: string) => /^(?:pr|stack):([^#]+)#/.exec(target)?.[1]
 
 /**
