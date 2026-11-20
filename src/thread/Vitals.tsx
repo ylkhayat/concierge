@@ -299,10 +299,32 @@ function Slides({ slides }: { slides: Slide[] }) {
   const [at, setAt] = useState(0)
   // a new first slide (an answer just came in): back to the top, where it is
   useEffect(() => { box.current?.scrollTo({ top: 0, behavior: 'instant' }); setAt(0) }, [slides[0]?.key])
-  const go = (i: number) => box.current?.scrollTo({ top: i * box.current.clientHeight, behavior: 'instant' })
+  const go = (i: number) => { const el = box.current; if (!el) return; const n = Math.max(0, Math.min(slides.length - 1, i)); el.scrollTo({ top: n * el.clientHeight, behavior: 'instant' }); setAt(n) }
+  // paged: one gesture, one slide. A trackpad's flick keeps sending wheel events as it coasts; those wait until it
+  // has been quiet for a moment, so a flick never skips slides
+  const now = useRef(at); now.current = at
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    let quietAt = 0
+    const wheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return
+      e.preventDefault()
+      const t = performance.now(), fresh = t - quietAt > 180
+      quietAt = t
+      if (fresh && Math.abs(e.deltaY) > 2) go(now.current + Math.sign(e.deltaY))
+    }
+    el.addEventListener('wheel', wheel, { passive: false })
+    return () => el.removeEventListener('wheel', wheel)
+  }, [slides.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const key = (e: React.KeyboardEvent) => {
+    const d = e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ' ? 1 : e.key === 'ArrowUp' || e.key === 'PageUp' ? -1 : e.key === 'Home' ? -Infinity : e.key === 'End' ? Infinity : 0
+    if (!d) return
+    e.preventDefault(); go(Number.isFinite(d) ? at + d : d < 0 ? 0 : slides.length - 1)
+  }
   return (
     <div className="relative">
-      <div ref={box} onScroll={(e) => setAt(Math.round(e.currentTarget.scrollTop / e.currentTarget.clientHeight))} tabIndex={0} aria-roledescription="carousel"
+      <div ref={box} onScroll={(e) => setAt(Math.round(e.currentTarget.scrollTop / e.currentTarget.clientHeight))} onKeyDown={key} tabIndex={0} aria-roledescription="carousel"
            className="h-44 snap-y snap-mandatory overflow-y-auto overscroll-contain pr-6 outline-none [scrollbar-width:none]">
         {slides.map((x, i) => (
           <section key={x.key} aria-roledescription="slide" aria-label={`${i + 1} of ${slides.length}: ${x.label}`} className="flex h-full snap-start snap-always flex-col overflow-hidden">
