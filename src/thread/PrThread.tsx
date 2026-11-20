@@ -135,7 +135,7 @@ export function PrThread(props: PrThreadProps) {
   const steer = (
     job ? (
             <NextSteps attach={lane} route={route} commands={commands} stepper inline nextUrl={busy ? undefined : `/prs/${enc(pr.id)}/next`} replyUrl={`/prs/${enc(pr.id)}/reply`} self={pr.number}
-                       others={prs.filter((p) => p.repo === pr.repo && !p.closed && p.id !== pr.id).map((p) => p.number)} draft={`pr:${pr.id}`} version={job.endedAt ?? ''} toast={toast}
+                       others={prs.filter((p) => p.repo === pr.repo && !p.closed && p.id !== pr.id).map((p) => p.number)} draft={`pr:${pr.id}`} version={`${job.endedAt ?? ''}|${pr.stackAnswered ?? ''}`} toast={toast}
                        placeholder={busy ? 'Tell it something while it works: it reads it between steps, without stopping' : 'Tell the agent what to change, answer, or do next…'} />
     ) : (
             <NextSteps attach={lane} route={route} commands={commands} stepper inline replyUrl={`/prs/${enc(pr.id)}/reply`} draft={`pr:${pr.id}`} version="" toast={toast} placeholder="Ask an agent to do something on this PR: it starts a run with your words" />

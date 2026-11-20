@@ -28,7 +28,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   // the same requests (and cache) as each PR's own panel: an answer there or here clears it in both
   const reads = useQueries({
     queries: members.map((p) => {
-      const path = `/prs/${enc(p.id)}/next?v=${enc(p.job?.endedAt ?? '')}`
+      const path = `/prs/${enc(p.id)}/next?v=${enc(`${p.job?.endedAt ?? ''}|${p.stackAnswered ?? ''}`)}`
       return { queryKey: [path], queryFn: () => api(path) as Promise<{ steps: Steps | null }>, staleTime: Infinity }
     }),
   })

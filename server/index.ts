@@ -151,6 +151,7 @@ function views(): PrView[] {
       const below = p.job?.state === 'queued' && p.job.after && ['queued', 'running'].includes(state.prs[p.job.after]?.job?.state ?? '') ? `#${state.prs[p.job.after].number}` : undefined
       const queued = p.job?.state === 'queued' ? queuedWhy(p.job, p.mine ? 'revise' : 'review', below, p.repo) : undefined
       const stackRun = driving.size && p.stack && p.stack.length > 1 && !p.closed ? driving.get(driveKey(p)) : undefined
+      if (answered(p) && pr.job) pr.job = { ...pr.job, next: undefined } // answered with the stack: nothing asked any more
       return { ...pr, ...(stackRun && { stackRun }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
@@ -2373,6 +2374,7 @@ app.post('/stacks/steps-review', async (c) => {
 app.get('/prs/:id/next', async (c) => {
   const p = pr(c.req.param('id'))
   try {
+    if (p && answered(p)) return c.json({ steps: null }) // answered with the whole stack: its agent took them up
     const n = await stepsFor(p?.job, p?.id ?? '')
     // a step already handed over isn't offered again: the same wording, compared by hash (case, punctuation and spacing
     // aside), so a new suggestion worded the same is recognised and one worded differently is shown
@@ -2487,6 +2489,7 @@ app.post('/stacks/say', async (c) => {
 })
 // one agent for the whole stack (the drive-stack skill): it works bottom-up through every PR, settles what crosses them,
 // restacks and checks again after each, and ends done or with one question. One run instead of a resume per PR's agent
+const answered = (p: Pr) => !!p.stackAnswered && p.stackAnswered === p.job?.endedAt
 const driveKey = (p: Pr) => { const c = treeChain(p); return `STACK-${p.repo.split('/')[1]}-${c[0]?.number ?? p.number}` }
 const driveOf = (key: string) => Object.values(state.execs).filter((r) => r.ids[0] === key).sort((a, b) => (b.queuedAt ?? '').localeCompare(a.queuedAt ?? ''))[0]
 app.get('/stacks/drive', (c) => {
@@ -2516,6 +2519,8 @@ app.post('/stacks/drive', async (c) => {
     b.push ? 'Push each changed branch when its part is done (with lease).' : 'Do not push: commit in the worktrees and report the shas.',
   ].filter(Boolean).join('\n\n')
   const run = enqueueExec([key], p.repo, false, { label: 'Resolve stack', prompt, said: words || 'Resolve the stack', role: 'stack' })
+  // what each PR's agent asked is answered now, by this run: none of them asks it again (a new run of its own asks anew)
+  if (run) { for (const s of chain) { const t = state.prs[`${s.repo}#${s.number}`]; if (t?.job?.endedAt) t.stackAnswered = t.job.endedAt } save() }
   return run ? c.json({ ok: true, run: { id: run.id, state: run.state } }) : c.json({ error: 'Could not start the stack run' }, 400)
 })
 function sendReply(p: Pr, msg: string): string | undefined {
