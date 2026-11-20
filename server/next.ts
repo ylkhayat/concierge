@@ -44,6 +44,12 @@ hides it from the message and shows it as a checklist the user ticks, so keep th
   browser (reply in crit, click Finish Review, merge on GitHub): Concierge offers those itself. Offer instead what you
   can do for them: "Post the 2 findings as review comments", "Drop f2 before posting", "Reword f1", or a decide step
   ("Post f1 and f2?", "Approve with or without the findings?").
+- A step that waits on CI ("submit the approve once CI is green") is one you finish in the same run when ticked:
+  wait for the checks yourself (\`gh pr checks <n> --watch --interval 30\`, repeated in under 9-minute calls), then
+  do it. Never stop to report "CI is still running": that hands the user a wait you could do. Pin the step to the PR,
+  not a commit: if the head moved, read the new commits; if they don't touch what you verified or flagged, go ahead
+  and say what changed; if they do, end with a blocking decide step ("Approve on the new head?"). Stop without
+  doing it only when a check fails.
 - Nothing needed from the user: {"steps":[]}.`
 
 const BLOCK = /\n?```deck-next[^\n]*\n([\s\S]*?)\n```\s*$/
