@@ -6,7 +6,7 @@
 import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import useEmblaCarousel from 'embla-carousel-react'
-import { WheelGesturesPlugin } from 'embla-carousel-wheel-gestures'
+import { WheelGestures } from 'wheel-gestures'
 import type { Action, Diagram, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
 import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
@@ -303,7 +303,26 @@ export function slidesOf(b: { long: string; at: string; diagram?: Diagram } | un
  * As tall as its tallest slide, up to a cap, so a slide is never cut; dots say where you are.
  */
 function Slides({ slides }: { slides: Slide[] }) {
-  const [ref, api] = useEmblaCarousel({ axis: 'y', skipSnaps: false, duration: 12 }, [WheelGesturesPlugin({ forceWheelAxis: 'y' })])
+  const [ref, api] = useEmblaCarousel({ axis: 'y', skipSnaps: false, duration: 12 })
+  // the wheel pages: one gesture (its momentum, a free-spinning wheel's spin included) moves one slide, once it has
+  // gone a little way; the rest of it, and anything in the next 350 ms, is the same gesture
+  const view = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = view.current
+    if (!api || !el) return
+    const wg = WheelGestures({ preventWheelAction: 'y', reverseSign: false })
+    let paged = false, until = 0
+    const off = wg.on('wheel', (w) => {
+      if (w.isStart) paged = false
+      if (w.isEnding) { paged = false; return }
+      const dy = w.axisMovement[1]
+      if (paged || performance.now() < until || Math.abs(dy) < 24) return
+      paged = true; until = performance.now() + 350
+      if (dy > 0) api.scrollNext(true); else api.scrollPrev(true)
+    })
+    wg.observe(el)
+    return () => { off(); wg.disconnect() }
+  }, [api])
   const [at, setAt] = useState(0)
   const [h, setH] = useState(0)
   const inner = useRef<(HTMLDivElement | null)[]>([])
@@ -331,7 +350,7 @@ function Slides({ slides }: { slides: Slide[] }) {
   }
   return (
     <div className="relative">
-      <div ref={ref} onKeyDown={key} tabIndex={0} aria-roledescription="carousel" className="overflow-hidden pr-6 outline-none" style={{ height: h || undefined }}>
+      <div ref={(el) => { ref(el); view.current = el }} onKeyDown={key} tabIndex={0} aria-roledescription="carousel" className="overflow-hidden pr-6 outline-none" style={{ height: h || undefined }}>
         <div className="flex h-full flex-col">
           {slides.map((x, i) => (
             <section key={x.key} aria-roledescription="slide" aria-label={`${i + 1} of ${slides.length}: ${x.label}`} className="min-h-0 shrink-0 grow-0 basis-full overflow-hidden">
