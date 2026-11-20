@@ -210,7 +210,9 @@ export function replicaStatus() {
 const NAME = /^[\w.-]{1,64}$/
 async function writeAtomic(file: string, data: string, mode?: number) {
   await mkdir(dirname(file), { recursive: true })
-  await writeFile(`${file}.tmp`, data, mode ? { mode } : undefined); await rename(`${file}.tmp`, file)
+  // a tmp of its own: two writes of one file at once (two beats) must not interleave into one broken file
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+  await writeFile(tmp, data, mode ? { mode } : undefined); await rename(tmp, file)
 }
 
 /** The worker's named calls for the other machines: the change log, the file index, a file's piece, the status, and

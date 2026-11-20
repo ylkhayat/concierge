@@ -65,7 +65,8 @@ async function refresh() {
     if (!f.endsWith('.json') || f.startsWith('.')) continue
     const name = f.slice(0, -5)
     if (name === fleet.machine) continue
-    const b = JSON.parse(await readFile(join(dir, f), 'utf8').catch(() => '{}')) as { worker?: string }
+    let b: { worker?: string } = {}
+    try { b = JSON.parse(await readFile(join(dir, f), 'utf8')) } catch { continue } // a broken beat: the next one replaces it
     if (!b.worker || !/^https?:\/\/[\w.:[\]-]+$/.test(b.worker)) continue
     names.add(name)
     const status = await call<WorkerStatus>(b.worker, token(), 'GET', '/status', undefined, 5000).catch(() => undefined)
