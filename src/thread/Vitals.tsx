@@ -5,8 +5,6 @@
 // pale: point at it and it offers to start, with the question that fits where the conversation stands.
 import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import useEmblaCarousel from 'embla-carousel-react'
-import { WheelGestures } from 'wheel-gestures'
 import type { Action, Diagram, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
 import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
@@ -299,36 +297,16 @@ export function slidesOf(b: { long: string; at: string; diagram?: Diagram } | un
 }
 
 /**
- * A vertical carousel, paged (Embla, with its wheel plugin: one gesture is one slide, a big flick never skips any).
- * As tall as its tallest slide, up to a cap, so a slide is never cut; dots say where you are.
+ * A vertical carousel on the browser's own scrolling: a flick goes as far as it goes, and it always comes to rest on a
+ * slide (scroll-snap). As tall as its tallest slide, up to a cap, so a slide is never cut; dots say where you are.
  */
 function Slides({ slides }: { slides: Slide[] }) {
-  const [ref, api] = useEmblaCarousel({ axis: 'y', skipSnaps: false, duration: 12 })
-  // the wheel pages: one gesture (its momentum, a free-spinning wheel's spin included) moves one slide, once it has
-  // gone a little way; the rest of it, and anything in the next 350 ms, is the same gesture
-  const view = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    const el = view.current
-    if (!api || !el) return
-    const wg = WheelGestures({ preventWheelAction: 'y', reverseSign: false })
-    let paged = false, until = 0
-    const off = wg.on('wheel', (w) => {
-      if (w.isStart) paged = false
-      if (w.isEnding) { paged = false; return }
-      const dy = w.axisMovement[1]
-      if (paged || performance.now() < until || Math.abs(dy) < 24) return
-      paged = true; until = performance.now() + 350
-      if (dy > 0) api.scrollNext(true); else api.scrollPrev(true)
-    })
-    wg.observe(el)
-    return () => { off(); wg.disconnect() }
-  }, [api])
+  const box = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState(0)
   const [h, setH] = useState(0)
   const inner = useRef<(HTMLDivElement | null)[]>([])
-  useEffect(() => { if (!api) return; const f = () => setAt(api.selectedScrollSnap()); api.on('select', f).on('reInit', f); return () => { api.off('select', f).off('reInit', f) } }, [api])
   // a new first slide (an answer just came in): back to it
-  useEffect(() => { api?.scrollTo(0, true) }, [api, slides[0]?.key])
+  useEffect(() => { box.current?.scrollTo({ top: 0, behavior: 'instant' }); setAt(0) }, [slides[0]?.key])
   // the height of the tallest slide's content, measured as it renders (markdown, wrapping)
   useLayoutEffect(() => {
     const measure = () => setH(Math.min(420, Math.max(96, ...inner.current.filter(Boolean).map((el) => el!.scrollHeight))))
@@ -337,38 +315,38 @@ function Slides({ slides }: { slides: Slide[] }) {
     inner.current.forEach((el) => el && ro.observe(el))
     return () => ro.disconnect()
   }, [slides.length])
-  useEffect(() => { api?.reInit() }, [api, h])
-  const key = (e: React.KeyboardEvent) => {
-    if (!api) return
-    const k = e.key
-    if (k === 'ArrowDown' || k === 'PageDown' || k === ' ') api.scrollNext(true)
-    else if (k === 'ArrowUp' || k === 'PageUp') api.scrollPrev(true)
-    else if (k === 'Home') api.scrollTo(0, true)
-    else if (k === 'End') api.scrollTo(slides.length - 1, true)
-    else return
-    e.preventDefault()
-  }
+  const go = (i: number) => box.current?.scrollTo({ top: i * box.current.clientHeight, behavior: 'smooth' })
+  // a short nudge (one notch of a wheel) would snap back to where it was: it moves one slide that way instead
+  const nudge = useRef({ from: 0, dy: 0, t: 0 })
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const idx = () => Math.round(el.scrollTop / el.clientHeight)
+    const wheel = (e: WheelEvent) => { const n = nudge.current, t = performance.now(); if (t - n.t > 250) { n.from = idx(); n.dy = 0 } n.dy += e.deltaY; n.t = t }
+    const end = () => { const n = nudge.current; if (Math.abs(n.dy) > 20 && idx() === n.from) go(n.from + Math.sign(n.dy)); n.dy = 0 }
+    el.addEventListener('wheel', wheel, { passive: true }); el.addEventListener('scrollend', end)
+    return () => { el.removeEventListener('wheel', wheel); el.removeEventListener('scrollend', end) }
+  }, [])
   return (
     <div className="relative">
-      <div ref={(el) => { ref(el); view.current = el }} onKeyDown={key} tabIndex={0} aria-roledescription="carousel" className="overflow-hidden pr-6 outline-none" style={{ height: h || undefined }}>
-        <div className="flex h-full flex-col">
-          {slides.map((x, i) => (
-            <section key={x.key} aria-roledescription="slide" aria-label={`${i + 1} of ${slides.length}: ${x.label}`} className="min-h-0 shrink-0 grow-0 basis-full overflow-hidden">
-              <div ref={(el) => { inner.current[i] = el }}>
-                <p className="mb-1.5 flex items-center gap-1.5 text-micro">
-                  <span className="font-semibold uppercase tracking-wide text-[var(--lane)]">{x.label}</span>
-                  {x.at && <span className="text-fg-4">· {ago(x.at)}</span>}
-                </p>
-                {x.body}
-              </div>
-            </section>
-          ))}
-        </div>
+      <div ref={box} onScroll={(e) => setAt(Math.round(e.currentTarget.scrollTop / e.currentTarget.clientHeight))} tabIndex={0} aria-roledescription="carousel"
+           className="snap-y snap-mandatory overflow-y-auto overscroll-contain pr-6 outline-none [scrollbar-width:none]" style={{ height: h || undefined }}>
+        {slides.map((x, i) => (
+          <section key={x.key} aria-roledescription="slide" aria-label={`${i + 1} of ${slides.length}: ${x.label}`} className="h-full snap-start overflow-hidden">
+            <div ref={(el) => { inner.current[i] = el }}>
+              <p className="mb-1.5 flex items-center gap-1.5 text-micro">
+                <span className="font-semibold uppercase tracking-wide text-[var(--lane)]">{x.label}</span>
+                {x.at && <span className="text-fg-4">· {ago(x.at)}</span>}
+              </p>
+              {x.body}
+            </div>
+          </section>
+        ))}
       </div>
       {slides.length > 1 && (
         <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1" role="tablist" aria-label="Slides">
           {slides.map((x, i) => (
-            <button key={x.key} role="tab" aria-selected={i === at} title={x.label} onClick={() => api?.scrollTo(i, true)}
+            <button key={x.key} role="tab" aria-selected={i === at} title={x.label} onClick={() => go(i)}
                     className={`w-1.5 rounded-full transition-[height,background-color] duration-150 ${i === at ? 'h-4 bg-[var(--lane)]' : 'h-1.5 bg-fg-4/40 hover:bg-fg-3'}`} />
           ))}
         </div>
