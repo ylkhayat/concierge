@@ -163,3 +163,24 @@ export async function stop(what: 'crit' | 'runs' | 'all') {
   if (what !== 'runs') { term(crit.flatMap((c) => c.tree.map((p) => p.pid))); n += crit.length }
   return n
 }
+
+/**
+ * Crit servers nothing uses any more: the PR was merged or closed, or its last run ended over CRIT_IDLE_H ago with
+ * none since. Each is ~40 MB and they piled up. Stopping one keeps its session: Restart crit brings it back as it was.
+ */
+const CRIT_IDLE_H = 12
+export async function reapCrit() {
+  const { crit } = await snapshot()
+  const old = Date.now() - CRIT_IDLE_H * 3600_000
+  const gone = crit.filter((c) => {
+    if (c.target?.kind !== 'pr') return false
+    const p = state.prs[c.target.id]
+    if (!p) return false
+    if (p.closed) return true
+    const j = p.job
+    return !!j && j.state !== 'running' && j.state !== 'queued' && !!j.endedAt && Date.parse(j.endedAt) < old
+  })
+  if (gone.length) { term(gone.flatMap((c) => c.tree.map((p) => p.pid))); console.log(`crit: stopped ${gone.map((c) => c.name).join(', ')}`) }
+  return gone.length
+}
+setInterval(() => void reapCrit().catch((e) => console.error('reapCrit', e.message)), 10 * 60_000).unref()
