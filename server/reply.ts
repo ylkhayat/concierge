@@ -1,3 +1,4 @@
+import { watchesCi } from './next.ts'
 // Shared by server tests and the browser: no Node imports here.
 
 /** One message to the agent from what you picked: each decision as "topic: choice", then your own words. */
@@ -42,7 +43,7 @@ export function composeChecklist(steps: Step[], picks: Record<number, number>, c
 
 /** How many things a hand-back asks of you: its decisions and its moves; "stop here" alone asks nothing. */
 export const pendingOf = (n?: { decisions: unknown[]; actions: { kind: string }[]; steps?: unknown[] }) =>
-  (!n ? 0 : n.steps ? n.steps.length : n.decisions.length + n.actions.filter((a) => a.kind !== 'stop').length) // what the panel lists
+  (!n ? 0 : n.steps ? n.steps.filter((x) => !watchesCi((x as { text?: string }).text ?? '')).length : n.decisions.length + n.actions.filter((a) => a.kind !== 'stop').length) // what the panel lists
 
 /** The choices an agent's question lists ("1. …", "- …", "Option A: …"): the last run of two to six, so they can be picked with a tap. */
 export function optionsOf(q: string): string[] {

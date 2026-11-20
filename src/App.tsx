@@ -166,7 +166,7 @@ export function App() {
   const codebaseRepo = mode === 'review' && selected?.startsWith('codebase:') ? selected.slice('codebase:'.length) : undefined
   // "stack:<any of its PRs>" selects the stack itself: found from that PR as the stack is now, so a link survives restacking
   const stack = selected?.startsWith('stack:') && prs ? stackAt(prs, tickets, selected.slice('stack:'.length)) : undefined
-  const stackPage = stack && <div key={stack.key} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]"><StackPage stack={stack} prs={prs ?? []} waiting={waiting} onSelect={(id) => goPr(id)} onTicket={(id) => goTicket(id)} toast={toast} /></div>
+  const stackPage = stack && <Detail key={stack.key}><StackPage stack={stack} prs={prs ?? []} waiting={waiting} onSelect={(id) => goPr(id)} onTicket={(id) => goTicket(id)} toast={toast} /></Detail>
   const detailOpen = !!pr || !!codebaseRepo || !!ticket || !!stack
   // the list follows the open PR (link, notification, hash) until you pick a tab yourself
   const tab = pickedTab ?? (pr ? tabOf(pr) : stack?.members[0] ? tabOf(stack.members[0]) : 'review')
@@ -389,9 +389,9 @@ export function App() {
           </div>
         ) : stackPage ? stackPage : pr ? (
           // keyed: each PR gets a fresh detail that fades in, instead of morphing the previous one
-          <div key={pr.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
+          <Detail key={pr.id}>
             <PrPage pr={pr} feed={feed} now={now} onBack={() => select(undefined)} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => (l.kind === 'ticket' ? goTicket(l.id) : select(l.id))} sync={{ at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }} />
-          </div>
+          </Detail>
         ) : (
           <Today missing={missing} onSkills={() => setSettingsOpen('skills')} me={me?.name ?? me?.login} prs={focusedPrs ?? []} tickets={scoped} focus={focus} health={health} now={now} onPr={select} onTicket={goTicket} />
         )}
@@ -417,9 +417,9 @@ export function App() {
       </aside>
       <main className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
         {stackPage ? stackPage : ticket ? (
-          <div key={ticket.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
+          <Detail key={ticket.id}>
             <TicketPage t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
-          </div>
+          </Detail>
         ) : (
           <ExecHome repo={focus} tickets={scoped} prs={prs ?? []} now={now} onTicket={select} onPr={goPr} onMap={focus && repos.includes(focus) ? () => goCodebase(focus) : undefined} />
         )}
@@ -580,3 +580,12 @@ const Boot = () => (
     <span className="flex size-11 animate-pulse items-center justify-center rounded-xl bg-accent text-on-accent"><GitPullRequestArrow className="size-6" /></span>
   </div>
 )
+
+/** An opened PR, stack or ticket: one entrance for the whole page. What it holds (the chat's turns, the vitals) would
+ *  fade in again as its data lands; for the page's first moments that is held back (.fresh, index.css), so it doesn't
+ *  arrive twice. What comes in after that still fades in. */
+function Detail({ children }: { children: React.ReactNode }) {
+  const [fresh, setFresh] = useState(true)
+  useEffect(() => { const t = setTimeout(() => setFresh(false), 700); return () => clearTimeout(t) }, [])
+  return <div className={`h-full animate-[detail-in_180ms_var(--ease-snappy)] ${fresh ? 'fresh' : ''}`}>{children}</div>
+}

@@ -23,6 +23,8 @@ html { font-feature-settings: "cv11", "ss01"; font-optical-sizing: auto; }
 ::view-transition-old(detail) { animation: 120ms ease-in both fade-out; }
 ::view-transition-new(detail) { animation: 220ms var(--ease-snappy) both rise-in; }
 @keyframes fade-out { to { opacity: 0; } }
+/* a page just opened (Detail, App.tsx): its parts arrive with it, not in a second wave of their own */
+.fresh :is(.lane, [class*='detail-in']) { animation: none; }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } }
 @keyframes drawer-in-left { from { transform: translateX(-24px); opacity: 0; } }

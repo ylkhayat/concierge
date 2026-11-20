@@ -27,7 +27,7 @@ import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
 import { cachedStackTour, makeStackTour, writingStackTour } from './stackTour.ts'
 import { trackTurns } from './turns.ts'
-import { hashOf, nextSteps, stepHash, toSteps, type NextSteps } from './next.ts'
+import { hashOf, nextSteps, stepHash, toSteps, withoutCiWatch, type NextSteps } from './next.ts'
 import { pendingOf, routeSteps } from './reply.ts'
 import { alert, alerts, condition, seeAlerts, whenAlerts } from './alerts.ts'
 import { pin, pins, prText, prYours, ticketText, ticketYours, watch, type Seen } from './pins.ts'
@@ -2338,7 +2338,8 @@ app.post('/prs/:id/explain', async (c) => {
 /** The run's final message: stored since this feature, else the last result in its log. */
 const finalMessage = (job: { summary?: string } | undefined, feedId: string) =>
   job?.summary ?? [...activity(feedId)].reverse().find((a) => a.kind === 'result')?.text
-async function stepsFor(holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string) {
+const stepsFor = async (holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string) => withoutCiWatch(await stepsOf(holder, feedId))
+async function stepsOf(holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string) {
   if (!holder || holder.state === 'running' || holder.state === 'queued') return null
   const msg = finalMessage(holder, feedId)
   // the agent's own block, or read before (one saved before checklists: its decisions and moves as one)

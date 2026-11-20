@@ -288,7 +288,7 @@ const GONE = /No conversation found|session .* not found/i
 
 export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?: string, after?: string) {
   // your words for a PR whose run is back in the queue (it was requeued just as they were due): kept with it, never dropped
-  if (pr.job?.state === 'queued' && kind === 'reply' && said) { (pr.job.heldWords ??= []).push(said); save(); return }
+  if (pr.job?.state === 'queued' && kind === 'reply' && said) { (pr.job.heldWords ??= []).push(said); note(pr.id, { at: new Date().toISOString(), kind: 'you', text: said }); save(); bus.emit('change'); return }
   // a run still working: words reach it another way (tell). One that finished but whose process is still closing
   // (a background task like a crit wait): queued, it starts once that process is gone instead of being dropped
   if ((children.has(pr.id) && pr.job?.state === 'running') || pr.job?.state === 'queued') return
@@ -320,6 +320,12 @@ export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?
   if (after) pr.job.after = after
   // your words wait a moment for the rest of what you are typing, so a burst of messages is one run (replyRoute.ts)
   if (kind === 'reply' && said) Object.assign(pr.job, { gathering: true, notBefore: new Date(Date.now() + GATHER_S * 1000).toISOString() })
+  // what you sent shows in the conversation now, not once it starts (a queue, a full plan window can make that minutes)
+  if (said) {
+    note(pr.id, { at: now, kind: 'section', text: LABEL[kind] }, false)
+    append(logFile(pr.id), JSON.stringify({ type: 'review-deck', section: LABEL[kind], timestamp: now }) + '\n')
+    note(pr.id, { at: now, kind: 'you', text: said }); pr.job.shown = true
+  }
   transition('job', pr.id, now, pr.job, 'queued', said ? 'you asked' : 'queued', {}, { kind })
   save()
   bus.emit('change')
@@ -968,6 +974,7 @@ function start(pr: Pr) {
   let asked = isFollowUp(job.kind) ? job.prompt! : fill(slot(job.kind as 'review' | 'revise', job.as ?? 'developer'), { number: pr.number, repo: pr.repo })
   if (wasPaused) note(pr.id, { at: startedAt, kind: 'event', text: "The plan's window has room again: it continues where it left off." })
   else if (job.continuing) note(pr.id, { at: startedAt, kind: 'event', text: `It continues where it left off${job.continued ? ` (restart ${job.continued} of ${MAX_CONTINUES})` : ''}.` })
+  else if (job.shown) note(pr.id, { at: startedAt, kind: 'event', text: 'Started.' })
   else {
     note(pr.id, { at: startedAt, kind: 'section', text: LABEL[job.kind] }, false) // the line below writes it
     append(logFile(pr.id), JSON.stringify({ type: 'review-deck', section: LABEL[job.kind], timestamp: startedAt }) + '\n')
@@ -1196,6 +1203,10 @@ export function enqueueExec(ids: string[], repo: string, auto = false, action?: 
   }
   state.execs[run.id] = run
   transition('exec', ids.join(' → '), run.id, run, 'queued', action?.said ? 'you asked' : auto ? 'auto' : 'queued', {}, { kind: run.label ?? 'exec' })
+  if (run.said) { // in the conversation now, not once it starts
+    note(`exec:${run.id}`, { at: run.queuedAt, kind: 'section', text: run.label ? `${run.label} · ${run.ids.join(' → ')}` : `Ship ${run.ids.join(' → ')}` })
+    note(`exec:${run.id}`, { at: run.queuedAt, kind: 'you', text: run.said }); run.shown = true
+  }
   // fresh work on a ticket is planned first (its skills and setup, router.ts): it starts once the plan is in
   if (planner && !action?.resume && !action?.prompt) {
     run.planning = true
@@ -1293,6 +1304,7 @@ function startExec(run: ExecRun, on?: string) {
   ev('running', run.continuing ? 'continued' : 'started', { startedAt: run.continuing && run.startedAt ? run.startedAt : now, endedAt: undefined, error: undefined, costUsd: undefined, denials: [], refused: undefined, pausedAt: undefined })
   if (wasPaused) note(key, { at: now, kind: 'event', text: "The plan's window has room again: it continues where it left off." })
   else if (run.continuing) note(key, { at: now, kind: 'event', text: `It continues where it left off${run.continued ? ` (restart ${run.continued} of ${MAX_CONTINUES})` : ''}.` })
+  else if (run.shown && !run.opened) note(key, { at: run.startedAt!, kind: 'event', text: 'Started.' })
   else if (!run.opened) {
     note(key, { at: run.startedAt!, kind: 'section', text: run.label ? `${run.label} · ${run.ids.join(' → ')}` : `Ship ${run.ids.join(' → ')}` })
     if (run.said) note(key, { at: run.startedAt!, kind: 'you', text: run.said })

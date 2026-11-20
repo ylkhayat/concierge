@@ -47,3 +47,10 @@ test('the feed shows the prose only', () => {
   assert.equal(proseOf(block('{"decisions":[],"actions":[]}')), 'Reviewed #12: two findings in crit.')
   assert.equal(proseOf('plain'), 'plain')
 })
+
+test('a step that only watches CI is not one for you', async () => {
+  const { watchesCi } = await import('./next.ts')
+  assert.equal(watchesCi("Read #5456's CI once it finishes and fix anything red"), true)
+  assert.equal(watchesCi('Move DA-1292 to In Review once CI is green'), false)
+  assert.equal(watchesCi('Force-push the rebased branch'), false)
+})
