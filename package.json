@@ -16,6 +16,8 @@
     "@xyflow/react": "^12.12.0",
     "date-fns": "4.1.0",
     "elkjs": "^0.12.0",
+    "embla-carousel-react": "8.6.0",
+    "embla-carousel-wheel-gestures": "8.1.0",
     "hono": "^4.13.13",
     "lucide-react": "^1.56.0",
     "mermaid": "^12.2.0",

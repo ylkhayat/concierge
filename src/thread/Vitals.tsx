@@ -4,7 +4,9 @@
 // opens, inside itself, on what is settled, what it has for the agent and what to ask next. One not assessed yet is
 // pale: point at it and it offers to start, with the question that fits where the conversation stands.
 import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import useEmblaCarousel from 'embla-carousel-react'
+import { WheelGesturesPlugin } from 'embla-carousel-wheel-gestures'
 import type { Action, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
 import { api, type Activity } from '../lib.ts'
 import { ago } from '../time.ts'
@@ -293,53 +295,58 @@ export function slidesOf(b: { long: string; at: string } | undefined, messages: 
   return [...after, ...card, ...before]
 }
 
-/** A vertical carousel of a fixed height: one slide at a time, snapping (no animation), dots for where you are. */
+/**
+ * A vertical carousel, paged (Embla, with its wheel plugin: one gesture is one slide, a big flick never skips any).
+ * As tall as its tallest slide, up to a cap, so a slide is never cut; dots say where you are.
+ */
 function Slides({ slides }: { slides: Slide[] }) {
-  const box = useRef<HTMLDivElement>(null)
+  const [ref, api] = useEmblaCarousel({ axis: 'y', skipSnaps: false, duration: 12 }, [WheelGesturesPlugin({ forceWheelAxis: 'y' })])
   const [at, setAt] = useState(0)
-  // a new first slide (an answer just came in): back to the top, where it is
-  useEffect(() => { box.current?.scrollTo({ top: 0, behavior: 'instant' }); setAt(0) }, [slides[0]?.key])
-  const go = (i: number) => { const el = box.current; if (!el) return; const n = Math.max(0, Math.min(slides.length - 1, i)); el.scrollTo({ top: n * el.clientHeight, behavior: 'instant' }); setAt(n) }
-  // paged: one gesture, one slide. A trackpad's flick keeps sending wheel events as it coasts; those wait until it
-  // has been quiet for a moment, so a flick never skips slides
-  const now = useRef(at); now.current = at
-  useEffect(() => {
-    const el = box.current
-    if (!el) return
-    let quietAt = 0
-    const wheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < Math.abs(e.deltaX)) return
-      e.preventDefault()
-      const t = performance.now(), fresh = t - quietAt > 180
-      quietAt = t
-      if (fresh && Math.abs(e.deltaY) > 2) go(now.current + Math.sign(e.deltaY))
-    }
-    el.addEventListener('wheel', wheel, { passive: false })
-    return () => el.removeEventListener('wheel', wheel)
-  }, [slides.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [h, setH] = useState(0)
+  const inner = useRef<(HTMLDivElement | null)[]>([])
+  useEffect(() => { if (!api) return; const f = () => setAt(api.selectedScrollSnap()); api.on('select', f).on('reInit', f); return () => { api.off('select', f).off('reInit', f) } }, [api])
+  // a new first slide (an answer just came in): back to it
+  useEffect(() => { api?.scrollTo(0, true) }, [api, slides[0]?.key])
+  // the height of the tallest slide's content, measured as it renders (markdown, wrapping)
+  useLayoutEffect(() => {
+    const measure = () => setH(Math.min(420, Math.max(96, ...inner.current.filter(Boolean).map((el) => el!.scrollHeight))))
+    measure()
+    const ro = new ResizeObserver(measure)
+    inner.current.forEach((el) => el && ro.observe(el))
+    return () => ro.disconnect()
+  }, [slides.length])
+  useEffect(() => { api?.reInit() }, [api, h])
   const key = (e: React.KeyboardEvent) => {
-    const d = e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ' ? 1 : e.key === 'ArrowUp' || e.key === 'PageUp' ? -1 : e.key === 'Home' ? -Infinity : e.key === 'End' ? Infinity : 0
-    if (!d) return
-    e.preventDefault(); go(Number.isFinite(d) ? at + d : d < 0 ? 0 : slides.length - 1)
+    if (!api) return
+    const k = e.key
+    if (k === 'ArrowDown' || k === 'PageDown' || k === ' ') api.scrollNext(true)
+    else if (k === 'ArrowUp' || k === 'PageUp') api.scrollPrev(true)
+    else if (k === 'Home') api.scrollTo(0, true)
+    else if (k === 'End') api.scrollTo(slides.length - 1, true)
+    else return
+    e.preventDefault()
   }
   return (
     <div className="relative">
-      <div ref={box} onScroll={(e) => setAt(Math.round(e.currentTarget.scrollTop / e.currentTarget.clientHeight))} onKeyDown={key} tabIndex={0} aria-roledescription="carousel"
-           className="h-44 snap-y snap-mandatory overflow-y-auto overscroll-contain pr-6 outline-none [scrollbar-width:none]">
-        {slides.map((x, i) => (
-          <section key={x.key} aria-roledescription="slide" aria-label={`${i + 1} of ${slides.length}: ${x.label}`} className="flex h-full snap-start snap-always flex-col overflow-hidden">
-            <p className="mb-1.5 flex items-center gap-1.5 text-micro">
-              <span className="font-semibold uppercase tracking-wide text-[var(--lane)]">{x.label}</span>
-              {x.at && <span className="text-fg-4">· {ago(x.at)}</span>}
-            </p>
-            <div className="min-h-0 flex-1 overflow-hidden [mask-image:linear-gradient(to_bottom,black_80%,transparent)]">{x.body}</div>
-          </section>
-        ))}
+      <div ref={ref} onKeyDown={key} tabIndex={0} aria-roledescription="carousel" className="overflow-hidden pr-6 outline-none" style={{ height: h || undefined }}>
+        <div className="flex h-full flex-col">
+          {slides.map((x, i) => (
+            <section key={x.key} aria-roledescription="slide" aria-label={`${i + 1} of ${slides.length}: ${x.label}`} className="min-h-0 shrink-0 grow-0 basis-full overflow-hidden">
+              <div ref={(el) => { inner.current[i] = el }}>
+                <p className="mb-1.5 flex items-center gap-1.5 text-micro">
+                  <span className="font-semibold uppercase tracking-wide text-[var(--lane)]">{x.label}</span>
+                  {x.at && <span className="text-fg-4">· {ago(x.at)}</span>}
+                </p>
+                {x.body}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
       {slides.length > 1 && (
         <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1" role="tablist" aria-label="Slides">
           {slides.map((x, i) => (
-            <button key={x.key} role="tab" aria-selected={i === at} title={x.label} onClick={() => go(i)}
+            <button key={x.key} role="tab" aria-selected={i === at} title={x.label} onClick={() => api?.scrollTo(i, true)}
                     className={`w-1.5 rounded-full transition-[height,background-color] duration-150 ${i === at ? 'h-4 bg-[var(--lane)]' : 'h-1.5 bg-fg-4/40 hover:bg-fg-3'}`} />
           ))}
         </div>
