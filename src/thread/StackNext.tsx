@@ -98,7 +98,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
     queryFn: () => api(`/prs/${enc(anchor!.id)}/actions`) as Promise<{ id: string; counts: { stack?: number } }[]> })
   // one agent is resolving the stack now: what it was answered is under way, so nothing is asked again until it ends
   const driving = stack.map((s) => prs.find((p) => p.repo === s.repo && p.number === s.number)).find((p) => p?.stackRun)?.stackRun
-  if (driving && waiting.length >= 2) return { covers: waiting.map((m) => m.pr.id), card: (
+  if (driving) return { covers: prs.filter((p) => stack.some((s) => s.repo === p.repo && s.number === p.number)).map((p) => p.id), card: (
     <section className="flex items-center gap-2 rounded-xl bg-run/5 p-3 text-small text-fg-2 ring-1 ring-run/20">
       <LoaderCircle className="size-4 shrink-0 animate-spin text-run-text" />
       <span>{driving === 'running' ? 'One agent is resolving the stack with your answers, bottom first.' : 'Your answers are queued for the stack\'s agent.'} What it still needs from you comes back here when it ends.</span>

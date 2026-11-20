@@ -83,7 +83,7 @@ import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
 
 export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
-export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running' }
+export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string }
 /** An error in a few words, with what is under Node's bare "fetch failed" (ENOTFOUND: no DNS, a timeout, a reset). */
 const whyFailed = (e: unknown) => {
   const c = (e as { cause?: { code?: string; message?: string } }).cause
@@ -151,8 +151,9 @@ function views(): PrView[] {
       const below = p.job?.state === 'queued' && p.job.after && ['queued', 'running'].includes(state.prs[p.job.after]?.job?.state ?? '') ? `#${state.prs[p.job.after].number}` : undefined
       const queued = p.job?.state === 'queued' ? queuedWhy(p.job, p.mine ? 'revise' : 'review', below, p.repo) : undefined
       const stackRun = driving.size && p.stack && p.stack.length > 1 && !p.closed ? driving.get(driveKey(p)) : undefined
-      if (answered(p) && pr.job) pr.job = { ...pr.job, next: undefined } // answered with the stack: nothing asked any more
-      return { ...pr, ...(stackRun && { stackRun }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
+      const stackAnswered = answeredAt(p)
+      if (stackAnswered && pr.job) pr.job = { ...pr.job, next: undefined } // answered with the stack: nothing asked any more
+      return { ...pr, ...(stackRun && { stackRun }), ...(stackAnswered && { stackAnswered }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
 }
@@ -2489,7 +2490,14 @@ app.post('/stacks/say', async (c) => {
 })
 // one agent for the whole stack (the drive-stack skill): it works bottom-up through every PR, settles what crosses them,
 // restacks and checks again after each, and ends done or with one question. One run instead of a resume per PR's agent
-const answered = (p: Pr) => !!p.stackAnswered && p.stackAnswered === p.job?.endedAt
+// a PR's agent's questions are answered once the stack was resolved after it finished: the stack's run took them up
+// (a new run of the PR's own ends later, and asks anew)
+const answeredAt = (p: Pr) => {
+  if (!p.job?.endedAt || !p.stack || p.stack.length < 2) return undefined
+  const r = driveOf(driveKey(p))
+  return r?.queuedAt && r.queuedAt > p.job.endedAt ? r.queuedAt : undefined
+}
+const answered = (p: Pr) => !!answeredAt(p)
 const driveKey = (p: Pr) => { const c = treeChain(p); return `STACK-${p.repo.split('/')[1]}-${c[0]?.number ?? p.number}` }
 const driveOf = (key: string) => Object.values(state.execs).filter((r) => r.ids[0] === key).sort((a, b) => (b.queuedAt ?? '').localeCompare(a.queuedAt ?? ''))[0]
 app.get('/stacks/drive', (c) => {
@@ -2519,8 +2527,6 @@ app.post('/stacks/drive', async (c) => {
     b.push ? 'Push each changed branch when its part is done (with lease).' : 'Do not push: commit in the worktrees and report the shas.',
   ].filter(Boolean).join('\n\n')
   const run = enqueueExec([key], p.repo, false, { label: 'Resolve stack', prompt, said: words || 'Resolve the stack', role: 'stack' })
-  // what each PR's agent asked is answered now, by this run: none of them asks it again (a new run of its own asks anew)
-  if (run) { for (const s of chain) { const t = state.prs[`${s.repo}#${s.number}`]; if (t?.job?.endedAt) t.stackAnswered = t.job.endedAt } save() }
   return run ? c.json({ ok: true, run: { id: run.id, state: run.state } }) : c.json({ error: 'Could not start the stack run' }, 400)
 })
 function sendReply(p: Pr, msg: string): string | undefined {

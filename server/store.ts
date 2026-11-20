@@ -184,7 +184,6 @@ export type Pr = {
   verdicts?: { who: string; state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'REQUESTED' }[] // yours: each reviewer's latest word, or a request still open
   reviewDecision?: string | null // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED (mine only)
   closed: boolean
-  stackAnswered?: string // the endedAt of the run whose next steps you answered for the whole stack: they aren't asked again
   handoffs?: { to: number; text: string; at: string }[] // steps of this PR's agent you sent to another PR (its agent, or its author): never suggested here again
   closedAt?: string // merged or closed: the list keeps it under Done for a few days (DONE_DAYS)
   merged?: boolean
