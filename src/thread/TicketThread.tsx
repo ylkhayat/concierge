@@ -58,7 +58,7 @@ export function TicketThread(props: TicketThreadProps) {
     { id: 'ticket', group: 'Read', label: `Read ${t.id}`, run: () => setPane('ticket') },
     ...prItems.map((x) => ({ id: `pr:${x.id}`, group: 'Open', label: `Open ${x.ref} in Review`, hint: x.title, run: () => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' }) })),
     ...(run ? [{ id: 'resume', group: 'Open', label: 'Resume the session in Terminal', run: () => act('resume-terminal', 'Opened the session in Terminal') }] : []),
-    { id: 'linear', group: 'Open', label: 'Open in Linear', run: () => open(t.url, '_blank', 'noreferrer') },
+    { id: 'linear', group: 'Open', label: t.source === 'github' ? 'Open on GitHub' : 'Open in Linear', run: () => open(t.url, '_blank', 'noreferrer') },
     ...tools,
   ]
   // the box to steer it: the agent's decisions once it hands back (a card in the conversation, since your picks and

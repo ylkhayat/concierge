@@ -20,7 +20,8 @@ import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
-import { defaultBranch, tokenChanged, getMe, ghBudget, outside, poll, prHealth, refreshOne, setOnStacks } from './github.ts'
+import { defaultBranch, tokenChanged, getMe, gh, ghBudget, outside, poll, prHealth, refreshOne, setOnStacks } from './github.ts'
+import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
 import { assignToMe, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
 import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
@@ -344,7 +345,7 @@ async function handOver(from: ExecRun, h: Handover) {
   const repo = repoFor(h.id, config.exec.repoByPrefix)
   if (!repo) { note(key, { at: at(), kind: 'error', text: `Not handed over to ${h.id}: no repository is mapped for ${h.id.split('-')[0]} (Settings › Workflows).` }); return }
   if (ticketBusy(h.id)) { note(key, { at: at(), kind: 'event', text: `${h.id} already has a run going; the handover waits for you there.` }); return }
-  const assigned = await assignToMe(h.id).then(() => '', (e: Error) => ` It could not be assigned to you (${e.message}); do that in Linear.`)
+  const assigned = await (issueOf(h.id) ? assignIssue(h.id) : assignToMe(h.id)).then(() => '', (e: Error) => ` It could not be assigned to you (${e.message}); do that in ${issueOf(h.id) ? 'GitHub' : 'Linear'}.`)
   const cmd = slot('exec') ? execCommand(slot('exec'), [h.id]) : ''
   const next = enqueueExec([h.id], repo, false, { label: `Handed over from ${src}`, prompt: `${cmd}\n\nHanded over from ${src}, whose run decided this:\n${h.brief}`.trim() })
   note(key, { at: at(), kind: 'event', text: next ? `Handed over to ${h.id}: its own run started, and its progress shows on ${h.id}.${assigned}` : `Could not start ${h.id}'s run.${assigned}` })
@@ -1163,7 +1164,7 @@ const execView = () => ({
   actions: config.exec.actions.map(({ id, label, hint, icon, confirm, env, prompt }) => ({ id, label, hint, icon, confirm, env, missing: missingFor(prompt) })),
   missing: missingFor(slot('exec')), // skills the exec command needs that this machine lacks
   tickets: ticketViews(), at: execBoard.at, error: execBoard.error, polling: execBoard.polling,
-  configured: !!config.exec.command && Object.keys(config.exec.repoByPrefix).length > 0, hasKey: hasKey(),
+  configured: (!!config.exec.command && Object.keys(config.exec.repoByPrefix).length > 0) || execBoard.tickets.some((t) => t.source === 'github'), hasKey: hasKey(),
 })
 export type ExecView = ReturnType<typeof execView>
 
@@ -1181,7 +1182,7 @@ async function offList(mine: Ticket[]): Promise<Ticket[]> {
     ...Object.values(state.execs).flatMap((r) => r.ids),
     ...Object.values(state.standups ?? {}).flatMap((w) => w.text.match(TICKET_ID) ?? []),
     ...Object.values(state.prs).filter((p) => p.mine).flatMap((p) => p.title.match(TICKET_ID) ?? []),
-  ].filter((id) => !on.has(id) && repoFor(id, config.exec.repoByPrefix)))
+  ].filter((id) => !on.has(id) && !issueOf(id) && repoFor(id, config.exec.repoByPrefix)))
   const refs = state.ticketRefs ??= {}
   for (const id of Object.keys(refs)) if (!named.has(id)) delete refs[id]
   // ponytail: 50 a poll keeps one query small; a backlog of more fills in over a few polls
@@ -1201,11 +1202,17 @@ async function offList(mine: Ticket[]): Promise<Ticket[]> {
 const healthAt = new Map<string, number>()
 async function pollTickets() {
   if (fleet.elsewhere()) return // a worker: the control plane polls
-  if (execBoard.polling || !hasKey() || !config.exec.command) return
+  if (execBoard.polling) return
   execBoard.polling = true
   bus.emit('exec')
   try {
-    const tickets = await myTickets()
+    const linear = hasKey() && config.exec.command ? await myTickets() : []
+    // and your GitHub issues in the repos you watch: for work not tracked in Linear
+    const taken = new Set([...Object.keys(config.exec.repoByPrefix), ...linear.map((t) => t.id.split('-')[0])])
+    const prs = Object.values(state.prs).map((p) => ({ repo: p.repo, number: p.number, url: p.url, title: p.title, body: p.body, head: p.head }))
+    const issues = await myIssues(Object.keys(config.repos), (k) => taken.has(k), prs, (q) => gh(`/search/issues?q=${encodeURIComponent(q)}&per_page=100`))
+      .catch((e: Error) => { console.error('github issues:', e.message); return execBoard.tickets.filter((t) => t.source === 'github') })
+    const tickets = [...linear, ...issues]
     // PR health for tickets in review: red CI or open threads mean "tend"
     await Promise.all(tickets.filter((t) => t.state.toLowerCase().includes('review') && prsOf(t).length).map(async (t) => {
       // every linked PR (a ticket can ship as a stack), up to 12
@@ -1218,7 +1225,7 @@ async function pollTickets() {
         if (h) { execBoard.health[key] = h; healthAt.set(key, Date.now()) }
       }))
     }))
-    execBoard.tickets = [...tickets, ...await offList(tickets)]
+    execBoard.tickets = [...tickets, ...(hasKey() ? await offList(linear) : [])]
     execBoard.error = undefined
     save()
   } catch (e) {
@@ -1246,7 +1253,7 @@ app.post('/exec/poll', async (c) => { await pollTickets(); return c.json(execVie
 // picked tickets, checked: every id well-formed, mapped to a repo with a checkout, none already running
 function pickedTickets(ids: unknown): { error: string; code: 400 | 409 } | { id: string; title: string; description: string; repo: string }[] {
   if (!Array.isArray(ids) || !ids.length || ids.some((i) => typeof i !== 'string' || !/^[A-Z][A-Z0-9]*-\d+$/.test(i))) return { error: 'Pick one or more tickets', code: 400 }
-  if (!config.exec.command) return { error: 'Set the command that ships tickets in Settings → Ship', code: 400 }
+  if (!config.exec.command && !(ids as string[]).every((i) => issueOf(i))) return { error: 'Set the command that ships tickets in Settings → Ship', code: 400 }
   const unmapped = (ids as string[]).filter((i) => !repoFor(i, config.exec.repoByPrefix))
   if (unmapped.length) return { error: `No repository mapped for ${unmapped.join(', ')}`, code: 400 }
   const noCheckout = (ids as string[]).map((i) => repoFor(i, config.exec.repoByPrefix)!).filter((r) => !config.repos[r])
@@ -1306,8 +1313,8 @@ app.post('/exec/action', async (c) => {
     // your words, posted as you: no AI marker. The exec command reads a newer human reply as the go-ahead.
     let url: string
     // answer where the agent asked: in the thread of its latest comment
-    try { url = await postComment(t.id, text, t.agentWaiting ? t.lastComment?.threadId : undefined) }
-    catch (e) { console.error(`reply on ${t.id} failed:`, (e as Error).message); return c.json({ error: `Linear: ${(e as Error).message}` }, 502) }
+    try { url = issueOf(t.id) ? await commentOnIssue(t.id, text) : await postComment(t.id, text, t.agentWaiting ? t.lastComment?.threadId : undefined) }
+    catch (e) { console.error(`reply on ${t.id} failed:`, (e as Error).message); return c.json({ error: `${issueOf(t.id) ? 'GitHub' : 'Linear'}: ${(e as Error).message}` }, 502) }
     console.log(`replied on ${t.id}: ${url}`)
     const run = enqueueExec([t.id], repo)
     return c.json({ commentUrl: url, run })

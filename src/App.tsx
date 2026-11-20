@@ -393,7 +393,7 @@ export function App() {
             <PrPage pr={pr} feed={feed} now={now} onBack={() => select(undefined)} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => (l.kind === 'ticket' ? goTicket(l.id) : select(l.id))} sync={{ at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }} />
           </div>
         ) : (
-          <Today missing={missing} onSkills={() => setSettingsOpen('skills')} me={me?.name ?? me?.login} prs={prs ?? []} tickets={tickets} health={health} now={now} onPr={select} onTicket={goTicket} />
+          <Today missing={missing} onSkills={() => setSettingsOpen('skills')} me={me?.name ?? me?.login} prs={focusedPrs ?? []} tickets={scoped} focus={focus} health={health} now={now} onPr={select} onTicket={goTicket} />
         )}
       </main>
     </div>

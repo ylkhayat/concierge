@@ -23,6 +23,7 @@ export type Ticket = {
   closed?: boolean // done or cancelled: kept only while something here still names it
   doneAt?: string // when it was done or cancelled: the list keeps it under Done for a few days
   project?: string // the Linear project it belongs to: product work; none is a side quest (bugs, tech debt, feedback)
+  source?: 'github' // a GitHub issue (issues.ts), not a Linear ticket
 }
 
 export const hasKey = () => !!process.env.LINEAR_API_KEY

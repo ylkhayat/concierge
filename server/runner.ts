@@ -9,6 +9,7 @@ import { appendFile, open, readdir, stat } from 'node:fs/promises'
 import { freemem, homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { explain, loadOverlay, mapBase } from './explain.ts'
+import { issueNote, issueOf, shipIssuesPrompt } from './issues.ts'
 import { execCommand, furthest, goalSettings, handGoalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
 import { defaultBranch } from './github.ts'
 import { fill } from './config.ts'
@@ -1179,7 +1180,7 @@ const execWorktrees = (repo: string) => join(dirname(config.repos[repo]), 'workt
 export const ticketBusy = (id: string) => Object.values(state.execs).some((r) => (r.state === 'queued' || r.state === 'running') && r.ids.includes(id))
 
 export function enqueueExec(ids: string[], repo: string, auto = false, action?: { label?: string; prompt?: string; resume?: string; costBefore?: number; allowedTools?: string[]; said?: string; batch?: string; role?: ExecRun['role']; brief?: string }): ExecRun | undefined {
-  if (!ids.length || ids.some(ticketBusy) || !config.repos[repo] || (!config.exec.command && !action)) return undefined
+  if (!ids.length || ids.some(ticketBusy) || !config.repos[repo] || (!config.exec.command && !action && !ids.every((id) => issueOf(id)))) return undefined
   // continue the first ticket's session; an explicit resume (a reply to a run) wins
   // a reply stays with its run's provider; fresh work goes to the one set for Exec, continuing its session if it has one there
   const provider = action?.resume ? (Object.values(state.execs).find((r) => r.sessionId === action.resume)?.provider ?? 'claude') : providerFor('exec', repo)
@@ -1300,7 +1301,9 @@ function startExec(run: ExecRun, on?: string) {
   save(); bus.emit('exec')
 
   // a fresh run's direction (your note when you picked the tickets) rides along with the command
-  const asked = run.prompt ?? execCommand(slot('exec', run.as ?? 'developer'), run.ids) + (run.said ? `\n\nMy direction for these tickets, follow it: ${run.said}` : '') + (run.brief ?? '')
+  // an issue isn't the exec command's (it reads Linear): it ships the plain way
+  const cmd = slot('exec', run.as ?? 'developer'), issues = run.ids.every((id) => issueOf(id))
+  const asked = (run.prompt ?? (issues ? shipIssuesPrompt(run.ids) : execCommand(cmd, run.ids)) + (run.said ? `\n\nMy direction for these tickets, follow it: ${run.said}` : '') + (run.brief ?? '')) + issueNote(run.ids)
   let last = 0
   const changed = () => { if (Date.now() - last > 400) { last = Date.now(); bus.emit('exec') } }
   const read = (text: string) => {

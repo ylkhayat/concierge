@@ -1,3 +1,4 @@
+import { issueKeys } from './issues.ts'
 // Reading an exec run (e.g. /my-exec) from its stream: per-ticket outcomes, PR links, and the live phase.
 // Pure functions: the runner feeds them lines, the tests feed them samples.
 
@@ -141,7 +142,7 @@ export const furthest = (a: Phase | undefined, b: Phase | undefined): Phase | un
   !a ? b : !b ? a : PHASES.indexOf(b) > PHASES.indexOf(a) ? b : a
 
 /** Which watched repo a ticket's code lives in, from its prefix ("AC-12" → repoByPrefix.BLI). */
-export const repoFor = (id: string, repoByPrefix: Record<string, string>) => repoByPrefix[id.split('-')[0]]
+export const repoFor = (id: string, repoByPrefix: Record<string, string>) => repoByPrefix[id.split('-')[0]] ?? issueKeys.get(id.split('-')[0])
 
 /** One exec command line: the template with {ids} filled in order. */
 export const execCommand = (template: string, ids: string[]) => template.replace('{ids}', ids.join(' '))

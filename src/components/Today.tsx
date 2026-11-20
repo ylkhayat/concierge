@@ -16,8 +16,8 @@ const usd = (n?: number) => n == null ? 'â€“' : n < 1 ? `${Math.round(n * 100)}Â
  * Review with nothing open: today across both workspaces. What waits on you, the one thing to do first,
  * what agents are doing right now, what shipped, and what it all costs.
  */
-export function Today({ missing = [], onSkills, me, prs, tickets, health, now, onPr, onTicket }: {
-  missing?: string[]; onSkills?: () => void; me?: string; prs: PrView[]; tickets: TicketView[]; health?: Health; now: number
+export function Today({ missing = [], onSkills, me, prs, tickets, health, now, onPr, onTicket, focus }: {
+  focus?: string; missing?: string[]; onSkills?: () => void; me?: string; prs: PrView[]; tickets: TicketView[]; health?: Health; now: number
   onPr: (id: string) => void; onTicket: (id: string) => void
 }) {
   const open = prs.filter((p) => !p.closed)
@@ -71,7 +71,7 @@ export function Today({ missing = [], onSkills, me, prs, tickets, health, now, o
         ) : (
           <div className="flex items-center gap-4 rounded-3xl bg-ok/7 p-5 ring-1 ring-ok/20">
             <CircleCheck className="size-6 text-ok-text" />
-            <p className="text-reading text-fg-2 ">You are clear. New review requests and feedback land here as they arrive.</p>
+            <p className="text-reading text-fg-2 ">{focus && !prs.length && !tickets.length ? <>Nothing in <span className="font-mono">{focus}</span> yet: no PRs, and no tickets or issues assigned to you. They show up here as they arrive.</> : 'You are clear. New review requests and feedback land here as they arrive.'}</p>
           </div>
         )}
 
