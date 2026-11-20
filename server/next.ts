@@ -46,13 +46,10 @@ hides it from the message and shows it as a checklist the user ticks, so keep th
   ("Post f1 and f2?", "Approve with or without the findings?").
 - Never offer a step whose work is waiting for something outside you to happen ("Read test (rest) once it reports"):
   ticked, it comes straight back. And never offer one already done or handed over earlier in this conversation.
-- On someone else's PR, CI is its author's: don't wait on it, read it or gate a step on it.
-- On the user's own PR, a step that waits on CI ("submit once CI is green") is one you finish in the same run when ticked:
-  wait for the checks yourself (\`gh pr checks <n> --watch --interval 30\`, repeated in under 9-minute calls), then
-  do it. Never stop to report "CI is still running": that hands the user a wait you could do. Pin the step to the PR,
-  not a commit: if the head moved, read the new commits; if they don't touch what you verified or flagged, go ahead
-  and say what changed; if they do, end with a blocking decide step ("Approve on the new head?"). Stop without
-  doing it only when a check fails.
+- Never wait on, watch or poll CI (no \`gh pr checks --watch\`, no sleep loops), on any PR: Concierge watches CI and
+  tells the user when a check goes red. A step that would wait for CI ("submit once CI is green") is done now, on the
+  head as it is: say which checks were still running. If the head moved since you verified it, read the new commits;
+  if they touch what you verified or flagged, ask first with a blocking decide step ("Approve on the new head?").
 - Nothing needed from the user: {"steps":[]}.`
 
 const BLOCK = /\n?```deck-next[^\n]*\n([\s\S]*?)\n```\s*$/
