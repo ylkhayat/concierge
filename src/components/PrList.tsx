@@ -274,6 +274,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
         <Layers className="size-3.5 shrink-0 text-accent" />
         <span className={`truncate font-mono ${appColor(repo).text}`}>{repo.split('/')[1]}</span>
         <span className="shrink-0 tabular-nums">{all.length} PRs</span>
+        {prs.some((p) => p.stackRun) && <span className="inline-flex shrink-0 items-center gap-1 text-run-text" title="One agent is resolving the whole stack now, bottom first"><LoaderCircle className="size-3 animate-spin" />{prs.some((p) => p.stackRun === 'running') ? 'resolving' : 'queued'}</span>}
         <span className="ml-auto flex shrink-0 -space-x-1">{authors.slice(0, 3).map((a) => <Avatar key={a.login} src={a.avatar} className="size-4" />)}</span>
         {/* the whole stack at a glance, bottom to top: a segment per PR in its status colour */}
         <span className="flex w-16 shrink-0 gap-0.5">
@@ -285,7 +286,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
       </button>
       {prs.map((p, i) => {
         const active = p.id === selected, lit = here.includes(p.status)
-        const working = p.status === 'preparing' || p.status === 'posting'
+        const working = p.status === 'preparing' || p.status === 'posting' || p.stackRun === 'running'
         return (
           <button key={p.id} data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} {...pick.drag(p.id, pickable(p))} aria-current={active} title={`${p.title}\n${p.repo}#${p.number} · ${statusMeta(p.status, p.mine).label}`}
                   className={`group relative flex w-full items-center gap-2.5 overflow-hidden rounded-ctl py-1.5 pl-2.5 pr-2 text-left reading:flex-col reading:gap-1 reading:px-0 reading:py-1.5 -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${active ? ACTIVE : pick.picked.includes(p.id) ? PICKED : IDLE}`}>

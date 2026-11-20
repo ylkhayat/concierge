@@ -83,7 +83,7 @@ import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
 
 export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
-export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean }
+export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running' }
 /** An error in a few words, with what is under Node's bare "fetch failed" (ENOTFOUND: no DNS, a timeout, a reset). */
 const whyFailed = (e: unknown) => {
   const c = (e as { cause?: { code?: string; message?: string } }).cause
@@ -135,6 +135,8 @@ function views(): PrView[] {
   const maps = new Map<string, string | undefined>()
   const mappedAt = (repo: string) => { if (!maps.has(repo)) maps.set(repo, loadBase(repo)?.mappedAt); return maps.get(repo) }
   const tickets = ticketViews() // once per update: every PR's linked ticket reads from it
+  // the stacks one agent is resolving now (Answer the stack): every PR of one shows it, in the list and on its page
+  const driving = new Map(Object.values(state.execs).filter((r) => r.ids[0]?.startsWith('STACK-') && (r.state === 'running' || r.state === 'queued')).map((r) => [r.ids[0], r.state as 'queued' | 'running']))
   return Object.values(state.prs)
     // a merged or closed one stays a few days, under Done, so it doesn't vanish from under you
     .filter((p) => !p.dismissed && (!p.closed || (!!p.closedAt && Date.now() - Date.parse(p.closedAt) < DONE_DAYS * 86_400_000)))
@@ -148,7 +150,8 @@ function views(): PrView[] {
       // queued: why it hasn't started (and when it should), shown on the PR
       const below = p.job?.state === 'queued' && p.job.after && ['queued', 'running'].includes(state.prs[p.job.after]?.job?.state ?? '') ? `#${state.prs[p.job.after].number}` : undefined
       const queued = p.job?.state === 'queued' ? queuedWhy(p.job, p.mine ? 'revise' : 'review', below, p.repo) : undefined
-      return { ...pr, waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
+      const stackRun = driving.size && p.stack && p.stack.length > 1 && !p.closed ? driving.get(driveKey(p)) : undefined
+      return { ...pr, ...(stackRun && { stackRun }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(p, crit, !!repoPath, op), flow: flowOf(flowInOf(p, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
 }
