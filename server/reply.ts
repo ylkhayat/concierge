@@ -1,4 +1,3 @@
-import { watchesCi } from './next.ts'
 // Shared by server tests and the browser: no Node imports here.
 
 /** One message to the agent from what you picked: each decision as "topic: choice", then your own words. */
@@ -95,8 +94,16 @@ export function routeSteps(msg: string, self: number, mine: Set<number>) {
  * decision, else its first step, and how many more. Undefined when it asks nothing.
  */
 export function askLine(n?: { steps?: Step[] }): string | undefined {
-  const steps = n?.steps ?? []
+  const steps = (n?.steps ?? []).filter((s) => !watchesCi(s.text))
   if (!steps.length) return undefined
   const first = steps.find((s) => s.kind === 'decide' && s.blocking) ?? steps.find((s) => s.kind === 'decide') ?? steps[0]
   return `${first.text}${steps.length > 1 ? ` (+${steps.length - 1})` : ''}`
 }
+
+/**
+ * A step that only watches CI ("Read #5456's CI once it finishes", "Watch the Native (mac) check"): Concierge reads
+ * CI itself and says when one goes red, so such a step neither shows nor makes the work wait on you.
+ * ponytail: a wording heuristic, for runs from before the prompt forbade these steps.
+ */
+export const watchesCi = (text: string) =>
+  /^(read|check|re-?check|watch|tend|wait|confirm|verify)\b/i.test(text.trim()) && /\b(CI|checks?|E2E|Native \(\w+\))\b/.test(text)

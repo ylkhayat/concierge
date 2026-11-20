@@ -28,7 +28,7 @@ function iconFor(a: Activity): [LucideIcon, string] {
 const BADGE = 'relative z-10 flex size-[22px] shrink-0 items-center justify-center rounded-lg'
 const TINT = { you: 'bg-accent-soft text-accent-text', agent: 'bg-hover text-fg-2', ok: 'bg-ok/15 text-ok', fail: 'bg-fail/15 text-fail', warn: 'bg-wait/15 text-wait', quiet: 'bg-hover text-fg-4', run: 'bg-run/15 text-run' } as const
 /** Every row's time: in its own column on the right, always shown. */
-const Time = ({ at }: { at: string }) => <time className="hidden shrink-0 pt-[3px] font-mono text-micro tabular-nums text-fg-4 sm:block" title={stamp(at)}>{clock(at)}</time>
+const Time = ({ at, seconds }: { at: string; seconds?: boolean }) => <time className="hidden shrink-0 pt-[3px] font-mono text-micro tabular-nums text-fg-4 sm:block" title={stamp(at)}>{clock(at, seconds)}</time>
 
 export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live: boolean; bg?: { base: string; count: number }; toast?: (m: string, tone?: 'ok' | 'error') => void }) {
   const chapters = chaptersOf(once(feed))
@@ -72,13 +72,7 @@ export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live
           const ho = a.kind === 'you' ? HANDOVER.exec(a.text) : null
           if (ho) return <HandoverCard key={k} a={a} from={ho[1]} />
           // what you said: a row like the rest, its badge in the accent
-          if (a.kind === 'you') return (
-            <li key={k} className="flex gap-2.5 rounded-lg px-2 py-1.5">
-              <span className={`${BADGE} ${TINT.you} text-micro font-semibold`} aria-hidden>Y</span>
-              <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-body leading-relaxed text-fg-1"><span className="mr-1.5 font-semibold text-accent-text">You</span>{a.text}</p>
-              <Time at={a.at} />
-            </li>
-          )
+          if (a.kind === 'you') return <YouSaid key={k} a={a} />
           // the plan made before the run: the skills it will load (each one readable on hover) and the steps
           if (a.kind === 'event' && a.plan) return (
             <li key={k} className="relative z-10 my-2 ml-8 rounded-ctl bg-surface-1 p-3 shadow-e1">
@@ -105,8 +99,8 @@ export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live
             // a note from Concierge, not the agent: one quiet line in the feed's own column, never a banner; a warning
             // keeps its colour so it still stands out among them
             return (
-              <li key={k} className="relative z-10 rounded-lg px-2 py-1">
-                <div className={`flex items-start gap-2.5 text-small leading-relaxed ${warn ? 'text-fg-2' : 'text-fg-3'}`}>
+              <li key={k} className="relative z-10 rounded-md px-1.5 py-0.5">
+                <div className={`flex items-start gap-2 text-small leading-relaxed ${warn ? 'text-fg-2' : 'text-fg-3'}`}>
                   <span className={`${BADGE} ${warn ? TINT.warn : TINT.quiet}`}><E className="size-3" aria-hidden /></span>
                   <span className="min-w-0 flex-1 pt-px">
                     {a.who && <span className="font-medium text-fg-2">{a.who} </span>}
@@ -121,7 +115,7 @@ export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live
                       </details>
                     )}
                   </span>
-                  <Time at={a.at} />
+                  <Time at={a.at} seconds />
                 </div>
                 {e.items && (
                   <ul className="ml-8 mt-1 max-w-[620px] divide-y divide-line overflow-hidden rounded-ctl bg-surface-1 ring-1 ring-line">
@@ -142,21 +136,25 @@ export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live
               </li>
             )
           }
-          const [Icon, color] = iconFor(a)
-          const prose = a.kind === 'text' || a.kind === 'result' || a.kind === 'error'
+          if (a.kind === 'text' || a.kind === 'result') return (
+            <li key={k} className="group/msg relative py-1">
+              <Md text={a.text} className="break-words !text-body !leading-relaxed text-fg-1 [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 [&_h1]:!text-reading [&_h2]:!text-body [&_h3]:!text-body [&_pre]:!text-small [&_table]:!text-small" />
+              <time className="absolute -bottom-3 left-0 font-mono text-micro tabular-nums text-fg-4 opacity-0 transition-opacity group-hover/msg:opacity-100" title={stamp(a.at)}>{clock(a.at, true)}</time>
+            </li>
+          )
+          const [Icon] = iconFor(a)
+          const prose = a.kind === 'error'
           return (
-            <li key={k} className="group/ev relative flex gap-2.5 rounded-lg px-2 py-1.5 transition-colors duration-150 hover:bg-hover">
-              <span className={`${BADGE} ${a.kind === 'result' ? TINT.ok : a.kind === 'error' ? TINT.fail : a.kind === 'denied' ? TINT.warn : a.kind === 'text' ? TINT.agent : TINT.quiet}`}>
+            <li key={k} className="group/ev relative flex items-start gap-2 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-hover">
+              <span className={`${BADGE} ${a.kind === 'error' ? TINT.fail : a.kind === 'denied' ? TINT.warn : TINT.quiet} !size-[18px] !rounded-md`}>
                 <Icon className="size-3" aria-hidden />
               </span>
-              <div className={`min-w-0 flex-1 text-body leading-relaxed ${a.kind === 'error' ? 'rounded-lg bg-fail/[0.06] px-3 py-2 ring-1 ring-fail/15' : 'pt-0.5'}`}>
+              <div className={`min-w-0 flex-1 text-small leading-relaxed ${a.kind === 'error' ? 'rounded-lg bg-fail/[0.06] px-3 py-2 ring-1 ring-fail/15' : 'pt-px'}`}>
                 {a.tool && <span className={`mr-2 rounded-md px-1.5 py-px font-mono text-meta ${a.kind === 'denied' ? 'bg-wait/10 text-wait-text' : 'bg-fill text-fg-2 '}`}>{a.kind === 'denied' ? `denied ${a.tool}` : a.tool}</span>}
                 {/* what the agent says is markdown (lists, headings, tables, code); errors stay as they came */}
-                {a.kind === 'text' || a.kind === 'result'
-                  ? <Md text={a.text} className="break-words !text-body !leading-relaxed text-fg-2 [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 [&_h1]:!text-reading [&_h2]:!text-body [&_h3]:!text-body [&_pre]:!text-small [&_table]:!text-small" />
-                  : <span className={prose ? 'whitespace-pre-wrap break-words text-fg-2 ' : 'break-all font-mono text-small text-fg-3 transition-colors group-hover/ev:text-fg-1'}>{prose ? <Inline text={a.text} /> : a.text}</span>}
+                {<span className={prose ? 'whitespace-pre-wrap break-words text-fg-2 ' : 'break-all font-mono text-small text-fg-3 transition-colors group-hover/ev:text-fg-1'}>{prose ? <Inline text={a.text} /> : a.text}</span>}
               </div>
-              <Time at={a.at} />
+              <Time at={a.at} seconds />
             </li>
           )
   }
@@ -171,38 +169,14 @@ export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live
   }
   return (
     <div ref={box} className="px-4 py-3">
-      <ol className="relative space-y-1">
-        {chapters.map((ch, ci) => {
-          const isOpen = open(ch, ci)
-          return (
-            <li key={ch.key} className="list-none">
-              {ch.head && <ChapterHead ch={ch} until={chapters[ci + 1]?.head?.at} open={isOpen} live={live && ci === chapters.length - 1} onToggle={() => toggle(ch.key)}
-                                       before={chapters.slice(0, ci).flatMap((c) => c.items).findLast((a) => a.costUsd != null)?.costUsd} />}
-              {isOpen && (
-                <ol className="relative pb-2">
-                  {(details ? runs(ch.items) : quiet(ch.items)).map((g, i) => Array.isArray(g)
-                    ? <ToolRun key={`${ci}:r${i}`} items={g} render={(a, j) => entry(a, `${ci}:${i}:${j}`)} />
-                    : entry(g, `${ci}:${i}`))}
-                </ol>
-              )}
-            </li>
-          )
-        })}
-        {live && (
-          <li className="flex items-center gap-2.5 px-2 py-1.5 text-body text-fg-3">
-            <span className={`${BADGE} ${TINT.run}`}>
-              <span className="absolute size-2 animate-ping rounded-full bg-run/60" />
-              <span className="size-2 rounded-full bg-run" />
-            </span>
-            {/* the step it is on now, replaced by the next one */}
-            <span key={feed.length} className="min-w-0 animate-[fade-in_160ms] truncate">
-              <span className="text-shimmer">working</span>
-              {feed.at(-1)?.kind === 'tool' && <span className="ml-1.5 font-mono text-meta">{feed.at(-1)!.tool} {feed.at(-1)!.text.slice(0, 120)}</span>}
-            </span>
-          </li>
-        )}
+      <ol className="relative space-y-5">
+        {chapters.map((ch, ci) => (
+          <Turn key={ch.key} ch={ch} open={open(ch, ci)} live={live && ci === chapters.length - 1} details={details} onToggle={() => toggle(ch.key)}
+                until={chapters[ci + 1]?.head?.at} before={chapters.slice(0, ci).flatMap((c) => c.items).findLast((a) => a.costUsd != null)?.costUsd}
+                entry={(a, k) => entry(a, `${ci}:${k}`)} />
+        ))}
       </ol>
-      {live && bg && <div className="ml-8 mt-1"><BgNow base={bg.base} count={bg.count} parked={turnOver(feed)} toast={toast} /></div>}
+      {live && bg && <div className="mt-1"><BgNow base={bg.base} count={bg.count} parked={turnOver(feed)} toast={toast} /></div>}
       <div ref={end} />
     </div>
   )
@@ -269,45 +243,44 @@ function shapeOf(a: Activity): { text: string; items?: { label: string; detail?:
   return { text: a.text }
 }
 
-/** Consecutive tool steps, three or more, become one group; everything else (what it says, errors, refusals) stays. */
 /** What the conversation needs: what it says, what you said, outcomes, errors, its plan, and what came from outside or
  *  went wrong. The rest (its steps, system notes) folds away until you want it. */
 const matters = (a: Activity) => a.kind === 'text' || a.kind === 'result' || a.kind === 'error' || a.kind === 'you' || a.kind === 'denied'
   || (a.kind === 'event' && (!!a.who || !!a.plan || /\b(stuck|stopped|couldn't|can't|didn't|failed|no output)\b/i.test(a.text)))
-function quiet(items: Activity[]): (Activity | Activity[])[] {
-  const out: (Activity | Activity[])[] = []
-  let cur: Activity[] = []
-  for (const a of items) { if (matters(a)) { if (cur.length) out.push(cur); cur = []; out.push(a) } else cur.push(a) }
-  if (cur.length) out.push(cur)
-  return out
-}
-
-function runs(items: Activity[]): (Activity | Activity[])[] {
-  const out: (Activity | Activity[])[] = []
-  let cur: Activity[] = []
-  const flush = () => { if (cur.length >= 3) out.push(cur); else out.push(...cur); cur = [] }
-  for (const a of items) { if (a.kind === 'tool' && a.tool !== 'Skill' && a.tool !== 'Agent') cur.push(a); else { flush(); out.push(a) } }
-  flush()
-  return out
-}
-
-/** "Ran 14 steps · git, gh, Read": one quiet line that opens to every step. */
-function ToolRun({ items, render }: { items: Activity[]; render: (a: Activity, i: number) => ReactNode }) {
-  const [open, setOpen] = useState(false)
+/** "Worked 47s · 14 steps · git, gh, Read": what the agent did between two things it said, one quiet line that opens
+ *  to every step (each with its time to the second). Open from the start under Everything. */
+function Worked({ items, until, open: start, live, render }: { items: Activity[]; until?: string; open: boolean; live?: boolean; render: (a: Activity, i: number) => ReactNode }) {
+  const [flip, setFlip] = useState(false)
+  const open = start !== flip
   const count = new Map<string, number>()
   for (const a of items.filter((x) => x.kind === 'tool')) { const n = a.tool === 'Bash' ? a.text.trim().split(/\s+/)[0].replace(/^.*\//, '') : a.tool ?? 'tool'; count.set(n, (count.get(n) ?? 0) + 1) }
   const names = [...count].sort((x, y) => y[1] - x[1]).map(([n]) => n)
+  const steps = items.filter((a) => a.kind === 'tool').length, notes = items.length - steps
+  const ms = (until ? Date.parse(until) : live ? Date.now() : Date.parse(items.at(-1)!.at)) - Date.parse(items[0].at)
+  const warn = items.some((a) => a.kind === 'denied' || a.kind === 'error')
   return (
     <li className="list-none">
-      <button onClick={() => setOpen(!open)} aria-expanded={open}
-              className="group/run relative flex w-full items-center gap-2.5 rounded-lg px-2 py-1 text-left text-small text-fg-3 transition-colors duration-150 hov hover:text-fg-2">
-        <span className={`${BADGE} ${TINT.quiet} font-mono text-[10px] font-semibold tabular-nums`} aria-hidden>{Math.min(items.length, 99)}</span>
-        <span className="min-w-0 truncate">{((t, e) => [t && `${t} step${t === 1 ? '' : 's'}`, e && `${e} note${e === 1 ? '' : 's'}`].filter(Boolean).join(', '))(items.filter((a) => a.kind === 'tool').length, items.filter((a) => a.kind !== 'tool').length)}
-          {names.length > 0 && <span className="text-fg-4"> · {names.slice(0, 4).join(', ')}{names.length > 4 ? ` +${names.length - 4}` : ''}</span>}</span>
+      <button onClick={() => setFlip(!flip)} aria-expanded={open}
+              className="group/run flex max-w-full items-center gap-1.5 rounded-md py-0.5 pr-1.5 text-left text-small text-fg-3 transition-colors duration-150 hover:text-fg-1">
+        {live ? <span className="relative flex size-3.5 items-center justify-center"><span className="absolute size-2 animate-ping rounded-full bg-run/50" /><span className="size-1.5 rounded-full bg-run" /></span>
+          : <Wrench className={`size-3.5 shrink-0 ${warn ? 'text-wait' : 'text-fg-4'}`} aria-hidden />}
+        <span className="min-w-0 truncate">
+          <span className={live ? 'text-shimmer' : ''}>{live ? 'Working' : 'Worked'}{ms >= 1000 ? ` ${secs(ms)}` : ''}</span>
+          <span className="text-fg-4">{[steps && ` · ${steps} step${steps === 1 ? '' : 's'}`, notes && ` · ${notes} note${notes === 1 ? '' : 's'}`].filter(Boolean).join('')}{names.length > 0 && ` · ${names.slice(0, 4).join(', ')}${names.length > 4 ? ` +${names.length - 4}` : ''}`}</span>
+        </span>
         <ChevronRight className={`size-3.5 shrink-0 text-fg-4 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
-        <span className="flex-1" /><Time at={items[0].at} />
       </button>
-      {open && <ol className="ml-[18px] animate-[fade-in_160ms] border-l border-line pl-1.5">{items.map(render)}</ol>}
+      {open && <ol className="ml-[7px] mt-0.5 animate-[fade-in_160ms] border-l border-line pl-2.5">{items.map(render)}</ol>}
+    </li>
+  )
+}
+
+/** Your words: on the right, in a bubble, as in any chat. Long ones fold to five lines. */
+function YouSaid({ a, clamp }: { a: Activity; clamp?: boolean }) {
+  return (
+    <li className="group/you flex list-none flex-col items-end gap-0.5 py-0.5">
+      <p className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-body leading-relaxed text-fg-1 ${clamp ? 'line-clamp-3' : ''}`}>{a.text}</p>
+      <time className="font-mono text-micro tabular-nums text-fg-4 opacity-0 transition-opacity group-hover/you:opacity-100" title={stamp(a.at)}>{clock(a.at, true)}</time>
     </li>
   )
 }
@@ -355,73 +328,64 @@ export function Inline({ text: raw }: { text: string }) {
 }
 
 
-// what a run's time went to, by what it was doing: each step lasts until the next one starts
-// one hue, in shades: the strip says where the time went without turning a run into a traffic light
-const CAT = {
-  read: { label: 'Reading', bar: 'bg-accent/35' }, edit: { label: 'Editing', bar: 'bg-accent' }, run: { label: 'Commands', bar: 'bg-accent/65' },
-  think: { label: 'Thinking', bar: 'bg-fg-4/40' }, wait: { label: 'Waiting', bar: 'bg-fg-4/20' }, you: { label: 'You', bar: 'bg-fg-2' },
-} as const
-type Cat = keyof typeof CAT
-const catOf = (a: Activity): Cat => a.kind === 'you' ? 'you' : a.kind === 'event' ? 'wait' : a.kind !== 'tool' ? 'think'
-  : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(a.tool ?? '') ? 'edit' : a.tool === 'Bash' ? 'run' : 'read'
-function shape(ch: Chapter, end: number): { cat: Cat; ms: number }[] {
-  const t0 = Date.parse(ch.head!.at), out: { cat: Cat; ms: number }[] = []
-  const add = (cat: Cat, ms: number) => { if (ms <= 0) return; const last = out.at(-1); if (last?.cat === cat) last.ms += ms; else out.push({ cat, ms }) }
-  if (ch.items[0]) add('think', Date.parse(ch.items[0].at) - t0)
-  ch.items.forEach((a, i) => add(catOf(a), (i + 1 < ch.items.length ? Date.parse(ch.items[i + 1].at) : end) - Date.parse(a.at)))
-  return out
-}
-const span = (ms: number) => ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))}s` : `${Math.floor(ms / 60_000)}m ${String(Math.round((ms % 60_000) / 1000)).padStart(2, '0')}s`
+const secs = (ms: number) => ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))}s` : ms < 3_600_000 ? `${Math.floor(ms / 60_000)}m ${String(Math.round((ms % 60_000) / 1000)).padStart(2, '0')}s` : `${Math.floor(ms / 3_600_000)}h ${Math.round((ms % 3_600_000) / 60_000)}m`
 
-/** A run, summed up: what it was, how it ended, on which account, what it cost, and how its time went (the strip). */
-function ChapterHead({ ch, until, open, live, onToggle, before }: { ch: Chapter; until?: string; open: boolean; live: boolean; onToggle: () => void; before?: number }) {
+/**
+ * One run, as a turn of a chat: what started it (your words on the right, or what it was: Review, Revise…), what the
+ * agent said, and what it did between, folded into "Worked 47s · 9 steps" lines. Its facts (when, how long, the cost,
+ * the account) sit in one quiet line above it. Folded (an earlier turn), it is what started it and how it ended.
+ */
+function Turn({ ch, open, live, details, onToggle, until, before, entry }: {
+  ch: Chapter; open: boolean; live: boolean; details: boolean; onToggle: () => void; until?: string; before?: number; entry: (a: Activity, k: string) => ReactNode
+}) {
   const h = ch.head!
   const steps = ch.items.filter((a) => a.kind === 'tool').length
   const ok = ch.outcome?.kind === 'result', bad = ch.outcome?.kind === 'error'
-  const end = live ? Date.now() : Date.parse((until && ch.end && until < ch.end ? until : ch.end) ?? h.at)
+  const stop = until && ch.end && until < ch.end ? until : ch.end
   // Claude reports the session's running total: this run cost its last total minus the one before it (a new session restarts it)
   const last = ch.items.findLast((a) => a.costUsd != null)?.costUsd
   const cost = last == null ? 0 : before != null && last >= before ? last - before : last
   const account = ch.items.map((a) => a.kind === 'event' && (a.text.match(/^Runs on ([^,.]+)/)?.[1] ?? a.text.match(/^Moved to ([^,.]+)/)?.[1])).filter(Boolean).at(-1) as string | undefined
-  const parts = steps >= 2 && end > Date.parse(h.at) ? shape(ch, end) : []
-  const total = parts.reduce((n, x) => n + x.ms, 0)
-  const sums = (Object.keys(CAT) as Cat[]).map((c) => [c, parts.filter((x) => x.cat === c).reduce((n, x) => n + x.ms, 0)] as const).filter(([, ms]) => ms > 0)
+  // what started it: your words, when the run opens with them (a handover or a lane's turn is not that)
+  const trigger = ch.items.slice(0, 3).find((a) => a.kind === 'you' && !a.lane && !HANDOVER.test(a.text))
+  const rest = ch.items.filter((a) => a !== trigger)
+  // the turn's body: what matters on its own, and the work between folded
+  const body: (Activity | Activity[])[] = []
+  // a failed step mid-run (an exit code) is part of the work; only an error that ends the run stands on its own
+  for (const a of rest) { if (matters(a) && (a.kind !== 'error' || a === ch.outcome)) body.push(a); else if (Array.isArray(body.at(-1))) (body.at(-1) as Activity[]).push(a); else body.push([a]) }
+  const label = h.text === 'Your reply' ? (trigger ? 'You asked' : 'Your reply') : h.text
   return (
-    <button onClick={onToggle} aria-expanded={open}
-            className={`group/ch relative z-10 mb-1 flex w-full items-start gap-2.5 rounded-ctl px-3 py-2.5 text-left transition-colors duration-150 ${open ? 'bg-surface-1 shadow-e1' : 'hov'}`}>
-      <ChevronRight className={`mt-0.5 size-3.5 shrink-0 text-fg-4 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className="text-body font-semibold text-fg-1">{h.text}</span>
-          {live ? <span className="flex items-center gap-1 text-meta font-medium text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />running</span>
-            : ok ? <CircleCheck className="size-3.5 text-ok" aria-label="finished" /> : bad ? <TriangleAlert className="size-3.5 text-fail" aria-label="ended with an error" /> : null}
-          {account && <span className="text-meta text-fg-3">on {account}</span>}
-          <span className="ml-auto flex items-center gap-2 text-meta tabular-nums text-fg-4" title={stamp(h.at)}>
-            <span>{when(h.at)}</span>
-            {ch.end && !live && <span>{duration(h.at, until && until < ch.end ? until : ch.end)}</span>}
-            {cost > 0 && <span className="text-fg-3">${cost.toFixed(2)}</span>}
-            {steps > 0 && <span>{steps} step{steps === 1 ? '' : 's'}</span>}
-          </span>
+    <li className="list-none">
+      <button onClick={onToggle} aria-expanded={open} title={stamp(h.at)}
+              className="group/turn mb-2 flex w-full items-center gap-2 text-left text-micro text-fg-4 transition-colors hover:text-fg-2">
+        <span className="h-px w-3 shrink-0 bg-line" />
+        <span className="font-semibold uppercase tracking-wide text-fg-3 group-hover/turn:text-fg-1">{label}</span>
+        {live ? <span className="flex items-center gap-1 font-medium text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />running</span>
+          : ok ? <CircleCheck className="size-3 text-ok" aria-label="finished" /> : bad ? <TriangleAlert className="size-3 text-fail" aria-label="ended with an error" /> : null}
+        <span className="h-px min-w-3 flex-1 bg-line" />
+        <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
+          <span>{when(h.at)}</span>
+          {stop && !live && <><span aria-hidden>·</span><span>{secs(Date.parse(stop) - Date.parse(h.at))}</span></>}
+          {cost > 0 && <><span aria-hidden>·</span><span className="text-fg-3">${cost.toFixed(2)}</span></>}
+          {account && <span className="hidden max-w-[12rem] truncate md:inline">· {account}</span>}
         </span>
-        {/* how its time went: reading, editing, commands, thinking, waiting, you */}
-        {/* only on an open run: closed, a run is its title and how it ended, nothing to decode */}
-        {open && total > 0 && (
-          <span className="mt-2 flex h-1.5 w-full gap-px overflow-hidden rounded-full" title={sums.map(([c, ms]) => `${CAT[c].label} ${span(ms)}`).join(' · ')}>
-            {parts.map((x, i) => <span key={i} className={`${CAT[x.cat].bar} min-w-[2px]`} style={{ flexGrow: x.ms }} />)}
-          </span>
-        )}
-        {/* one line of the same height open or closed (the legend, or the outcome), so a click never shifts the feed */}
-        {(open ? sums.length > 1 : ch.outcome) && (
-          <span className="mt-1.5 flex h-5 items-center overflow-hidden">
-            {open ? sums.length > 1 && (
-              <span className="flex gap-x-3 truncate text-micro text-fg-3">
-                {sums.map(([c, ms]) => <span key={c} className="flex shrink-0 items-center gap-1"><span className={`size-1.5 rounded-full ${CAT[c].bar}`} />{CAT[c].label} <span className="tabular-nums text-fg-4">{span(ms)}</span></span>)}
-              </span>
-            ) : ch.outcome && <span className="truncate text-small text-fg-3">{plain(ch.outcome.text)}</span>}
-          </span>
-        )}
-      </span>
-    </button>
+        <ChevronRight className={`size-3 shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
+      </button>
+      <ol className="space-y-1.5">
+        {trigger && <YouSaid a={trigger} clamp={!open} />}
+        {open ? body.map((g, i) => Array.isArray(g)
+          ? <Worked key={`w${i}`} items={g} open={details} live={live && i === body.length - 1} until={(body[i + 1] as Activity | undefined)?.at ?? (live ? undefined : stop)} render={(a, j) => entry(a, `${i}:${j}`)} />
+          : entry(g, String(i)))
+          : (ch.outcome || steps > 0) && (
+            <li className="list-none">
+              <button onClick={onToggle} className="flex w-full items-start gap-1.5 text-left text-small text-fg-3 transition-colors hover:text-fg-1">
+                {bad ? <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-fail" /> : <Bot className="mt-0.5 size-3.5 shrink-0 text-fg-4" />}
+                <span className="line-clamp-2">{ch.outcome ? plain(ch.outcome.text) : `Worked through ${steps} step${steps === 1 ? '' : 's'}`}</span>
+              </button>
+            </li>
+          )}
+      </ol>
+    </li>
   )
 }
 

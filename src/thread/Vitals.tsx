@@ -26,6 +26,9 @@ const STEP: Record<Stage, number> = { new: 0, open: 1, converging: 2, concluded:
  *  something works on it. Under the pointer (or the focus) its line gives way to the one thing worth knowing or doing;
  *  the name and the hairline stay. A click opens what it holds, under the row. */
 export function Vital({ name, status, lane, meter, foot, busy, idle, flag, back, open, onOpen, peek, glow, stale }: { icon?: ReactNode; name: string; status: string; lane: string; meter?: ReactNode; foot?: ReactNode; busy?: boolean; idle?: boolean; flag?: boolean; back?: ReactNode; open?: boolean; onOpen?: () => void; peek?: ReactNode; glow?: boolean; stale?: boolean }) {
+  // its status fades in when it changes, not when the page opens or its data first lands
+  const settled = useRef(0)
+  useEffect(() => { settled.current = Date.now() }, [])
   return (
     <section tabIndex={0} aria-label={`${name}: ${status}`} aria-expanded={onOpen ? open : undefined} style={{ '--lane': lane } as React.CSSProperties}
              onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) onOpen?.() }} onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) onOpen?.() }}
@@ -38,7 +41,7 @@ export function Vital({ name, status, lane, meter, foot, busy, idle, flag, back,
       </div>
       {/* what is going on now, and under the pointer the one thing worth knowing or doing (same place, same size) */}
       <div className="relative mt-1 grid min-h-0 flex-1">
-        <p key={status} className={`col-start-1 row-start-1 truncate text-small font-medium text-fg-1 transition-opacity duration-200 animate-[detail-in_400ms_var(--ease-out)] ${back ? 'group-hover/v:pointer-events-none group-hover/v:opacity-0 group-focus-within/v:pointer-events-none group-focus-within/v:opacity-0' : ''}`}>{status}</p>
+        <p key={status} className={`col-start-1 row-start-1 truncate text-small font-medium text-fg-1 transition-opacity duration-200 ${settled.current && Date.now() - settled.current > 1500 ? 'animate-[detail-in_400ms_var(--ease-out)]' : ''} ${back ? 'group-hover/v:pointer-events-none group-hover/v:opacity-0 group-focus-within/v:pointer-events-none group-focus-within/v:opacity-0' : ''}`}>{status}</p>
         {back && <div className="pointer-events-none relative z-10 col-start-1 row-start-1 flex min-w-0 items-start gap-2 opacity-0 transition-opacity duration-200 group-hover/v:pointer-events-auto group-hover/v:opacity-100 group-focus-within/v:pointer-events-auto group-focus-within/v:opacity-100">{back}</div>}
       </div>
       <div className="mt-auto min-w-0">{meter ?? foot}</div>

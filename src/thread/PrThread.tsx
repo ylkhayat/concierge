@@ -191,7 +191,7 @@ export function PrThread(props: PrThreadProps) {
         onAsk={(q) => appendDraft(`pr:${pr.id}`, q)}
         vitals={(<>
             <WorkStrip work={work} here={`pr:${pr.id}`} toast={toast} onOpen={(k) => k.startsWith('pr:') ? props.onSelect(k.slice(3)) : x.onOpenLinked({ kind: 'ticket', id: k.slice(7), label: k.slice(7), title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' })} />
-            <Vitals key={target} scope={stack && !shared ? { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } } : undefined}
+            <Vitals key={whole && !shared ? 'stack' : 'own'} scope={stack && !shared ? { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } } : undefined}
                     shipping={<ShippingVital update={lastUpdate(feed)} title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
                     topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number }} />
         </>)}

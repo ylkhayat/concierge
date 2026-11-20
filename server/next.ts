@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { providerFor, spawnAgent, tokensOf, type ProviderId } from './providers.ts'
-import type { Step } from './reply.ts'
+import { watchesCi, type Step } from './reply.ts'
 
 export type Decision = {
   topic: string; question: string
@@ -183,12 +183,6 @@ export function haiku<T>(prompt: string, schema: object, system: string, budget 
   })
 }
 
-/**
- * A step that only watches CI ("Read #5456's CI once it finishes", "Watch the Native (mac) check"): Concierge reads
- * CI itself and says when one goes red, so such a step neither shows nor makes the work wait on you.
- * ponytail: a wording heuristic, for runs from before the prompt forbade these steps.
- */
-export const watchesCi = (text: string) =>
-  /^(read|check|re-?check|watch|tend|wait|confirm|verify)\b/i.test(text.trim()) && /\b(CI|checks?|E2E|Native \(\w+\))\b/.test(text)
+
 export const withoutCiWatch = <T extends { steps?: { text: string }[] } | null | undefined>(n: T): T =>
   n?.steps?.some((x) => watchesCi(x.text)) ? { ...n, steps: n.steps.filter((x) => !watchesCi(x.text)) } : n

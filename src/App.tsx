@@ -586,6 +586,6 @@ const Boot = () => (
  *  arrive twice. What comes in after that still fades in. */
 function Detail({ children }: { children: React.ReactNode }) {
   const [fresh, setFresh] = useState(true)
-  useEffect(() => { const t = setTimeout(() => setFresh(false), 700); return () => clearTimeout(t) }, [])
+  useEffect(() => { const t = setTimeout(() => setFresh(false), 1200); return () => clearTimeout(t) }, [])
   return <div className={`h-full animate-[detail-in_180ms_var(--ease-snappy)] ${fresh ? 'fresh' : ''}`}>{children}</div>
 }
