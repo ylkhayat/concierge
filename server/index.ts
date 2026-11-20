@@ -968,17 +968,6 @@ app.get('/works/feed', async (c) => {
     (m.kind === 'pr' ? await loadActivity(m.key.slice(3)) : await ticketActivity(m.key.slice(7))).slice(-600).map((a) => ({ ...a, part: m.label }))))
   return c.json(feeds.flat().sort((a, b) => a.at.localeCompare(b.at)).slice(-1500))
 })
-// every Work there is now, for the Works inbox: its id and its parts (the open PRs and the tickets on your board)
-app.get('/works/all', (c) => {
-  const done = new Set<string>(), out: { id: string; members: string[] }[] = []
-  for (const k of [...execBoard.tickets.map((t) => `ticket:${t.id}`), ...Object.values(state.prs).filter((p) => !p.closed).map((p) => `pr:${p.id}`)]) {
-    if (done.has(k)) continue
-    const { w, members } = workOfMember(k)
-    for (const m of members) done.add(m.key)
-    out.push({ id: w.id, members: members.map((m) => m.key) })
-  }
-  return c.json(out)
-})
 // what @ in the box can name: the tickets on your board and the PRs being tracked
 app.get('/works/candidates', (c) => c.json([
   ...execBoard.tickets.map((t) => ({ key: `ticket:${t.id}`, kind: 'ticket', label: t.id, title: t.title })),

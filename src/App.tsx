@@ -1,4 +1,4 @@
-import { ClipboardList, Coins, Crosshair, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap } from 'lucide-react'
+import { ClipboardList, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
@@ -27,13 +27,12 @@ import { ExecHome } from './components/ExecHome.tsx'
 import { RepoPicker } from './components/RepoPicker.tsx'
 import { knowApps } from './appColor.ts'
 import { lazy, Suspense } from 'react'
-import { useWorkRows, WorksInbox } from './components/WorksInbox.tsx'
 import { Machine } from './components/Machine.tsx'
 import { Read } from './components/Read.tsx'
 import { Focus } from './components/Focus.tsx'
-import { current, finished, stackAt, unitOf, units, type Rules, type Unit } from './desk.ts'
+import { stackAt, type Rules } from './desk.ts'
 import { StackPage } from './thread/StackPage.tsx'
-import { focusBlock, offUntil, useDeskTime } from './deskTime.ts'
+import { focusBlock, useDeskTime } from './deskTime.ts'
 import { useNewVersion } from './fresh.ts'
 
 // the graph libraries load only when the codebase view opens
@@ -43,21 +42,21 @@ import { ago, api, critUrl, enc, isTyping, param, setParam, useDeck, useNow, use
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
 
-type Mode = 'review' | 'exec' | 'desk' | 'read' | 'focus' | 'standup' | 'skills' | 'plans'
+type Mode = 'review' | 'exec' | 'read' | 'focus' | 'standup' | 'skills' | 'plans'
 // a phone opening the app (no PR in the link) starts on Focus: what needs you, one card at a time
 const phone = () => matchMedia('(max-width: 767px)').matches
 const modeOf = (): Mode => {
   const p = location.pathname
-  return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/desk') ? 'desk' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans'
-    // opened with nothing in the link: the queue of what needs you (the Desk; on a phone, Focus). A link to a PR is Review
-    : p === '/' && !location.hash ? (phone() ? 'focus' : 'desk') : 'review'
+  return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans'
+    // opened with nothing in the link: Review (on a phone, Focus: what needs you, one card at a time)
+    : p === '/' && !location.hash && phone() ? 'focus' : 'review'
 }
 // links from before Ship was named (/exec) still open it, and the address bar says /ship
 if (location.pathname.startsWith('/exec')) history.replaceState(history.state, '', `/ship${location.pathname.slice(5)}${location.search}${location.hash}`)
-// opened on the queue: the address says so, so a reload (or a copied link) comes back to it
-if (location.pathname === '/' && !location.hash && !matchMedia('(max-width: 767px)').matches) history.replaceState(history.state, '', `/desk${location.search}`)
-const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', desk: '/desk', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans' }
-// the list's own rules, for the desk's units
+// the Desk is gone: its old links open Review
+if (location.pathname.startsWith('/desk')) history.replaceState(history.state, '', `/review${location.search}${location.hash}`)
+const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans' }
+// the list's own rules (Focus and Read group by them)
 const RULES: Rules = { waiting, ticketGroup: (t) => groupOf(t).id }
 
 export function App() {
@@ -186,46 +185,35 @@ export function App() {
     } catch { /* no storage: nothing to compare */ }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useDeskTime() // a topic put off, a focus block started or over
-  // the Works inbox: one row per Work (a ticket, its PRs, their stack), by what waits on you across its parts
-  const workRows = useWorkRows(mode === 'desk' ? focusedPrs ?? prs : undefined, scoped, RULES)
-  const workNow = workRows.filter((r) => !r.later)
-  const workHere = workRows.find((r) => r.parts.some((x) => x.id === selected))
-  const goUnit = () => { const i = workNow.findIndex((r) => r === workHere); const n = workNow.slice(i + 1).find((r) => r.needs || r.working) ?? workNow[(i + 1) % workNow.length]; if (n) select(n.lead) }
-  // something is always open: the part that needs you most, in the Work that needs you most
-  useEffect(() => { if (mode === 'desk' && !selected && workNow.length) select(workNow[0].lead) }, [mode, !!selected, workNow[0]?.key]) // eslint-disable-line react-hooks/exhaustive-deps
-  const deskWaiting = prs ? units(prs, tickets, RULES).filter((u) => u.needs).length : 0
   // explanations on PRs waiting on you: what Read's badge counts
   useEffect(() => { if ((mode === 'review' || mode === 'exec') && !spaces.includes(mode)) setMode(spaces[0]) }, [spaces.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   // re-themes the whole page, dialogs and popovers too: each workspace has its accent hue (index.css)
   useEffect(() => { document.documentElement.dataset.mode = codebaseRepo ? 'codebase' : mode }, [mode, codebaseRepo])
   useEffect(() => {
-    const n = mode === 'exec' ? execWaiting : mode === 'desk' ? deskWaiting : needsYou
-    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', desk: 'Work', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans' }[mode]} · Concierge`
-  }, [needsYou, execWaiting, deskWaiting, mode])
+    const n = mode === 'exec' ? execWaiting : needsYou
+    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans' }[mode]} · Concierge`
+  }, [needsYou, execWaiting, mode])
 
-  // g then d / r / e / s / c: to a workspace. g alone (no second key within a moment) still opens the PR on GitHub
+  // g then r / e / s / c: to a workspace. g alone (no second key within a moment) still opens the PR on GitHub
   const chord = useRef(0), chordTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (document.querySelector('dialog[open]')) return // a modal is up: Esc closes it, list keys wait
       if (isTyping(e)) { if (e.key === 'Escape') (e.target as HTMLElement).blur(); return }
-      const ids = mode === 'exec' ? execList.map((t) => t.id) : mode === 'desk' ? workNow.map((r) => r.lead) : list.map((p) => p.id)
+      const ids = mode === 'exec' ? execList.map((t) => t.id) : list.map((p) => p.id)
       const i = ids.indexOf(selected ?? '')
       if (e.key === 'j' || e.key === 'ArrowDown') select(ids[Math.min(i + 1, ids.length - 1)])
       else if (e.key === 'k' || e.key === 'ArrowUp') select(ids[Math.max(i - 1, 0)])
       else if (e.key === '/') { e.preventDefault(); document.querySelector('input')?.focus() }
       else if (pr && e.key === 'o') { const u = critUrl(pr); if (u) open(u, '_blank') }
-      else if (chord.current && Date.now() - chord.current < 900 && 'dresc'.includes(e.key)) {
+      else if (chord.current && Date.now() - chord.current < 900 && 'resc'.includes(e.key)) {
         chord.current = 0; clearTimeout(chordTimer.current)
-        if (e.key === 'c') goCodebase(); else setMode(({ d: 'desk', r: 'review', e: 'exec', s: 'standup' } as const)[e.key as 'd' | 'r' | 'e' | 's'])
+        if (e.key === 'c') goCodebase(); else setMode(({ r: 'review', e: 'exec', s: 'standup' } as const)[e.key as 'r' | 'e' | 's'])
       }
       else if (e.key === 'g') { chord.current = Date.now(); const url = pr?.url; chordTimer.current = setTimeout(() => { chord.current = 0; if (url) open(url, '_blank') }, 900) }
       else if (pr?.job && e.key === 'r') api(`/prs/${enc(pr.id)}/resume-terminal`, {}).then(() => toast('Opened the session in Terminal'))
-      else if (mode === 'review' && pr && e.key === 'd') { history.pushState(null, '', `/desk${location.search}#${enc(pr.id)}`); deskFrom.current = true; setModeState('desk') }
-      // on the desk, Esc goes back to the PR you came from (d); elsewhere it closes what is open
-      else if (mode === 'desk' && e.key === 'Escape' && deskFrom.current && !document.querySelector(':popover-open')) { deskFrom.current = false; history.back() }
-      else if (mode !== 'desk' && e.key === 'Escape' && !document.querySelector(':popover-open')) select(undefined)
+      else if (e.key === 'Escape' && !document.querySelector(':popover-open')) select(undefined)
       else return
       e.preventDefault()
     }
@@ -282,7 +270,6 @@ export function App() {
     : { repo: r, tickets: (prs ?? []).filter((p) => p.repo === r).length, waiting: (prs ?? []).filter((p) => p.repo === r && waiting(p)).length })
   // the rail's pill sits behind the active workspace (its icon and its name), and glides to the next one on a switch;
   // measured again whenever the rail's contents move (the focus picker loading, a badge, a resize)
-  const deskFrom = useRef(false) // the desk was opened from a PR with d: Esc goes back there
   const railRef = useRef<HTMLElement>(null), pillRef = useRef<HTMLSpanElement>(null)
   // the sidebar: icons only, or wide with names (kept per browser); either way the role, then the application, then
   // the role's workspaces
@@ -326,7 +313,7 @@ export function App() {
       <Head>Workspaces</Head>
       {/* the workspaces; one accent pill slides to the active one (railPill) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
-      {([['desk', Crosshair, 'Work', deskWaiting, 'Your work, one row per ticket with its PRs and stack, by what waits on you (g d; n for the next)'], ['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'desk' || m === 'standup' || m === 'skills' || m === 'plans' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
+      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
         const on = mode === m && !(m === 'review' && codebaseRepo)
         return (
           <button key={m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}`} aria-current={on}
@@ -410,33 +397,6 @@ export function App() {
   )
 
   const syncPr = { at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }
-  // the desk: a stage, the unit you work on in the middle and the few you juggle at its side
-  const deskFrame = (
-    <main className="@container relative min-h-0 min-w-0 flex-1 overflow-hidden">
-      {selected ? (
-        <div className="flex h-full min-h-0">
-        <WorksInbox rows={workRows} selected={selected} onOpen={select} />
-        <div className="min-w-0 flex-1">
-          {pr ? (
-            <div key={pr.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
-              <PrPage compact ticket={tickets.find((t) => workHere?.parts.some((x) => x.kind === 'ticket' && x.id === t.id))} pr={pr} feed={feed} now={now} onBack={() => setMode('review')} toast={toast} prs={prs ?? []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} onOpenLinked={(l) => select(l.id)} sync={syncPr} />
-            </div>
-          ) : ticket ? (
-            <div key={ticket.id} className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
-              <TicketPage compact t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={(id: string) => (id.startsWith('stack:') ? goPr(id) : select(id))} toast={toast} onOpenLinked={(l) => select(l.id)} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
-            </div>
-          ) : null}
-        </div>
-        </div>
-      ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-          {prs ? <><Crosshair className="size-7 text-ok" /><p className="text-reading text-fg-2 ">Nothing needs you{focus ? ` in ${focus}` : ''}. New reviews, feedback and tickets land here, grouped by the work they belong to.</p></>
-            : <LoaderCircle className="size-5 animate-spin text-fg-3" />}
-        </div>
-      )}
-    </main>
-  )
-
   // Exec has Review's shape: tickets on the left, the open one on the right; the accent and the work differ
   const execFrame = (
     <div className="relative flex min-h-0 flex-1">
@@ -497,7 +457,7 @@ export function App() {
             <button onClick={() => setSettingsOpen('usage')} className="ml-auto rounded-lg px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Adjust</button>
           </div>
         )}
-        {mode === 'exec' ? execFrame : mode === 'desk' ? deskFrame : mode === 'focus' ? (
+        {mode === 'exec' ? execFrame : mode === 'focus' ? (
           <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             {prs ? <Focus prs={focusedPrs ?? prs} tickets={scoped} rules={RULES} toast={toast} onOpenPr={goPr} onOpenTicket={goTicket}
                           onRead={(id) => { history.pushState(null, '', `/read${location.search}#${enc(id)}`); setModeState('read'); setSelected(id) }} />
@@ -529,7 +489,6 @@ export function App() {
       <SettingsDialog open={!!settingsOpen} tab={settingsOpen || 'general'} onTab={(t) => setParam('settings', t)} onClose={() => setSettingsOpen(false)} health={health} theme={theme} onTheme={setTheme} toast={toast}
                       onSetup={() => setSetupOpen(true)} />
       <Palette prs={prs ?? []} tickets={tickets} onPr={goPr} onTicket={goTicket} commands={[
-        { id: 'desk', label: 'Go to the desk', hint: 'one stack or task at a time', run: () => setMode('desk') },
         { id: 'review', label: 'Go to Review', run: () => setMode('review') },
         { id: 'standup', label: 'Go to Standup', hint: 'what you did and what is next', run: () => setMode('standup') },
         ...(spaces.includes('exec') ? [{ id: 'exec', label: 'Go to Ship', run: () => setMode('exec') }] : []),
