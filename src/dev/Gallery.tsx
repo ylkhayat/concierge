@@ -1,6 +1,7 @@
 // A page of the thread's parts with made-up data, for looking at them without a server (the dev server only:
 // npx vite --config dev/preview/vite.config.mjs, then /?gallery). Never in a build.
 import { ShippingVital, Vitals } from '../thread/Vitals.tsx'
+import { CardDiagram } from '../thread/CardDiagram.tsx'
 import { MessageCircleQuestion } from 'lucide-react'
 import { NextSteps } from '../components/NextSteps.tsx'
 import { NextCard, ThreadHeader, ThreadLayout } from '../ui/Thread.tsx'
@@ -15,7 +16,17 @@ export function Gallery() {
       <ThreadLayout
         header={<ThreadHeader crumb={<span>AC-1492</span>} title="Exports fail to save after a long upload" />}
         tabs={[{ id: 'ticket', label: 'Ticket' }]} tab="ticket" onTab={() => {}}
-        pane={<div className="p-5 text-small text-fg-2">The ticket's description.</div>}
+        pane={<div className="space-y-6 p-5" style={{ '--lane': 'var(--vital-understanding)' } as React.CSSProperties}>
+          <CardDiagram d={{ kind: 'path', before: 'Export lost after long upload', after: 'Saved, with a link in the toast', steps: [
+            { label: 'Export button', file: 'src/export/Button.tsx', detail: 'Starts the upload and keeps the job id.' },
+            { label: 'uploadExport', file: 'src/export/upload.ts', detail: 'Streams the file in chunks and retries a dropped chunk three times.' },
+            { label: 'POST /exports', file: 'server/routes/exports.ts', detail: 'Stores the file and returns where it went.' },
+            { label: 'Saved toast', file: 'src/export/toast.tsx', detail: 'Shows the link to the saved export.' }] }} />
+          <div style={{ '--lane': 'var(--vital-intent)' } as React.CSSProperties}>
+            <CardDiagram d={{ kind: 'fork', problem: 'Reporters think long exports vanish', chosen: { label: 'Link in the toast', why: 'It answers where the export went, where they look.' },
+              setAside: [{ label: 'Email when done', why: 'Slow, and most exports finish in a minute.' }, { label: 'Exports page', why: 'A new page for one link.' }], open: ['Keep exports for how long?'] }} />
+          </div>
+        </div>}
         vitals={(
           <Vitals shipping={<ShippingVital title="The agent asks you" tone="wait" at={2} why="It confirmed the export is saved and needs a decision on the ticket." />}
                   topics={{ target: 'x', onChange: () => {}, onSteer: async () => {}, toast: () => {}, d: { intent: { target: 'x', topic: 'intent', messages: [{ who: 'you', text: 'q', at: '' }], stage: 'converging', status: '1 open question', summary: 'Agreed: the desktop app saved the export; the bug is that the reporter was never shown where it is.', costUsd: 0.12,

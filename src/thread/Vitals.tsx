@@ -7,7 +7,8 @@ import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } fr
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import useEmblaCarousel from 'embla-carousel-react'
 import { WheelGesturesPlugin } from 'embla-carousel-wheel-gestures'
-import type { Action, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
+import type { Action, Diagram, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
+import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
 import { ago } from '../time.ts'
 import { Md } from '../components/Md.tsx'
@@ -273,7 +274,7 @@ type Slide = { key: string; label: string; at?: string; body: ReactNode }
  * The card as slides, newest first: each answer to what you asked after the card was written, then the card's parts
  * (its bold-labelled sections, one each), then what was asked before it.
  */
-export function slidesOf(b: { long: string; at: string } | undefined, messages: { who: string; text: string; at: string }[]): Slide[] {
+export function slidesOf(b: { long: string; at: string; diagram?: Diagram } | undefined, messages: { who: string; text: string; at: string }[]): Slide[] {
   const qa: { q?: string; a?: string; at: string }[] = []
   for (const m of messages) {
     if (m.who === 'you') qa.push({ q: m.text, at: m.at })
@@ -289,7 +290,9 @@ export function slidesOf(b: { long: string; at: string } | undefined, messages: 
   // the card's parts: "**Problem** …" up to the next bold label at a line's start
   const parts = b ? [...b.long.matchAll(/(?:^|\n)\s*(?:[-*]\s*)?\*\*([^*\n]+?)\*\*:?\s*([\s\S]*?)(?=\n\s*(?:[-*]\s*)?\*\*[^*\n]+\*\*|$)/g)]
     .map((m, i): Slide => ({ key: `part${i}`, label: m[1].replace(/:$/, ''), at: b.at, body: <Md text={m[2].trim()} className="text-small leading-relaxed [&>*:first-child]:!mt-0" /> })) : []
-  const card = parts.length ? parts : b ? [{ key: 'card', label: 'The card', at: b.at, body: <Md text={b.long} className="text-small leading-relaxed" /> }] : []
+  const text = parts.length ? parts : b ? [{ key: 'card', label: 'The card', at: b.at, body: <Md text={b.long} className="text-small leading-relaxed" /> }] : []
+  // its picture first: the card at a glance, the parts after it for the words
+  const card = b?.diagram ? [{ key: 'diagram', label: b.diagram.kind === 'path' ? 'The path' : 'The decision', at: b.at, body: <CardDiagram d={b.diagram} /> }, ...text] : text
   const after = qa.map((x, i) => [x, i] as const).filter(([x]) => !b || x.at > b.at).reverse().map(([x, i]) => asked(x, i))
   const before = qa.map((x, i) => [x, i] as const).filter(([x]) => b && x.at <= b.at).reverse().map(([x, i]) => asked(x, i))
   return [...after, ...card, ...before]
