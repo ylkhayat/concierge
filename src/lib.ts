@@ -95,7 +95,7 @@ export function useDeck(selected: string | undefined) {
   selectedRef.current = selected
   useEffect(() => {
     setFeed(selected ? feedCache.get(selected) ?? [] : []); setFeedFor(selected)
-    if (selected) api(feedUrl(selected)).then((f: Activity[]) => { cacheFeed(selected, f); if (selectedRef.current === selected) setFeed(f) }).catch(() => {})
+    if (selected) { if (!feedCache.has(selected)) loadingFeed(selected, true); api(feedUrl(selected)).then((f: Activity[]) => { cacheFeed(selected, f); if (selectedRef.current === selected) setFeed(f) }).catch(() => {}).finally(() => loadingFeed(selected, false)) }
   }, [selected])
 
   // one item's feed, right from the render that opens it: `feed` while it is that item's, else what is cached (never
@@ -105,6 +105,15 @@ export function useDeck(selected: string | undefined) {
 }
 const selectedRef: { current?: string } = {}
 const feedCache = new Map<string, Activity[]>() // per PR, so switching back shows the feed instantly
+// the feeds being read for the first time: the page says it is loading instead of "nothing ran yet" until they land
+const loadingFeeds = new Set<string>()
+function loadingFeed(key: string, on: boolean) { if (on) loadingFeeds.add(key); else loadingFeeds.delete(key); dispatchEvent(new Event('feed-loading')) }
+/** Whether an item's feed is still being read for the first time. */
+export function useFeedLoading(key: string) {
+  const [on, setOn] = useState(() => loadingFeeds.has(key))
+  useEffect(() => { const f = () => setOn(loadingFeeds.has(key)); f(); addEventListener('feed-loading', f); return () => removeEventListener('feed-loading', f) }, [key])
+  return on
+}
 /** Into the cache as the newest; the oldest goes past 30, so a long day doesn't keep every feed it ever read. */
 function cacheFeed(id: string, f: Activity[]) { feedCache.delete(id); feedCache.set(id, f); if (feedCache.size > 30) feedCache.delete(feedCache.keys().next().value!) }
 // "ticket:<id>" is a ticket's whole timeline, "exec:<run>" one run's feed; anything else is a PR's

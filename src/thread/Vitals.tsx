@@ -4,7 +4,9 @@
 // opens, inside itself, on what is settled, what it has for the agent and what to ask next. One not assessed yet is
 // pale: point at it and it offers to start, with the question that fits where the conversation stands.
 import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+const UnderstandingMap = lazy(() => import('./ChangeMap.tsx').then((m) => ({ default: m.UnderstandingMap })))
+const IntentFlow = lazy(() => import('./ChangeMap.tsx').then((m) => ({ default: m.IntentFlow })))
 import type { Action, Diagram, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
 import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
@@ -144,9 +146,9 @@ const PHASE: Record<NonNullable<D['phase']>, string> = { refreshing: 'Catching u
 
 /** Intent or Understanding: a card that knows one side of the work. Its few words on the tile, its gist on hover, the
  *  whole page when clicked; asked from the chat's box (Send to Intent / Understanding), it lights up and answers here. */
-export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen }: {
+export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen , prId }: {
   target: string; topic: Topic; d?: D; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>
-  onSteerPr?: (number: number, text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast; here?: number
+  onSteerPr?: (number: number, text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast; here?: number; prId?: string
   open?: boolean; onOpen?: () => void
 }): { tile: ReactNode; details: ReactNode } {
   const t = TOPIC[topic], b = d?.brief, started = !!b || !!d?.messages.length, busy = !!d?.busy
@@ -194,7 +196,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
   ) })
   // the whole card, under the row, when its tile is clicked: what it knows, then what you asked it
   const details = open ? (
-    <div className={`card space-y-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
+    <div className={`card flex h-full flex-col gap-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
       <div className="flex flex-wrap items-center gap-2">
         <t.icon className="size-4" style={{ color: lane }} />
         <span className="text-small font-semibold text-fg-1">{t.label}</span>
@@ -207,7 +209,15 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
       </div>
       {busy && <p className="flex items-center gap-2 text-small text-fg-2"><LoaderCircle className="size-3.5 animate-spin" style={{ color: lane }} />{status}</p>}
       {d?.error && <p className="rounded-ctl bg-fail/10 px-2.5 py-1.5 text-small text-fail-text">{d.error}</p>}
-      {b || d?.messages.length ? <Slides slides={[...slidesOf(b, d?.messages ?? []), ...perPrSlides]} /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}
+      {/* on a PR: the change as a picture, the whole height (ChangeMap); elsewhere (a ticket), the card's slides */}
+      {prId ? (
+        <div className="min-h-0 flex-1">
+          <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>}>
+            {topic === 'understanding' ? <UnderstandingMap prId={prId} toast={toast} /> : <IntentFlow prId={prId} fork={b?.diagram?.kind === 'fork' ? b.diagram : undefined} toast={toast} />}
+          </Suspense>
+        </div>
+      ) : b || d?.messages.length ? <Slides slides={[...slidesOf(b, d?.messages ?? []), ...perPrSlides]} /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}
+      {prId && (() => { const m = d?.messages.at(-1); return m?.who === 'agent' && <p className="line-clamp-2 shrink-0 rounded-ctl bg-fill px-3 py-1.5 text-small text-fg-2"><b className="font-medium text-fg-1">Answered: </b>{m.text.replace(/[#*_`>]/g, '')}</p> })()}
       {d?.steer && (
         <div className="flex items-start gap-2 rounded-ctl bg-fill px-2.5 py-2">
           <span className="min-w-0 flex-1 text-small text-fg-1"><b className="font-semibold">For the agent:</b> {d.steer}</span>
@@ -244,6 +254,14 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
     addEventListener('pointerdown', away); addEventListener('keydown', esc)
     return () => { removeEventListener('pointerdown', away); removeEventListener('keydown', esc) }
   }, [open, inline])
+  // an open card takes the chat's whole height: from under the row to the bottom of the window
+  const [room, setRoom] = useState(480)
+  useLayoutEffect(() => {
+    if (!open || inline) return
+    const fit = () => { const r = box.current?.getBoundingClientRect(); if (r) setRoom(Math.max(320, innerHeight - r.bottom - 12)) }
+    fit(); addEventListener('resize', fit)
+    return () => removeEventListener('resize', fit)
+  }, [open, inline])
   const { d, ...rest } = topics
   const v = (['intent', 'understanding'] as const).map((tp) => topicVital({ ...rest, topic: tp, d: d?.[tp], open: open === tp, onOpen: () => setOpen(open === tp ? undefined : tp) }))
   return (
@@ -261,7 +279,7 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
       )}
       {/* what a clicked one holds: floating over the panel under the row, so nothing below it moves */}
       {(v[0].details || v[1].details) && (
-        <div className={inline ? '' : 'absolute inset-x-3 top-full z-30 -mt-1 max-h-[min(55vh,480px)] overflow-y-auto rounded-card shadow-[var(--e3)]'}>{v[0].details}{v[1].details}</div>
+        <div className={inline ? '' : 'absolute inset-x-3 top-full z-30 -mt-1 overflow-hidden rounded-card shadow-[var(--e3)]'} style={inline ? undefined : { height: room }}>{v[0].details}{v[1].details}</div>
       )}
     </div>
   )

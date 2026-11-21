@@ -665,7 +665,7 @@ app.get('/github/login', (c) => c.json(githubLoginState() ?? null))
 function sharedChanged(changed: SharedKey[]) {
   if (!changed.length) return
   rereadSecrets()
-  if (changed.includes('GITHUB_TOKEN')) tokenChanged()
+  if (changed.includes('GITHUB_TOKEN')) { tokenChanged(); void checks(true) } // a new sign-in: the GitHub check reads it again
   if (changed.includes('LINEAR_API_KEY')) void pollTickets()
 }
 setInterval(() => sharedChanged(applyShared()), 30_000).unref()
@@ -1742,8 +1742,8 @@ app.post('/base', async (c) => {
 })
 
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
-const setupView = async () => ({
-  configured: configured(), configFile: CONFIG_FILE, checks: await checks(), skills: await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
+const setupView = async (light = false) => ({
+  configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
   workDir: WORK_DIR, clones: cloneState(),
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
@@ -1752,7 +1752,8 @@ const setupView = async () => ({
   commands: { review: await skillExists(config.agent.review.command), revise: await skillExists(config.agent.revise.command), stack: !!config.agent.stack && await skillExists(config.agent.stack) },
 })
 export type SetupView = Awaited<ReturnType<typeof setupView>>
-app.get('/setup', async (c) => c.json(await setupView()))
+// light: what the app needs to start (no CLI checks, no skill source): it shows its boot screen until this answers
+app.get('/setup', async (c) => c.json(await setupView(c.req.query('light') === '1')))
 app.get('/setup/repos', async (c) => c.json(await suggestions()))
 app.get('/setup/my-skills', async (c) => c.json(await mySkills()))
 app.post('/setup/clone', async (c) => {

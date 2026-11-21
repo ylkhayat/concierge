@@ -57,6 +57,7 @@ const ICON: Partial<Record<FlowAction, LucideIcon>> = { post: Send, publish: Upl
 export function PrThread(props: PrThreadProps) {
   const x = usePrThread(props)
   const { pr, feed, toast, prs, onBack, job, busy, next, flow, asks, askFirst, act, url, resumeCmd, critDown, restartCrit, fixThreads, smartRebase, below, markRead, runFinalize, BIG, alsoLine, doNext, chips, statusField, parentLinks, stackNav, headerActions, people, submit, setSubmit } = x
+  const feedLoading = useFeedLoading(pr.id)
   const role = useRole(), panes = ROLE_PANES[role]
   const [paneState, setPaneState] = useState<Pane>(() => (PANES.find((p) => p === param('pane')) ?? (props.ticket ? 'ticket' : lastPane[role] ?? panes[0])))
   // a tab this role doesn't have: its own last one, or its first
@@ -193,7 +194,7 @@ export function PrThread(props: PrThreadProps) {
             <WorkStrip work={work} here={`pr:${pr.id}`} toast={toast} onOpen={(k) => k.startsWith('pr:') ? props.onSelect(k.slice(3)) : x.onOpenLinked({ kind: 'ticket', id: k.slice(7), label: k.slice(7), title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' })} />
             <Vitals key={whole && !shared ? 'stack' : 'own'} scope={stack && !shared ? { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } } : undefined}
                     shipping={<ShippingVital update={lastUpdate(feed)} title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
-                    topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number }} />
+                    topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number, prId: pr.id }} />
         </>)}
         pane={pane === 'overview' ? <Overview pr={pr} prs={prs} onSelect={props.onSelect} toast={toast} onOpen={(t) => setPane(t === 'stack' && !stackNext ? 'overview' : t)} /> : pane === 'stack' && stackNext ? <div className="flex h-full min-h-0 flex-col p-4">{stackNext}</div> : pane === 'explain' ? (
             <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>}>
@@ -210,6 +211,7 @@ export function PrThread(props: PrThreadProps) {
         </div>
         {count > 0
           ? <ActivityFeed feed={all} live={live || Object.values(talks.d ?? {}).some((x) => x.busy)} bg={{ base: `/prs/${enc(pr.id)}`, count: pr.background }} toast={toast} />
+          : feedLoading ? <p className="flex items-center justify-center gap-2 py-6 text-body text-fg-3"><LoaderCircle className="size-4 animate-spin" />Loading the activity…</p>
           : <p className="py-6 text-center text-body text-fg-3">{pr.mine ? 'Nothing has run on this PR yet.' : 'No agent has looked at this PR yet.'}</p>}
       </ThreadLayout>
       {submit && <SubmitDialog pr={pr} event={submit.event} drop={submit.drop} onClose={() => setSubmit(undefined)} toast={toast} />}

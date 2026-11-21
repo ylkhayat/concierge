@@ -112,6 +112,7 @@ export function TicketThread(props: TicketThreadProps) {
       {siblings && <p className="rounded-xl bg-hover px-3 py-2 text-small text-fg-3">One run works {siblings.join(' → ')} together, so their activity is the same. A reply here goes to that run too.</p>}
       {run || all.length
         ? <ActivityFeed feed={all} live={t.busy} bg={run && { base: `/exec/${run.id}`, count: t.background }} toast={toast} />
+        : feedLoading ? <p className="flex items-center justify-center gap-2 py-6 text-body text-fg-3"><LoaderCircle className="size-4 animate-spin" />Loading the activity…</p>
         : <p className="py-6 text-center text-body text-fg-3">No run yet. Run starts the exec command on {t.id}, unattended.</p>}
     </ThreadLayout>
   )

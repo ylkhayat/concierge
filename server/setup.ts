@@ -18,7 +18,16 @@ export type Check = { ok: boolean; detail: string; fix?: string }
 const version = (cmd: string, args = ['--version']) =>
   run(cmd, args, { timeout: 5000 }).then((r) => r.stdout.trim().split('\n')[0], () => undefined)
 
-export async function checks(): Promise<Record<'github' | 'claude' | 'crit', Check>> {
+// each check starts a CLI (claude --version takes seconds, longer when the machine is busy): kept 10 minutes, so a
+// page asking for the setup never waits on them twice
+let checked: { at: number; out: Promise<Record<'github' | 'claude' | 'crit', Check>> } | undefined
+export function checks(fresh = false): Promise<Record<'github' | 'claude' | 'crit', Check>> {
+  if (!fresh && checked && Date.now() - checked.at < 10 * 60_000) return checked.out
+  checked = { at: Date.now(), out: runChecks() }
+  checked.out.catch(() => { checked = undefined })
+  return checked.out
+}
+async function runChecks(): Promise<Record<'github' | 'claude' | 'crit', Check>> {
   const [me, claude, crit] = await Promise.all([
     getMe().catch(() => undefined), version('claude'), version('crit'),
   ])

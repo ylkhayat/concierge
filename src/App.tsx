@@ -97,7 +97,7 @@ export function App() {
   const [spaces, setSpaces] = useState<Mode[]>(['review', 'exec'])
   const [linearApp, setLinearApp] = useState(false)
   const [missing, setMissing] = useState<string[]>([]) // skills the settings run that this machine lacks
-  useEffect(() => { api('/setup').then((s) => { setConfigured(s.configured); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
+  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
   // Linear links open in the desktop app: linear://<same path>. One listener covers every link on the page.
   useEffect(() => {
     if (!linearApp) return
