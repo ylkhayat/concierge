@@ -9,10 +9,11 @@ import { api } from '../lib.ts'
 import { refresh, remember, useApi } from '../query.ts'
 import { Skeleton } from './Connections.tsx'
 import { Md } from './Md.tsx'
+import { ActivityFeed } from './ActivityFeed.tsx'
+import type { Activity } from '../../server/runner.ts'
 import { MOSCOW_HUE, PlanStream, type ColorBy, type Move } from './PlanStream.tsx'
 import { playsFor } from '../planPlays.ts'
 import { AREAS, coverage, obligations, resources, type Compliance, type Obligation } from '../../server/readiness.ts'
-import { Meter, Vital } from '../thread/Vitals.tsx'
 import type { SetupView } from '../../server/index.ts'
 import { applyAll, LATER } from '../../server/planOps.ts'
 import { impact } from '../planDiff.ts'
@@ -165,12 +166,22 @@ function StageBar({ stages, onStep }: { stages: Stage[]; onStep: (s: Stage) => v
 }
 
 // --- the chat: the planning partner, its questions as cards and what to do next one click away ------------------------
-function Chat({ p, toast, stage, settings, onSelect, onTurn }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode; onSelect?: (id: string) => void; onTurn?: (turn: string, act: 'discard' | 'replay') => void }) {
+function Chat({ p, toast, stage, settings, onSelect, onReplay }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode; onSelect?: (id: string) => void; onReplay?: (from: number) => void }) {
   const [text, setText] = useState('')
   const [picks, setPicks] = useState<Record<number, number>>({})
   const scroll = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
-  useLayoutEffect(() => { const el = scroll.current; if (el) el.scrollTop = el.scrollHeight }, [p.messages.length, p.live, p.busy, p.asks?.length])
+  // pinned to the newest line, also as replies render and grow; scrolling up unpins, back down pins again
+  const inner = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = scroll.current, c = inner.current
+    if (!el || !c) return
+    let stick = true
+    const on = () => { stick = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
+    const ro = new ResizeObserver(() => { if (stick) el.scrollTop = el.scrollHeight })
+    el.addEventListener('scroll', on, { passive: true }); ro.observe(c)
+    return () => { el.removeEventListener('scroll', on); ro.disconnect() }
+  }, [])
   useLayoutEffect(() => { const el = box.current; if (!el) return; el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight + 2, 200)}px` }, [text])
   // the agent's picks start chosen: you change only what you disagree with
   useEffect(() => { setPicks(Object.fromEntries((p.asks ?? []).map((a, i) => [i, a.pick ?? -1]).filter(([, j]) => (j as number) >= 0))) }, [p.asks])
@@ -180,6 +191,10 @@ function Chat({ p, toast, stage, settings, onSelect, onTurn }: { p: Plan; toast:
   }
   const asks = p.busy ? [] : p.asks ?? []
   const gaps = p.busy ? [] : p.gaps ?? []
+  const feed: Activity[] = [
+    ...p.messages.map((m): Activity => (m.who === 'you' ? { at: m.at, kind: 'you', text: m.text } : { at: m.at, kind: 'text', text: m.text || 'Changed the board.', turn: m.turn })),
+    ...(p.busy && p.live ? [{ at: p.at, kind: 'text' as const, text: p.live }] : []),
+  ]
   const answers = asks.map((a, i) => (picks[i] !== undefined ? `${a.q} ${a.options[picks[i]]}` : undefined)).filter(Boolean) as string[]
   const answer = () => send([...answers, text.trim()].filter(Boolean).join('\n'))
   // what to do next: the agent's suggestions, else the step the plan is at
@@ -192,20 +207,18 @@ function Chat({ p, toast, stage, settings, onSelect, onTurn }: { p: Plan; toast:
     <div className="flex min-h-0 flex-1 flex-col">
       {settings}
       <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-4 px-4 py-5">
+       <div ref={inner} className="px-[max(0px,calc((100%-860px)/2))]">
+        <div className="flex flex-col gap-4 px-4 pt-4">
           <details className="group/brief rounded-xl bg-hover/50 px-3 py-2 text-small">
             <summary className="cursor-pointer list-none font-medium text-fg-2"><span className="mr-1 inline-block transition-transform group-open/brief:rotate-90">›</span>The brief</summary>
             <p className="mt-1.5 whitespace-pre-wrap text-fg-2">{p.brief || p.project?.vision || 'No brief yet: tell it below what the project is for.'}</p>
           </details>
-          {p.messages.map((m, i) => m.who === 'you'
-            ? <div key={i} className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-body text-fg-1">{m.text}</div>
-            : <div key={i} className="space-y-1.5">{m.text && <Md text={m.text} className="!text-body" />}{m.turn && <TurnChanges p={p} turn={m.turn} onSelect={onSelect} onTurn={onTurn} />}</div>)}
-          {p.busy && (
-            <div className="space-y-1">
-              {p.live && <Md text={p.live} className="!text-body" />}
-              <p className="flex items-center gap-2 text-small text-accent-text"><Sparkles className="size-4 animate-pulse" />Drawing the plan…</p>
-            </div>
-          )}
+        </div>
+        {/* the conversation, as the Dev chat shows a run's: your words, its replies, each reply's changes to the map
+            (straight in the scroller: the feed keeps itself pinned to the newest line) */}
+        {feed.length > 0 && <ActivityFeed feed={feed} live={!!p.busy} toast={toast} pin={false} after={(a) => a.turn && <TurnChanges id={p.id} turn={a.turn} onSelect={onSelect} onReplay={onReplay} />} />}
+        <div className="flex flex-col gap-4 px-4 pb-4">
+          {p.busy && <p className="flex items-center gap-2 text-small text-accent-text"><Sparkles className="size-4 animate-pulse" />Drafting on the board…</p>}
           {p.error && <p className="rounded-xl bg-fail/10 px-3 py-2 text-small text-fail">{p.error}</p>}
           {/* its questions: answered with a click, its pick chosen */}
           {asks.length > 0 && (
@@ -227,22 +240,10 @@ function Chat({ p, toast, stage, settings, onSelect, onTurn }: { p: Plan; toast:
               <button onClick={answer} disabled={!answers.length} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-40"><Send className="size-3.5" />Answer{answers.length > 1 ? ` all ${answers.length}` : ''}</button>
             </div>
           )}
-          {/* the angles it hasn't explored: one click hands one to it */}
-          {gaps.length > 0 && !asks.length && (
-            <div className="space-y-1.5 rounded-2xl border border-dashed border-fg-4/50 p-3">
-              <p className="label text-fg-3">Not explored yet</p>
-              {gaps.map((g) => { const a = areaOf(g), I = a.icon; return (
-                <button key={g.id} onClick={() => send(explore(g))} title={g.why} className="group flex w-full items-start gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-hover">
-                  <I className="mt-0.5 size-3.5 shrink-0" style={{ color: `oklch(0.65 0.13 ${a.hue})` }} />
-                  <span className="min-w-0 flex-1"><span className="text-small font-medium text-fg-1">{g.title}</span><span className="block text-meta text-fg-3">{a.label} · {g.why}</span></span>
-                  <span className="shrink-0 text-meta font-medium text-accent-text opacity-0 group-hover:opacity-100">Explore</span>
-                </button>
-              ) })}
-            </div>
-          )}
         </div>
+       </div>
       </div>
-      <div className="space-y-2 border-t border-line p-3">
+      <div className="mx-auto w-full max-w-[860px] space-y-2 px-3 pb-3 pt-1">
         {suggest.length > 0 && !asks.length && (
           <div className="flex flex-wrap gap-1.5" aria-label="What to do next">
             {suggest.map((x) => (
@@ -364,24 +365,25 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
   if (!areas.length && !risks.length && !company) return null
   const lane = (h: number) => `oklch(0.66 0.14 ${h})`
   const over = res.capacity !== undefined && res.demand > res.capacity
+  const high = risks.filter((n) => n.risk!.likelihood * n.risk!.impact >= 6).length
+  const pills = [
+    ...areas.map((a) => { const done = a.items.filter((x) => x.by).length, all = done === a.items.length
+      return { id: a.id, name: a.label, status: `${done}/${a.items.length}`, color: all ? 'var(--st-ok)' : lane(a.hue), hint: all ? 'Every obligation has its ticket' : `Missing: ${a.items.filter((x) => !x.by).map((x) => x.ob.title).join(', ')}` } }),
+    { id: 'resources', name: 'Resources', status: res.capacity !== undefined ? `${res.demand}/${res.capacity} pt` : `${res.demand} pt`, color: over ? 'var(--st-fail)' : res.missing.length ? 'var(--st-wait)' : lane(70), hint: res.missing.length ? `No ${res.missing.join(', ')} on the team` : over ? `${res.demand - res.capacity!} pt more than the appetite holds` : 'The team holds the work' },
+    { id: 'risks', name: 'Risks', status: risks.length ? `${risks.length}${high ? ` · ${high} high` : ''}` : 'none', color: high ? 'var(--st-fail)' : lane(25), hint: risks[0] ? risks[0].risk!.note || risks[0].title : 'Ask the planner for the riskiest assumptions' },
+  ]
   return (
-    <div className="border-b border-line px-4 py-2.5">
-      <div className="flex items-center gap-2 pb-2"><span className="label text-fg-4">Readiness</span>
-        {!company?.regions?.length && !company?.certifications?.length && <span className="text-meta text-fg-4">· set where your users are and your certifications in Settings → Compliance for these checks</span>}</div>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(118px,1fr))] gap-2">
-        {areas.map((a) => {
-          const done = a.items.filter((x) => x.by).length, all = done === a.items.length
-          return <Vital key={a.id} name={a.label} lane={all ? 'var(--st-ok)' : lane(a.hue)} status={all ? 'All covered' : `${done} of ${a.items.length} covered`} open={open === a.id} onOpen={() => setOpen(open === a.id ? undefined : a.id)}
-                        meter={<Meter of={a.items.length} at={done} color={all ? 'var(--st-ok)' : lane(a.hue)} />} back={<p className="min-w-0 flex-1 truncate text-meta text-fg-2">{all ? 'Every obligation has its ticket' : `Missing: ${a.items.filter((x) => !x.by).map((x) => x.ob.title).join(', ')}`}</p>} />
-        })}
-        <Vital name="Resources" lane={over || res.missing.length ? 'var(--st-wait)' : lane(70)} open={open === 'resources'} onOpen={() => setOpen(open === 'resources' ? undefined : 'resources')}
-               status={res.capacity !== undefined ? `${res.demand} of ${res.capacity} pt` : `${res.demand} pt · ${res.weekly}/wk`}
-               meter={<Meter of={10} at={res.capacity ? Math.min(10, Math.round((10 * res.demand) / Math.max(1, res.capacity))) : 0} color={over ? 'var(--st-fail)' : lane(70)} />}
-               flag={res.missing.length > 0} back={<p className="min-w-0 flex-1 truncate text-meta text-fg-2">{res.missing.length ? `No ${res.missing.join(', ')} on the team` : over ? `${res.demand - res.capacity!} pt more than the appetite holds` : 'The team holds the work'}</p>} />
-        <Vital name="Risks" lane={risks.some((n) => n.risk!.likelihood * n.risk!.impact >= 6) ? 'var(--st-fail)' : lane(25)} open={open === 'risks'} onOpen={() => setOpen(open === 'risks' ? undefined : 'risks')}
-               status={risks.length ? `${risks.length} logged · ${risks.filter((n) => n.risk!.likelihood * n.risk!.impact >= 6).length} high` : 'None logged'}
-               meter={<Meter of={3} at={Math.min(3, risks.filter((n) => n.risk!.likelihood * n.risk!.impact >= 4).length)} color="var(--st-fail)" />}
-               back={<p className="min-w-0 flex-1 truncate text-meta text-fg-2">{risks[0] ? risks[0].risk!.note || risks[0].title : 'Ask the planner for the riskiest assumptions'}</p>} />
+    <div className="border-b border-line px-4 py-1.5">
+      {/* one line: each area with how much is covered; a click opens what it misses */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="label mr-1 text-fg-4">Readiness</span>
+        {pills.map((x) => (
+          <button key={x.id} onClick={() => setOpen(open === x.id ? undefined : x.id)} aria-expanded={open === x.id} title={x.hint}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-meta transition-colors ${open === x.id ? 'bg-accent-soft text-fg-1 ring-1 ring-accent/30' : 'bg-fill text-fg-2 hover:bg-fill-strong hover:text-fg-1'}`}>
+            <span className="size-1.5 rounded-full" style={{ background: x.color }} />{x.name}<span className="font-medium tabular-nums text-fg-1">{x.status}</span>
+          </button>
+        ))}
+        {!company?.regions?.length && !company?.certifications?.length && <span className="text-meta text-fg-4">Settings → Compliance sets what these check</span>}
       </div>
       {open && (
         <div className="mt-2 max-h-64 overflow-y-auto rounded-card bg-surface-1 p-3 shadow-e1 animate-[detail-in_180ms_var(--ease-out)]">
@@ -427,27 +429,33 @@ function usePaced(ops: Op[] = []): [Op[], (i: number) => void] {
   return [ops.slice(0, n), (i) => i >= 0 && setN(i)]
 }
 
-/** A reply's changes to the map, while they are in the draft: one chip each, which opens it on the map. */
-function TurnChanges({ p, turn, onSelect, onTurn }: { p: Plan; turn: string; onSelect?: (id: string) => void; onTurn?: (turn: string, act: 'discard' | 'replay') => void }) {
-  const ops = (p.scenario?.ops ?? []).filter((o) => o.turn === turn)
-  if (!ops.length) return null
-  const whatIf = applyAll(p, p.scenario?.ops ?? [])
-  const name = (id: string) => whatIf.nodes.find((n) => n.id === id)?.title ?? p.nodes.find((n) => n.id === id)?.title ?? id
+/**
+ * A reply's changes to the map, while they are in the draft: one chip each, which opens it on the map; Replay plays them
+ * again on the board, Discard takes them out of the draft. Reads the plan itself: the feed around it redraws only for new lines.
+ */
+function TurnChanges({ id, turn, onSelect, onReplay }: { id: string; turn: string; onSelect?: (id: string) => void; onReplay?: (from: number) => void }) {
+  const p = useApi<Plan>(`/plans/${id}`).data
+  const all = p?.scenario?.ops ?? [], ops = all.filter((o) => o.turn === turn)
+  if (!p || !ops.length) return null
+  const whatIf = applyAll(p, all)
+  const name = (x: string) => whatIf.nodes.find((n) => n.id === x)?.title ?? p.nodes.find((n) => n.id === x)?.title ?? x
   const verb = (o: Op) => o.op === 'add' ? '+' : o.op === 'remove' ? '−' : o.op === 'move' ? (o.cut ? '✂' : '↔') : o.op === 'link' ? '→' : '✎'
-  const ids = new Map<string, Op>(); for (const o of ops) { const id = 'id' in o ? o.id : 'to' in o ? o.to : ''; if (id) ids.set(id, o) }
+  const ids = new Map<string, Op>(); for (const o of ops) { const x = 'id' in o ? o.id : 'to' in o ? o.to : ''; if (x) ids.set(x, o) }
+  const discard = () => { const rest = all.filter((o) => o.turn !== turn); remember(`/plans/${id}`, { ...p, scenario: rest.length ? { ...p.scenario!, ops: rest } : undefined }); void api(`/plans/${id}/scenario`, { ops: rest }).then((r: Plan) => remember(`/plans/${id}`, r)) }
+  const btn = 'rounded-full px-1.5 py-0.5 text-meta text-fg-3 hover:bg-hover'
   return (
-    <div className="flex flex-wrap gap-1">
-      {[...ids].slice(0, 12).map(([id, o]) => (
-        <button key={id} onClick={() => onSelect?.(id)} title={o.because?.map((b) => `${b.source}: ${b.text}`).join('\n') || undefined}
-                className="inline-flex max-w-[220px] items-center gap-1 rounded-full bg-accent-soft/70 px-2 py-0.5 text-meta text-fg-1 ring-1 ring-accent/20 transition-colors hover:bg-accent-soft">
-          <span className="font-mono text-accent-text">{verb(o)}</span><span className="truncate">{name(id)}</span>{o.because?.length ? <span className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
+    <div className="mt-2 flex flex-wrap items-center gap-1">
+      {[...ids].slice(0, 12).map(([x, o]) => (
+        <button key={x} onClick={() => onSelect?.(x)} title={o.because?.map((b) => `${b.source}: ${b.text}`).join('\n') || undefined}
+                className="inline-flex max-w-[240px] items-center gap-1 rounded-full bg-accent-soft/70 px-2 py-0.5 text-meta text-fg-1 ring-1 ring-accent/20 transition-colors hover:bg-accent-soft">
+          <span className="font-mono text-accent-text">{verb(o)}</span><span className="truncate">{name(x)}</span>{o.because?.length ? <span className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
         </button>
       ))}
       {ids.size > 12 && <span className="px-1 text-meta text-fg-3">+{ids.size - 12} more</span>}
-      {onTurn && !p.busy && <span className="inline-flex items-center gap-0.5 pl-1">
-        <button onClick={() => onTurn(turn, 'replay')} title="Watch these changes again on the map" className="rounded-full px-1.5 py-0.5 text-meta text-fg-3 hover:bg-hover hover:text-fg-1">Replay</button>
-        <button onClick={() => onTurn(turn, 'discard')} title="Take this reply's changes out of the draft (⌘Z brings them back)" className="rounded-full px-1.5 py-0.5 text-meta text-fg-3 hover:bg-hover hover:text-fail-text">Discard</button>
-      </span>}
+      {!p.busy && <>
+        <button onClick={() => onReplay?.(all.findIndex((o) => o.turn === turn))} title="Watch these changes again on the board" className={`${btn} hover:text-fg-1`}>Replay</button>
+        <button onClick={discard} title="Take this reply's changes out of the draft (⌘Z brings them back)" className={`${btn} hover:text-fail-text`}>Discard</button>
+      </>}
     </div>
   )
 }
@@ -572,7 +580,6 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const move = (m: Move) => void addTried([m])
   const shown = paced.length < tried.length ? applyAll(p, paced) : whatIf
   const fresh = paced.length < tried.length || paced.length === tried.length ? paced.at(-1) : undefined
-  const turnAct = (turn: string, act: 'discard' | 'replay') => act === 'discard' ? void setTried(tried.filter((o) => o.turn !== turn)) : replayFrom(tried.findIndex((o) => o.turn === turn))
   const set: SetPlan = (v) => api(path, v).then((r: Plan) => { remember(path, r); refresh('/plans') }, (e: Error) => toast(e.message, 'error'))
   const say = (text: string) => api(`${path}/say`, { text }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   const items = p.nodes.filter((n) => n.kind !== 'goal'), made = p.nodes.filter((n) => n.created).length
@@ -627,12 +634,9 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
               <Flag className="size-3.5" />{armed === 'create' ? <><ArmLabel>{`Confirm: ${p.nodes.length - made} in Linear`}</ArmLabel><ArmBar on="plain" /></> : made ? `Create the other ${p.nodes.length - made}` : 'Create in Linear'}
             </button>}
       </header>
-      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(340px,32%)_minmax(0,1fr)]">
-        <section aria-label="Chat" className="flex min-h-0 flex-col border-line lg:border-r">
-          {p.vision && <VisionCard p={p} set={set} toast={toast} />}
-          <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} onTurn={turnAct} />
-        </section>
-        <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-col overflow-hidden bg-surface-2/40 lg:flex">
+      {/* the board on top, the conversation docked under it (on a phone: the conversation alone) */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-2/40 lg:flex">
           {p.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)} />}
           {p.nodes.length > 0 && <Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />}
           {p.nodes.length > 0 && <Readiness whatIf={whatIf} company={setup.data?.config.compliance} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
@@ -648,6 +652,10 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
             ) : <PlanStream p={withObligations(shown, setup.data?.config.compliance)} base={tried.length ? p : undefined} draft={paced} fresh={fresh?.turn && 'id' in fresh ? `${fresh.id}:${paced.length}` : undefined} onMove={p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
+        </section>
+        <section aria-label="Chat" className="flex min-h-0 flex-1 flex-col border-line bg-surface-1/60 lg:h-[clamp(240px,36%,460px)] lg:flex-none lg:border-t">
+          {p.vision && <VisionCard p={p} set={set} toast={toast} />}
+          <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} onReplay={replayFrom} />
         </section>
       </div>
     </div>

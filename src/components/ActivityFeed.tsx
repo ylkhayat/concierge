@@ -30,7 +30,7 @@ const TINT = { you: 'bg-accent-soft text-accent-text', agent: 'bg-hover text-fg-
 /** Every row's time: in its own column on the right, always shown. */
 const Time = ({ at, seconds }: { at: string; seconds?: boolean }) => <time className="hidden shrink-0 pt-[3px] font-mono text-micro tabular-nums text-fg-4 sm:block" title={stamp(at)}>{clock(at, seconds)}</time>
 
-export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live: boolean; bg?: { base: string; count: number }; toast?: (m: string, tone?: 'ok' | 'error') => void }) {
+export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { feed: Activity[]; live: boolean; bg?: { base: string; count: number }; toast?: (m: string, tone?: 'ok' | 'error') => void; after?: (a: Activity) => ReactNode; pin?: boolean }) {
   const chapters = chaptersOf(once(feed))
   const [details] = useFeedDetails()
   // the newest chapter is open, earlier ones folded; a click flips one from its default
@@ -49,7 +49,7 @@ export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live
     return () => b.removeEventListener('scroll', on)
   }, [feed.length > 0])
   useLayoutEffect(() => {
-    if (!pinned.current) return
+    if (!pinned.current || !pin) return // pin: off where the page around keeps its own place (more follows the feed)
     // after layout and once more next frame: markdown and code blocks can grow after the first paint
     end.current?.scrollIntoView({ block: 'end' })
     const id = requestAnimationFrame(() => end.current?.scrollIntoView({ block: 'end' }))
@@ -139,6 +139,7 @@ export function ActivityFeed({ feed, live, bg, toast }: { feed: Activity[]; live
           if (a.kind === 'text' || a.kind === 'result') return (
             <li key={k} className="group/msg relative py-1">
               <Md text={a.text} className="break-words !text-body !leading-relaxed text-fg-1 [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 [&_h1]:!text-reading [&_h2]:!text-body [&_h3]:!text-body [&_pre]:!text-small [&_table]:!text-small" />
+              {after?.(a)}
               <time className="absolute -bottom-3 left-0 font-mono text-micro tabular-nums text-fg-4 opacity-0 transition-opacity group-hover/msg:opacity-100" title={stamp(a.at)}>{clock(a.at, true)}</time>
             </li>
           )

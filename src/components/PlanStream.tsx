@@ -95,7 +95,9 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
 
   // a drop: earlier or later (a rank between the tickets around that time), onto another stream (its epic), or into
   // Later (cut); a press without a drag opens the ticket
-  const local = (e: PointerEvent | React.PointerEvent) => { const b = svgRef.current!.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top } }
+  // the pointer in the map's own units: the page may be zoomed (Settings → size), so screen pixels are scaled back by
+  // how big the map is drawn on screen against its own width and height
+  const local = (e: PointerEvent | React.PointerEvent) => { const b = svgRef.current!.getBoundingClientRect(); return { x: ((e.clientX - b.left) * w) / (b.width || w), y: ((e.clientY - b.top) * H) / (b.height || H) } }
   const inLater = (e: PointerEvent) => { const b = laterRef.current?.getBoundingClientRect(); return !!b && e.clientY >= b.top - 8 && e.clientY <= b.bottom + 8 && e.clientX >= b.left && e.clientX <= b.right }
   const drop = (d: NonNullable<typeof drag>) => {
     if (!onMove) return

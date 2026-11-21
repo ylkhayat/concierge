@@ -59,6 +59,7 @@ export type Activity = {
   names?: string[] // e.g. connectors that didn't start
   skill?: string // a skill it loaded: readable on hover
   costUsd?: number; ms?: number // a result: what the turn cost, and how long it took
+  turn?: string // a planner's reply: the draft changes it made (plans), shown under it
 }
 
 // log writes never hold the thread: queued per file (so lines keep their order) and written off it
