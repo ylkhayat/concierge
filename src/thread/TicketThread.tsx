@@ -10,7 +10,7 @@ import { StackNav } from '../components/StackNav.tsx'
 import { NextSteps } from '../components/NextSteps.tsx'
 import { SectionHeadings } from '../components/NextPanel.tsx'
 import { PHASE_LABEL } from '../components/ExecList.tsx'
-import { api, param, setParam, type TicketView } from '../lib.ts'
+import { api, param, setParam, useFeedLoading, type TicketView } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
 import { sayTo, useDiscussions, useWork, useWorkFeed, withTurns, WorkStrip } from './Discussion.tsx'
@@ -33,6 +33,7 @@ let lastPane: Pane | undefined
 
 export function TicketThread(props: TicketThreadProps) {
   const { t, feed, toast, run, siblings, prItems, onOpenLinked, runIt, act, missing, chips, openPr, statusField, parentLinks, stackNav, headerActions, panelBody, ticketBody, asking, runAsks, next } = useTicketThread(props)
+  const feedLoading = useFeedLoading(`ticket:${t.id}`)
   // product and design read the ticket's domain beside the ticket; the tools are a developer's
   const role = useRole(), panes: Pane[] = role === 'developer' ? ['overview', 'ticket'] : ['overview', 'ticket', 'domain']
   const [paneState, setPaneState] = useState<Pane>(() => (PANES.find((p) => p === param('tpane')) ?? lastPane ?? 'overview'))
