@@ -34,6 +34,26 @@ export function setParam(k: string, v?: string | number | null) {
   history.replaceState(history.state, '', u)
 }
 
+/**
+ * The live event stream, shared by every tab (liveWorker.ts, a SharedWorker): it looks like an EventSource (onopen,
+ * onerror, addEventListener, close), so the code below doesn't care. A browser without SharedWorker streams on its own.
+ */
+function liveEvents(): Pick<EventSource, 'addEventListener' | 'close'> & { onopen: (() => void) | null; onerror: (() => void) | null } {
+  if (typeof SharedWorker === 'undefined') return new EventSource('/api/events') as never
+  const t = Object.assign(new EventTarget(), { onopen: null as (() => void) | null, onerror: null as (() => void) | null, close: () => {} })
+  let w: SharedWorker
+  try { w = new SharedWorker(new URL('./liveWorker.ts', import.meta.url), { type: 'module', name: 'concierge-live' }) } catch { return new EventSource('/api/events') as never }
+  w.port.onmessage = (m: MessageEvent<{ type: string; data?: string }>) => {
+    const { type, data } = m.data
+    if (type === 'open') t.onopen?.()
+    if (type === 'error') t.onerror?.()
+    t.dispatchEvent(new MessageEvent(type, { data }))
+  }
+  w.port.start()
+  t.close = () => { w.port.postMessage('bye'); w.port.close() }
+  return t as never
+}
+
 /** Live dashboard state over one SSE connection (EventSource reconnects on its own). */
 export function useDeck(selected: string | undefined) {
   const [me, setMe] = useState<Me>()
@@ -48,7 +68,7 @@ export function useDeck(selected: string | undefined) {
   useEffect(() => { api('/me').then((m: Me) => { reach = m.reach; setMe(m) }).catch(() => {}) }, [])
 
   useEffect(() => {
-    const es = new EventSource('/api/events')
+    const es = liveEvents()
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
     es.addEventListener('prs', (e) => setPrs(JSON.parse(e.data))) // the whole list, when this page connects
