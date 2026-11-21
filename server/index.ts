@@ -405,7 +405,9 @@ export const linksOfTicket = (t: Ticket, said = ''): Linked[] => {
 let noTickets: { at: number; repos: Set<string> } = { at: 0, repos: new Set() }
 function ticketless(repo: string) {
   if (Date.now() - noTickets.at > 60_000) {
-    const named = new Set(Object.values(state.prs).filter((p) => ticketsOf(p).length).map((p) => p.repo))
+    // from the PRs alone (a ticket id in a title, or a branch that starts with one), never the board: before Linear is read (a restart, a
+    // machine without its key) the board is empty, and every repo would look ticketless and fold into one Work
+    const named = new Set(Object.values(state.prs).filter((p) => /\b[A-Z]{2,5}-\d+\b/.test(p.title) || /^[a-z]{2,5}-\d+(?:[-_/]|$)/i.test(p.head)).map((p) => p.repo))
     noTickets = { at: Date.now(), repos: new Set(Object.values(state.prs).map((p) => p.repo).filter((r) => !named.has(r))) }
   }
   return noTickets.repos.has(repo)
