@@ -4,7 +4,7 @@ import {
   TriangleAlert, Send, CheckCheck, X, Upload, Wand, Sparkles, type LucideIcon, Scale } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PinButton } from './PinButton.tsx'
-import { ago, api, critUrl, duration, enc, focusWanted, isTyping, param, setParam, setReading, wantFocus, type Activity, type PrView, resumed } from '../lib.ts'
+import { ago, api, critUrl, duration, enc, focusWanted, isTyping, param, setParam, wantFocus, type Activity, type PrView, resumed } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { useApi } from '../query.ts'
 import { Chip } from './Chip.tsx'
@@ -121,7 +121,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
   const setTab = (t: Tab) => { lastTab = t; setTabState(t); setParam('tab', t) }
   // focus mode: reading Explain, the sidebars step back; any other tab (or leaving the PR) brings them back
   const [focus, setFocus] = useState(focusWanted)
-  useEffect(() => { setReading(tab === 'explain' && focus); return () => setReading(false) }, [tab, focus])
+  // ponytail: the list no longer steps back to bare PR numbers while you read (it collapsed unasked, behind the new view's own tabs)
   const toggleFocus = () => { wantFocus(!focus); setFocus(!focus) }
   // f: focus on and off; from another tab it opens Explain in focus
   useEffect(() => {
