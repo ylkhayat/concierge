@@ -29,6 +29,7 @@ export type Gap = { id: string; area: string; title: string; why: string; under?
 export type Link = { from: string; to: string } // `from` has to be done before `to` (Linear: from blocks to)
 export type Said = { who: 'you' | 'agent'; text: string; at: string }
 export type Plan = {
+  undo?: number; redo?: number // steps to undo and redo, as the page gets it (plans.ts withHistory); never kept
   id: string; title: string; brief: string; method: 'agile' | 'waterfall'; skill?: string; team?: string
   nodes: PlanNode[]; links: Link[]; messages: Said[]
   busy?: boolean; live?: string // the reply as it streams

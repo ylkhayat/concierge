@@ -71,7 +71,7 @@ import { baseSlots, canChange, mustChange, ownerOf, roles, setOwner, setRoles, s
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from './readiness.ts'
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
-import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, type Op as PlanOp } from './plans.ts'
+import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
 import { checks, cloneRepo, cloneState, ensureClones, installSourceSkills, DEFAULT_SOURCE, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
@@ -2268,16 +2268,18 @@ app.get('/plans', (c) => c.json({ plans: allPlans().map(({ id, title, method, no
 app.post('/plans', async (c) => { const b = await c.req.json<{ title?: string; brief?: string; method?: 'agile' | 'waterfall'; appetite?: number }>(); return c.json(newPlan(b.title ?? '', b.brief ?? '', b.method, b.appetite)) })
 app.get('/plans/teams', async (c) => { try { return c.json({ teams: await linearTeams() }) } catch (e) { return planErr(c, e) } })
 app.get('/plans/projects', async (c) => { try { return c.json({ projects: await linearProjects() }) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/project', async (c) => { try { return c.json(await linkProject(c.req.param('id'), (await c.req.json<{ project: string }>()).project)) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/sync', async (c) => { try { return c.json(await syncProject(c.req.param('id'))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/vision', async (c) => { try { return c.json(await applyVision(c.req.param('id'))) } catch (e) { return planErr(c, e) } })
-app.get('/plans/:id', (c) => { const p = planOf(c.req.param('id')); return p ? c.json(p) : c.json({ error: 'No such plan' }, 404) })
-app.post('/plans/:id', async (c) => { try { return c.json(setPlan(c.req.param('id'), await c.req.json())) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/say', async (c) => { try { await talkPlan(c.req.param('id'), (await c.req.json<{ text: string }>()).text); return c.json(planOf(c.req.param('id'))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/scenario', async (c) => { try { return c.json(setPlanScenario(c.req.param('id'), (await c.req.json<{ ops: PlanOp[] }>()).ops ?? [])) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/project', async (c) => { try { return c.json(withHistory(await linkProject(c.req.param('id'), (await c.req.json<{ project: string }>()).project))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/sync', async (c) => { try { return c.json(withHistory(await syncProject(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/vision', async (c) => { try { return c.json(withHistory(await applyVision(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
+app.get('/plans/:id', (c) => { const p = planOf(c.req.param('id')); return p ? c.json(withHistory(p)) : c.json({ error: 'No such plan' }, 404) })
+app.post('/plans/:id', async (c) => { try { return c.json(withHistory(setPlan(c.req.param('id'), await c.req.json()))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/say', async (c) => { try { await talkPlan(c.req.param('id'), (await c.req.json<{ text: string }>()).text); return c.json(withHistory(planOf(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/scenario', async (c) => { try { return c.json(withHistory(setPlanScenario(c.req.param('id'), (await c.req.json<{ ops: PlanOp[] }>()).ops ?? []))) } catch (e) { return planErr(c, e) } })
 app.post('/plans/:id/scenario/apply', async (c) => { try { return c.json(await applyPlanScenario(c.req.param('id'))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/edit', async (c) => { try { return c.json(editPlan(c.req.param('id'), (await c.req.json<{ ops: PlanOp[] }>()).ops)) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/create', async (c) => { try { return c.json(await createPlan(c.req.param('id'))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/edit', async (c) => { try { return c.json(withHistory(editPlan(c.req.param('id'), (await c.req.json<{ ops: PlanOp[] }>()).ops))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/create', async (c) => { try { return c.json(withHistory(await createPlan(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/undo', (c) => { try { return c.json(withHistory(undoRedoPlan(c.req.param('id'), true))) } catch (e) { return planErr(c, e) } })
+app.post('/plans/:id/redo', (c) => { try { return c.json(withHistory(undoRedoPlan(c.req.param('id'), false))) } catch (e) { return planErr(c, e) } })
 app.post('/plans/:id/remove', (c) => { removePlan(c.req.param('id')); return c.json({ ok: true }) })
 // the product lens (Product and Design roles): kept per PR, written on request from what is already known
 app.get('/prs/:id/domain', async (c) => {

@@ -38,11 +38,32 @@ export function setPlan(id: string, v: Partial<Pick<Plan, 'title' | 'brief' | 'm
   Object.assign(p, v, { at: new Date().toISOString() }); save()
   return p
 }
-export function removePlan(id: string) { delete all()[id]; save() }
+export function removePlan(id: string) { delete all()[id]; hist.delete(id); save() }
+
+// Undo and redo: the board before each change (an edit of yours, a scenario move, a whole planner turn), in memory and
+// per plan. What reaches Linear (apply, create, sync) can't be taken back there, so it ends the history.
+// ponytail: 50 whole snapshots of nodes and links; diffs if a big project makes that heavy
+type Snap = Pick<Plan, 'nodes' | 'links' | 'scenario'>
+const hist = new Map<string, { past: Snap[]; future: Snap[] }>()
+const snapOf = (p: Plan): Snap => structuredClone({ nodes: p.nodes, links: p.links, scenario: p.scenario })
+const histOf = (id: string) => { let h = hist.get(id); if (!h) hist.set(id, h = { past: [], future: [] }); return h }
+function step(p: Plan) { const h = histOf(p.id); h.past.push(snapOf(p)); if (h.past.length > 50) h.past.shift(); h.future = [] }
+const forget = (id: string) => hist.delete(id)
+/** The plan as the page gets it: with how many steps there are to undo and redo. */
+export const withHistory = <T extends Plan | undefined>(p: T) => p && { ...p, undo: hist.get(p.id)?.past.length ?? 0, redo: hist.get(p.id)?.future.length ?? 0 }
+export function undoRedo(id: string, back: boolean) {
+  const p = planOf(id); if (!p) throw new Error('No such plan')
+  if (p.busy || p.creating) throw new Error('Wait for it to finish')
+  const h = histOf(id), from = back ? h.past : h.future, to = back ? h.future : h.past
+  const s = from.pop(); if (!s) throw new Error(back ? 'Nothing to undo' : 'Nothing to redo')
+  to.push(snapOf(p)); Object.assign(p, s, { at: new Date().toISOString() }); save()
+  return p
+}
 
 /** The moves being tried: replaced as a whole (the page sends every move so far); none clears it. */
 export function setScenario(id: string, ops: Op[]) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
+  step(p)
   p.scenario = ops.length ? { ops: ops.filter((o) => o.op === 'move').slice(0, 500), at: new Date().toISOString() } : undefined
   save(); return p
 }
@@ -78,7 +99,7 @@ export async function applyScenario(id: string) {
   for (const o of p.scenario.ops) apply(p, o, 'you')
   // a cut issue now sits in Backlog there too
   for (const w of writes) if (w.patch.backlog && results.find((x) => x.identifier === w.identifier)?.ok) { const n = p.nodes.find((x) => x.id === w.id); if (n) n.state = { name: 'Backlog', type: 'backlog' } }
-  p.scenario = undefined; p.at = new Date().toISOString(); save()
+  p.scenario = undefined; p.at = new Date().toISOString(); forget(id); save()
   return { plan: p, results }
 }
 
@@ -86,6 +107,7 @@ export async function applyScenario(id: string) {
 export function edit(id: string, ops: Op[]) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
   if (p.creating) throw new Error('It is being created in Linear')
+  step(p)
   for (const o of ops) apply(p, o, 'you')
   p.at = new Date().toISOString(); save()
   return p
@@ -130,6 +152,7 @@ export async function talk(id: string, text: string) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
   if (p.busy) throw new Error('It is still working')
   const first = !p.sessionId
+  step(p) // the whole turn is one step back
   p.messages.push({ who: 'you', text, at: new Date().toISOString() })
   // its last questions and suggestions are answered by this message: the reply brings new ones
   Object.assign(p, { busy: true, live: '', error: undefined, asks: [], suggest: [], gaps: [], at: new Date().toISOString() }); save()
@@ -214,7 +237,7 @@ export async function create(id: string) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
   if (!p.team) throw new Error('Pick a Linear team first')
   if (p.creating || p.busy) throw new Error('Wait for it to finish')
-  Object.assign(p, { creating: true, error: undefined }); save()
+  Object.assign(p, { creating: true, error: undefined }); forget(id); save()
   void (async () => {
     try {
       const goal = p.nodes.find((n) => n.kind === 'goal')
@@ -331,7 +354,7 @@ export async function linkProject(id: string, projectId: string) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
   const r = await projectOf(projectId)
   mergeProject(p, r.project, r.viewer)
-  p.at = new Date().toISOString(); save()
+  forget(id); p.at = new Date().toISOString(); save()
   return p
 }
 export const syncProject = (id: string) => { const p = planOf(id); if (!p?.project) throw new Error('Not linked to a Linear project'); return linkProject(id, p.project.id) }

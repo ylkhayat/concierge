@@ -95,3 +95,19 @@ test('a scenario is kept until applied; Apply makes its moves in the plan and cl
   assert.equal(planOf(p.id).nodes.find((n) => n.id === 'a')!.parent, 'later')
   assert.equal(planOf(p.id).scenario, undefined)
 })
+
+test('undo and redo: each edit and scenario change is a step; Linear ends the history', async () => {
+  const { newPlan, edit, setScenario, undoRedo, withHistory } = await import('./plans.ts')
+  const p = newPlan('h', '')
+  edit(p.id, [{ op: 'add', id: 't1', kind: 'ticket', title: 'One' }])
+  edit(p.id, [{ op: 'update', id: 't1', title: 'Two' }])
+  setScenario(p.id, [{ op: 'move', id: 't1', cut: true }])
+  assert.equal(withHistory(p)!.undo, 3)
+  undoRedo(p.id, true); assert.equal(p.scenario, undefined)
+  undoRedo(p.id, true); assert.equal(p.nodes[0].title, 'One')
+  undoRedo(p.id, false); assert.equal(p.nodes[0].title, 'Two')
+  assert.deepEqual([withHistory(p)!.undo, withHistory(p)!.redo], [2, 1])
+  edit(p.id, [{ op: 'update', id: 't1', title: 'Three' }]) // a new change drops the redo
+  assert.equal(withHistory(p)!.redo, 0)
+  assert.throws(() => undoRedo(p.id, false), /Nothing to redo/)
+})

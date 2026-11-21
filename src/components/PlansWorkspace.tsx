@@ -1,7 +1,7 @@
 // Plans, the product manager's workspace: a brief, broken down with an agent while you watch. The chat on the left; on
 // the right one map of the project (PlanStream): where it stands, what is done, going on, still to refine, and the
 // angles not explored yet, faint, one click from the planner. Not another Linear: the tickets themselves live there.
-import { ArrowRight, ArrowUp, Check, CheckCircle2, Zap, ExternalLink, Flag, GitBranch, LoaderCircle, Plus, RefreshCw, Send, Sparkles, Target, Trash2, X } from 'lucide-react'
+import { ArrowRight, ArrowUp, Check, CheckCircle2, Zap, ExternalLink, Flag, GitBranch, LoaderCircle, Plus, RefreshCw, Redo2, Send, Sparkles, Target, Trash2, Undo2, X } from 'lucide-react'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Kind, Op, Plan, PlanNode } from '../../server/plans.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
@@ -412,6 +412,32 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
   )
 }
 
+/** Undo and redo on the board: every edit, scenario move and planner turn is a step; ⌘Z and ⇧⌘Z (or ⌘Y) outside a text box. */
+function History({ p, onBack }: { p: Plan; onBack: (undo: boolean) => unknown }) {
+  const now = useRef({ p, onBack }); now.current = { p, onBack }
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t?.closest('input, textarea, [contenteditable="true"]')) return
+      const k = e.key.toLowerCase(), undo = k === 'z' && !e.shiftKey, redo = (k === 'z' && e.shiftKey) || k === 'y'
+      if (!undo && !redo) return
+      e.preventDefault()
+      const { p: x } = now.current
+      if (!x.busy && !x.creating && (undo ? x.undo : x.redo)) now.current.onBack(undo)
+    }
+    addEventListener('keydown', key); return () => removeEventListener('keydown', key)
+  }, [])
+  const off = p.busy || p.creating
+  const btn = 'rounded-lg p-1.5 text-fg-3 transition-colors hover:bg-hover hover:text-fg-1 disabled:pointer-events-none disabled:opacity-30'
+  return (
+    <span className="inline-flex items-center">
+      <button disabled={off || !p.undo} onClick={() => onBack(true)} title={`Undo (⌘Z)${p.undo ? ` · ${p.undo} step${p.undo === 1 ? '' : 's'}` : ''}`} aria-label="Undo" className={btn}><Undo2 className="size-4" /></button>
+      <button disabled={off || !p.redo} onClick={() => onBack(false)} title="Redo (⇧⌘Z)" aria-label="Redo" className={btn}><Redo2 className="size-4" /></button>
+    </span>
+  )
+}
+
 function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatIf: Plan; people: number; pace: number; toast: Toast; onSet: (ops: Op[]) => Promise<unknown> }) {
   const ops = p.scenario?.ops ?? []
   const i = impact(p, whatIf, people, pace)
@@ -438,7 +464,6 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatI
         {i.writes.length > 0 && <span className="text-fg-2">{i.writes.length} Linear change{i.writes.length === 1 ? '' : 's'}</span>}
         <button onClick={() => setOpen(!open)} aria-expanded={open} className="text-meta font-medium text-accent-text hover:underline">{open ? 'Hide details' : 'Details'}</button>
         <span className="ml-auto inline-flex items-center gap-1.5">
-          <button onClick={() => void onSet(ops.slice(0, -1))} className="rounded-lg px-2 py-1 text-meta font-medium text-fg-2 hover:bg-hover hover:text-fg-1">Undo</button>
           <button onClick={() => void onSet([])} className="rounded-lg px-2 py-1 text-meta font-medium text-fg-2 hover:bg-hover hover:text-fail-text">Discard</button>
           <button disabled={busy} onClick={() => (i.writes.length ? arm('apply', apply) : apply())} className="btn-primary btn-sm relative inline-flex items-center gap-1.5 overflow-hidden">
             {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
@@ -501,6 +526,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const set: SetPlan = (v) => api(path, v).then((r: Plan) => { remember(path, r); refresh('/plans') }, (e: Error) => toast(e.message, 'error'))
   const say = (text: string) => api(`${path}/say`, { text }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   const items = p.nodes.filter((n) => n.kind !== 'goal'), made = p.nodes.filter((n) => n.created).length
+  const back = (undo: boolean) => api(`${path}/${undo ? 'undo' : 'redo'}`, {}).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   const create = () => api(`${path}/create`, {}).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   const teamName = teams.data?.teams.find((t) => t.id === p.team)?.name
   // the fit: what the appetite holds, and whether the work left lands within it
@@ -541,6 +567,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
         <input defaultValue={p.title} key={p.id} onBlur={(e) => e.target.value.trim() && e.target.value !== p.title && set({ title: e.target.value })} aria-label="Plan name"
                className="min-w-[140px] flex-1 bg-transparent text-title font-semibold tracking-tight text-fg-1 outline-none" />
+        <History p={p} onBack={back} />
         <StageBar stages={stages} onStep={step} />
         {p.creating ? <span className="inline-flex items-center gap-1.5 text-small text-run"><LoaderCircle className="size-3.5 animate-spin" />Creating {made}/{p.nodes.length}…</span>
           : made === p.nodes.length && made > 0 ? <span className="inline-flex items-center gap-1 text-small font-medium text-ok"><Check className="size-4" />In Linear</span>
