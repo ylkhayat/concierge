@@ -114,9 +114,14 @@ export function App() {
   // quick confirmations ("Copied", "Run queued"): sonner, like the alerts
   const toast = (msg: string, tone: Toast['tone'] = 'ok') => { if (tone === 'ok') sonner.success(msg); else sonner.error(msg) }
 
+  const detailRef = useRef<HTMLElement>(null)
   const select = (id?: string) => {
     if (id === selected) return
-    setSelected(id)
+    // switching items: the browser crossfades the detail pane alone (an element-scoped view transition); the list,
+    // the rail and the header don't move. Where there is no such thing, the page's own entrance (Detail) does it
+    const pane = detailRef.current as (HTMLElement & { startViewTransition?: (f: () => void) => unknown }) | null
+    if (scopedTransitions && pane?.startViewTransition && selected && id && !matchMedia('(prefers-reduced-motion: reduce)').matches) pane.startViewTransition(() => flushSync(() => setSelected(id)))
+    else setSelected(id)
     // the query (tabs, view, focus…) stays; a tour step belongs to the PR it was on
     const u = new URL(location.href); u.searchParams.delete('step'); u.hash = id ? enc(id) : ''
     history.replaceState(null, '', u)
@@ -387,7 +392,7 @@ export function App() {
             : <div className="space-y-2 p-3 pt-16">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[46px] animate-pulse rounded-lg bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
-      <main className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
+      <main ref={detailRef} className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
         {codebaseRepo ? (
           <div key="codebase" className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
             <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}>
@@ -425,7 +430,7 @@ export function App() {
             : <div className="space-y-2 p-3 pt-6">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-xl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
-      <main className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
+      <main ref={detailRef} className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
         {stackPage ? stackPage : ticket ? null : (
           <ExecHome repo={focus} tickets={scoped} prs={prs ?? []} now={now} onTicket={select} onPr={goPr} onMap={focus && repos.includes(focus) ? () => goCodebase(focus) : undefined} />
         )}
@@ -594,11 +599,14 @@ const Boot = () => (
   </div>
 )
 
+/** Element-scoped view transitions (Chrome 147+): a part of the page transitions on its own. */
+const scopedTransitions = typeof HTMLElement !== 'undefined' && 'startViewTransition' in HTMLElement.prototype
+
 /** An opened PR, stack or ticket: one entrance for the whole page. What it holds (the chat's turns, the vitals) would
  *  fade in again as its data lands; for the page's first moments that is held back (.fresh, index.css), so it doesn't
  *  arrive twice. What comes in after that still fades in. */
 function Detail({ children }: { children: React.ReactNode }) {
   const [fresh, setFresh] = useState(true)
   useEffect(() => { const t = setTimeout(() => setFresh(false), 1200); return () => clearTimeout(t) }, [])
-  return <div className={`h-full animate-[detail-in_180ms_var(--ease-snappy)] ${fresh ? 'fresh' : ''}`}>{children}</div>
+  return <div className={`h-full ${scopedTransitions ? '' : 'animate-[detail-in_180ms_var(--ease-snappy)]'} ${fresh ? 'fresh' : ''}`}>{children}</div>
 }
