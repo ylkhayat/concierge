@@ -10,7 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { LATER, type Gap, type Op, type Plan } from '../../server/planOps.ts'
 import { areaOf, initials } from '../planLook.tsx'
-import { planStream, ranksOf, type Slot } from '../planStream.ts'
+import { planStream, ranksOf, sizeFor, type Slot } from '../planStream.ts'
 
 const DAY = 86_400_000, WEEK = 7 * DAY
 const fmt = (w: number) => new Date(Date.now() + w * WEEK).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
@@ -38,13 +38,15 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   const critical = new Set(s.critical)
   // a pebble's colour: its stream's, or who works it, or its MoSCoW (unset: grey)
   const pebbleHue = (sl: Slot, h: number): number | null => { if (colorBy === 'owner') return nameHue(sl.who ?? sl.lane ?? '?'); if (colorBy === 'moscow') { const m = p.nodes.find((n) => n.id === sl.id)?.moscow; return m ? MOSCOW_HUE[m] : null } return h }
-  const moved = new Set(base ? p.nodes.filter((n) => { const o = base.nodes.find((x) => x.id === n.id); return !o || o.rank !== n.rank || o.parent !== n.parent || o.priority !== n.priority || o.assignee !== n.assignee }).map((n) => n.id) : [])
+  const moved = new Set(base ? p.nodes.filter((n) => { const o = base.nodes.find((x) => x.id === n.id); return !o || o.rank !== n.rank || o.estimate !== n.estimate || o.parent !== n.parent || o.priority !== n.priority || o.assignee !== n.assignee }).map((n) => n.id) : [])
   const appetite = p.appetite ? (Date.parse(p.appetite.from) + p.appetite.weeks * WEEK - Date.now()) / WEEK : undefined
   const due = p.project?.targetDate ? (Date.parse(p.project.targetDate) - Date.now()) / WEEK : undefined
   const [hover, setHover] = useState<{ slot: Slot; x: number; y: number }>()
   // a pebble being dragged: where it was picked up, and where the pointer is (in the map's own coordinates)
   const svgRef = useRef<SVGSVGElement>(null), laterRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<{ id: string; x0: number; y0: number; x: number; y: number; moved: boolean; overLater: boolean }>()
+  // a pebble being resized: its width now (its points follow, snapped to the usual sizes)
+  const [resize, setResize] = useState<{ id: string; w: number }>()
   // the streams draw in once, as the view opens; later changes glide
   const [drawn, setDrawn] = useState(false)
   useEffect(() => { const t = setTimeout(() => setDrawn(true), 1400); return () => clearTimeout(t) }, [])
@@ -121,6 +123,21 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
     addEventListener('pointermove', move); addEventListener('pointerup', up)
   }
 
+  const stretch = (e: React.PointerEvent, sl: Slot, full: number) => {
+    if (e.button !== 0 || !onMove) return
+    e.preventDefault(); e.stopPropagation()
+    const x0 = local(e).x
+    let r = { id: sl.id, w: full }
+    setResize(r)
+    const move = (ev: PointerEvent) => { r = { ...r, w: Math.max(6, full + local(ev).x - x0) }; setResize(r) }
+    const up = () => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up); setResize(undefined)
+      const pts = sizeFor(sl.points, full, r.w)
+      if (pts !== sl.points) onMove({ op: 'move', id: sl.id, estimate: pts })
+    }
+    addEventListener('pointermove', move); addEventListener('pointerup', up)
+  }
+
   return (
     <div ref={box} className="relative h-full min-h-0 w-full overflow-y-auto overflow-x-hidden">
       {legend && <Legend />}
@@ -178,36 +195,6 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                 </text>
                 {/* at a glance: how much of it is done, as a solid run along its line */}
                 {compact && (() => { const done = st.slots.filter((sl) => sl.done).reduce((a, sl) => a + sl.points, 0) / Math.max(1, st.points); return done > 0 ? <rect x={x0} y={cy - t / 2} width={Math.max(t, (x1 - x0) * done)} height={t} rx={t / 2} fill={col(h, 0.95)} style={{ transition: 'width 500ms var(--ease-snappy)' }} /> : null })()}
-                {!compact && st.slots.map((sl, j) => {
-                  // a pebble never wider than its time: a short ticket is a smaller round one, never over its neighbour
-                  const later = appetite !== undefined && sl.start >= appetite
-                  const slotW = Math.max(5, x(sl.end) - x(sl.start) - 3), ph = Math.min(lanes > 1 ? lanePh : Math.max(8, t - 8), slotW), cy = rowCy + yOf(sl.id)
-                  const left = x(sl.start) + 1.5, width = slotW
-                  const lit = hover?.slot.id === sl.id || selected === sl.id
-                  return (
-                    <g key={sl.id}>
-                    <rect rx={ph / 2} y={cy - ph / 2} height={ph}
-                          style={{ x: left, width, transition: 'x 500ms var(--ease-snappy), width 500ms var(--ease-snappy), fill-opacity 200ms', cursor: 'pointer',
-                            ...(drawn ? {} : { animation: `pebble-in 420ms var(--ease-spring) ${i * 90 + 300 + j * 40}ms both` }) } as React.CSSProperties}
-                          fill={sl.refine && !later && colorBy === 'epic' ? `url(#hatch-${i})` : pebbleHue(sl, h) === null ? 'var(--fg-4)' : col(pebbleHue(sl, h)!)} fillOpacity={sl.refine && !later ? (lit ? 1 : 0.85) : sl.done ? 0.95 : later ? 0.18 : lit ? 0.9 : 0.6}
-                          stroke={sl.started ? col(h) : later || sl.refine ? col(h, 0.8) : 'none'} strokeWidth={sl.started ? 2.5 : 1.2} strokeDasharray={later || sl.refine ? '3 3' : undefined}
-                          className={sl.started ? 'animate-pulse' : undefined}
-                          onMouseEnter={() => setHover({ slot: sl, x: left + width / 2, y: cy - ph / 2 })} onMouseLeave={() => setHover(undefined)}
-                          onPointerDown={(e) => press(e, sl)} opacity={drag?.moved && drag.id === sl.id ? 0.35 : 1} />
-                    {/* on the critical path: what sets the end date */}
-                    {critical.has(sl.id) && !sl.done && <rect x={left + 2} y={cy + ph / 2 + 2} width={Math.max(2, width - 4)} height={2} rx={1} fill="var(--accent)" pointerEvents="none" style={{ transition: 'x 500ms var(--ease-snappy), width 500ms var(--ease-snappy)' }} />}
-                    {/* its size, when the pebble has room: ~ when guessed */}
-                    {slotW >= 22 && ph >= 12 && <text x={left + width / 2} y={cy + 3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} pointerEvents="none" className={sl.done ? 'fill-[var(--on-accent)]' : 'fill-fg-1'} style={{ transition: 'x 500ms var(--ease-snappy)' }}>{sl.sized ? '' : '~'}{sl.points}</text>}
-                    {/* who picked it up */}
-                    {sl.who && (
-                      <g pointerEvents="none" style={{ transform: `translate(${left + width - 4}px, ${cy + ph / 2 + 1}px)`, transition: 'transform 500ms var(--ease-snappy)' }}>
-                        <circle r={7.5} fill="var(--surface-1)" stroke={col(h)} strokeWidth={1.5} />
-                        <text y={3} textAnchor="middle" fontSize={7.5} fontWeight={700} className="fill-fg-1">{initials(sl.who)}</text>
-                      </g>
-                    )}
-                    </g>
-                  )
-                })}
                 {/* open: every ticket on its own line, at its time, named */}
                 {isOpen && st.slots.map((sl, j) => {
                   const n = nodeOf.get(sl.id), ry = listY + j * ROW + ROW / 2
@@ -234,6 +221,46 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                 })}
               </g>
             )
+          })}
+          {/* the pebbles, in one layer: a ticket moved to another stream glides there; its right edge resizes it */}
+          {!compact && rows.flatMap(({ st, t, cy: rowCy, lanes, lanePh, yOf }, i) => {
+            const h = hueOf(st.id)
+            return st.slots.map((sl, j) => {
+              // a pebble never wider than its time: a short ticket is a smaller round one, never over its neighbour
+              const later = appetite !== undefined && sl.start >= appetite
+              const full = Math.max(5, x(sl.end) - x(sl.start) - 3), sizing = resize?.id === sl.id
+              const slotW = sizing ? resize.w : full, ph = Math.min(lanes > 1 ? lanePh : Math.max(8, t - 8), full), cy = rowCy + yOf(sl.id)
+              const left = x(sl.start) + 1.5, width = slotW, pts = sizing ? sizeFor(sl.points, full, resize.w) : sl.points
+              const lit = hover?.slot.id === sl.id || selected === sl.id
+              const glide = 'x 500ms var(--ease-snappy), y 500ms var(--ease-snappy), width 500ms var(--ease-snappy)'
+              return (
+                <g key={sl.id}>
+                <rect rx={ph / 2} height={ph}
+                      style={{ x: left, y: cy - ph / 2, width, transition: sizing ? 'none' : `${glide}, fill-opacity 200ms`, cursor: 'pointer',
+                        ...(drawn ? {} : { animation: `pebble-in 420ms var(--ease-spring) ${i * 90 + 300 + j * 40}ms both` }) } as React.CSSProperties}
+                      fill={sl.refine && !later && colorBy === 'epic' ? `url(#hatch-${i})` : pebbleHue(sl, h) === null ? 'var(--fg-4)' : col(pebbleHue(sl, h)!)} fillOpacity={sl.refine && !later ? (lit ? 1 : 0.85) : sl.done ? 0.95 : later ? 0.18 : lit ? 0.9 : 0.6}
+                      stroke={sizing ? 'var(--accent)' : sl.started ? col(h) : later || sl.refine ? col(h, 0.8) : 'none'} strokeWidth={sl.started || sizing ? 2.5 : 1.2} strokeDasharray={later || sl.refine ? '3 3' : undefined}
+                      className={sl.started ? 'animate-pulse' : undefined}
+                      onMouseEnter={() => setHover({ slot: sl, x: left + width / 2, y: cy - ph / 2 })} onMouseLeave={() => setHover(undefined)}
+                      onPointerDown={(e) => press(e, sl)} opacity={drag?.moved && drag.id === sl.id ? 0.35 : 1} />
+                {/* on the critical path: what sets the end date */}
+                {critical.has(sl.id) && !sl.done && <rect height={2} rx={1} fill="var(--accent)" pointerEvents="none" style={{ x: left + 2, y: cy + ph / 2 + 2, width: Math.max(2, width - 4), transition: sizing ? 'none' : glide } as React.CSSProperties} />}
+                {/* its size, when the pebble has room: ~ when guessed */}
+                {(slotW >= 22 && ph >= 12 || sizing) && <text y={3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} pointerEvents="none" className={sl.done ? 'fill-[var(--on-accent)]' : 'fill-fg-1'}
+                      style={{ transform: `translate(${left + width / 2}px, ${cy}px)`, transition: sizing ? 'none' : 'transform 500ms var(--ease-snappy)' }}>{sl.sized || sizing ? '' : '~'}{pts}</text>}
+                {/* who picked it up */}
+                {sl.who && (
+                  <g pointerEvents="none" style={{ transform: `translate(${left + width - 4}px, ${cy + ph / 2 + 1}px)`, transition: 'transform 500ms var(--ease-snappy)' }}>
+                    <circle r={7.5} fill="var(--surface-1)" stroke={col(h)} strokeWidth={1.5} />
+                    <text y={3} textAnchor="middle" fontSize={7.5} fontWeight={700} className="fill-fg-1">{initials(sl.who)}</text>
+                  </g>
+                )}
+                {/* drag the right edge: bigger or smaller (its estimate, in the scenario) */}
+                {onMove && !sl.done && <rect height={ph + 6} width={8} fill="transparent" className="cursor-ew-resize" aria-label={`Resize ${title(sl.id)}`}
+                      style={{ x: left + width - 5, y: cy - ph / 2 - 3, transition: sizing ? 'none' : glide } as React.CSSProperties} onPointerDown={(e) => stretch(e, sl, full)} />}
+                </g>
+              )
+            })
           })}
           {/* the plan before the moves: a dashed outline where each moved ticket was, and a line to where it is now */}
           {before && !compact && before.streams.flatMap((bs) => bs.slots).filter((was) => moved.has(was.id)).map((was) => {

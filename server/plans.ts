@@ -85,6 +85,7 @@ export async function applyScenario(id: string) {
     try {
       const input: Record<string, unknown> = {}
       if (w.patch.priority !== undefined) input.priority = w.patch.priority
+      if (w.patch.estimate !== undefined) input.estimate = w.patch.estimate
       if (w.patch.parentId !== undefined) input.parentId = w.patch.parentId
       if (w.patch.assigneeId !== undefined) input.assigneeId = w.patch.assigneeId
       if (w.patch.backlog) {
@@ -129,7 +130,7 @@ const PROTOCOL = [
   '  plan fields on add or update (tickets): "moscow":"must|should|could|wont", "rice":{"reach":users a quarter,"impact":0.25-3,"confidence":0-1}, "horizon":"now|next|later". Set them for every ticket you add or estimate; on items in Linear update only sets these.',
   '  readiness on add or update: "covers":["dpia"] (the obligations a ticket covers, by id), "risk":{"likelihood":1-3,"impact":1-3,"note":"…"} (a risk it carries or mitigates).',
   '  propose: {"op":"propose","why":"…","ops":[{"op":"move",…},…]} (a scenario for the product manager to try: moves only, nothing applied; use it when asked to propose, cut, sequence or re-plan)',
-  '  move:   {"op":"move","id":"t3","rank":2.5,"parent":"e2","priority":1,"cut":true} (its place in the order of work, under which epic, how urgent, or cut to Later and back with cut:false; works on items in Linear too)',
+  '  move:   {"op":"move","id":"t3","rank":2.5,"parent":"e2","priority":1,"estimate":5,"cut":true} (its place in the order of work, under which epic, how urgent, how big, or cut to Later and back with cut:false; works on items in Linear too)',
   '  remove: {"op":"remove","id":"t3"} (its children go too)',
   '  link:   {"op":"link","from":"t1","to":"t2"} (t1 has to be done before t2) · unlink: the same with "unlink"',
   '  vision: {"op":"vision","text":"…"} (only when told you may)',

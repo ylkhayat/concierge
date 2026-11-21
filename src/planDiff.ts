@@ -5,7 +5,7 @@ import { LATER, type Plan, type PlanNode } from '../server/planOps.ts'
 import { planStream } from './planStream.ts'
 
 const WEEK = 7 * 86_400_000
-export type LinearWrite = { id: string; issue: string; identifier?: string; changes: string[]; patch: { priority?: number; parentId?: string | null; assigneeId?: string | null; backlog?: boolean } }
+export type LinearWrite = { id: string; issue: string; identifier?: string; changes: string[]; patch: { estimate?: number; priority?: number; parentId?: string | null; assigneeId?: string | null; backlog?: boolean } }
 export type Impact = {
   moves: number
   endBefore: number; endAfter: number; days: number // weeks from now, and the change in days (negative: earlier)
@@ -39,6 +39,7 @@ export function impact(base: Plan, whatIf: Plan, people: number, pace: number, n
     if (!o || !n.created || n.kind === 'goal' || n.kind === 'milestone') return []
     const changes: string[] = [], patch: LinearWrite['patch'] = {}
     if (isCut(n) !== isCut(o)) { if (isCut(n)) { changes.push('to Backlog (cut)'); patch.backlog = true } }
+    if (n.estimate && n.estimate !== o.estimate) { changes.push(`estimate ${o.estimate ?? '?'} → ${n.estimate}`); patch.estimate = n.estimate }
     if ((n.priority ?? 0) !== (o.priority ?? 0)) { changes.push(`priority ${PRIORITY[o.priority ?? 0]} → ${PRIORITY[n.priority ?? 0]}`); patch.priority = n.priority ?? 0 }
     if (n.parent !== o.parent && !isCut(n)) {
       const p = n.parent ? byB.get(n.parent) : undefined

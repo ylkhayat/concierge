@@ -98,3 +98,7 @@ export function refineOf(n: PlanNode): string | undefined {
   if (n.kind === 'ticket' && !n.estimate) return 'No estimate yet'
   return undefined
 }
+
+// points for a pebble stretched from one width to another, snapped to the sizes teams estimate in
+const SIZES = [1, 2, 3, 5, 8, 13, 21]
+export const sizeFor = (pts: number, from: number, to: number) => { const want = Math.max(1, pts) * (to / Math.max(1, from)); return SIZES.reduce((a, b) => (Math.abs(b - want) < Math.abs(a - want) ? b : a)) }

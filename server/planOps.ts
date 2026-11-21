@@ -63,7 +63,7 @@ export type Op =
   // back). Unlike update it also moves what is already in Linear (Apply writes it there)
   // a scenario the planner proposes: moves for the product manager to try (never applied by it)
   | { op: 'propose'; ops: Op[]; why?: string }
-  | { op: 'move'; id: string; rank?: number; parent?: string; priority?: 1 | 2 | 3 | 4; assignee?: string | null; assigneeId?: string | null; cut?: boolean }
+  | { op: 'move'; id: string; rank?: number; estimate?: number; parent?: string; priority?: 1 | 2 | 3 | 4; assignee?: string | null; assigneeId?: string | null; cut?: boolean }
 
 export const LATER = 'later' // the epic cut work goes under
 type Best = { rice?: PlanNode['rice']; moscow?: PlanNode['moscow']; horizon?: PlanNode['horizon']; covers?: string[]; risk?: PlanNode['risk'] }
@@ -149,6 +149,7 @@ export function apply(p: Plan, o: Op, by: 'agent' | 'you'): boolean {
       if (o.parent !== undefined && o.parent !== n.parent && has(o.parent) && o.parent !== n.id && !under(o.parent, n.id)) { n.parent = o.parent; delete n.cutFrom }
       if (o.rank !== undefined && Number.isFinite(o.rank)) n.rank = o.rank
       if (o.priority !== undefined && [1, 2, 3, 4].includes(o.priority)) n.priority = o.priority
+      if (o.estimate !== undefined && Number.isFinite(o.estimate) && o.estimate > 0) n.estimate = Math.min(100, Math.round(o.estimate))
       if (o.assignee !== undefined) { if (o.assignee) { n.assignee = o.assignee; if (o.assigneeId) n.assigneeId = o.assigneeId } else { delete n.assignee; delete n.assigneeId } }
       n.by = by
       return true

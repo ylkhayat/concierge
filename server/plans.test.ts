@@ -111,3 +111,16 @@ test('undo and redo: each edit and scenario change is a step; Linear ends the hi
   assert.equal(withHistory(p)!.redo, 0)
   assert.throws(() => undoRedo(p.id, false), /Nothing to redo/)
 })
+
+test('a move resizes: the estimate changes in the plan and is a Linear write for an issue there', async () => {
+  const { impact } = await import('../src/planDiff.ts')
+  const { applyAll } = await import('./planOps.ts')
+  const { sizeFor } = await import('../src/planStream.ts')
+  const p = blank()
+  apply(p, { op: 'add', id: 't1', kind: 'ticket', title: 'T1', estimate: 3 }, 'agent')
+  p.nodes[0].created = { id: 'lin1', identifier: 'ENG-1', url: '' }
+  const w = applyAll(p, [{ op: 'move', id: 't1', estimate: 8 }])
+  assert.equal(w.nodes[0].estimate, 8); assert.equal(p.nodes[0].estimate, 3)
+  assert.deepEqual(impact(p, w, 1, 5).writes[0].patch, { estimate: 8 })
+  assert.equal(sizeFor(3, 30, 60), 5); assert.equal(sizeFor(3, 30, 5), 1)
+})
