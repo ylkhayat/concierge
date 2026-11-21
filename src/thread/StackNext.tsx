@@ -11,6 +11,7 @@ import { composeChecklist, type Step } from '../../server/reply.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { api, type PrView } from '../lib.ts'
 import { refresh } from '../query.ts'
+import { Pick } from '../ui/Pick.tsx'
 
 type Member = { pr: PrView; url: string; steps: Step[] }
 // what "and push when done" adds to each agent's answer: this round's go-ahead to publish what it was asked to fix
@@ -223,17 +224,9 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
               <li key={i}>
                 <Flags id={idOf(m, i)} copyOf={copyOf} clashes={clashes} label={label} />
                 <p className="text-small text-fg-1">{s.text}{s.blocking && pickOf(m, i) < 0 && <span className="ml-1.5 rounded-full bg-wait/15 px-1.5 label text-wait-text">needed</span>}</p>
-                <div role="radiogroup" aria-label={s.text} className="mt-1 flex flex-wrap gap-1.5">
-                  {(s.options ?? []).map((o, j) => {
-                    const sel = pickOf(m, i) === j
-                    return (
-                      <button key={j} role="radio" aria-checked={sel} onClick={() => setPicks((x) => ({ ...x, [key(m, i)]: sel ? -1 : j }))}
-                              className={`flex items-start gap-1.5 rounded-ctl px-2.5 py-1 text-left text-small transition-colors ${sel ? 'bg-accent font-medium text-on-accent' : 'bg-fill text-fg-2 hover:bg-fill-strong'}`}>
-                        {sel ? <Check className="mt-0.5 size-3.5 shrink-0" /> : o.recommended && <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent-text" />}{o.label}
-                      </button>
-                    )
-                  })}
-                </div>
+                <Pick wrap label={s.text} className="mt-1" value={pickOf(m, i) < 0 ? undefined : pickOf(m, i)} onChange={(j) => setPicks((x) => ({ ...x, [key(m, i)]: pickOf(m, i) === j ? -1 : j }))}
+                      options={(s.options ?? []).map((o, j) => ({ value: j, hint: o.recommended ? 'The agent’s pick' : undefined,
+                        label: <>{o.recommended && <Sparkles className="mr-1 inline size-3.5 align-[-2px] text-accent-text" />}{o.label}</> }))} />
               </li>
             ) : (
               <li key={i}>
@@ -324,13 +317,9 @@ function PlanView({ p, chosen, choose, stepOn, toggle, prsOf, restack }: {
               <li key={i}>
                 <p className="text-small font-medium text-fg-1">{d.question}<Prs ids={d.options.flatMap((o) => o.picks.map((x) => x.id))} />{chosen(d) < 0 && <span className="ml-1.5 rounded-full bg-wait/15 px-1.5 label text-wait-text">needed</span>}</p>
                 {d.why && <p className="text-meta text-fg-3">{d.why}</p>}
-                <div role="radiogroup" aria-label={d.question} className="mt-1 flex flex-wrap gap-1.5">
-                  {d.options.map((o, j) => { const sel = chosen(d) === j; return (
-                    <button key={j} role="radio" aria-checked={sel} onClick={() => choose(d, j)} className={`flex items-start gap-1.5 rounded-ctl px-2.5 py-1 text-left text-small transition-colors ${sel ? 'bg-accent font-medium text-on-accent' : 'bg-surface-1 text-fg-2 ring-1 ring-line hover:bg-fill'}`}>
-                      {sel ? <Check className="mt-0.5 size-3.5 shrink-0" /> : d.suggested === j && <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent-text" />}{o.label}
-                    </button>
-                  ) })}
-                </div>
+                <Pick wrap label={d.question} className="mt-1" value={chosen(d) < 0 ? undefined : chosen(d)} onChange={(j) => choose(d, j)}
+                      options={d.options.map((o, j) => ({ value: j, hint: d.suggested === j ? 'The agents’ pick' : undefined,
+                        label: <>{d.suggested === j && <Sparkles className="mr-1 inline size-3.5 align-[-2px] text-accent-text" />}{o.label}</> }))} />
               </li>
             ))}
           </ul>

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
 import { label, sha, VERSION } from '../version.ts'
+import { Field, Pick, PickPill } from '../ui/Pick.tsx'
 import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
@@ -402,9 +403,10 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
           {/* several machines: an organization's row first, allowing all its repositories (now and later) on a machine */}
           {(setup?.machines?.length ?? 0) > 1 && all.findIndex(([r]) => r.split('/')[0] === owner) === i && (
             <div className="flex flex-wrap items-center gap-2 bg-fill/40 px-4 py-2">
-              <span className="font-mono text-small font-semibold text-fg-1">{owner}</span><span className="text-meta text-fg-3">every repository of it, now and later</span>
-              <MachineChips label={`Machines that may clone ${owner}'s repositories`} machines={setup!.machines} machine={setup?.machine} on={(m) => org.includes(m)}
-                            onToggle={(m, on) => api('/repos/clone-on', { repo: `${owner}/*`, machine: m, on }).then(() => { toast(on ? `${owner}'s repositories may be cloned on ${m}` : `${owner} is no longer allowed on ${m} as a whole`); return reload() }, (e: Error) => toast(e.message, 'error'))} />
+              <span className="font-mono text-small font-semibold text-fg-1">{owner}</span><span className="text-meta text-fg-3">all its repositories, now and later</span>
+              <Pick multi label={`Machines that may clone ${owner}'s repositories`} value={org} className="ml-auto"
+                    options={setup!.machines.map((m) => ({ value: m, label: m === setup?.machine ? <>{m} <span className="font-normal opacity-60">this one</span></> : m }))}
+                    onChange={(_, m, on) => api('/repos/clone-on', { repo: `${owner}/*`, machine: m, on }).then(() => { toast(on ? `${owner}'s repositories may be cloned on ${m}` : `${owner} is no longer allowed on ${m} as a whole`); return reload() }, (e: Error) => toast(e.message, 'error'))} />
             </div>
           )}
           <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
@@ -440,22 +442,6 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   )
 }
 
-/** Which machines may clone it: one chip each, on or off; a locked one says why it can't change here. */
-function MachineChips({ label, machines, machine, on, locked, onToggle }: { label: string; machines: string[]; machine?: string; on: (m: string) => boolean; locked?: (m: string) => string | undefined; onToggle: (m: string, on: boolean) => void }) {
-  return (
-    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-1">
-      <span className="mr-0.5 text-meta text-fg-4">Cloned on</span>
-      {machines.map((m) => { const yes = on(m), why = locked?.(m); return (
-        <button key={m} role="switch" aria-checked={yes} disabled={!!why} onClick={() => onToggle(m, !yes)}
-                title={why ?? (yes ? `On ${m}: untick to take it off there (its checkout is removed once nothing would be lost: no uncommitted changes, unpushed commits or running agents)` : `Not on ${m}: tick to clone it there`)}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta transition-colors disabled:cursor-default ${yes ? 'bg-accent-soft font-medium text-accent-text ring-1 ring-accent/30' : 'bg-fill text-fg-3 hover:text-fg-1'}`}>
-          {yes ? <Check className="size-3" /> : <Plus className="size-3" />}{m}{m === machine && <span className="font-normal text-fg-4">· this one</span>}
-        </button>
-      ) })}
-    </div>
-  )
-}
-
 function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow }: {
   clone?: string // not on this machine yet: 'cloning', 'not-here' (not allowed on it), or why the clone failed
   machines?: string[]; machine?: string; allowed?: string[]; byOrg?: string[]; removed?: string[]; here?: string[]; onAllow?: (machine: string, on: boolean) => void // several machines: where it may be cloned
@@ -472,58 +458,57 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
   const pct = task?.total ? Math.round(((task.done ?? 0) / task.total) * 100) : 0
   const coverage = p ? Math.round((p.known / Math.max(1, p.folders)) * 100) : 0
 
+  const status = clone === 'cloning' ? <span className="inline-flex items-center gap-1.5 text-run-text"><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine</span>
+    : clone === 'not-here' ? 'Not on this machine' : clone?.startsWith('kept:') ? <span className="text-wait-text">Unticked here, {clone}</span> : clone ? <span className="text-fail-text">{clone}</span> : undefined
+  const mapped = clone !== 'not-here' && !clone?.startsWith('kept:')
+  const link = 'shrink-0 text-meta font-medium text-accent-text hover:underline disabled:opacity-40'
   return (
-    <div className="group space-y-3 px-4 py-4">
-      <div className="flex items-start gap-3">
+    <div className="group px-4 py-3.5">
+      <div className="flex items-center gap-3">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-fill text-fg-3"><FolderGit2 className="size-4" /></span>
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-body font-semibold">{repo}</div>
-          <div className="truncate font-mono text-meta text-fg-3" title={path}>{home(path)}</div>
-          {clone && <div className={`mt-0.5 flex items-center gap-1.5 text-meta ${clone === 'cloning' ? 'text-run-text' : clone === 'not-here' ? 'text-fg-3' : 'text-fail-text'}`}>{clone === 'cloning' ? <><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine…</> : clone === 'not-here' ? 'Not on this machine: tick it below to clone it here' : clone.startsWith('kept:') ? `Unticked here, but ${clone}: it goes once that is cleared` : `Not on this machine: ${clone}`}</div>}
-          {/* several machines: which may hold it (a company may keep a repository off some); a new one holds none until allowed */}
-          {machines.length > 1 && onAllow && (
-            <div className="mt-1.5"><MachineChips label={`Machines that may clone ${repo}`} machines={machines} machine={machine}
-                 on={(m) => !removed.includes(m) && (allowed.includes(m) || byOrg.includes(m) || here.includes(m))}
-                 onToggle={onAllow} /></div>
-          )}
+          <div className="flex min-w-0 items-center gap-1.5 text-meta text-fg-3"><span className="truncate font-mono" title={path}>{home(path)}</span>{status && <><span className="text-fg-4">·</span><span className="truncate">{status}</span></>}</div>
         </div>
         <button onClick={() => arm('remove', onRemove)} title={armed ? 'Click again to stop watching (its codebase map is kept)' : 'Stop watching'} aria-label={`Stop watching ${repo}`}
                 className={`relative isolate flex items-center gap-1 overflow-hidden rounded-lg p-1.5 text-small font-medium transition-all hover:bg-fail/10 hover:text-fail-text focus:opacity-100 group-hover:opacity-100 ${armed ? 'text-fail-text opacity-100' : 'text-fg-4 opacity-0'}`}>
           <Trash2 className="size-4" />{armed && <><ArmLabel>Confirm: stop watching</ArmLabel><ArmBar on="plain" /></>}
         </button>
       </div>
-
-      {/* the one account its work runs on: none follows the order in Accounts; one waits for that account instead of moving */}
-      {accounts.length > 1 && (
-        <div className="ml-11 flex flex-wrap items-center gap-1.5" title="Kept to one account: every run on this repository (reviews, revises, tickets, explanations) uses only it, and waits when it is at its limit instead of moving to another">
-          <span className="mr-1 text-meta text-fg-3">Runs on</span>
-          <Chip on={!pin} onClick={() => onPin(undefined)}>Any (the order)</Chip>
-          {accounts.map((a) => <Chip key={a.id} on={pin === a.id} onClick={() => onPin(pin === a.id ? undefined : a.id)}>{a.label} only</Chip>)}
-        </div>
-      )}
-
-      {/* the repo's codebase map (made from this machine's checkout: none while it isn't here) */}
-      {clone !== 'not-here' && !clone?.startsWith('kept:') && <div className="ml-11 flex items-center gap-3 rounded-xl bg-fill/60 px-3 py-2.5 ring-1 ring-line ">
-        <MapIcon className={`size-4 shrink-0 ${busy ? 'text-accent' : p && p.toMap === 0 ? 'text-ok' : 'text-fg-3'}`} />
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="truncate text-small text-fg-2 ">
-            {busy ? `${task?.under ? `Mapping deeper into ${task.under}` : 'Mapping'} · ${task?.step ?? 'queued'}`
-              : task?.state === 'failed' ? <span className="text-fail-text">{task.error}</span>
-              : p ? (p.toMap === 0 ? `Mapped ${p.folders} folders on ${p.branch}${meta ? ` · ${hours(meta.mappedAt)}` : ''}`
-                : p.mapped ? (p.complete ? `${p.toMap} folders changed on ${p.branch}` : `${p.known} of ${p.folders} folders mapped`) : `Not mapped yet · ${p.folders} folders on ${p.branch}`)
-              : plan ? <span className="text-fail-text">{(plan as { error: string }).error}</span> : <span className="text-fg-3">Checking the default branch…</span>}
-          </div>
-          <span className="flex h-1.5 overflow-hidden rounded-full bg-fill-strong">
-            <span className={`h-full rounded-full transition-all duration-700 ease-[var(--ease-snappy)] ${busy ? 'bg-accent' : coverage === 100 ? 'bg-ok' : 'bg-accent/40'}`}
-                  style={{ width: `${busy ? Math.max(3, pct) : coverage}%` }} />
-          </span>
-        </div>
-        {busy ? (
-          <button onClick={() => act('cancel')} className={`${quiet} hover:text-fail-text`}>Stop</button>
-        ) : p && p.toMap > 0 ? (
-          <button onClick={() => act('start')} className={primary}><MapIcon className="size-3.5" />{p.mapped ? (p.complete ? 'Update' : 'Finish') : 'Map'} · ~${p.estimateUsd.toFixed(2)}</button>
-        ) : p ? <span className="flex shrink-0 items-center gap-1 text-small text-ok-text"><CircleCheck className="size-4" />Up to date</span> : null}
-      </div>}
+      {/* where it lives, what it runs on, its map: one row each, lined up */}
+      <div className="ml-11 mt-2.5 space-y-2">
+        {machines.length > 1 && onAllow && (
+          <Field label="Machines" hint="Where it may be checked out: a new machine holds none until ticked; unticking takes the checkout off once nothing would be lost">
+            <Pick multi label={`Machines that may clone ${repo}`} value={machines.filter((m) => !removed.includes(m) && (allowed.includes(m) || byOrg.includes(m) || here.includes(m)))}
+                  options={machines.map((m) => ({ value: m, label: m === machine ? <>{m} <span className="font-normal opacity-60">this one</span></> : m }))}
+                  onChange={(_, m, on) => onAllow(m, on)} />
+          </Field>
+        )}
+        {accounts.length > 1 && (
+          <Field label="Account" hint="Kept to one account: every run on this repository uses only it, and waits when it is at its limit instead of moving to another">
+            <Pick label={`The account ${repo} runs on`} value={pin ?? ''} options={[{ value: '', label: 'Any', hint: 'Follows the order in Accounts' }, ...accounts.map((a) => ({ value: a.id, label: a.label }))]}
+                  onChange={(v) => onPin(v || undefined)} />
+          </Field>
+        )}
+        {mapped && (
+          <Field label="Map" hint="Its codebase map, made from this machine's checkout: what Explain and the agents read first">
+            <div className="flex items-center gap-3">
+              <span className="flex h-1 w-24 shrink-0 overflow-hidden rounded-full bg-fill-strong">
+                <span className={`h-full rounded-full transition-all duration-700 ease-[var(--ease-snappy)] ${busy ? 'bg-accent' : coverage === 100 ? 'bg-ok' : 'bg-accent/50'}`} style={{ width: `${busy ? Math.max(3, pct) : coverage}%` }} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-small text-fg-2">
+                {busy ? `${task?.under ? `Mapping ${task.under}` : 'Mapping'} · ${task?.step ?? 'queued'}`
+                  : task?.state === 'failed' ? <span className="text-fail-text">{task.error}</span>
+                  : p ? (p.toMap === 0 ? `Up to date · ${p.folders} folders on ${p.branch}${meta ? ` · ${hours(meta.mappedAt)}` : ''}`
+                    : p.mapped ? (p.complete ? `${p.toMap} folders changed on ${p.branch}` : `${p.known} of ${p.folders} folders`) : `Not mapped · ${p.folders} folders on ${p.branch}`)
+                  : plan ? <span className="text-fail-text">{(plan as { error: string }).error}</span> : <span className="text-fg-3">Checking…</span>}
+              </span>
+              {busy ? <button onClick={() => act('cancel')} className={`${link} !text-fg-3 hover:!text-fail-text`}>Stop</button>
+                : p && p.toMap > 0 ? <button onClick={() => act('start')} className={link}>{p.mapped ? (p.complete ? 'Update' : 'Finish') : 'Map it'} · ~${p.estimateUsd.toFixed(2)}</button> : null}
+            </div>
+          </Field>
+        )}
+      </div>
     </div>
   )
 }
@@ -997,11 +982,8 @@ function LlamaModels({ a, set }: { a: AccountView; set: (b: object, m: string) =
         return (
           <div key={size} className="flex flex-wrap items-center gap-2">
             <span className="w-20 shrink-0 font-medium text-fg-2 ">{title}</span>
-            <div className="flex min-w-0 flex-1 flex-wrap gap-1.5" role="radiogroup" aria-label={`${a.label} ${title}: model`}>
-              {[...opts(true), ...opts(false)].map((m) => (
-                <Chip key={m} mono on={m === now} onClick={() => m !== now && use(size, m)} title={`${isCloud(m) ? 'Ollama Cloud' : here}${hasModel(all, m) ? '' : ' · not pulled yet'}`}>{m}{hasModel(all, m) ? '' : ' (missing)'}</Chip>
-              ))}
-            </div>
+            <Pick className="min-w-0 flex-1" label={`${a.label} ${title}: model`} value={now} onChange={(m) => m !== now && use(size, m)}
+                  options={[...opts(true), ...opts(false)].map((m) => ({ value: m, mono: true, label: `${m}${hasModel(all, m) ? '' : ' (missing)'}`, hint: `${isCloud(m) ? 'Ollama Cloud' : here}${hasModel(all, m) ? '' : ' · not pulled yet'}` }))} />
             <button onClick={() => check(now, `size=${size}`)} disabled={checks[now] === 'checking'} className={quiet}><Zap className="size-3.5" />Check speed</button>
             <Checked r={checks[now]} />
           </div>
@@ -1299,15 +1281,8 @@ function Access({ toast }: { toast: Toast }) {
   )
 }
 
-/** A choice that toggles: a pill, filled when on. The one control for picking among items in Settings. */
-function Chip({ on, onClick, children, title, mono }: { on: boolean; onClick: () => void; children: ReactNode; title?: string; mono?: boolean }) {
-  return (
-    <button type="button" aria-pressed={on} onClick={onClick} title={title}
-            className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-small transition-colors ${mono ? 'font-mono text-meta' : ''} ${on ? 'bg-accent-soft font-medium text-accent-text ring-1 ring-accent/40' : 'bg-fill text-fg-2 hover:bg-fill-strong hover:text-fg-1'}`}>
-      {on && <Check className="size-3 shrink-0" />}<span className="truncate">{children}</span>
-    </button>
-  )
-}
+/** A choice that toggles: the app's one pill (ui/Pick.tsx). */
+const Chip = ({ on, onClick, children, title, mono }: { on: boolean; onClick: () => void; children: ReactNode; title?: string; mono?: boolean }) => <PickPill on={on} onClick={onClick} title={title} mono={mono} check>{children}</PickPill>
 
 /**
  * Ship's setup, all of it a click: which Linear teams' tickets show (each team from Linear itself), the repository
@@ -1351,9 +1326,8 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
                 <div className="text-meta text-fg-3">{!on ? 'Hidden from Ship' : repo ? <>Worked in <span className="font-mono">{repo}</span></> : <span className="text-wait-text">Pick its repository</span>}</div>
               </div>
               {on && (
-                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={`${k}: repository`}>
-                  {repos.map((r) => <Chip key={r} mono on={repo === r} title={r} onClick={() => setRepo(k, repo === r ? undefined : r)}>{r.split('/')[1] ?? r}</Chip>)}
-                </div>
+                <Pick label={`${k}: repository`} value={repo} onChange={(r) => setRepo(k, repo === r ? undefined : r)}
+                      options={repos.map((r) => ({ value: r, mono: true, hint: r, label: r.split('/')[1] ?? r }))} />
               )}
               <Toggle label={`Show ${k} in Ship`} on={on} onChange={() => showTeam(k)} />
             </div>
@@ -2102,12 +2076,8 @@ function AccountModels({ a, set }: { a: AccountView; set: (b: object, m: string)
             return (
               <div key={k.slot}>
                 <p className="text-meta text-fg-2" title={k.hint}>{k.label}</p>
-                <div role="radiogroup" aria-label={`${a.label}: ${k.label}`} className="mt-0.5 flex flex-wrap gap-1">
-                  {[{ id: '', label: `Inherit (${k.inherit})` }, ...list].map((m) => (
-                    <button key={m.id || 'inherit'} role="radio" aria-checked={cur === m.id} onClick={() => cur !== m.id && pick(k.slot, k.label, m.id, m.label)}
-                            className={`rounded-full px-2 py-0.5 text-micro font-medium transition-colors ${cur === m.id ? 'bg-accent text-on-accent' : 'bg-fill text-fg-2 hover:bg-fill-strong'}`}>{m.label}</button>
-                  ))}
-                </div>
+                <Pick className="mt-1" label={`${a.label}: ${k.label}`} value={cur} options={[{ id: '', label: `Inherit (${k.inherit})` }, ...list].map((m) => ({ value: m.id, label: m.label }))}
+                      onChange={(id) => { const m = [{ id: '', label: `Inherit (${k.inherit})` }, ...list].find((x) => x.id === id)!; if (cur !== id) pick(k.slot, k.label, id, m.label) }} />
               </div>
             )
           })}

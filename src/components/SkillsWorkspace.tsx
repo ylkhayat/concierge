@@ -7,6 +7,8 @@ import type { Advice, Installed, SkillRow, Source, Verdict } from '../../server/
 import { api } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
 import { ROLES, useRole, type Role, type RolesView } from '../role.ts'
+import { Tabs } from './Tabs.tsx'
+import { Pick } from '../ui/Pick.tsx'
 type Owner = Role | 'shared'
 
 type Row = SkillRow & { before: number; source: Source; tokens?: number; mode?: string }
@@ -251,16 +253,13 @@ export function SkillsWorkspace({ toast }: { toast: Toast }) {
       <aside className="flex w-full shrink-0 flex-col border-r border-line md:w-[360px]">
         <div className="space-y-2.5 px-4 pb-2 pt-4">
           <div className="flex items-center gap-2"><button onClick={() => setSel(undefined)} className="text-title font-semibold tracking-tight">Skills</button>
-            <div role="radiogroup" aria-label="Period" className="ml-auto inline-flex rounded-ctl bg-fill p-0.5 text-small">
-              {[7, 30, 90].map((d) => <button key={d} role="radio" aria-checked={days === d} onClick={() => setDays(d)} className={`rounded-lg px-2 py-0.5 font-medium transition-colors ${days === d ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{d}d</button>)}
-            </div>
+            <span className="ml-auto"><Tabs size="sm" label="Period" value={String(days)} onChange={(d) => setDays(Number(d))} options={['7', '30', '90'].map((d) => ({ id: d, label: `${d}d` }))} /></span>
           </div>
-          <div role="tablist" className="flex gap-0.5 rounded-ctl bg-hover p-[3px]">
-            {(['all', 'mine', 'company', 'others'] as const).map((s) => <button key={s} role="tab" aria-selected={scope === s} onClick={() => setScope(s)} title={s === 'others' ? 'Other roles\' skills: you can use them, not change them' : undefined} className={`flex-1 whitespace-nowrap rounded-lg px-1.5 py-1 text-small font-medium ${scope === s ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{s === 'all' ? ROLES[role].label : s === 'mine' ? 'Mine' : s === 'company' ? 'Org' : 'Others'}</button>)}
-          </div>
+          <Tabs as="tab" size="sm" full label="Skills to show" value={scope} onChange={setScope}
+                options={(['all', 'mine', 'company', 'others'] as const).map((s) => ({ id: s, title: s === 'others' ? 'Other roles\' skills: you can use them, not change them' : undefined, label: s === 'all' ? ROLES[role].label : s === 'mine' ? 'Mine' : s === 'company' ? 'Org' : 'Others' }))} />
           <div className="flex items-center gap-1 text-meta">
             <span className="text-fg-4">Sort</span>
-            {([['used', 'Runs'], ['trending', 'Trend'], ['work', 'Needs work'], ['tokens', 'Tokens']] as const).map(([k, l]) => <button key={k} onClick={() => setSort(k)} className={`whitespace-nowrap rounded-md px-2 py-0.5 ${sort === k ? 'bg-accent-soft text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}>{l}</button>)}
+            <Pick label="Sort" value={sort} onChange={setSort} options={([['used', 'Runs'], ['trending', 'Trend'], ['work', 'Needs work'], ['tokens', 'Tokens']] as const).map(([k, l]) => ({ value: k, label: l }))} />
           </div>
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_56px_2.5rem_2.25rem] gap-3 border-y border-line px-4 py-1.5 label text-fg-4"><span>Skill</span><span>{days}d</span><span className="text-right">Runs</span><span className="text-right">Score</span></div>
@@ -395,9 +394,8 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
     {mine ? (
       <div className="flex flex-wrap items-center gap-2 text-small text-fg-3">
         <span>Belongs to</span>
-        <div role="radiogroup" aria-label="Belongs to" className="inline-flex rounded-lg bg-hover p-0.5">
-          {([role, 'shared'] as Owner[]).map((o) => <button key={o} role="radio" aria-checked={owner === o} onClick={() => owner !== o && own(o)} className={`rounded-md px-2.5 py-0.5 font-medium ${owner === o ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{o === 'shared' ? 'Every role' : `${ROLES[role].label} only`}</button>)}
-        </div>
+        <Tabs<Owner> size="sm" label="Belongs to" value={owner} onChange={(o) => o !== owner && own(o)}
+                     options={([role, 'shared'] as Owner[]).map((o) => ({ id: o, label: o === 'shared' ? 'Every role' : `${ROLES[role].label} only` }))} />
       </div>
     ) : <p className="rounded-xl bg-hover/60 px-3 py-2 text-small text-fg-2">{OWNER_LABEL(owner)}'s skill: you can use it as {ROLES[role].label}, but change it only as {OWNER_LABEL(owner)}, or share it with every role from there.</p>}
     <div className="card grid grid-cols-2 divide-line lg:grid-cols-4 lg:divide-x">

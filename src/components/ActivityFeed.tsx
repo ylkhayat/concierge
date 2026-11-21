@@ -6,6 +6,7 @@ import {
 import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { api, here, hereIn, type Activity } from '../lib.ts'
 import { Md } from './Md.tsx'
+import { Tabs } from './Tabs.tsx'
 import { LANE } from './NextSteps.tsx'
 import { BgNow, turnOver } from './Background.tsx'
 import { chaptersOf, HANDOVER, once, type Chapter } from '../chapters.ts'
@@ -302,12 +303,8 @@ export function useFeedDetails(): [boolean, (v: boolean) => void] {
 export function FeedMode() {
   const [details, setDetails] = useFeedDetails()
   return (
-    <div role="radiogroup" aria-label="What Activity shows" className="inline-flex rounded-lg bg-hover p-0.5 text-meta">
-      {([[false, 'Conversation'], [true, 'Everything']] as const).map(([v, label]) => (
-        <button key={label} role="radio" aria-checked={details === v} onClick={() => setDetails(v)}
-                className={`rounded-md px-2.5 py-0.5 font-medium transition-[background-color,color,box-shadow] duration-150 ${details === v ? 'sel text-fg-1' : 'text-fg-3 hover:text-fg-1'}`}>{label}</button>
-      ))}
-    </div>
+    <Tabs size="sm" label="What Activity shows" value={details ? 'all' : 'talk'} onChange={(v) => setDetails(v === 'all')}
+          options={[{ id: 'talk', label: 'Conversation' }, { id: 'all', label: 'Everything' }]} />
   )
 }
 

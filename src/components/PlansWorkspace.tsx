@@ -9,6 +9,8 @@ import { api } from '../lib.ts'
 import { refresh, remember, useApi } from '../query.ts'
 import { Skeleton } from './Connections.tsx'
 import { Md } from './Md.tsx'
+import { Pick, PickPill } from '../ui/Pick.tsx'
+import { Tabs } from './Tabs.tsx'
 import { ActivityFeed } from './ActivityFeed.tsx'
 import type { Activity } from '../../server/runner.ts'
 import { MOSCOW_HUE, PlanStream, type ColorBy, type Move } from './PlanStream.tsx'
@@ -35,17 +37,9 @@ const PRIORITY = ['', 'Urgent', 'High', 'Medium', 'Low']
 const PRIORITY_DOT = ['', 'bg-fail', 'bg-wait', 'bg-run', 'bg-fg-4']
 
 // --- choosing, in the app's own look: a row of chips for a few options, an inline list for many -------------------
-/** A few options in a row; the chosen one filled. */
-function Chips<T extends string | number>({ value, options, onChange, label }: { value: T | undefined; options: [T, string][]; onChange: (v: T) => void; label: string }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1">
-      {options.map(([v, l]) => (
-        <button key={String(v)} role="radio" aria-checked={value === v} onClick={() => onChange(v)}
-                className={`rounded-lg px-2 py-0.5 text-meta font-medium transition-colors ${value === v ? 'bg-accent text-on-accent' : 'bg-hover text-fg-2 hover:text-fg-1'}`}>{l}</button>
-      ))}
-    </div>
-  )
-}
+/** A few options in a row; the chosen one filled: the app's one picker (ui/Pick.tsx). */
+const Chips = <T extends string | number>({ value, options, onChange, label }: { value: T | undefined; options: [T, string][]; onChange: (v: T) => void; label: string }) =>
+  <Pick label={label} value={value} options={options.map(([v, l]) => ({ value: v, label: l }))} onChange={onChange} />
 /** Many options, as rows to pick from in place: a search box once it is long. */
 function InlineList({ value, options, onPick, empty = 'Nothing to pick' }: { value?: string; options: { value: string; label: string; hint?: string }[]; onPick: (v: string) => void; empty?: string }) {
   const [q, setQ] = useState('')
@@ -227,14 +221,8 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay }: { p: Plan; toas
               {asks.map((a, i) => (
                 <div key={i} className="space-y-1.5">
                   <p className="text-small font-medium text-fg-1">{a.q}</p>
-                  <div role="radiogroup" aria-label={a.q} className="flex flex-wrap gap-1.5">
-                    {a.options.map((o, j) => (
-                      <button key={j} role="radio" aria-checked={picks[i] === j} onClick={() => setPicks((x) => ({ ...x, [i]: j }))}
-                              className={`rounded-lg px-2.5 py-1 text-small transition-colors ${picks[i] === j ? 'bg-accent text-on-accent' : 'bg-hover text-fg-2 hover:text-fg-1'}`}>
-                        {o}{a.pick === j && <span className={`ml-1.5 text-micro ${picks[i] === j ? 'opacity-80' : 'text-accent-text'}`}>its pick</span>}
-                      </button>
-                    ))}
-                  </div>
+                  <Pick wrap label={a.q} value={picks[i]} onChange={(j) => setPicks((x) => ({ ...x, [i]: j }))}
+                        options={a.options.map((o, j) => ({ value: j, label: <>{o}{a.pick === j && <span className="ml-1 text-micro opacity-70">its pick</span>}</> }))} />
                 </div>
               ))}
               <button onClick={answer} disabled={!answers.length} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-40"><Send className="size-3.5" />Answer{answers.length > 1 ? ` all ${answers.length}` : ''}</button>
@@ -342,9 +330,7 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
       {shown && <span className="text-meta text-fg-3 animate-[detail-in_160ms_var(--ease-out)]">{preview(shown.ops)}</span>}
       <span className="inline-flex items-center gap-1.5">
         <span className="label text-fg-4">Colour</span>
-        <span role="radiogroup" aria-label="Colour the tickets by" className="inline-flex rounded-ctl bg-fill p-0.5 text-meta font-medium">
-          {([['epic', 'Epic'], ['owner', 'Owner'], ['moscow', 'MoSCoW']] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={colorBy === v} onClick={() => onColorBy(v)} className={`rounded-lg px-2 py-0.5 ${colorBy === v ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{l}</button>)}
-        </span>
+        <Tabs size="sm" label="Colour the tickets by" value={colorBy} onChange={onColorBy} options={[{ id: 'epic', label: 'Epic' }, { id: 'owner', label: 'Owner' }, { id: 'moscow', label: 'MoSCoW' }]} />
         {colorBy === 'moscow' && <span className="inline-flex items-center gap-2 text-micro text-fg-3">{(['must', 'should', 'could', 'wont'] as const).map((m) => <span key={m} className="inline-flex items-center gap-1"><span className="size-2 rounded-full" style={{ background: `oklch(0.72 0.12 ${MOSCOW_HUE[m]})` }} />{m === 'wont' ? "won't" : m}</span>)}<span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-fg-4" />unset</span></span>}
       </span>
     </div>
@@ -733,17 +719,14 @@ function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegen
       </div>
       {/* how much to show, and what the forecast rests on */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <div role="radiogroup" aria-label="How much to show" className="inline-flex rounded-ctl bg-fill p-0.5 font-medium">
-          {([['overview', 'Overview', 'Every stream as one line of progress'], ['streams', 'Streams', 'Each stream with its tickets along it'], ['tickets', 'Tickets', 'Every ticket by name']] as const).map(([v, l, hint]) => (
-            <button key={v} role="radio" aria-checked={level === v} title={hint} onClick={() => onLevel(v)} className={`rounded-lg px-3 py-1 transition-colors ${level === v ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{l}</button>
-          ))}
-        </div>
+        <Tabs size="sm" as="tab" label="How much to show" value={level ?? 'streams'} onChange={onLevel}
+              options={[{ id: 'overview', label: 'Overview', title: 'Every stream as one line of progress' }, { id: 'streams', label: 'Streams', title: 'Each stream with its tickets along it' }, { id: 'tickets', label: 'Tickets', title: 'Every ticket by name' }]} />
         {stepper(people, (n) => void set({ people: n }), 'People', 'people')}
         <span title="Points one person finishes a week">{stepper(pace, (n) => void set({ pace: n }), 'Pace', 'points a week')}</span>
         <span className="inline-flex items-center gap-1.5 text-fg-3" title="How much time the work is worth: the plan fits its scope into it">Appetite
           <Chips label="Appetite" value={p.appetite?.weeks ?? 0} options={[[0, 'None'] as [number, string], ...[...new Set([2, 4, 6, 12, p.appetite?.weeks ?? 2])].sort((a, b) => a - b).map((w, i) => [w, i ? String(w) : `${w} wk`] as [number, string])]} onChange={(w) => void set({ appetite: w || null })} />
         </span>
-        <button onClick={onLegend} aria-pressed={legend} className={`rounded-ctl px-2.5 py-1 font-medium transition-colors ${legend ? 'bg-fill text-fg-1' : 'text-fg-3 hover:bg-hover hover:text-fg-1'}`}>Key</button>
+        <PickPill on={legend} onClick={onLegend} title="What the marks on the map mean">Key</PickPill>
         {tools && <span className="ml-auto">{tools}</span>}
       </div>
     </div>
@@ -802,10 +785,7 @@ function NewPlan({ onMade, toast }: { onMade: (id: string) => void; toast: Toast
               <Chips label="Appetite" value={appetite} options={[[0, 'Not set'], [1, '1 week'], [2, '2 weeks'], [4, '4 weeks'], [6, '6 weeks'], [12, 'A quarter']]} onChange={setAppetite} />
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <div role="radiogroup" aria-label="Method" className="relative grid grid-cols-2 rounded-lg bg-hover p-0.5 text-small font-medium">
-                <span aria-hidden className="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-md bg-surface-1 shadow-sm transition-transform duration-300 ease-[var(--ease-snappy)]" style={{ transform: method === 'waterfall' ? 'translateX(100%)' : undefined }} />
-                {(['agile', 'waterfall'] as const).map((m) => <button key={m} role="radio" aria-checked={method === m} onClick={() => setMethod(m)} className={`relative z-10 px-3 py-1 capitalize ${method === m ? 'text-fg-1' : 'text-fg-3'}`}>{m}</button>)}
-              </div>
+              <Tabs label="Method" value={method} onChange={setMethod} options={[{ id: 'agile', label: 'Agile' }, { id: 'waterfall', label: 'Waterfall' }]} />
               <button onClick={pitch} disabled={!!busy || !brief.trim()} className="ml-auto inline-flex items-center gap-2 btn-primary btn-lg shadow-[0_8px_24px_-10px_var(--accent)] transition-transform active:scale-[0.98] disabled:opacity-40 disabled:shadow-none">
                 {busy === 'new' ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}Break it down
               </button>

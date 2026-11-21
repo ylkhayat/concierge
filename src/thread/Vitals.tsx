@@ -12,6 +12,7 @@ import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
 import { ago } from '../time.ts'
 import { Md } from '../components/Md.tsx'
+import { Tabs } from '../components/Tabs.tsx'
 import { TOPIC, type Discussions, type View } from './Discussion.tsx'
 import type { Tone } from '../ui/Thread.tsx'
 
@@ -275,11 +276,8 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
       {scope && (
         <div className="flex items-center gap-2 px-1 text-small">
           <span className="text-fg-3">Intent and Understanding of</span>
-          <div role="radiogroup" aria-label="Scope" className="inline-flex rounded-ctl bg-fill p-0.5">
-            {([[false, 'This PR'], [true, `The stack (${scope.size})`]] as const).map(([val, l]) => (
-              <button key={l} role="radio" aria-checked={scope.stack === val} onClick={() => scope.set(val)} className={`rounded-lg px-2.5 py-0.5 font-medium ${scope.stack === val ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{l}</button>
-            ))}
-          </div>
+          <Tabs size="sm" label="Scope" value={scope.stack ? 'stack' : 'pr'} onChange={(v) => scope.set(v === 'stack')}
+                options={[{ id: 'pr', label: 'This PR' }, { id: 'stack', label: `The stack (${scope.size})` }]} />
         </div>
       )}
       {/* what a clicked one holds: floating over the panel under the row, so nothing below it moves */}

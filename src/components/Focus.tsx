@@ -7,6 +7,7 @@ import { cards, type Card } from '../focus.ts'
 import type { Rules } from '../desk.ts'
 import { api, critUrl, enc, type PrView, type TicketView } from '../lib.ts'
 import { useArm } from '../arm.tsx'
+import { Pick } from '../ui/Pick.tsx'
 import { statusMeta } from './StatusBadge.tsx'
 
 // put off for this session: they go to the back of the line
@@ -174,17 +175,8 @@ export function Answer({ pr, done, toast }: { pr: PrView; done: (m: string) => v
         <div key={i} className="space-y-2">
           <p className="text-reading font-medium leading-snug text-fg-1 ">{d.question}</p>
           {d.why && <p className="text-small text-fg-3">{d.why}</p>}
-          <div className="flex flex-wrap gap-2">
-            {d.options.map((o, j) => {
-              const on = picks[i] === j
-              return (
-                <button key={j} onClick={() => setPicks((p) => ({ ...p, [i]: j }))} aria-pressed={on}
-                        className={`flex min-h-10 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-body font-medium ${on ? 'bg-accent text-on-accent' : 'bg-fill text-fg-2 '}`}>
-                  {on && <Check className="size-4" />}{o.label}{o.recommended && !on && <span className="text-micro font-semibold uppercase text-accent-text">pick</span>}
-                </button>
-              )
-            })}
-          </div>
+          <Pick wrap label={d.question} value={picks[i]} onChange={(j) => setPicks((p) => ({ ...p, [i]: j }))}
+                options={d.options.map((o, j) => ({ value: j, hint: o.label, label: <>{o.label}{o.recommended && picks[i] !== j && <span className="ml-1.5 text-micro font-semibold uppercase text-accent-text">pick</span>}</> }))} />
         </div>
       ))}
       {publish ? (

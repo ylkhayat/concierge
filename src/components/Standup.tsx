@@ -5,6 +5,7 @@ import type { Written } from '../../server/store.ts'
 import { ago } from '../time.ts'
 import { api, param, setParam, type TicketView } from '../lib.ts'
 import { IdBadge, PRIORITY } from './ExecList.tsx'
+import { Pick } from '../ui/Pick.tsx'
 
 // days as YYYY-MM-DD in your own time zone: "did" counts from the start of one of them
 const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -227,20 +228,11 @@ const hue = (team: string) => [...team].reduce((h, c) => (h * 31 + c.charCodeAt(
 /** The teams to speak for, as pills you toggle: none picked is every team. */
 function TeamPills({ teams, picked, count, onToggle, onClear }: { teams: string[]; picked: string[]; count: (t: string) => number; onToggle: (t: string) => void; onClear: () => void }) {
   return (
-    <div role="group" aria-label="Teams" className="mt-4 flex flex-wrap items-center gap-1.5">
+    <div className="mt-4 flex flex-wrap items-center gap-1.5">
       <span className="mr-1 text-small font-semibold text-fg-3">Teams</span>
-      {teams.map((t) => {
-        const on = picked.includes(t), h = hue(t)
-        return (
-          <button key={t} onClick={() => onToggle(t)} aria-pressed={on} title={on ? `Leave ${t} out` : `Only ${picked.length ? 'these teams' : t}`}
-                  style={on ? { backgroundColor: `hsl(${h} 85% 55% / 0.12)`, boxShadow: `inset 0 0 0 1px hsl(${h} 70% 50% / 0.45)` } : undefined}
-                  className={`group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-small font-medium transition-all duration-200 ${on ? 'text-fg-1 ' : 'text-fg-2 ring-1 ring-line hover:ring-line-strong'}`}>
-            {on ? <Check className="size-3" style={{ color: `hsl(${h} 70% 45%)` }} /> : <span className="size-2 rounded-full" style={{ backgroundColor: `hsl(${h} 70% 55%)` }} />}
-            {t}
-            <span className={`tabular-nums text-micro ${on ? 'text-fg-3' : 'text-fg-3'}`}>{count(t)}</span>
-          </button>
-        )
-      })}
+      <Pick label="Teams" multi value={picked} onChange={(_, t) => onToggle(t)}
+            options={teams.map((t) => ({ value: t, hint: picked.includes(t) ? `Leave ${t} out` : `Only ${picked.length ? 'these teams' : t}`,
+              label: <>{t}<span className="ml-1.5 tabular-nums text-micro text-fg-3">{count(t)}</span></> }))} />
       {picked.length > 0 && <button onClick={onClear} className="ml-1 text-meta font-medium text-fg-3 transition-colors hover:text-fg-2">Clear</button>}
     </div>
   )

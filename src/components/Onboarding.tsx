@@ -5,10 +5,12 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import { api, type Health, type Theme } from '../lib.ts'
-import { Agents, blocked, Exec as ExecSetup, guessSkill, skillsFor, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
+import { Agents, blocked, Exec as ExecSetup, guessSkill, skillsFor, Toggle, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
+import { Tabs } from './Tabs.tsx'
+import { Pick } from '../ui/Pick.tsx'
 
 type Suggestion = { repo: string; prs: number; paths: string[]; watched: boolean }
-type Pick = { on: boolean; path: string; status?: 'ok' | 'checking' | string }
+type RepoPick = { on: boolean; path: string; status?: 'ok' | 'checking' | string }
 
 const STEPS: { id: string; title: string; hint: string; icon: LucideIcon }[] = [
   { id: 'tools', title: 'Connect', hint: 'GitHub and your agents', icon: Wrench },
@@ -31,7 +33,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   const [setup, setSetup] = useState<SetupView>()
   const [rechecking, setRechecking] = useState(false)
   const [suggested, setSuggested] = useState<Suggestion[]>()
-  const [picks, setPicks] = useState<Record<string, Pick>>({})
+  const [picks, setPicks] = useState<Record<string, RepoPick>>({})
   const [extra, setExtra] = useState({ repo: '', path: '' })
   const [mode, setMode] = useState<'starter' | 'own'>('starter')
   const [commands, setCommands] = useState({ review: '', revise: '' })
@@ -252,10 +254,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                           {p.on && (
                             <div className="mt-2.5 flex items-center gap-2 pl-7">
                               {s.paths.length > 1 ? (
-                                <div role="radiogroup" aria-label={`${s.repo}: checkout`} className="flex flex-wrap gap-1.5">
-                                  {s.paths.map((x) => <button key={x} type="button" role="radio" aria-checked={p.path === x} onClick={() => check(s.repo, x)}
-                                                              className={`rounded-full px-2.5 py-1 font-mono text-meta transition-colors ${p.path === x ? 'bg-accent-soft font-medium text-accent-text ring-1 ring-accent/40' : 'bg-fill text-fg-2 hover:bg-fill-strong hover:text-fg-1'}`}>{x}</button>)}
-                                </div>
+                                <Pick label={`${s.repo}: checkout`} value={p.path} onChange={(x) => check(s.repo, x)} options={s.paths.map((x) => ({ value: x, label: x, mono: true }))} />
                               ) : (
                                 <input value={p.path} placeholder="Local checkout, e.g. ~/code/repo" onChange={(e) => setPicks((x) => ({ ...x, [s.repo]: { ...p, path: e.target.value, status: undefined } }))}
                                        onBlur={(e) => e.target.value && check(s.repo, e.target.value)} className={`${field} font-mono`} />
@@ -322,16 +321,11 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                 <div className="divide-y divide-line rounded-2xl ring-1 ring-line ">
                   {spaces.includes('review') && (
                     <Pref icon={Zap} title="Auto-review" hint="Start the review skill as soon as someone requests your review.">
-                      <Toggle on={prefs.autoStart} onChange={(v) => setPrefs({ ...prefs, autoStart: v })} />
+                      <Toggle label="Auto-review" on={prefs.autoStart} onChange={(v) => setPrefs({ ...prefs, autoStart: v })} />
                     </Pref>
                   )}
                   <Pref icon={Layers} title="Parallel runs" hint="Agent runs at once; more are queued.">
-                    <div className="flex items-center gap-1 rounded-xl bg-fill p-1">
-                      {[1, 2, 3, 4].map((n) => (
-                        <button key={n} onClick={() => setPrefs({ ...prefs, maxJobs: n })}
-                                className={`size-7 rounded-lg text-body font-semibold tabular-nums transition-all ${prefs.maxJobs === n ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{n}</button>
-                      ))}
-                    </div>
+                    <Tabs label="Parallel runs" value={String(prefs.maxJobs)} options={['1', '2', '3', '4'].map((n) => ({ id: n, label: n }))} onChange={(n) => setPrefs({ ...prefs, maxJobs: Number(n) })} />
                   </Pref>
                   <Pref icon={Wallet} title="Daily budget" hint="Stop starting runs once today's spend reaches it. Empty means no cap.">
                     <label className="flex w-28 items-center gap-1 rounded-xl bg-fill/60 px-3 py-1.5 ring-1 ring-line focus-within:ring-2 focus-within:ring-accent/60 ">
@@ -340,10 +334,10 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                     </label>
                   </Pref>
                   <Pref icon={SquareTerminal} title="Terminal for Resume" hint="Where an agent session opens when you take over.">
-                    <Segmented value={prefs.terminal} options={[['Terminal', 'Terminal'], ['iTerm', 'iTerm']]} onChange={(v) => setPrefs({ ...prefs, terminal: v as 'Terminal' | 'iTerm' })} />
+                    <Tabs<'Terminal' | 'iTerm'> label="Terminal for Resume" value={prefs.terminal} options={[{ id: 'Terminal', label: 'Terminal' }, { id: 'iTerm', label: 'iTerm' }]} onChange={(v) => setPrefs({ ...prefs, terminal: v })} />
                   </Pref>
                   <Pref icon={Sun} title="Appearance" hint="Saved in this browser.">
-                    <Segmented value={theme} options={[['system', <Monitor key="s" className="size-3.5" />], ['light', <Sun key="l" className="size-3.5" />], ['dark', <Moon key="d" className="size-3.5" />]]} onChange={(v) => onTheme(v as Theme)} />
+                    <Tabs<Theme> label="Appearance" value={theme} options={[{ id: 'system', icon: Monitor, label: <span className="sr-only">System</span>, title: 'System' }, { id: 'light', icon: Sun, label: <span className="sr-only">Light</span>, title: 'Light' }, { id: 'dark', icon: Moon, label: <span className="sr-only">Dark</span>, title: 'Dark' }]} onChange={onTheme} />
                   </Pref>
                 </div>
                 {/* the safety story, said once, where you decide how much runs on its own */}
@@ -439,25 +433,6 @@ function Pref({ icon: Icon, title, hint, children }: { icon: LucideIcon; title: 
         <div className="text-small text-fg-3">{hint}</div>
       </div>
       {children}
-    </div>
-  )
-}
-
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button role="switch" aria-checked={on} onClick={() => onChange(!on)} className={`relative h-6 w-10 shrink-0 rounded-full transition-colors duration-300 ${on ? 'bg-accent' : 'bg-fill-strong'}`}>
-      <span className={`absolute top-1 size-4 rounded-full bg-white shadow-sm transition-all duration-300 ease-[var(--ease-snappy)] ${on ? 'left-5' : 'left-1'}`} />
-    </button>
-  )
-}
-
-function Segmented({ value, options, onChange }: { value: string; options: [string, ReactNode][]; onChange: (v: string) => void }) {
-  return (
-    <div className="flex shrink-0 rounded-xl bg-fill p-1">
-      {options.map(([v, label]) => (
-        <button key={v} onClick={() => onChange(v)} aria-pressed={value === v}
-                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-small font-medium transition-all ${value === v ? 'sel text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>{label}</button>
-      ))}
     </div>
   )
 }

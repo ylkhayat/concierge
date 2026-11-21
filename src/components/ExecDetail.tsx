@@ -8,6 +8,7 @@ import { PinButton } from './PinButton.tsx'
 import { api, duration, param, setParam, type Activity, type ExecView, type TicketView, resumed } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { Md } from './Md.tsx'
+import { Pick } from '../ui/Pick.tsx'
 import { Chip } from './Chip.tsx'
 import { NextSteps } from './NextSteps.tsx'
 import { Working } from './Working.tsx'
@@ -322,15 +323,8 @@ function ActionCard({ t, actions, toast, inline }: { t: TicketView; actions: Act
       <div className="space-y-2 p-3.5 pt-2.5">
         {/* the choices it listed: a tap answers with that one, a second tap clears it */}
         {opts.length > 0 && (
-          <div className="flex flex-col gap-1">
-            {opts.map((o, i) => (
-              <button key={o} onClick={() => setNote(note === o ? '' : o)} aria-pressed={note === o}
-                      className={`flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-left text-small transition-colors ${note === o ? 'sel text-fg-1' : 'text-fg-2 ring-1 ring-line hov'}`}>
-                <span className="mt-px shrink-0 font-mono text-micro text-fg-4">{i + 1}</span><span className="min-w-0">{o}</span>
-                {note === o && <Check className="ml-auto mt-0.5 size-3.5 shrink-0 text-accent-text" />}
-              </button>
-            ))}
-          </div>
+          <Pick wrap label="Its choices" value={note} onChange={(o) => setNote(note === o ? '' : o)}
+                options={opts.map((o, i) => ({ value: o, hint: o, label: <><span className="mr-1.5 font-mono text-micro text-fg-4">{i + 1}</span>{o}</> }))} />
         )}
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000}
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && note.trim() && !busy) go('reply', 'Reply') }}

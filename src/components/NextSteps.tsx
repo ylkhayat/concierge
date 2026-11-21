@@ -1,4 +1,4 @@
-import { Check, ChevronUp, LoaderCircle, Send, Sparkles, Upload } from 'lucide-react'
+import { ChevronUp, LoaderCircle, Send, Sparkles, Upload } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { NextSteps as Steps } from '../../server/next.ts'
 import { composeChecklist, type Step } from '../../server/reply.ts'
@@ -8,6 +8,7 @@ import { useDraft } from '../draft.ts'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
 import { useMention, useSlash, type Command } from '../ui/Slash.tsx'
 import { refresh, useApi } from '../query.ts'
+import { Pick } from '../ui/Pick.tsx'
 
 /**
  * What the agent hands back, as a checklist: each next step on its own line (ticked when the agent recommends it),
@@ -143,24 +144,16 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
     ['Recommended', 'ticked: goes ahead', idxs.filter((i) => list[i].kind !== 'decide' && list[i].checked)],
     ['Also possible', 'tick to include', idxs.filter((i) => list[i].kind !== 'decide' && !list[i].checked)],
   ]
+  // a decision's option: pick it, or click the picked one again to clear it
+  const pickOf = (i: number, j: number) => setPicks((p) => { const n = { ...p }; if (p[i] === j) delete n[i]; else n[i] = j; return n })
   const row = (x: Step, i: number) => x.kind === 'decide' ? (
                 <li key={i} className="rounded-xl px-2.5 py-2 ring-1 ring-line ">
                   <div className="text-small font-medium text-fg-1 ">{x.text}
                     {x.blocking && <span className={`ml-1.5 rounded-full px-1.5 label ${picks[i] === undefined ? 'bg-wait/15 text-wait-text' : 'bg-fg-3/10 text-fg-3'}`}>needed</span>}
                   </div>
                   {x.why && <div className="text-meta text-fg-3">{x.why}</div>}
-                  <div role="radiogroup" aria-label={x.text} className="mt-1.5 flex flex-wrap gap-1.5">
-                    {(x.options ?? []).map((o, j) => {
-                      const sel = picks[i] === j
-                      return (
-                        <button key={j} role="radio" aria-checked={sel} onClick={() => setPicks((p) => { const n = { ...p }; if (sel) delete n[i]; else n[i] = j; return n })}
-                                className={`flex max-w-full items-center gap-1.5 rounded-xl px-3 py-1 text-left text-small font-medium transition-all ${sel ? 'bg-accent text-on-accent shadow-sm' : 'bg-surface-1 text-fg-2 ring-1 ring-line-strong hover:ring-accent'}`}>
-                          {sel && <Check className="size-3.5" />}{o.label}
-                          {o.recommended && <span className={`shrink-0 whitespace-nowrap rounded-full px-1.5 label ${sel ? 'bg-white/20' : 'bg-accent/10 text-accent-text'}`}>agent’s pick</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <Pick wrap label={x.text} className="mt-1.5" value={picks[i]} onChange={(j) => pickOf(i, j)}
+                        options={(x.options ?? []).map((o, j) => ({ value: j, label: <>{o.label}{o.recommended && <span className="ml-1.5 rounded-full bg-accent/10 px-1.5 label text-accent-text">agent’s pick</span>}</> }))} />
                 </li>
               ) : (
                 <li key={i}>
@@ -190,19 +183,9 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
               {x.blocking && picks[i] === undefined && <span className="ml-1.5 rounded-full bg-wait/15 px-1.5 label text-wait-text">needed</span>}
               {x.why && <span className="ml-1.5 font-normal text-fg-3">{x.why}</span>}
             </p>
-            <div role="radiogroup" aria-label={x.text} className="mt-1.5 flex flex-wrap gap-1.5">
-              {(x.options ?? []).map((o, j) => {
-                const sel = picks[i] === j
-                return (
-                  <button key={j} role="radio" aria-checked={sel} onClick={() => setPicks((p) => { const n = { ...p }; if (sel) delete n[i]; else n[i] = j; return n })}
-                          title={o.recommended ? 'The agent’s pick' : undefined}
-                          className={`flex max-w-full items-start gap-1.5 rounded-ctl px-2.5 py-1 text-left text-small transition-colors ${sel ? 'bg-accent font-medium text-on-accent' : 'bg-fill text-fg-2 hover:bg-fill-strong hover:text-fg-1'}`}>
-                    {sel ? <Check className="mt-0.5 size-3.5 shrink-0" /> : o.recommended && <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent-text" />}
-                    <span className="min-w-0">{o.label}</span>
-                  </button>
-                )
-              })}
-            </div>
+            <Pick wrap label={x.text} className="mt-1.5" value={picks[i]} onChange={(j) => pickOf(i, j)}
+                  options={(x.options ?? []).map((o, j) => ({ value: j, hint: o.recommended ? 'The agent’s pick' : undefined,
+                    label: <>{o.recommended && <Sparkles className="mr-1 inline size-3.5 align-[-2px] text-accent-text" />}{o.label}</> }))} />
           </div>
         )
       })}
@@ -307,12 +290,12 @@ function SentTo({ to, unsettled, onMove }: { to: { lane: Lane; text: string }; u
  * the box is yours again at once) or a lane you pick, which sends them straight there. Kept until you change it.
  */
 function LanePicker({ pin, onPin }: { pin: Lane | 'auto'; onPin: (l: Lane | 'auto') => void }) {
-  const chip = (on: boolean, cls: string) => `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro font-medium transition-colors ${on ? cls : 'text-fg-3 ring-1 ring-line hover:text-fg-1'}`
   return (
-    <div role="radiogroup" aria-label="Send to" className="flex flex-wrap items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1">
       <span className="mr-0.5 text-micro text-fg-4">Send to</span>
-      <button type="button" role="radio" aria-checked={pin === 'auto'} onClick={() => onPin('auto')} title="Found for you from what you write (it sends at once, and says where it went)" className={chip(pin === 'auto', 'bg-fill-strong text-fg-1')}><Sparkles className="size-3" />Auto</button>
-      {LANES.map((l) => <button key={l} type="button" role="radio" aria-checked={pin === l} onClick={() => onPin(l)} title={LANE[l].hint} className={chip(pin === l, LANE[l].fill)}>{LANE[l].label}</button>)}
+      <Pick<Lane | 'auto'> label="Send to" value={pin} onChange={onPin}
+            options={[{ value: 'auto' as const, label: <span className="inline-flex items-center gap-1"><Sparkles className="size-3" />Auto</span>, hint: 'Found for you from what you write (it sends at once, and says where it went)' },
+                      ...LANES.map((l) => ({ value: l, label: LANE[l].label, hint: LANE[l].hint }))]} />
     </div>
   )
 }
