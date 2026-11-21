@@ -24,7 +24,7 @@ import { ROLES, useRole } from './role.ts'
 import { setAway, useAway } from './away.ts'
 import { setMachineNames } from './machineNames.ts'
 import { scopeDefault } from './scope.ts'
-import { NotHere } from './components/NotHere.tsx'
+import { AwayRepo, NotHere } from './components/NotHere.tsx'
 import { RoleSwitch } from './components/RoleSwitch.tsx'
 import { RepoList } from './components/RepoList.tsx'
 import { ExecHome } from './components/ExecHome.tsx'
@@ -292,8 +292,8 @@ export function App() {
   const repoOfSelected = () => selected?.startsWith('codebase:') ? selected.slice(9)
     : (prs ?? []).find((p) => p.id === selected?.replace(/^stack:/, ''))?.repo ?? tickets.find((t) => t.id === selected)?.repo
   const focusCounts = focusRepos.map((r) => mode === 'exec'
-    ? { repo: r, tickets: tickets.filter((t) => t.repo === r).length, waiting: tickets.filter((t) => t.repo === r && ['needs-you', 'tend'].includes(groupOf(t).id)).length }
-    : { repo: r, tickets: (prs ?? []).filter((p) => p.repo === r).length, waiting: (prs ?? []).filter((p) => p.repo === r && waiting(p)).length })
+    ? { repo: r, tickets: tickets.filter((t) => t.repo === r).length, waiting: tickets.filter((t) => t.repo === r && ['needs-you', 'tend'].includes(groupOf(t).id)).length, away: away.has(r) }
+    : { repo: r, tickets: (prs ?? []).filter((p) => p.repo === r).length, waiting: (prs ?? []).filter((p) => p.repo === r && waiting(p)).length, away: away.has(r) })
   // the rail's pill sits behind the active workspace (its icon and its name), and glides to the next one on a switch;
   // measured again whenever the rail's contents move (the focus picker loading, a badge, a resize)
   const railRef = useRef<HTMLElement>(null), pillRef = useRef<HTMLSpanElement>(null)
@@ -489,7 +489,8 @@ export function App() {
             <button onClick={() => setSettingsOpen('usage')} className="ml-auto rounded-lg px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Adjust</button>
           </div>
         )}
-        {mode === 'exec' ? execFrame : mode === 'focus' ? (
+        {focus && away.has(focus) && ['review', 'exec', 'focus', 'read'].includes(mode) ? <AwayRepo repo={focus} onAllApps={() => setFocus(undefined)} />
+          : mode === 'exec' ? execFrame : mode === 'focus' ? (
           <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             {prs ? <Focus prs={focusedPrs ?? prs} tickets={scoped} rules={RULES} toast={toast} onOpenPr={goPr} onOpenTicket={goTicket}
                           onRead={(id) => { history.pushState(null, '', `/read${location.search}#${enc(id)}`); setModeState('read'); setSelected(id) }} />
