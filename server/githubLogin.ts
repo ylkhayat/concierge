@@ -11,7 +11,7 @@ import { STATE_DIR } from './paths.ts'
 
 const run = promisify(execFile)
 // what Concierge needs: your repositories (private ones too), your organisations' PRs, and re-running their workflows
-const SCOPES = 'repo,read:org,workflow'
+const SCOPES = 'repo,read:org,workflow,read:project' // read:project: an organization's GitHub Projects, offered when planning
 
 type Pending = { child: ReturnType<typeof spawn>; dir: string; done?: boolean; ok?: boolean; error?: string; login?: string }
 let pending: Pending | undefined

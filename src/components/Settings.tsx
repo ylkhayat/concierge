@@ -3,6 +3,7 @@ import {
   CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
+import { HelperPrompt } from './HelperPrompt.tsx'
 import { label, sha, VERSION } from '../version.ts'
 import { Field, Pick, PickPill } from '../ui/Pick.tsx'
 import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
@@ -1356,9 +1357,15 @@ const Chip = ({ on, onClick, children, title, mono }: { on: boolean; onClick: ()
 export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: SaveConfig }) {
   const x = setup?.config.exec
   const teamsQ = useApi<{ teams: { id: string; key: string; name: string }[] }>(setup?.linearKey ? '/plans/teams' : undefined, { staleTime: 10 * 60_000 })
+  // a Linear team's tickets are worked in the repositories of the organizations that manage their work in Linear: not
+  // your personal ones (orgs.ts). None marked Linear yet: every repository, as before
+  const orgsQ = useApi<import('../../server/orgs.ts').Org[]>('/orgs', { staleTime: 10 * 60_000 })
   const [rule, setRule] = useState('')
   if (!setup || !x) return <Skeleton rows={4} />
-  const repos = Object.keys(setup.config.repos)
+  const all_ = Object.keys(setup.config.repos)
+  const linearOrgs = new Set((orgsQ.data ?? []).filter((o) => o.tracker === 'linear').map((o) => o.owner))
+  const ofLinear = all_.filter((r) => linearOrgs.has(r.split('/')[0]))
+  const repos = ofLinear.length ? ofLinear : all_
   const known = teamsQ.data?.teams ?? []
   const keys = [...new Set([...known.map((t) => t.key), ...x.teams, ...Object.keys(x.repoByPrefix)])].sort()
   const nameOf = (k: string) => known.find((t) => t.key === k)?.name
@@ -1377,7 +1384,7 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
   const addRule = () => { const t = rule.trim(); if (!t || x.allowedTools.includes(t)) return setRule(''); save({ allowedTools: [...x.allowedTools, t] }, `Allowed: ${t}`); setRule('') }
   return (
     <>
-      <Group title="Linear teams" hint="Whose tickets show in Ship, and the repository each team’s tickets are worked in. Saved as you click.">
+      <Group title="Linear teams" hint={`Whose tickets show in Ship, and the repository each team’s tickets are worked in${ofLinear.length ? ` (${[...linearOrgs].join(', ')}: the organizations that manage their work in Linear)` : ''}. Saved as you click.`}>
         {!setup.linearKey && <Row icon={CircleAlert} title="Linear isn’t connected" hint="Paste a Linear API key under Machines → Shared keys (Linear → Settings → Security & access → API keys). Ship lists your tickets with it." />}
         {setup.linearKey && teamsQ.isLoading && <div className="px-4 py-3"><Skeleton rows={2} /></div>}
         {keys.map((k) => {
@@ -1391,7 +1398,7 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
               </div>
               {on && (
                 <Pick label={`${k}: repository`} value={repo} onChange={(r) => setRepo(k, repo === r ? undefined : r)}
-                      options={repos.map((r) => ({ value: r, mono: true, hint: r, label: r.split('/')[1] ?? r }))} />
+                      options={[...new Set([...repos, ...(repo ? [repo] : [])])].map((r) => ({ value: r, mono: true, hint: r, label: r.split('/')[1] ?? r }))} />
               )}
               <Toggle label={`Show ${k} in Ship`} on={on} onChange={() => showTeam(k)} />
             </div>
@@ -1637,6 +1644,8 @@ function Update() {
         </span>
       </Row>
       {err && <p role="alert" className="mx-3.5 mb-3 rounded-lg bg-fail/10 px-3 py-2 text-small text-fail">{err}</p>}
+      {/* asked: it only happens through the helper (or a cron line from before); say so the moment it matters */}
+      {(asking || u?.asked || busy) && <div className="mx-3.5 mb-3"><HelperPrompt why="Updating builds the new version on your computer and restarts Concierge with it." /></div>}
       {u?.upstream && <Upstream up={u.upstream} busy={busy || asking} onMerge={() => ask({ upstream: true })} />}
       {(busy || phase === 'updated') && at >= 0 && (
         <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-3.5 pb-3 text-meta" aria-label="Update progress">

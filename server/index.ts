@@ -4,7 +4,7 @@ import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.t
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { profile } from './profile.ts'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -77,7 +77,8 @@ import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, 
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
-import { nearbyMachines, tailnetOwner, tailscaleView, tsStatus, type TsPeer } from './tailscale.ts'
+import { githubProjects, orgs, setTracker } from './orgs.ts'
+import { nearbyMachines, tailnetOwner, tailscaleView, tsStatus, watchTailnet, type TsPeer } from './tailscale.ts'
 import { gitIdentity } from './gitIdentity.ts'
 import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
@@ -774,10 +775,41 @@ app.get('/tailnet', async (c) => {
 app.get('/tailscale', async (c) => c.json(await tailscaleView()))
 // the other Concierge machines on the tailnet (online or not), and whether this one is with them yet: a machine that
 // isn't joins them (bin/join, which waits for one to be online), never as the main one
+// asks for this machine's host, which the app inside Docker can't act on itself: a file in asks/ wakes its helper
+// (bin/up sets it up: launchd's WatchPaths on a Mac, a systemd path unit on Linux), which runs bin/update --if-asked once
+// and empties the folder. Nothing runs in between
+const ASKS = join(STATE_DIR, 'asks'), JOIN_ASKED = join(STATE_DIR, 'join-asked'), HELPER = join(STATE_DIR, 'helper-installed')
+const askHost = (what: 'join-now' | 'update') => mkdir(ASKS, { recursive: true }).then(() => writeFile(join(ASKS, what), new Date().toISOString() + '\n')).catch((e: Error) => console.warn(`asks: ${what}: ${e.message}`))
+const joinAsked = () => stat(JOIN_ASKED).then(() => true, () => false)
+// Tailscale says when the tailnet changes (pushed, not polled): the page's list of your other machines follows, and one
+// coming online while you asked to join them starts the join
+watchTailnet((now, before) => {
+  stale('/fleet/nearby')
+  const came = now.filter((m) => m.online && !before.some((b) => b.name === m.name && b.online))
+  if (!came.length) return
+  console.log(`tailnet: ${came.map((m) => m.name).join(' and ')} came online`)
+  if (!fleet.machine) void joinAsked().then((y) => { if (y) void askHost('join-now') })
+})
 app.get('/fleet/nearby', async (c) => {
   const near = await nearbyMachines()
   const mine = new Set([fleet.machine, ...machines.keys()].filter(Boolean))
-  return c.json({ joined: !!fleet.machine, machine: fleet.machine, machines: near.map((m) => ({ ...m, ours: mine.has(m.name) })) })
+  // asked: you chose to join them once one is online; helper: this machine's every-minute bin/update ran lately (it is
+  // what starts the join on the host, which the app inside Docker can't)
+  const asked = await readFile(JOIN_ASKED, 'utf8').then((t) => t.trim() || true, () => false)
+  const helper = await stat(HELPER).then(() => true, () => false)
+  return c.json({ joined: !!fleet.machine, machine: fleet.machine, asked: !!asked, helper, machines: near.map((m) => ({ ...m, ours: mine.has(m.name) })) })
+})
+// "Join them once one is online": a note this machine's helper (bin/update, every minute) acts on, running bin/join in
+// the background until it is done. Off again: the note goes (a join already under way finishes its current wait)
+// is this machine's host helper set up (bin/helper on)? The page asks for it, with why, when something needs it
+app.get('/helper', async (c) => c.json({ on: await stat(HELPER).then(() => true, () => false) }))
+app.post('/fleet/join', async (c) => {
+  const { on } = await c.req.json<{ on?: boolean }>().catch(() => ({ on: false }))
+  if (on) {
+    await writeFile(JOIN_ASKED, new Date().toISOString() + '\n') // bin/join names the machine itself (its host's name)
+    if ((await nearbyMachines()).some((m) => m.online)) await askHost('join-now') // one is online already: now
+  } else await rm(JOIN_ASKED, { force: true })
+  return c.json({ ok: true })
 })
 // the run history, from the event log: the latest runs (each as it ended) and per-day totals (Settings → Usage)
 // standup: since the start of the last working day by default (?since=ISO for another start)
@@ -1127,6 +1159,7 @@ app.post('/update', async (c) => {
   const lock = await stat(join(STATE_DIR, 'update.lock.d')).catch(() => undefined)
   if (!now && lock && Date.now() - lock.mtimeMs < 3 * 3600_000) return c.json({ error: 'An update is already under way: Settings → Machines shows where it stands' }, 409)
   await writeFile(join(STATE_DIR, 'update-asked'), now ? `now ${Math.floor(Date.now() / 1000)}` : `${upstream ? 'upstream ' : ''}${new Date().toISOString()}`)
+  await askHost('update') // wakes the helper at once (a cron line from before still finds update-asked within a minute)
   return c.json({ ok: true })
 })
 
@@ -1844,6 +1877,7 @@ app.post('/repos/clone-on', async (c) => {
   if (!machine || !fleetMachines().includes(machine)) return c.json({ error: 'No such machine' }, 400)
   allowClone(repo, machine, !!on)
   void ensureClones()
+  alignLater(machine) // that machine clones it (or takes it off) now, if it is online
   return c.json(await setupView())
 })
 // unticking also takes the checkout off that machine (when nothing would be lost: setup.ts takeOff); ticking again undoes it
@@ -1963,6 +1997,7 @@ app.post('/config', async (c) => {
   // a repository added from this machine's page may be cloned here (other machines wait until you allow them)
   if (b.repos && fleet.machine) for (const r of Object.keys(b.repos)) if (!(prevRepos as string[]).includes(r)) allowClone(r, fleet.machine, true)
   if (b.repos) void ensureClones() // a repository new to this machine is cloned in the background
+  if (b.repos || b.skillSources !== undefined || b.skillSource !== undefined) alignLater() // every machine follows (clones, skill sources)
   return c.json(await setupView())
 })
 // who does the work: accounts (Claude, OpenAI, Llama; more of each, every one signed in on its own), one per kind of
@@ -2008,6 +2043,7 @@ function pinLogin(id: string, login: string) {
   const mine = userConfig().accounts ?? [], had = mine.find((a) => a.id === id)
   const a = accountOf(id)
   saveConfig({ accounts: had ? mine.map((x) => (x.id === id ? { ...x, login } : x)) : [...mine, { id, label: a.label, kind: a.kind, login }] })
+  alignLater() // which machines now differ from it
 }
 // every 30s on the main server: an account without a login yet takes the first one seen (here first); a machine signed in
 // as someone else under its name takes none of its work (machines.ts loginOk), and the page says where and who
@@ -2180,6 +2216,7 @@ app.post('/accounts', async (c) => {
   if (home) await prepareHome(home, b.kind as 'claude' | 'openai')
   saveConfig({ accounts: [...(userConfig().accounts ?? []), { id, label, kind: b.kind, ...(home && { home }), ...(b.host && { host: b.host.replace(/\/$/, '') }) }] })
   void readOpenaiAuth()
+  alignLater() // a new account: which machines have it signed in
   return c.json(await providersView())
 })
 app.delete('/accounts/:id', async (c) => {
@@ -2371,7 +2408,22 @@ app.post('/roles/skill', async (c) => {
 app.get('/plans', (c) => c.json({ plans: allPlans().map(({ id, title, method, nodes, busy, creating, at }) => ({ id, title, method, count: nodes.length, made: nodes.filter((n) => n.created).length, busy, creating, at })) }))
 app.post('/plans', async (c) => { const b = await c.req.json<{ title?: string; brief?: string; method?: 'agile' | 'waterfall'; appetite?: number }>(); return c.json(newPlan(b.title ?? '', b.brief ?? '', b.method, b.appetite)) })
 app.get('/plans/teams', async (c) => { try { return c.json({ teams: await linearTeams() }) } catch (e) { return planErr(c, e) } })
-app.get('/plans/projects', async (c) => { try { return c.json({ projects: await linearProjects() }) } catch (e) { return planErr(c, e) } })
+// an organization's projects, from where it manages its work: Linear's, or its GitHub Projects (orgs.ts). No organization
+// given: Linear's, as before
+app.get('/plans/projects', async (c) => {
+  try {
+    const owner = c.req.query('org'), o = owner ? (await orgs()).find((x) => x.owner === owner) : undefined
+    if (o?.tracker === 'github') return c.json({ source: 'github', projects: (await githubProjects(o.owner, o.personal)).map((p) => ({ ...p, mine: false })) })
+    return c.json({ source: 'linear', projects: await linearProjects() })
+  } catch (e) { return planErr(c, e) }
+})
+app.get('/orgs', async (c) => c.json(await orgs()))
+app.post('/orgs', async (c) => {
+  const { owner, tracker } = await c.req.json<{ owner?: string; tracker?: string }>()
+  if (!owner || !/^[\w.-]+$/.test(owner) || (tracker !== 'linear' && tracker !== 'github')) return c.json({ error: 'An organization and linear or github' }, 400)
+  setTracker(owner, tracker)
+  return c.json(await orgs())
+})
 app.post('/plans/:id/project', async (c) => { try { return c.json(withHistory(await linkProject(c.req.param('id'), (await c.req.json<{ project: string }>()).project))) } catch (e) { return planErr(c, e) } })
 app.post('/plans/:id/sync', async (c) => { try { return c.json(withHistory(await syncProject(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
 app.post('/plans/:id/vision', async (c) => { try { return c.json(withHistory(await applyVision(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
@@ -2993,6 +3045,8 @@ serveMachine(() => state.settings.maxJobs, ownUsage, {
   // whether an account is signed in here, and signing it in from the dashboard (the page relays the code)
   signedIn: async (b: { account?: string }) => signedInHere(b.account),
   signin: async (b: { account?: string; step?: string; input?: string }) => signinHere(b),
+  // the alignment protocol: bring this machine in line with the shared settings, and say what still differs
+  align: async () => alignHere(),
   // a hosted run's background, here where its processes are (the control plane keeps its task list)
   bg: async (b: { id: string; tasks: BgTask[] }) => bgViewOf(b.tasks ?? [], hosted().get(b.id)?.child.pid),
   bgStop: async (b: { id: string; task?: BgTask; pid?: number }) => bgStopOf(b.task, b.pid, hosted().get(b.id)?.child.pid),
@@ -3015,6 +3069,69 @@ async function signedInHere(account = 'claude') {
   if (a.kind === 'llama') return (await ollamaState(a.id)).up
   return (await claudeAuth(a.home)).loggedIn
 }
+// --- aligning the machines: one protocol over the tailnet, between machines that are online -----------------------------
+// The main server asks each machine to align when it comes online, and again when something every machine must agree on
+// changes (which machines may have a repository, the skill sources, the accounts, an account's login). Each machine
+// fixes what it can by itself: clones the repositories allowed on it (and takes off the ones no longer allowed, once
+// nothing would be lost), fetches the skill sources. Then it says what still differs; what only you can do (a sign-in,
+// a clone that failed) shows in Settings → Machines and as one notice. Nothing is polled and nothing times out: an
+// offline machine is aligned when it is back.
+export type AlignReport = {
+  version?: string; repos: Record<string, string>; checkedOut: string[]; missingSkills: string[]; brokenLinks: string[]
+  accounts: { id: string; signedIn: boolean; who?: string }[]
+}
+async function alignHere(): Promise<AlignReport> {
+  await ensureClones().catch((e: Error) => console.warn('align: clones:', e.message))
+  if (skillSources().length) await installSourceSkills().catch((e: Error) => console.warn('align: skills:', e.message))
+  const needed = await skillsNeeded([config.agent.review.command, config.agent.revise.command, config.agent.stack ?? '', config.exec.command, ...config.exec.actions.map((x) => x.prompt)])
+  const clones = cloneState()
+  return {
+    version: process.env.DECK_VERSION, repos: clones, checkedOut: Object.keys(config.repos).filter((r) => !(r in clones)),
+    missingSkills: needed.filter((x) => !x.found).map((x) => x.name), brokenLinks: (await brokenSkillLinks()).map((l) => l.name),
+    accounts: await Promise.all(accounts().map(async (a) => ({ id: a.id, signedIn: await signedInHere(a.id).catch(() => false), who: identityOf(a.id) }))),
+  }
+}
+type AlignItem = { machine: string; what: string; state: 'fixing' | 'needs-you'; fix?: string }
+let alignment: { at?: string; items: AlignItem[]; asked: string[] } = { items: [], asked: [] }
+/** Ask every online machine (or one) to align, and gather what still differs. */
+async function alignAll(only?: string) {
+  if (!fleet.machine || fleet.elsewhere()) return
+  const here = only && only !== fleet.machine ? undefined : await alignHere().catch(() => undefined)
+  const there = await ask<AlignReport>('align', {}, only && only !== fleet.machine ? only : undefined)
+  const reports = new Map<string, AlignReport | undefined>([...(here ? [[fleet.machine, here] as const] : []), ...there])
+  // what each account must be (one account, one login) and which ones the work uses
+  const used = new Set([...Object.values(config.providers?.use ?? {}), ...(config.providers?.fallback ?? []), 'claude'].filter(Boolean) as string[])
+  const items: AlignItem[] = []
+  for (const [m, r] of reports) {
+    if (!r) { items.push({ machine: m, what: "didn't answer the alignment (an older version: it updates itself)", state: 'fixing' }); continue }
+    if (r.version && process.env.DECK_VERSION && r.version !== process.env.DECK_VERSION) items.push({ machine: m, what: `runs build ${r.version}, this one ${process.env.DECK_VERSION}: it updates itself when idle`, state: 'fixing' })
+    for (const [repo, st] of Object.entries(r.repos)) {
+      if (st === 'not-here') continue // not allowed there: as it should be
+      items.push(st === 'cloning' ? { machine: m, what: `cloning ${repo}`, state: 'fixing' } : { machine: m, what: `couldn't clone ${repo}: ${st}`, state: 'needs-you', fix: 'Check the repository and its access from that machine (Settings → Repositories)' })
+    }
+    if (r.missingSkills.length) items.push({ machine: m, what: `lacks ${r.missingSkills.map((x) => `/${x}`).join(', ')}, which your settings run`, state: 'needs-you', fix: 'Add a skill source that has them (Settings → Skills), or the skills on that machine' })
+    if (r.brokenLinks.length) items.push({ machine: m, what: `can't follow its skill links ${r.brokenLinks.join(', ')}`, state: 'needs-you', fix: 'Run bin/up on that machine: it mounts the folder they point into' })
+    for (const a of r.accounts) {
+      if (!used.has(a.id)) continue
+      const acc = accountOf(a.id)
+      if (!a.signedIn) items.push({ machine: m, what: `${acc.label} isn't signed in`, state: 'needs-you', fix: `Settings → Accounts → ${acc.label} → Sign in on ${m}` })
+      else if (acc.login && a.who && a.who !== acc.login) items.push({ machine: m, what: `${acc.label} is signed in as ${loginText(a.who)}, not ${loginText(acc.login)}`, state: 'needs-you', fix: `Sign it in again there, or make that login the account's (Settings → Accounts)` })
+    }
+  }
+  // what a machine that answered no longer has: gone from the list; one that didn't answer this time keeps its items
+  const answered = new Set(reports.keys())
+  alignment = { at: new Date().toISOString(), asked: [...answered], items: [...(only ? alignment.items.filter((x) => !answered.has(x.machine)) : []), ...items] }
+  const mine = alignment.items.filter((x) => x.state === 'needs-you')
+  condition('alignment', 'Machines', mine.length ? `${mine.length} thing${mine.length === 1 ? '' : 's'} only you can do to align your machines: ${mine.slice(0, 3).map((x) => `${x.machine}: ${x.what}`).join('; ')}${mine.length > 3 ? '…' : ''} (Settings → Machines)` : undefined)
+  stale('/fleet/alignment')
+  if (items.length) console.log(`align: ${items.map((x) => `${x.machine}: ${x.what}`).join('; ')}`)
+}
+// asked a moment after a change, once for a burst of them
+let alignSoon: NodeJS.Timeout | undefined
+const alignLater = (only?: string) => { clearTimeout(alignSoon); alignSoon = setTimeout(() => void alignAll(only), 3_000) }
+app.get('/fleet/alignment', (c) => c.json(alignment))
+app.post('/fleet/align', async (c) => { await alignAll(); return c.json(alignment) })
+
 /** Sign an account in on this machine: start (an address to approve), finish (the code it showed), state. */
 async function signinHere(b: { account?: string; step?: string; input?: string }) {
   const a = accounts().find((x) => x.id === (b.account ?? 'claude'))
@@ -3076,6 +3193,7 @@ app.post('/machines/:name/signin', async (c) => {
 const pushConnectors = (only?: string) => { if (machines.size) void ask('connectors', { custom: state.customConnectors ?? {}, connected: state.connected ?? [] }, only) }
 onCameBack((name, atStart) => {
   pushConnectors(name)
+  alignLater(name) // back online, however long it was away: brought in line, and what still differs is said
   // a machine came online: said once, as a notification (pin), unless this one only just started and is seeing it for the first time
   if (!atStart) alert({ kind: 'system', id: `machine:${name}`, label: 'Machines', title: `${name} is online` }, `${name} is online again and takes runs`, 'info', true)
 })

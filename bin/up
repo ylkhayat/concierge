@@ -92,6 +92,10 @@ until wait_up; do
   docker compose up -d
 done
 
+# the host helper (Update now, joining your other machines) is not set up here: the page asks for it, with why, the
+# moment you use something that needs it (bin/helper on)
+mkdir -p "$HOME/.local/state/$dir/asks"
+
 say "Concierge is up: $url"
 case $(uname) in Darwin) open "$url" ;; Linux) command -v xdg-open >/dev/null && xdg-open "$url" >/dev/null 2>&1 || true ;; esac
 say "The onboarding signs you in to GitHub$([[ -f fleet/compose.fleet.yml ]] && echo ', Tailscale') and your agents. Updates: bin/update"

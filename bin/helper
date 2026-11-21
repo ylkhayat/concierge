@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# This machine's helper: the few things Concierge needs done on the host, which the app inside Docker can't do itself.
+# It rebuilds Concierge when you press Update now, and joins your other machines when one comes online (if you asked).
+# It runs only when the app asks (a file in its asks/ folder): launchd's WatchPaths on a Mac, a systemd path unit on
+# Linux. No polling, nothing left running. The page asks you to turn it on when you first need it, and says why.
+#   bin/helper on       set it up       bin/helper off      remove it       bin/helper status
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")/.."
+dir=$(cat .env .env.fleet 2>/dev/null | grep -E '^CONCIERGE_DIRNAME=' | tail -1 | cut -d= -f2- || true); dir=${dir:-concierge}
+[[ -d $HOME/.local/state/review-deck && $dir == concierge ]] && dir=review-deck
+state="$HOME/.local/state/$dir"; asks="$state/asks"; mark="$state/helper-installed"
+run="cd '$PWD' && bin/update --if-asked >> '$state/update.log' 2>&1"
+plist="$HOME/Library/LaunchAgents/dev.concierge.helper.plist"; unit="$HOME/.config/systemd/user"
+case ${1:-status} in
+  on)
+    mkdir -p "$asks"
+    if [[ $(uname) == Darwin ]]; then
+      mkdir -p "$(dirname "$plist")"
+      cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.concierge.helper</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>-c</string><string>export PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin; $run</string></array>
+  <key>WatchPaths</key><array><string>$asks</string></array>
+</dict></plist>
+PLIST
+      launchctl bootout "gui/$(id -u)/dev.concierge.helper" 2>/dev/null || true
+      launchctl bootstrap "gui/$(id -u)" "$plist"
+      echo launchd > "$mark"
+    elif command -v systemctl >/dev/null; then
+      mkdir -p "$unit"
+      printf '[Unit]\nDescription=Concierge: wake its helper when it asks\n[Path]\nDirectoryNotEmpty=%s\n[Install]\nWantedBy=default.target\n' "$asks" > "$unit/concierge-helper.path"
+      printf '[Unit]\nDescription=Concierge helper (bin/update --if-asked)\n[Service]\nType=oneshot\nExecStart=/bin/bash -c "%s"\n' "$run" > "$unit/concierge-helper.service"
+      systemctl --user daemon-reload && systemctl --user enable --now concierge-helper.path
+      echo systemd > "$mark"
+    else echo "helper: no launchd or systemd here: run bin/update --if-asked yourself when Concierge asks" >&2; exit 1; fi
+    echo "helper: on. It wakes only when Concierge asks (Update now, joining your other machines)" ;;
+  off)
+    if [[ $(uname) == Darwin ]]; then launchctl bootout "gui/$(id -u)/dev.concierge.helper" 2>/dev/null || true; rm -f "$plist"
+    elif command -v systemctl >/dev/null; then systemctl --user disable --now concierge-helper.path 2>/dev/null || true; rm -f "$unit/concierge-helper.path" "$unit/concierge-helper.service"; fi
+    rm -f "$mark"; echo "helper: off" ;;
+  status) [[ -f $mark ]] && echo "helper: on ($(cat "$mark"))" || echo "helper: off (bin/helper on to set it up)" ;;
+  *) echo "usage: bin/helper on|off|status" >&2; exit 2 ;;
+esac

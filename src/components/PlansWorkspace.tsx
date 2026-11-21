@@ -749,7 +749,8 @@ function VisionCard({ p, set, toast }: { p: Plan; set: SetPlan; toast: Toast }) 
   )
 }
 
-type LinearProject = { id: string; name: string; targetDate?: string; lead?: string; mine: boolean }
+type LinearProject = { id: string; name: string; targetDate?: string; lead?: string; mine: boolean; url?: string; description?: string }
+type Org = import('../../server/orgs.ts').Org
 
 /**
  * Starting a plan: pitch a new project on the left (its name, the brief, the method), or pick one of your Linear
@@ -793,27 +794,50 @@ function NewPlan({ onMade, toast }: { onMade: (id: string) => void; toast: Toast
           </div>
         </div>
       </div>
-      <ProjectList busy={busy} onPlan={(x, ask) => start(x.id, { title: x.name, brief: ask, method, appetite }, x.id, ask.trim() ? `Plan this into the project:\n${ask}` : 'Read the project against its vision: what is missing to reach it? Propose the tickets.')} />
+      <ProjectList busy={busy} onPlan={(x, ask, source) => source === 'github'
+        // a GitHub Project: the plan reads it as context (planning into it, tickets and all, is Linear's for now)
+        ? start(x.id, { title: x.name, brief: [x.description, ask].filter(Boolean).join('\n\n'), method, appetite }, undefined, `This plan is for the GitHub Project "${x.name}" (${x.url}).${ask.trim() ? `\n${ask}` : ' Break it down.'}`)
+        : start(x.id, { title: x.name, brief: ask, method, appetite }, x.id, ask.trim() ? `Plan this into the project:\n${ask}` : 'Read the project against its vision: what is missing to reach it? Propose the tickets.')} />
     </div>
   )
 }
 
-/** Your Linear projects, the ones you lead first: pick one to plan into it. */
-function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProject, ask: string) => void }) {
-  const q = useApi<{ projects: LinearProject[] }>('/plans/projects', { staleTime: 5 * 60_000 })
+/**
+ * An organization's projects, from where it manages its work: Linear (the ones you lead first) or its GitHub Projects.
+ * Pick the organization first (yours, or one whose repositories you watch): your personal work never lists a company's
+ * Linear projects. Pick a project to plan into it.
+ */
+function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProject, ask: string, source: 'linear' | 'github') => void }) {
+  const orgsQ = useApi<Org[]>('/orgs', { staleTime: 10 * 60_000 })
+  const [org, setOrg] = useState<string>()
+  const o = orgsQ.data?.find((x) => x.owner === org) ?? orgsQ.data?.[0]
+  const q = useApi<{ source: 'linear' | 'github'; projects: LinearProject[] }>(o ? `/plans/projects?org=${encodeURIComponent(o.owner)}` : undefined, { staleTime: 5 * 60_000 })
+  const setTracker = (tracker: 'linear' | 'github') => o && api('/orgs', { owner: o.owner, tracker }).then(() => { refresh('/orgs'); refresh('/plans/projects') }, () => {})
+  const where = q.data?.source === 'github' ? 'GitHub Projects' : 'Linear'
   const [find, setFind] = useState(''), [open, setOpen] = useState<string>(), [ask, setAsk] = useState('')
   const list = (q.data?.projects ?? []).filter((x) => x.name.toLowerCase().includes(find.trim().toLowerCase())).sort((a, b) => Number(b.mine) - Number(a.mine))
   return (
     <aside aria-label="Your Linear projects" className="hidden w-[360px] shrink-0 flex-col border-l border-line lg:flex">
       <div className="space-y-2 px-4 pb-2 pt-5">
         <h3 className="text-body font-semibold text-fg-1">Or plan into a project</h3>
-        <p className="text-meta text-fg-3">Its vision, tickets and timeline come in. If you lead it, the plan may reshape its vision; otherwise it only adds tickets.</p>
-        <input value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find a project" className="w-full rounded-lg bg-hover px-2.5 py-1.5 text-small text-fg-1 outline-none placeholder:text-fg-4 focus:ring-1 focus:ring-accent/40" />
+        {(orgsQ.data?.length ?? 0) > 1 && o && (
+          <Pick label="Organization" value={o.owner} onChange={(v) => { setOrg(v); setFind(''); setOpen(undefined) }}
+                options={orgsQ.data!.map((x) => ({ value: x.owner, label: x.owner, hint: x.personal ? 'You' : x.tracker === 'linear' ? 'Linear' : 'GitHub Projects' }))} />
+        )}
+        {o && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-fg-3">
+            <span>{o.personal ? 'You manage' : `${o.owner} manages`} its work in</span>
+            <Tabs size="sm" label={`Where ${o.owner} manages its work`} value={o.tracker} onChange={(t) => void setTracker(t)} options={[{ id: 'linear', label: 'Linear' }, { id: 'github', label: 'GitHub Projects' }]} />
+            {o.guessed && <span className="text-fg-4">(a guess: change it if not)</span>}
+          </div>
+        )}
+        <p className="text-meta text-fg-3">{q.data?.source === 'github' ? 'Its description comes in as the plan’s context.' : 'Its vision, tickets and timeline come in. If you lead it, the plan may reshape its vision; otherwise it only adds tickets.'}</p>
+        <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`Find a project in ${where}`} className="w-full rounded-lg bg-hover px-2.5 py-1.5 text-small text-fg-1 outline-none placeholder:text-fg-4 focus:ring-1 focus:ring-accent/40" />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {q.isLoading ? <div className="px-2"><Skeleton rows={7} /></div>
           : q.error ? <p className="px-3 py-2 text-small text-fail">{(q.error as Error).message}</p>
-          : !list.length ? <p className="px-3 py-2 text-small text-fg-3">{find ? 'No project matches.' : 'No open projects in Linear.'}</p>
+          : !list.length ? <p className="px-3 py-2 text-small text-fg-3">{find ? 'No project matches.' : `No open projects in ${where}${o ? ` for ${o.owner}` : ''}.`}</p>
           : list.map((x, i) => (
             <div key={x.id} className="animate-[rise-in_220ms_var(--ease-snappy)_both]" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
               <button onClick={() => { setOpen(open === x.id ? undefined : x.id); setAsk('') }} aria-expanded={open === x.id}
@@ -821,7 +845,7 @@ function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProjec
                 <span className={`mt-1.5 size-2 shrink-0 rounded-full ${x.mine ? 'bg-accent' : 'bg-fg-4/40'}`} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-small font-medium text-fg-1">{x.name}</span>
-                  <span className="block text-micro text-fg-3">{x.mine ? 'You lead it' : `Led by ${x.lead ?? 'no one'}`}{x.targetDate ? ` · due ${fmt(x.targetDate)}` : ''}</span>
+                  <span className="block truncate text-micro text-fg-3">{q.data?.source === 'github' ? (x.description ?? 'GitHub Project') : <>{x.mine ? 'You lead it' : `Led by ${x.lead ?? 'no one'}`}{x.targetDate ? ` · due ${fmt(x.targetDate)}` : ''}</>}</span>
                 </span>
                 {x.mine && <span className="shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-micro font-medium text-accent-text">Yours</span>}
               </button>
@@ -829,8 +853,8 @@ function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProjec
                 <div className="mx-2 mb-2 mt-1 space-y-2 animate-[detail-in_160ms_var(--ease-snappy)]">
                   <textarea value={ask} onChange={(e) => setAsk(e.target.value)} rows={3} placeholder="What to add (optional): leave empty and it finds what is missing to reach the vision"
                             className="w-full resize-none rounded-lg bg-surface-1 px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/40" />
-                  <button onClick={() => onPlan(x, ask)} disabled={!!busy} className="inline-flex w-full items-center justify-center gap-1.5 btn-primary disabled:opacity-50">
-                    {busy === x.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}Plan into {x.mine ? 'your project' : 'it: tickets only'}
+                  <button onClick={() => onPlan(x, ask, q.data?.source ?? 'linear')} disabled={!!busy} className="inline-flex w-full items-center justify-center gap-1.5 btn-primary disabled:opacity-50">
+                    {busy === x.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}{q.data?.source === 'github' ? 'Plan for it' : `Plan into ${x.mine ? 'your project' : 'it: tickets only'}`}
                   </button>
                 </div>
               )}

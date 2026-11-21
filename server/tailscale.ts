@@ -59,3 +59,37 @@ export async function nearbyMachines(): Promise<Nearby[]> {
     .map((p) => ({ name: p.HostName!.replace(/^concierge-/, ''), host: p.HostName!, online: !!p.Online, lastSeen: p.LastSeen && !p.LastSeen.startsWith('0001') ? p.LastSeen : undefined, ip: p.TailscaleIPs?.find((a) => a.includes('.')) }))
     .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name))
 }
+
+/**
+ * Tailscale pushes every change of the tailnet (its watch-ipn-bus: peers added, removed, coming online or going away):
+ * `onChange` gets the Concierge machines on it each time that list or one's online state changes. Nothing is polled:
+ * one idle connection, read again only when Tailscale says something changed. It reconnects when the stream ends (the
+ * link restarted), waiting longer each time it can't (up to five minutes).
+ */
+export function watchTailnet(onChange: (now: Nearby[], before: Nearby[]) => void) {
+  const sock = process.env.TAILSCALE_SOCKET ?? '/var/run/tailscale/tailscaled.sock'
+  // NoPrivateKeys, InitialStatus, and the peer changes and patches (online, last seen): what tells us a machine came back
+  const MASK = (1 << 4) | (1 << 12) | (1 << 13) | (1 << 14)
+  let last: Nearby[] = [], key = '', settle: NodeJS.Timeout | undefined, wait = 5_000
+  const reread = () => void nearbyMachines().then((now) => {
+    const k = JSON.stringify(now.map((m) => [m.name, m.online]))
+    if (k === key) return
+    const before = last
+    last = now; key = k
+    onChange(now, before)
+  }, () => {})
+  const open = () => {
+    const req = httpGet({ socketPath: sock, path: `/localapi/v0/watch-ipn-bus?mask=${MASK}`, headers: { Host: 'local-tailscaled.sock' } }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return again() }
+      if (wait !== 5_000 || !said) console.log('tailnet: watching for your other machines (Tailscale says when one comes or goes)')
+      said = true; wait = 5_000
+      res.setEncoding('utf8')
+      res.on('data', () => { clearTimeout(settle); settle = setTimeout(reread, 2_000) }) // a burst of changes: read once
+      res.on('end', again)
+    })
+    req.on('error', again)
+  }
+  let pending = false, said = false
+  const again = () => { if (pending) return; pending = true; setTimeout(() => { pending = false; open() }, wait).unref(); wait = Math.min(wait * 2, 300_000) }
+  open()
+}

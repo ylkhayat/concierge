@@ -224,6 +224,16 @@ def find(peers):
     return list({h['name']: h for h in found if h.get('name')}.values())
 
 
+def clear_ask():
+    """The page's "Join them once one is online" (join-asked) is done with: joined, or refused. Under either folder name."""
+    for n in ('concierge', 'review-deck'):
+        for f in ('join-asked', 'join.pid'):
+            try:
+                os.remove(os.path.join(HOME, '.local/state', n, f))
+            except FileNotFoundError:
+                pass
+
+
 def env_set(updates, name='.env'):
     """Set keys in .env (made from .env.example if there is none yet), or the fleet's .env.fleet, keeping everything else."""
     path = os.path.join(ROOT, name)
@@ -271,6 +281,7 @@ def main():
     a.add_argument('--name', help="this machine's name among them (default: its hostname)")
     a.add_argument('--yes', action='store_true', help="don't ask before joining")
     a.add_argument('--check', action='store_true', help='check everything a join needs, change nothing')
+    a.add_argument('--once', action='store_true', help="don't wait for one to be online: join now, or say none is and stop (Concierge's helper runs it when one comes online)")
     o = a.parse_args()
     if o.check:
         sys.exit(check())
@@ -280,6 +291,9 @@ def main():
     me, peers = tailscale()
     say(f"signed in to Tailscale as {me.get('HostName', '?')}; looking for Concierge on {len(peers)} machine(s) online")
     found = find(peers)
+    if not found and o.once:
+        say('none of your other machines answers yet: nothing done (this runs again when one comes online)')
+        return
     # none online yet (you're away from home, the others asleep): wait for one, however long, then go on by itself
     waited = 0
     while not found:
@@ -302,7 +316,10 @@ def main():
     others = ', '.join(h['name'] for h in found if h is not main_server)
     say(f"found Concierge: {main_server['name']} runs the main server" + (f' ({others} too)' if others else ''))
 
-    name = (o.name or re.sub(r'[^a-z0-9-]', '-', (me.get('HostName') or socket.gethostname()).lower().split('.')[0])).strip('-')[:31]
+    # its name: yours, else this computer's. Not the Tailscale name when that is the fleet's link (concierge-<something>)
+    host = me.get('HostName') or ''
+    host = socket.gethostname() if not host or host.startswith('concierge-') else host
+    name = (o.name or re.sub(r'[^a-z0-9-]', '-', host.lower().split('.')[0])).strip('-')[:31]
     if any(h['name'] == name for h in found):
         sys.exit(f'join: {name} is already one of them: pass --name <another name>')
     if not o.yes and input(f"join {main_server['name']}'s Concierge as {name}? [Y/n] ").strip().lower() not in ('', 'y', 'yes'):
@@ -320,6 +337,8 @@ def main():
                 r = get(f"{base}/join/{r['id']}", timeout=10) | {'id': r['id']}
             except Exception:
                 pass
+    if r.get('state') == 'denied':
+        clear_ask()  # refused: not asked again every minute
     if r.get('state') != 'approved' or not r.get('setup'):
         sys.exit('join: not approved' if r.get('state') == 'denied' else 'join: the main server gave no setup: run it again')
     s = r['setup']
@@ -344,6 +363,7 @@ def main():
     subprocess.run(cmd, cwd=ROOT, check=True)
     if s['role'] == 'worker':
         env_set({'DECK_ROLE': 'worker'}, '.env.fleet')  # bin/standby restarts with it
+    clear_ask()  # joined: the ask the page left is done
     say('building Concierge here (a few minutes the first time)')
     subprocess.run([os.path.join(ROOT, 'bin', 'update'), '--force'], cwd=ROOT)
     say(f"done: {name} is the {s['role']}. Its state, settings and sessions come over from {s['main']} within a minute.\n"

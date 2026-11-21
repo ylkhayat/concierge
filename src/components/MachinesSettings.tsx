@@ -2,7 +2,7 @@
 // its CPU, memory and disk (the whole machine, and the share Concierge's agents take), its agents, and what you can do
 // from here (work machine, log, restart). Then the keys every machine shares, which fill themselves from the machines'
 // own .env files.
-import { NearbyMachines } from './NearbyMachines.tsx'
+import { Alignment, NearbyMachines } from './NearbyMachines.tsx'
 import { HardDrive, Laptop, Cpu, MemoryStick, Bot, Server, ShieldCheck } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -101,6 +101,7 @@ export function MachinesSettings() {
   return (
     <section className="space-y-3">
       <NearbyMachines />
+      {v.several && <Alignment />}
       {v.several && (
         <Tabs as="tab" label="Machine" value={tab} onChange={setTab}
               options={[{ id: 'all', label: 'All machines' }, ...ms.map((x) => ({ id: x.name, label: x.name, icon: x.work ? Laptop : Server, dot: x.behind?.length ? 'warn' as const : undefined, title: x.behind?.length ? 'Not on the latest version' : undefined }))]} />
