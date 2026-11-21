@@ -612,7 +612,19 @@ const pr = (id: string) => state.prs[decodeURIComponent(id)]
 // machine: which of two machines runs it (DECK_NAME), so crit links opened through the shared link reach this one.
 // alive: answers without asking anything else (GitHub, the agents), for Docker's health check
 app.get('/alive', (c) => c.text('ok'))
-app.get('/me', async (c) => c.json({ ...(await getMe()), machine: fleet.reach ? fleet.machine : undefined, reach: fleet.reach }))
+app.get('/me', async (c) => c.json({
+  ...(await getMe()), machine: fleet.reach ? fleet.machine : undefined, reach: fleet.reach,
+  viewer: await viewerOf(c.req.header('x-forwarded-for'), c.req.header('tailscale-user-login')),
+  serving: { role: process.env.DECK_ROLE, version: process.env.DECK_VERSION, control: fleet.mayWrite() },
+}))
+/** Who opens the page: no forwarded address is this machine itself (localhost); else the tailnet device that address is. */
+async function viewerOf(fwd?: string, login?: string) {
+  const ip = fwd?.split(',')[0]?.trim()
+  if (!ip) return { here: true }
+  const s = await tsStatus()
+  const p = [s?.Self, ...Object.values(s?.Peer ?? {})].find((x) => x?.TailscaleIPs?.includes(ip))
+  return { here: false, ip, device: p?.HostName, os: p?.OS, login: login?.trim() || undefined }
+}
 // updating a Docker install: the container can't rebuild itself, so the button leaves a note that bin/update
 // (run every minute by cron on the host) picks up; its log and the commit it deployed come back the same way
 // where it runs: this machine, the other one, their heartbeats and the sync between them (Settings → About)

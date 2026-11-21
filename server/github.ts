@@ -46,7 +46,13 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
   return body as T
 }
 
-export type Me = { login: string; name: string | null; avatar: string; machine?: string; reach?: { from: string; to: string } }
+export type Me = {
+  login: string; name: string | null; avatar: string; machine?: string; reach?: { from: string; to: string }
+  // who opens the page and from where: this machine itself, or a device on your tailnet through the link (as Tailscale names it)
+  viewer?: { here: boolean; device?: string; os?: string; ip?: string; login?: string }
+  // the machine answering: its role in the fleet, the build it runs, and whether it holds the lease (saves, runs agents)
+  serving?: { role?: string; version?: string; control: boolean }
+}
 let me: Me | undefined
 // who you are, kept: a restart while GitHub refuses (its quota spent, offline) still knows you
 export async function getMe(): Promise<Me> {

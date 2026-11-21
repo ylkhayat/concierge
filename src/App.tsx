@@ -498,7 +498,7 @@ export function App() {
         ) : reviewFrame}
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
         <footer className="relative z-30 flex h-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap border-t border-line bg-bg-rail px-2 text-meta text-fg-3 ">
-          <Machine name={me?.machine} />
+          <Machine me={me} />
           {syncState}{refreshBtn}
           <VpnChip machine={me?.machine} onOpen={() => setSettingsOpen('connections')} />
           <span className="flex-1" />
