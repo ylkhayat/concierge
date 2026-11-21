@@ -99,7 +99,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
            className={`relative flex min-h-0 flex-1 flex-col @[1100px]/thread:grid @[1100px]/thread:[grid-template-columns:var(--split)_1px_minmax(0,1fr)] @[1100px]/thread:[grid-template-rows:minmax(0,1fr)_auto] ${dragging ? '' : 'transition-[grid-template-columns] duration-300 ease-[var(--ease-snappy)]'}`}>
         {/* the chat's own column, top to bottom: the conversation, then its box on the floor. One piece, so the height of
             what sits under the panel (the next step can be tall) never pushes the box up or takes room from the chat */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col @[1100px]/thread:col-start-1 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1">
+        <div data-chat-column className="flex min-h-0 min-w-0 flex-1 flex-col @[1100px]/thread:col-start-1 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1">
           {/* wide: the vitals head the chat, the frame for reading it (narrow: they are above, for both) */}
           {vitals && <div className="relative z-30 hidden shrink-0 border-b border-line @[1100px]/thread:block">{vitals}</div>}
           <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col">

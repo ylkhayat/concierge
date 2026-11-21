@@ -258,9 +258,14 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
   const [room, setRoom] = useState(480)
   useLayoutEffect(() => {
     if (!open || inline) return
-    const fit = () => { const r = box.current?.getBoundingClientRect(); if (r) setRoom(Math.max(320, innerHeight - r.bottom - 12)) }
-    fit(); addEventListener('resize', fit)
-    return () => removeEventListener('resize', fit)
+    // to the bottom of the chat's own column (measured in the same units as the row: the app zooms on wide screens, and
+    // the window's height counts the status bar under it)
+    const el = box.current, col = el?.closest('[data-chat-column]')
+    const fit = () => { const r = el?.getBoundingClientRect(), c = (col ?? document.body).getBoundingClientRect(); const z = Number(getComputedStyle(document.documentElement).getPropertyValue('--z')) || 1; if (r) setRoom(Math.max(280, (c.bottom - r.bottom) / z - 12)) }
+    fit()
+    const ro = new ResizeObserver(fit); if (col) ro.observe(col)
+    addEventListener('resize', fit)
+    return () => { ro.disconnect(); removeEventListener('resize', fit) }
   }, [open, inline])
   const { d, ...rest } = topics
   const v = (['intent', 'understanding'] as const).map((tp) => topicVital({ ...rest, topic: tp, d: d?.[tp], open: open === tp, onOpen: () => setOpen(open === tp ? undefined : tp) }))
