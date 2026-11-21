@@ -156,3 +156,6 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 :root.dark[data-texture='film'] body::after, .dark .tex-tile[data-t='film']::after { opacity: 0.18; filter: invert(1) hue-rotate(180deg); }
 @media (prefers-reduced-transparency: reduce) { :root[data-texture] body::after { display: none; } }
 @media print { :root[data-texture] body::after { display: none; } }
+
+/* a change the planner just made on the plan board: a ring that swells and fades */
+@keyframes fresh-glow { 0% { opacity: 0; stroke-width: 6px } 25% { opacity: 1 } 100% { opacity: 0; stroke-width: 1px } }

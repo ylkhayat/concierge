@@ -132,3 +132,16 @@ test('evidence is kept short, three at most, and a link only when it is a web on
   const b = becauseOf([{ source: 'amplitude', text: 'x', url: 'javascript:alert(1)' }, { source: 's', text: 't', url: 'https://a.b' }, { text: 'no source' }, {}, { source: 'a', text: 'b' }, { source: 'c', text: 'd' }])!
   assert.equal(b.length, 3); assert.equal(b[0].url, undefined); assert.equal(b[1].url, 'https://a.b')
 })
+
+test('a draft: the planner changes come in with their turn; yours, added meanwhile, win over its later ones', async () => {
+  const { newPlan, edit, addToScenario, draft, planOf } = await import('./plans.ts')
+  const p = newPlan('D', '')
+  edit(p.id, [{ op: 'add', id: 'e', kind: 'epic', title: 'E' }, { op: 'add', id: 'a', kind: 'ticket', title: 'A', parent: 'e' }])
+  draft(p, { op: 'add', id: 'b', kind: 'ticket', title: 'B', parent: 'e', because: [{ source: 'amplitude', text: 'x' }] }, 't1')
+  addToScenario(p.id, [{ op: 'move', id: 'a', estimate: 8, turn: 'forged' } as never])
+  draft(p, { op: 'move', id: 'a', estimate: 1 }, 't1') // you moved it: dropped
+  draft(p, { op: 'remove', id: 'nope' }, 't1') // does nothing: dropped
+  const ops = planOf(p.id).scenario!.ops
+  assert.deepEqual(ops.map((o) => [o.op, o.turn]), [['add', 't1'], ['move', undefined]])
+  assert.equal(planOf(p.id).nodes.length, 2) // nothing applied yet
+})

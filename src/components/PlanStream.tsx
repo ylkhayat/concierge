@@ -24,7 +24,7 @@ export type Move = Extract<Op, { op: 'move' }>
 export type ColorBy = 'epic' | 'owner' | 'moscow'
 export const MOSCOW_HUE = { must: 25, should: 70, could: 230, wont: 280 } as const
 const nameHue = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7)
-export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, onSelect, onExplore, compact, open, onToggle, legend, onMove, draft = [] }: { p: Plan; base?: Plan; draft?: Op[]; people: number; pace: number; selected?: string; onSelect: (id?: string) => void; onExplore?: (g: Gap) => void
+export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, onSelect, onExplore, compact, open, onToggle, legend, onMove, draft = [], fresh }: { p: Plan; base?: Plan; draft?: Op[]; fresh?: string; people: number; pace: number; selected?: string; onSelect: (id?: string) => void; onExplore?: (g: Gap) => void
   compact?: boolean; open?: Set<string>; onToggle?: (id: string) => void; legend?: boolean; onMove?: (m: Move) => void; colorBy?: ColorBy }) {
   const box = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(0)
@@ -249,6 +249,9 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                 {/* changed by the draft: ringed, and a dot when it rests on evidence */}
                 {moved.has(sl.id) && !sizing && <rect rx={ph / 2 + 3} height={ph + 6} fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeOpacity={0.85} pointerEvents="none"
                       style={{ x: left - 3, y: cy - ph / 2 - 3, width: width + 6, transition: glide, animation: 'pebble-in 360ms var(--ease-spring) both' } as React.CSSProperties} />}
+                {/* the change that just came in: a glow that fades */}
+                {fresh?.startsWith(`${sl.id}:`) && <rect key={fresh} rx={ph / 2 + 6} height={ph + 12} fill="none" stroke="var(--accent)" strokeWidth={3} pointerEvents="none"
+                      style={{ x: left - 6, y: cy - ph / 2 - 6, width: width + 12, animation: 'fresh-glow 1400ms var(--ease-out) both' } as React.CSSProperties} />}
                 {evidence.has(sl.id) && <circle r={4} fill="var(--accent)" stroke="var(--surface-1)" strokeWidth={1.5} pointerEvents="none" style={{ transform: `translate(${left + 2}px, ${cy - ph / 2 - 1}px)`, transition: 'transform 500ms var(--ease-snappy)' }} />}
                 {/* on the critical path: what sets the end date */}
                 {critical.has(sl.id) && !sl.done && <rect height={2} rx={1} fill="var(--accent)" pointerEvents="none" style={{ x: left + 2, y: cy + ph / 2 + 2, width: Math.max(2, width - 4), transition: sizing ? 'none' : glide } as React.CSSProperties} />}

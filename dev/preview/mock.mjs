@@ -58,8 +58,8 @@ http.createServer((req, res) => {
   // settings saved: kept in memory (the company profile and the rest of config)
   if (p === '/config' && req.method === 'POST') { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => { const v = JSON.parse(b || '{}'); Object.assign(setupMock.config, v); json(res, setupMock) }); return }
   // a plan's scenario: kept in memory, so moves can be tried in the preview
-  const sc = /^\/plans\/(p\d)\/scenario$/.exec(p)
-  if (sc && req.method === 'POST') { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => { const pl = sc[1] === 'p1' ? plan : big; const ops = JSON.parse(b || '{}').ops ?? []; pl.scenario = ops.length ? { ops, at: new Date().toISOString() } : undefined; json(res, pl) }); return }
+  const sc = /^\/plans\/(p\d)\/scenario(\/add)?$/.exec(p)
+  if (sc && req.method === 'POST') { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => { const pl = sc[1] === 'p1' ? plan : big; const ops = [...(sc[2] ? pl.scenario?.ops ?? [] : []), ...(JSON.parse(b || '{}').ops ?? [])]; pl.scenario = ops.length ? { ops, at: new Date().toISOString() } : undefined; json(res, pl) }); return }
   // the gallery's agent asking (src/dev/Gallery.tsx): one decision with long options, and a step
   if (p === '/gallery/next') return json(res, { steps: { source: 'agent', steps: [
     { kind: 'decide', text: 'What to do with AC-1492 now that the export is confirmed saved', blocking: true, options: [

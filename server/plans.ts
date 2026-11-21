@@ -65,11 +65,24 @@ export function undoRedo(id: string, back: boolean) {
  * One change the planner drafts: kept in the scenario (tried, not applied), with its turn and its evidence, when it
  * makes sense on the map as drafted so far (a change that does nothing, like removing what Linear owns, is dropped).
  */
-function draft(p: Plan, o: Op, turn: string) {
+export function draft(p: Plan, o: Op, turn: string) {
   const ops = p.scenario?.ops ?? []
+  // yours win: what you moved in the draft, it no longer changes (it sees your change with the map next time)
+  const target = 'id' in o ? o.id : undefined
+  if (target && ops.some((x) => !x.turn && 'id' in x && x.id === target)) return
   if (!apply(applyAll(p, ops), o, 'agent')) return
   const because = becauseOf(o.because)
   p.scenario = { ...p.scenario, ops: [...ops, { ...o, turn, because }].slice(-500), at: new Date().toISOString() }
+}
+
+/** Your moves, added to what is being tried (also while the planner drafts: its changes keep coming in beside them). */
+export function addToScenario(id: string, ops: Op[]) {
+  const p = planOf(id); if (!p) throw new Error('No such plan')
+  const mine = ops.filter((o) => BOARD.has(o.op)).map(({ turn: _, ...o }) => o as Op)
+  if (!mine.length) return p
+  step(p)
+  p.scenario = { ...p.scenario, ops: [...(p.scenario?.ops ?? []), ...mine].slice(-500), at: new Date().toISOString() }
+  save(); return p
 }
 
 /** The moves being tried: replaced as a whole (the page sends every move so far); none clears it. */

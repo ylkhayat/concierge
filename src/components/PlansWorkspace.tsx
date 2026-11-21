@@ -165,7 +165,7 @@ function StageBar({ stages, onStep }: { stages: Stage[]; onStep: (s: Stage) => v
 }
 
 // --- the chat: the planning partner, its questions as cards and what to do next one click away ------------------------
-function Chat({ p, toast, stage, settings, onSelect }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode; onSelect?: (id: string) => void }) {
+function Chat({ p, toast, stage, settings, onSelect, onTurn }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode; onSelect?: (id: string) => void; onTurn?: (turn: string, act: 'discard' | 'replay') => void }) {
   const [text, setText] = useState('')
   const [picks, setPicks] = useState<Record<number, number>>({})
   const scroll = useRef<HTMLDivElement>(null)
@@ -199,7 +199,7 @@ function Chat({ p, toast, stage, settings, onSelect }: { p: Plan; toast: Toast; 
           </details>
           {p.messages.map((m, i) => m.who === 'you'
             ? <div key={i} className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-body text-fg-1">{m.text}</div>
-            : <div key={i} className="space-y-1.5">{m.text && <Md text={m.text} className="!text-body" />}{m.turn && <TurnChanges p={p} turn={m.turn} onSelect={onSelect} />}</div>)}
+            : <div key={i} className="space-y-1.5">{m.text && <Md text={m.text} className="!text-body" />}{m.turn && <TurnChanges p={p} turn={m.turn} onSelect={onSelect} onTurn={onTurn} />}</div>)}
           {p.busy && (
             <div className="space-y-1">
               {p.live && <Md text={p.live} className="!text-body" />}
@@ -412,8 +412,23 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
   )
 }
 
+/**
+ * The draft's changes as the board shows them: what is there when it opens at once, then each new one of the planner's
+ * about a third of a second after the last (yours at once). replayFrom(i) plays them again from the i-th.
+ */
+function usePaced(ops: Op[] = []): [Op[], (i: number) => void] {
+  const [n, setN] = useState(ops.length)
+  useEffect(() => {
+    if (n > ops.length) { setN(ops.length); return }
+    if (n === ops.length) return
+    const t = setTimeout(() => setN(n + 1), ops[n]?.turn ? 320 : 0)
+    return () => clearTimeout(t)
+  }, [n, ops])
+  return [ops.slice(0, n), (i) => i >= 0 && setN(i)]
+}
+
 /** A reply's changes to the map, while they are in the draft: one chip each, which opens it on the map. */
-function TurnChanges({ p, turn, onSelect }: { p: Plan; turn: string; onSelect?: (id: string) => void }) {
+function TurnChanges({ p, turn, onSelect, onTurn }: { p: Plan; turn: string; onSelect?: (id: string) => void; onTurn?: (turn: string, act: 'discard' | 'replay') => void }) {
   const ops = (p.scenario?.ops ?? []).filter((o) => o.turn === turn)
   if (!ops.length) return null
   const whatIf = applyAll(p, p.scenario?.ops ?? [])
@@ -429,6 +444,10 @@ function TurnChanges({ p, turn, onSelect }: { p: Plan; turn: string; onSelect?: 
         </button>
       ))}
       {ids.size > 12 && <span className="px-1 text-meta text-fg-3">+{ids.size - 12} more</span>}
+      {onTurn && !p.busy && <span className="inline-flex items-center gap-0.5 pl-1">
+        <button onClick={() => onTurn(turn, 'replay')} title="Watch these changes again on the map" className="rounded-full px-1.5 py-0.5 text-meta text-fg-3 hover:bg-hover hover:text-fg-1">Replay</button>
+        <button onClick={() => onTurn(turn, 'discard')} title="Take this reply's changes out of the draft (⌘Z brings them back)" className="rounded-full px-1.5 py-0.5 text-meta text-fg-3 hover:bg-hover hover:text-fail-text">Discard</button>
+      </span>}
     </div>
   )
 }
@@ -526,6 +545,8 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const [compact, setCompact] = useState(false), [open, setOpen] = useState<Set<string>>(new Set()), [legend, setLegend] = useState(false)
   const [colorBy, setColorBy] = useState<ColorBy>('epic')
   const setup = useApi<SetupView>('/setup', { staleTime: 60_000 })
+  // the draft as the board shows it: the planner's changes one at a time as they come in (yours at once), so each is seen
+  const [paced, replayFrom] = usePaced(p?.scenario?.ops)
   // a link can open it at a level (?detail=overview or tickets)
   const wanted = useRef(new URLSearchParams(location.search).get('detail'))
   useEffect(() => {
@@ -543,7 +564,15 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
     remember(path, { ...p, scenario: next.length ? { ops: next, at: new Date().toISOString() } : undefined })
     return api(`${path}/scenario`, { ops: next }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   }
-  const move = (m: Move) => void setTried([...tried, m])
+  // yours, added on the server to what is there (the planner's changes may be coming in meanwhile)
+  const addTried = (more: Op[]) => {
+    remember(path, { ...p, scenario: { ops: [...tried, ...more], at: new Date().toISOString() } })
+    return api(`${path}/scenario/add`, { ops: more }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
+  }
+  const move = (m: Move) => void addTried([m])
+  const shown = paced.length < tried.length ? applyAll(p, paced) : whatIf
+  const fresh = paced.length < tried.length || paced.length === tried.length ? paced.at(-1) : undefined
+  const turnAct = (turn: string, act: 'discard' | 'replay') => act === 'discard' ? void setTried(tried.filter((o) => o.turn !== turn)) : replayFrom(tried.findIndex((o) => o.turn === turn))
   const set: SetPlan = (v) => api(path, v).then((r: Plan) => { remember(path, r); refresh('/plans') }, (e: Error) => toast(e.message, 'error'))
   const say = (text: string) => api(`${path}/say`, { text }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   const items = p.nodes.filter((n) => n.kind !== 'goal'), made = p.nodes.filter((n) => n.created).length
@@ -601,11 +630,11 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(340px,32%)_minmax(0,1fr)]">
         <section aria-label="Chat" className="flex min-h-0 flex-col border-line lg:border-r">
           {p.vision && <VisionCard p={p} set={set} toast={toast} />}
-          <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} />
+          <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} onTurn={turnAct} />
         </section>
         <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-col overflow-hidden bg-surface-2/40 lg:flex">
           {p.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)} />}
-          {p.nodes.length > 0 && <Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void setTried([...tried, ...o])} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />}
+          {p.nodes.length > 0 && <Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />}
           {p.nodes.length > 0 && <Readiness whatIf={whatIf} company={setup.data?.config.compliance} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
                                                 onAdd={(ob) => void ops([{ op: 'add', id: `r-${ob.id}`, kind: 'ticket', title: ob.title, description: ob.why, parent: p.nodes.find((n) => n.kind === 'goal')?.id, covers: [ob.id], moscow: 'must' }])} />}
           {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} />}
@@ -616,7 +645,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
                 <p className="text-body font-semibold text-fg-1">{p.busy ? 'Drawing the plan…' : 'The plan draws itself here'}</p>
                 <p className="max-w-sm text-small text-fg-3">Each epic a stream flowing into the goal, its tickets along it when they would be worked on, and the time it is worth marked.</p>
               </div>
-            ) : <PlanStream p={withObligations(whatIf, setup.data?.config.compliance)} base={tried.length ? p : undefined} draft={tried} onMove={p.busy || p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
+            ) : <PlanStream p={withObligations(shown, setup.data?.config.compliance)} base={tried.length ? p : undefined} draft={paced} fresh={fresh?.turn && 'id' in fresh ? `${fresh.id}:${paced.length}` : undefined} onMove={p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
         </section>
