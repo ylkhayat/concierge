@@ -197,18 +197,14 @@ export function setPalette(p: Palette) {
 }
 if (paletteNow()) document.documentElement.dataset.palette = paletteNow() // before the first paint
 
-/** A surface over the whole app (index.css, "Textures"): the touch of paper, film or a drafting table. */
+/** A grain over the whole app (index.css, "Textures"): the touch of film. */
 export const TEXTURES = [
   { id: '', label: 'None', hint: 'Clean surfaces' },
-  { id: 'grain', label: 'Grain', hint: 'Film grain, barely there' },
-  { id: 'paper', label: 'Paper', hint: 'Fibres, warm and quiet' },
-  { id: 'dots', label: 'Dots', hint: 'A dotted notebook' },
-  { id: 'grid', label: 'Grid', hint: 'A drafting table' },
-  { id: 'contours', label: 'Contours', hint: 'A topographic map' },
-  { id: 'aurora', label: 'Aurora', hint: 'Soft light in the workspace colour' },
+  { id: 'grain', label: 'Grain', hint: 'Fine film grain, barely there' },
+  { id: 'film', label: 'Film', hint: 'Coarser, warmer grain' },
 ] as const
 export type Texture = (typeof TEXTURES)[number]['id']
-export const textureNow = (): Texture => { try { return (localStorage.getItem('texture') ?? '') as Texture } catch { return '' } }
+export const textureNow = (): Texture => { try { const t = localStorage.getItem('texture') ?? ''; return (TEXTURES.some((x) => x.id === t) ? t : '') as Texture } catch { return '' } }
 export function setTexture(t: Texture) {
   const root = document.documentElement
   if (t) root.dataset.texture = t; else delete root.dataset.texture

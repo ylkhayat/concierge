@@ -304,7 +304,7 @@ function Palettes({ dark }: { dark: boolean }) {
 function Textures() {
   const [now, setNow] = useState(textureNow)
   return (
-    <div role="radiogroup" aria-label="Texture" className="grid grid-cols-3 gap-2 px-3 pb-3 sm:grid-cols-4">
+    <div role="radiogroup" aria-label="Texture" className="grid grid-cols-3 gap-2 px-3 pb-3">
       {TEXTURES.map((t) => {
         const on = now === t.id
         return (
@@ -332,7 +332,7 @@ function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; 
         </Row>
         <Row icon={Palette} title="Palette" hint="The tint and depth of every surface, in light and in dark. Each workspace keeps its accent." />
         <Palettes dark={theme === 'dark' || (theme === 'system' && document.documentElement.classList.contains('dark'))} />
-        <Row icon={Sparkles} title="Texture" hint="A faint surface over everything: film grain, paper, a dotted page, a grid, contours or soft light. With any palette." />
+        <Row icon={Sparkles} title="Texture" hint="A faint grain over everything, fine or coarser. With any palette." />
         <Textures />
         <Row icon={Maximize} title="Interface size" hint="Auto grows it on very wide screens; or pick a size.">
           <Segmented value={scale} options={SCALES} onChange={(v) => {

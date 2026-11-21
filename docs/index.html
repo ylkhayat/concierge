@@ -121,6 +121,8 @@ h1 em { font-style: normal; background: linear-gradient(100deg, oklch(0.6 0.2 29
 .vt.busy .n::before { animation: blink 1.2s ease-in-out infinite; }
 .vt .s { margin-top: 3px; font-size: 12px; font-weight: 500; color: var(--fg1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vt .m { display: flex; gap: 2px; margin-top: 7px; } .vt .m i { height: 3px; flex: 1; border-radius: 2px; background: color-mix(in oklch, var(--fg1) 8%, transparent); transition: background .5s; } .vt .m i.on { background: var(--l); }
+.vt .f { margin-top: 6px; font-size: 10.5px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .vt .f b { font-weight: 500; color: var(--fg4, var(--fg3)); font-variant-numeric: tabular-nums; }
+.vt.on { box-shadow: 0 0 0 1.5px var(--l), 0 0 28px -10px var(--l); }
 @keyframes vt-drift { from { background-position: 0% 0; } to { background-position: 100% 0; } }
 .chat { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; color: var(--fg2); }
 .chat .lane { padding-left: 10px; box-shadow: inset 2px 0 0 var(--l); } .chat .lane b { display: block; font-size: 10px; font-weight: 600; color: var(--l); }
@@ -156,6 +158,17 @@ h1 em { font-style: normal; background: linear-gradient(100deg, oklch(0.6 0.2 29
 @media (max-width: 640px) { .ready { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .lane2 b.mv, .lane2 i, .strat .bar { animation: none; opacity: 1; } .lane2 b.mv { left: 24%; } }
 /* the vitals section: three big cards cycling through what they would say */
+.vbig .vt .f { font-size: 12.5px; margin-top: 10px; transition: opacity .35s; }
+.mind { position: relative; height: 340px; margin-top: 12px; border-radius: 18px; box-shadow: var(--e3), 0 0 0 1.5px oklch(0.62 0.17 230 / .5);
+  background: radial-gradient(color-mix(in oklch, var(--fg1) 9%, transparent) 1px, transparent 1.3px) 0 0 / 18px 18px, var(--s1); overflow: hidden; }
+.mind-lines { position: absolute; inset: 0; width: 100%; height: 100%; } .mind-lines path { stroke: oklch(0.62 0.17 230 / .55); stroke-width: 1.6; fill: none; vector-effect: non-scaling-stroke; }
+.mn { position: absolute; width: 23%; padding: 10px 12px; border-radius: 12px; background: var(--s1); box-shadow: 0 0 0 1px var(--line), var(--e2, 0 6px 18px -8px rgb(0 0 0 / .3)); font-size: 11px; color: var(--fg2); transform: translate(-50%, -50%); }
+.mn b { display: block; font: 600 11.5px/1.3 var(--mono, ui-monospace, monospace); color: var(--fg1); } .mn em { display: block; font-style: normal; font-size: 10px; color: oklch(0.62 0.17 230); margin: 2px 0 6px; }
+.mn span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 3px 0; border-top: 1px solid var(--line); font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; }
+.mn.c { width: 26%; background: color-mix(in oklch, oklch(0.62 0.17 230) 16%, var(--s1)); box-shadow: 0 0 0 1px oklch(0.62 0.17 230 / .45); left: 50%; top: 50%; }
+.mn.c i { display: block; font-style: normal; font-size: 9.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: oklch(0.62 0.17 230); } .mn.c b { font-family: inherit; font-size: 13px; margin-top: 4px; }
+.mn.l1 { left: 20%; top: 23%; } .mn.l2 { left: 20%; top: 75%; } .mn.r1 { left: 80%; top: 20%; } .mn.r2 { left: 80%; top: 53%; } .mn.r3 { left: 80%; top: 83%; }
+@media (max-width: 760px) { .mind { height: auto; padding: 14px; display: grid; gap: 8px; } .mind-lines { display: none; } .mn { position: static; width: auto; transform: none; } }
 .vbig { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 40px; }
 .vbig .vt { padding: 16px 18px; border-radius: 16px; box-shadow: var(--e3); }
 .vbig .vt .n { font-size: 11px; } .vbig .vt .s { font-size: 16px; margin-top: 8px; white-space: normal; min-height: 2.6em; }
@@ -505,9 +518,9 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
         <div class="detail">
           <div><div class="crumb">payments #482</div><h3>Retry webhooks with backoff</h3></div>
           <div class="vitals">
-            <div class="vt busy"><div class="n">Shipping</div><div class="s">Writing the review</div><div class="m"><i class="on"></i><i class="on"></i><i></i><i></i></div></div>
-            <div class="vt i"><div class="n">Intent</div><div class="s">1 open question</div><div class="m"><i class="on"></i><i class="on"></i><i></i></div></div>
-            <div class="vt u idle"><div class="n">Understanding</div><div class="s">Not assessed yet</div><div class="m"><i></i><i></i><i></i></div></div>
+            <div class="vt busy"><div class="n">Shipping</div><div class="s">Writing the review</div><div class="f"><b>now</b> · read the retry policy</div></div>
+            <div class="vt i"><div class="n">Intent</div><div class="s">1 open question</div><div class="f"><b>2m</b> · answered: fail a 4xx at once</div></div>
+            <div class="vt u idle"><div class="n">Understanding</div><div class="s">Not written yet</div><div class="f">click to write it</div></div>
           </div>
           <div class="chat">
             <div>Found an unbounded retry on 4xx responses. Writing the review.</div>
@@ -596,7 +609,7 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
       <div class="feat reveal" style="--h:320">
         <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2a10 10 0 0 0 0 20 2 2 0 0 0 2-2v-1a2 2 0 0 1 2-2h1a5 5 0 0 0 5-5c0-5.5-4.5-10-10-10z"/></svg></span>
         <h3>Your look</h3>
-        <p>Three palettes, Concierge, Midnight and Paper, in light or dark. Lay a texture over it if you like: film grain, paper, dots, a grid, contours or a soft aurora.</p>
+        <p>Three palettes, Concierge, Midnight and Paper, in light or dark, and a film grain over it if you like, fine or coarser.</p>
       </div>
       <div class="feat reveal" style="--h:260">
         <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 8h18M8 21h8M12 18v3"/></svg></span>
@@ -661,9 +674,19 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
       <p class="sub">Every PR and ticket carries three vitals that follow the conversation as it goes. Open Understanding and the change is drawn as a mind map: what it does at the centre, the parts of the system it touches around it, and each file’s new behaviour a click away. Open Intent and it reads as a story: why it was needed, what was decided, before and now. On your phone too.</p>
     </div>
     <div class="vbig reveal" id="vitalsDemo" aria-hidden="true">
-      <div class="vt"><div class="n">Shipping</div><div class="s"></div><div class="w"></div><div class="m"><i></i><i></i><i></i><i></i></div></div>
-      <div class="vt i"><div class="n">Intent</div><div class="s"></div><div class="w"></div><div class="m"><i></i><i></i><i></i></div></div>
-      <div class="vt u"><div class="n">Understanding</div><div class="s"></div><div class="w"></div><div class="m"><i></i><i></i><i></i></div></div>
+      <div class="vt"><div class="n">Shipping</div><div class="s"></div><div class="f"></div></div>
+      <div class="vt i"><div class="n">Intent</div><div class="s"></div><div class="f"></div></div>
+      <div class="vt u on"><div class="n">Understanding</div><div class="s"></div><div class="f"></div></div>
+    </div>
+    <!-- Understanding, opened: the change as a mind map, the whole height of the chat -->
+    <div class="mind reveal" aria-hidden="true">
+      <svg class="mind-lines" viewBox="0 0 1000 300" preserveAspectRatio="none"><path d="M500 150 L230 70"/><path d="M500 150 L230 225"/><path d="M500 150 L770 60"/><path d="M500 150 L770 160"/><path d="M500 150 L770 250"/></svg>
+      <div class="mn l1"><b>payments/queue</b><em>~2 changed</em><span>~ retry.ts · a 4xx fails at once</span><span>~ backoff.ts · doubles up to 5 tries</span></div>
+      <div class="mn l2"><b>Behaviour</b><em>1 flow it changes</em><span>Webhook delivery · timeouts retry, 4xx don't</span></div>
+      <div class="mn c"><i>What changes</i><b>Webhooks retry timeouts with backoff, never a 4xx</b></div>
+      <div class="mn r1"><b>payments/api</b><em>+1 new</em><span>+ webhook_errors.ts · names each failure</span></div>
+      <div class="mn r2"><b>libs/http</b><em>~1 changed</em><span>~ client.ts · exposes the status code</span></div>
+      <div class="mn r3"><b>tests</b><em>+2 new</em><span>+ retry.spec.ts · 4xx never retried</span></div>
     </div>
   </section>
 
@@ -1262,19 +1285,18 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
     const el = document.getElementById('vitalsDemo'); if (!el) return
     const cards = [...el.querySelectorAll('.vt')]
     const STEPS = [
-      [['The agent is reviewing', 'Reading the diff and the retry policy', 1, 1], ['Not assessed yet', 'Tap it: it starts from the conversation', 0, 0], ['Not assessed yet', 'Tap it: it starts from the conversation', 0, 0]],
-      [['The review is ready', '1 blocking finding, 3 suggestions', 2, 0], ['1 open question', 'Should a 4xx ever be retried?', 1, 1], ['Not assessed yet', 'Tap it: it starts from the conversation', 0, 0]],
-      [['The review is ready', '1 blocking finding, 3 suggestions', 2, 0], ['Decision proposed', 'Retry timeouts only; fail a 4xx at once', 2, 0], ['Knows the flow', 'Not yet: why the backoff doubles', 1, 1]],
-      [['Post the review', 'Your findings, as inline comments', 3, 0], ['Intent agreed', 'Its steer went to the agent', 3, 0], ['Understood', 'Ready to approve', 3, 0]],
+      [['The agent is reviewing', '<b>now</b> · reading the diff', 1], ['Not written yet', 'click to write it', 0], ['Not written yet', 'click to write it', 0]],
+      [['The review is ready', '<b>1m</b> · 1 blocking finding, 3 suggestions', 0], ['1 open question', '<b>now</b> · should a 4xx ever be retried?', 1], ['Not written yet', 'click to write it', 0]],
+      [['The review is ready', '<b>2m</b> · 1 blocking finding, 3 suggestions', 0], ['Decision proposed', '<b>1m</b> · retry timeouts only', 0], ['Retry path, five parts', '<b>now</b> · drawing the map', 1]],
+      [['Post the review', '<b>now</b> · your findings, as inline comments', 0], ['Intent agreed', '<b>2m</b> · its steer went to the agent', 0], ['Retry path, five parts', '<b>1m</b> · written · 2 asked', 0]],
     ]
     let at = 0
     const show = () => {
-      STEPS[at].forEach(([s, w, on, busy], k) => {
-        const c = cards[k], S = c.querySelector('.s'), W = c.querySelector('.w')
-        S.style.opacity = W.style.opacity = 0
-        setTimeout(() => { S.textContent = s; W.textContent = w; S.style.opacity = W.style.opacity = 1 }, 250)
-        c.querySelectorAll('.m i').forEach((x, j) => x.classList.toggle('on', j < on))
-        c.classList.toggle('busy', !!busy); c.classList.toggle('idle', s === 'Not assessed yet')
+      STEPS[at].forEach(([s, f, busy], k) => {
+        const c = cards[k], S = c.querySelector('.s'), F = c.querySelector('.f')
+        S.style.opacity = F.style.opacity = 0
+        setTimeout(() => { S.textContent = s; F.innerHTML = f; S.style.opacity = F.style.opacity = 1 }, 250)
+        c.classList.toggle('busy', !!busy); c.classList.toggle('idle', s === 'Not written yet')
       })
       at = (at + 1) % STEPS.length
     }
