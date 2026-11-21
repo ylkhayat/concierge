@@ -68,20 +68,34 @@ export function useDeck(selected: string | undefined) {
     es.addEventListener('health', (e) => { setHealth(JSON.parse(e.data)); staleNow(['/load', '/providers', '/usage/accounts', '/machines', '/infra', '/update']) })
     es.addEventListener('exec', (e) => { setExec(JSON.parse(e.data)); staleNow(['/stacks/drive', '/load', '/runs']) })
     es.addEventListener('alerts', (e) => setAlerts(JSON.parse(e.data)))
+    // a run's lines arrive many a second: gathered, and applied a few times a second, so the page renders once for a
+    // burst instead of once a line. Only feeds already read are kept (one never opened is read whole when it opens)
+    let lines: { id: string; a: Activity }[] = [], flush: ReturnType<typeof setTimeout> | undefined
+    const stale = new Set<string>()
     es.addEventListener('activity', (e) => {
-      const { id, a } = JSON.parse(e.data)
-      staleNow([id.startsWith('exec:') ? `/exec/${id.slice(5)}/` : `/prs/${encodeURIComponent(id)}/background`])
-      feedCache.set(id, [...(feedCache.get(id) ?? []).slice(-2999), a])
-      if (id === selectedRef.current) setFeed((f) => [...f.slice(-2999), a])
+      const x = JSON.parse(e.data) as { id: string; a: Activity }
+      lines.push(x); stale.add(x.id.startsWith('exec:') ? `/exec/${x.id.slice(5)}/` : `/prs/${encodeURIComponent(x.id)}/background`)
+      flush ??= setTimeout(() => {
+        flush = undefined
+        const got = lines; lines = []
+        staleNow([...stale]); stale.clear()
+        const by = new Map<string, Activity[]>()
+        for (const { id, a } of got) by.set(id, [...(by.get(id) ?? []), a])
+        for (const [id, add] of by) { const had = feedCache.get(id); if (had) cacheFeed(id, [...had, ...add].slice(-3000)) }
+        const mine = selectedRef.current && by.get(selectedRef.current)
+        if (mine) setFeed((f) => [...f, ...mine].slice(-3000))
+      }, 200)
     })
-    return () => es.close()
+    // back after a drop (a restart, a slow server): what it missed comes in again, the open feed included
+    es.addEventListener('open', () => { const id = selectedRef.current; if (id) api(feedUrl(id)).then((f: Activity[]) => { cacheFeed(id, f); if (selectedRef.current === id) setFeed(f) }).catch(() => {}) })
+    return () => { es.close(); if (flush) clearTimeout(flush) }
   }, [])
 
   // the SSE listener above outlives renders, so it reads the selection through a ref
   selectedRef.current = selected
   useEffect(() => {
     setFeed(selected ? feedCache.get(selected) ?? [] : []); setFeedFor(selected)
-    if (selected) api(feedUrl(selected)).then((f: Activity[]) => { feedCache.set(selected, f); if (selectedRef.current === selected) setFeed(f) }).catch(() => {})
+    if (selected) api(feedUrl(selected)).then((f: Activity[]) => { cacheFeed(selected, f); if (selectedRef.current === selected) setFeed(f) }).catch(() => {})
   }, [selected])
 
   // one item's feed, right from the render that opens it: `feed` while it is that item's, else what is cached (never
@@ -91,6 +105,8 @@ export function useDeck(selected: string | undefined) {
 }
 const selectedRef: { current?: string } = {}
 const feedCache = new Map<string, Activity[]>() // per PR, so switching back shows the feed instantly
+/** Into the cache as the newest; the oldest goes past 30, so a long day doesn't keep every feed it ever read. */
+function cacheFeed(id: string, f: Activity[]) { feedCache.delete(id); feedCache.set(id, f); if (feedCache.size > 30) feedCache.delete(feedCache.keys().next().value!) }
 // "ticket:<id>" is a ticket's whole timeline, "exec:<run>" one run's feed; anything else is a PR's
 const feedUrl = (key: string) => key.startsWith('ticket:') ? `/exec/tickets/${key.slice(7)}/activity`
   : key.startsWith('exec:') ? `/exec/${key.slice(5)}/activity` : `/prs/${enc(key)}/activity`
@@ -100,7 +116,7 @@ const prefetching = new Set<string>()
 export function prefetchFeed(key: string) {
   if (feedCache.has(key) || prefetching.has(key)) return
   prefetching.add(key)
-  api(feedUrl(key)).then((f: Activity[]) => { if (!feedCache.has(key)) feedCache.set(key, f) }).catch(() => {}).finally(() => prefetching.delete(key))
+  api(feedUrl(key)).then((f: Activity[]) => { if (!feedCache.has(key)) cacheFeed(key, f) }).catch(() => {}).finally(() => prefetching.delete(key))
 }
 
 // dates and times live in time.ts (date-fns); re-exported here for the callers that import them from lib

@@ -146,7 +146,10 @@ function views(): PrView[] {
       const crit = critOfView(p)
       const op = ops.get(p.id)
       // the description is fetched when you open it (/prs/:id/body): the live list stays small
-      const { body, bodyHtml: _html, ...pr } = p
+      const { body, bodyHtml: _html, lastSaid: _said, ...pr } = p
+      // and the job without what only the server reads (its prompt, the last run's words and steps): the list is sent
+      // again on every change, so each byte here costs on both ends
+      if (pr.job) { const { prompt: _p, lastWords: _w, lastSteps: _s, ...job } = pr.job; pr.job = { ...job, ...(job.summary && { summary: cap(job.summary, 1500) }) } as typeof pr.job }
       const waiting = p.job?.state === 'queued' ? waitingOn(p.job, p.mine ? 'revise' : 'review', p.repo) : undefined
       // queued: why it hasn't started (and when it should), shown on the PR
       const below = p.job?.state === 'queued' && p.job.after && ['queued', 'running'].includes(state.prs[p.job.after]?.job?.state ?? '') ? `#${state.prs[p.job.after].number}` : undefined
@@ -1164,10 +1167,30 @@ function ticketViews(): TicketView[] {
   // dimmed for now: until its state moves on (another bucket), then it's back to normal by itself
   return views.map((v) => ({ ...v, stack: stacks.get(v.id), pinned: `ticket:${v.id}` in pins(), dimmed: state.dimmed?.[v.id] === v.bucket }))
 }
+const cap = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}…` : t)
+/**
+ * A ticket as the board sends it: the run without what only the server reads (its prompt, plan, brief, handovers), and
+ * a done one without its long text. Measured: 2 MB a send before, most of it closed tickets' descriptions and runs'
+ * prompts, sent again on every change.
+ */
+function slimTicket(t: TicketView): TicketView {
+  const r = t.run && (({ prompt: _p, plan: _l, brief: _b, handovers: _h, ...x }) => ({ ...x, ...(x.summary && { summary: cap(x.summary, 1500) }) }))(t.run as typeof t.run & { plan?: unknown; brief?: unknown; handovers?: unknown })
+  const done = t.bucket === 'closed'
+  return { ...t, ...(r && { run: r as typeof t.run }), ...(done && { description: cap(t.description, 400), ...(t.lastComment && { lastComment: { ...t.lastComment, body: cap(t.lastComment.body, 300) } }) }) }
+}
+// the board as JSON, built at most once a second however many pages ask (ponytail: one cache, the pages share it)
+let execCache: { at: number; data: string } | undefined
+function execJson() {
+  if (execCache && Date.now() - execCache.at < 900) return execCache.data
+  const t = performance.now()
+  execCache = { at: Date.now(), data: JSON.stringify(execView()) }
+  slow('execView (live update)', t)
+  return execCache.data
+}
 const execView = () => ({
   actions: config.exec.actions.map(({ id, label, hint, icon, confirm, env, prompt }) => ({ id, label, hint, icon, confirm, env, missing: missingFor(prompt) })),
   missing: missingFor(slot('exec')), // skills the exec command needs that this machine lacks
-  tickets: ticketViews(), at: execBoard.at, error: execBoard.error, polling: execBoard.polling,
+  tickets: ticketViews().map(slimTicket), at: execBoard.at, error: execBoard.error, polling: execBoard.polling,
   configured: (!!config.exec.command && Object.keys(config.exec.repoByPrefix).length > 0) || execBoard.tickets.some((t) => t.source === 'github'), hasKey: hasKey(),
 })
 export type ExecView = ReturnType<typeof execView>
@@ -2673,7 +2696,7 @@ const prsHub = (() => {
     const data = JSON.stringify({ set, del, order: next.map((p) => p.id) })
     for (const send of pages) send('prs-patch', data)
   }
-  bus.on('change', () => { soon ??= setTimeout(refresh, 150) })
+  bus.on('change', () => { soon ??= setTimeout(refresh, 400) }) // a run's burst of changes is one rebuild: views() is the server's heaviest read
   setInterval(() => { if (pages.size) refresh() }, 4000).unref()
   return {
     join(send: (event: 'prs-patch', data: string) => void) { if (!pages.size) refresh(); pages.add(send); return list },
@@ -2692,13 +2715,9 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   const sendPrs = async () => { await stream.writeSSE({ event: 'prs', data: JSON.stringify(prsHub.join(patch)) }) }
   const sendHealth = () => stream.writeSSE({ event: 'health', data: JSON.stringify(healthView()) })
   const onActivity = (id: string, a: Activity) => stream.writeSSE({ event: 'activity', data: JSON.stringify({ id, a }) })
-  let lastExec = ''
-  const sendExec = async () => {
-    const t = performance.now()
-    const data = JSON.stringify(execView())
-    slow('execView (live update)', t)
-    if (data !== lastExec) { lastExec = data; await stream.writeSSE({ event: 'exec', data }) }
-  }
+  let lastExec = '', execSoon: ReturnType<typeof setTimeout> | undefined
+  // a burst of changes (a run's every line says 'exec') is one send, at most one a second, built once for every page
+  const sendExec = () => { execSoon ??= setTimeout(async () => { execSoon = undefined; const data = execJson(); if (data !== lastExec) { lastExec = data; await stream.writeSSE({ event: 'exec', data }) } }, lastExec ? 1000 : 0) }
   const sendAlerts = () => stream.writeSSE({ event: 'alerts', data: JSON.stringify(alerts()) })
   // what changed, by API path: gathered for a moment so a burst of saves is one message
   let pending = new Set<string>(), flush: ReturnType<typeof setTimeout> | undefined
@@ -2710,7 +2729,7 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   bus.on('activity', onActivity)
   await sendPrs() // the whole list once; from here on prsHub sends this page patches
   await sendHealth()
-  await sendExec()
+  sendExec()
   await sendAlerts()
   const tick = setInterval(() => { stream.writeSSE({ event: 'ping', data: '' }) }, 4000)
   await new Promise<void>((resolve) => stream.onAbort(resolve))
@@ -2718,7 +2737,7 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   prsHub.leave(patch)
   bus.off('alerts', sendAlerts)
   live.off('stale', onStale); if (flush) clearTimeout(flush)
-  bus.off('exec', sendExec)
+  bus.off('exec', sendExec); if (execSoon) clearTimeout(execSoon)
   bus.off('health', sendHealth)
   bus.off('activity', onActivity)
 }))

@@ -3,7 +3,7 @@ import {
   Bot, CircleCheck, FilePen, FileText, Search, ShieldAlert, Sparkles, SquareTerminal, TriangleAlert, Users, Wrench,
   ChevronRight, type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { api, here, hereIn, type Activity } from '../lib.ts'
 import { Md } from './Md.tsx'
 import { LANE } from './NextSteps.tsx'
@@ -338,7 +338,9 @@ const secs = (ms: number) => ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))
  * agent said, and what it did between, folded into "Worked 47s · 9 steps" lines. Its facts (when, how long, the cost,
  * the account) sit in one quiet line above it. Folded (an earlier turn), it is what started it and how it ended.
  */
-function Turn({ ch, open, live, details, onToggle, until, before, entry }: {
+// a run that is over doesn't change: it renders again only when it opens, closes or gets a line (the live one)
+const Turn = memo(TurnImpl, (a, b) => a.ch.key === b.ch.key && a.ch.items.length === b.ch.items.length && a.open === b.open && a.live === b.live && a.details === b.details && a.until === b.until && a.before === b.before)
+function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
   ch: Chapter; open: boolean; live: boolean; details: boolean; onToggle: () => void; until?: string; before?: number; entry: (a: Activity, k: string) => ReactNode
 }) {
   const h = ch.head!
