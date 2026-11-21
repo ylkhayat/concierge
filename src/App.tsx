@@ -21,6 +21,8 @@ import { ExecList, groupOf, orderedTickets } from './components/ExecList.tsx'
 import { PrThread } from './thread/PrThread.tsx'
 import { TicketThread } from './thread/TicketThread.tsx'
 import { ROLES, useRole } from './role.ts'
+import { setAway, useAway } from './away.ts'
+import { NotHere } from './components/NotHere.tsx'
 import { RoleSwitch } from './components/RoleSwitch.tsx'
 import { RepoList } from './components/RepoList.tsx'
 import { ExecHome } from './components/ExecHome.tsx'
@@ -98,7 +100,7 @@ export function App() {
   const [spaces, setSpaces] = useState<Mode[]>(['review', 'exec'])
   const [linearApp, setLinearApp] = useState(false)
   const [missing, setMissing] = useState<string[]>([]) // skills the settings run that this machine lacks
-  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
+  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.clones); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
   // Linear links open in the desktop app: linear://<same path>. One listener covers every link on the page.
   useEffect(() => {
     if (!linearApp) return
@@ -116,6 +118,7 @@ export function App() {
   const toast = (msg: string, tone: Toast['tone'] = 'ok') => { if (tone === 'ok') sonner.success(msg); else sonner.error(msg) }
 
   const detailRef = useRef<HTMLElement>(null)
+  const away = useAway() // repositories not on this machine: their PRs and tickets don't open here
   const select = (id?: string) => {
     if (id === selected) return
     // switching items: the browser crossfades the detail pane alone (an element-scoped view transition); the list,
@@ -408,7 +411,7 @@ export function App() {
         {recentPrs.map((p) => (
           <Activity key={p.id} mode={!codebaseRepo && !stackPage && p.id === pr?.id ? 'visible' : 'hidden'}>
           <Detail>
-              <PrPage pr={p} feed={feedOf(p.id)} now={now} onBack={() => select(undefined)} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => (l.kind === 'ticket' ? goTicket(l.id) : select(l.id))} sync={{ at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }} />
+              {away.has(p.repo) ? <NotHere repo={p.repo} what="pull request" /> : <PrPage pr={p} feed={feedOf(p.id)} now={now} onBack={() => select(undefined)} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => (l.kind === 'ticket' ? goTicket(l.id) : select(l.id))} sync={{ at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }} />}
           </Detail>
           </Activity>
         ))}
@@ -439,7 +442,7 @@ export function App() {
         {recentTickets.map((t) => (
           <Activity key={t.id} mode={!stackPage && t.id === ticket?.id ? 'visible' : 'hidden'}>
           <Detail>
-              <TicketPage t={t} actions={exec?.actions ?? []} missing={exec?.missing} feed={feedOf(`ticket:${t.id}`)} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
+              {t.repo && away.has(t.repo) ? <NotHere repo={t.repo} what="ticket" /> : <TicketPage t={t} actions={exec?.actions ?? []} missing={exec?.missing} feed={feedOf(`ticket:${t.id}`)} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />}
           </Detail>
           </Activity>
         ))}

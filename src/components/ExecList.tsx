@@ -1,3 +1,4 @@
+import { useAway } from '../away.ts'
 import type { Prep } from '../../server/plan.ts'
 import { askLine } from '../../server/reply.ts'
 import { queuedText } from '../time.ts'
@@ -128,6 +129,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
   picked: string[]; onPick: (ids: string[]) => void; onRun: (stacks?: string[][], note?: string) => Promise<unknown>
   query: string; onQuery: (q: string) => void; now: number
 }) {
+  const away = useAway() // repositories not on this machine: their tickets are shown, not opened
   // a bookmark or dim clicked here shows at once (the row moves to where it now belongs); the server's next update agrees
   const [over, setOver] = useState<Record<string, { pinned?: boolean; dimmed?: boolean }>>({})
   useEffect(() => setOver({}), [given])
@@ -183,8 +185,8 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
     const mine = g.id === 'needs-you' || g.id === 'tend' // waiting on you: the whole title, it's what you came for
     const done = isDone(t)
     return (
-      <div key={t.id} data-flip={t.id} ref={active ? activeRef : undefined} onClick={() => onSelect(t.id)} onMouseEnter={() => prefetchFeed(`ticket:${t.id}`)} {...drag(t.id, pickable)} role="button" tabIndex={0} aria-current={active} style={t.repo ? appColor(t.repo).style : undefined}
-           onKeyDown={(e) => e.key === 'Enter' && onSelect(t.id)}
+      <div key={t.id} data-flip={t.id} ref={active ? activeRef : undefined} onClick={() => !(t.repo && away.has(t.repo)) && onSelect(t.id)} data-away={(t.repo && away.has(t.repo)) || undefined} aria-disabled={(t.repo && away.has(t.repo)) || undefined} onMouseEnter={() => prefetchFeed(`ticket:${t.id}`)} {...drag(t.id, pickable)} role="button" tabIndex={0} aria-current={active} style={t.repo ? appColor(t.repo).style : undefined}
+           onKeyDown={(e) => e.key === 'Enter' && !(t.repo && away.has(t.repo)) && onSelect(t.id)}
            className={`group relative ${up || down ? '' : 'mb-0.5'} flex w-full cursor-pointer ${active && moved ? 'animate-[moved_1.6s_ease-out]' : ''} items-center gap-2.5 overflow-hidden rounded-ctl px-2.5 py-2 text-left -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${
              active ? 'sel' : on ? 'bg-accent/6 ring-1 ring-accent/25' : 'hov'}`}>
         {up && <span className="absolute left-[22px] top-0 h-1/2 w-px bg-fill-strong" aria-hidden />}

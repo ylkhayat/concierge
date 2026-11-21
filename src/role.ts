@@ -6,12 +6,15 @@ import { useEffect, useState } from 'react'
 
 export type Role = 'developer' | 'product' | 'design'
 // rail: the role's own workspaces; another role's are a switch away, never mixed in
-export const ROLES: Record<Role, { label: string; short: string; icon: LucideIcon; hint: string; rail: string[] }> = {
+// pending: shown as coming soon, never joined or switched to
+export const ROLES: Record<Role, { label: string; short: string; icon: LucideIcon; hint: string; rail: string[]; pending?: boolean }> = {
   developer: { label: 'Developer', short: 'Dev', icon: Code2, hint: 'The code: Explain\'s tour, business, technical and norms views, the turns, the tools', rail: ['review', 'exec', 'standup', 'skills'] },
   product: { label: 'Product', short: 'PM', icon: Lightbulb, hint: 'The domain: contexts, entities, rules and the user\'s journey; nothing technical', rail: ['plans', 'skills'] },
-  design: { label: 'Design', short: 'Design', icon: Palette, hint: 'The experience: the journey, the screens and their states, the words people see', rail: ['review', 'skills'] },
+  design: { label: 'Design', short: 'Design', icon: Palette, hint: 'The experience: the journey, the screens and their states, the words people see', rail: ['review', 'skills'], pending: true },
 }
-const ORDER = Object.keys(ROLES) as Role[]
+const ORDER = (Object.keys(ROLES) as Role[]).filter((r) => !ROLES[r].pending)
+/** The roles you can be in now (not the ones still coming). */
+export const ready = (rs: Role[]) => rs.filter((r) => !ROLES[r].pending)
 const KEY = 'role', EVENT = 'concierge:role'
 
 const stored = (): Role => {

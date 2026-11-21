@@ -159,3 +159,6 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 
 /* a change the planner just made on the plan board: a ring that swells and fades */
 @keyframes fresh-glow { 0% { opacity: 0; stroke-width: 6px } 25% { opacity: 1 } 100% { opacity: 0; stroke-width: 1px } }
+
+/* a PR or ticket of a repository not on this machine (Settings → Repositories): seen in the list, not opened */
+[data-away] { opacity: 0.45; cursor: not-allowed; }

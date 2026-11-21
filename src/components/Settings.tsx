@@ -2009,8 +2009,9 @@ function RolesSettings() {
         {(Object.keys(ROLES) as Role[]).map((r) => {
           const x = ROLES[r], on = v.joined.includes(r)
           return (
-            <Row key={r} icon={x.icon} title={x.label} hint={`${x.hint}. Workspaces: ${x.rail.join(', ')}`}>
-              {on ? <span className="flex items-center gap-1.5">
+            <Row key={r} icon={x.icon} title={x.label} hint={x.pending ? `${x.hint}. Not available yet.` : `${x.hint}. Workspaces: ${x.rail.join(', ')}`}>
+              {x.pending ? <span className="rounded-full bg-fill px-2 py-0.5 text-meta font-medium text-fg-3">Coming soon</span>
+              : on ? <span className="flex items-center gap-1.5">
                       {v.joined[0] === r && <span className="text-meta text-fg-3">signed up as</span>}
                       {v.joined.length > 1 && <button onClick={() => post({ joined: v.joined.filter((y) => y !== r) })} className={quiet}>Leave</button>}
                     </span>
@@ -2020,7 +2021,7 @@ function RolesSettings() {
         })}
         {err && <p role="alert" className="mx-3.5 mb-3 rounded-lg bg-fail/10 px-3 py-2 text-small text-fail">{err}</p>}
       </Group>
-      {v.joined.filter((r) => r !== 'developer').map((r) => <RoleSlots key={r} role={r} v={v} onSaved={(x) => remember('/roles', { ...v, ...x })} />)}
+      {v.joined.filter((r) => r !== 'developer' && !ROLES[r].pending).map((r) => <RoleSlots key={r} role={r} v={v} onSaved={(x) => remember('/roles', { ...v, ...x })} />)}
     </>
   )
 }

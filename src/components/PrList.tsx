@@ -1,3 +1,4 @@
+import { useAway } from '../away.ts'
 import { appColor } from '../appColor.ts'
 import { askLine } from '../../server/reply.ts'
 import { Bookmark, ChevronRight, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
@@ -232,9 +233,10 @@ function Quick({ p, act }: { p: PrView; act: Act }) {
 
 /** A PR on its own: avatar with its status dot, title, and the facts line. */
 function Row({ p, seen, active, onSelect, now, activeRef, pick, act }: RowProps) {
+  const away = useAway() // its repository isn't on this machine: shown, not opened
   const working = p.status === 'preparing' || p.status === 'posting'
   return (
-    <button data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} {...pick.drag(p.id, pickable(p))} aria-current={active} title={`${p.title}\n${p.repo}#${p.number}`} style={appColor(p.repo).style}
+    <button data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} disabled={away.has(p.repo)} data-away={away.has(p.repo) || undefined} {...pick.drag(p.id, pickable(p))} aria-current={active} title={`${p.title}\n${p.repo}#${p.number}`} style={appColor(p.repo).style}
             className={`group relative mb-0.5 flex w-full items-center gap-2.5 overflow-hidden rounded-ctl px-2.5 py-2 text-left reading:flex-col reading:gap-1 reading:px-0 reading:py-1.5 -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${active ? ACTIVE : pick.picked.includes(p.id) ? PICKED : IDLE}`}>
       {working && <Shimmer />}
       <PickMark p={p} pick={pick}>
@@ -263,6 +265,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
   prs: PrView[]; here: PrView['status'][]; byNumber: Map<string, PrView>; selected?: string; onSelect: (id: string) => void; now: number
   activeRef: RefObject<HTMLButtonElement | null>; pick: Pick; act: Act
 }) {
+  const away = useAway()
   // every PR of the tree, bottom first (PRs built on the same one have different lines: one card holds them all)
   const all = treeOf(prs), repo = prs[0].repo
   const authors = [...new Map(prs.map((p) => [p.author.login, p.author])).values()]
@@ -288,7 +291,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
         const active = p.id === selected, lit = here.includes(p.status)
         const working = p.status === 'preparing' || p.status === 'posting' || p.stackRun === 'running'
         return (
-          <button key={p.id} data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} {...pick.drag(p.id, pickable(p))} aria-current={active} title={`${p.title}\n${p.repo}#${p.number} · ${statusMeta(p.status, p.mine).label}`}
+          <button key={p.id} data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} disabled={away.has(p.repo)} data-away={away.has(p.repo) || undefined} {...pick.drag(p.id, pickable(p))} aria-current={active} title={`${p.title}\n${p.repo}#${p.number} · ${statusMeta(p.status, p.mine).label}`}
                   className={`group relative flex w-full items-center gap-2.5 overflow-hidden rounded-ctl py-1.5 pl-2.5 pr-2 text-left reading:flex-col reading:gap-1 reading:px-0 reading:py-1.5 -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${active ? ACTIVE : pick.picked.includes(p.id) ? PICKED : IDLE}`}>
             {working && <Shimmer />}
             {/* the rail: joins this node to the PR below and the one above */}
