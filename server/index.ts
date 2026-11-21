@@ -622,11 +622,12 @@ app.get('/machines', async (c) => {
   const beats = ((await infraView()) as { beats?: { name: string; role?: string; active?: boolean; agoS?: number }[] }).beats ?? []
   const here = [...children.values()].filter((x) => !(x as { machine?: string }).machine).length
   const me = fleet.machine ?? 'this machine', own = slotsHere(state.settings.maxJobs)
-  const list = [{ name: me, role: process.env.DECK_ROLE, control: true, online: true, slots: own, room: capped(fleet.machine, own), running: here, freeMb: Math.round(freemem() / 1048576) }]
+  const list = [{ name: me, role: process.env.DECK_ROLE, control: fleet.mayWrite(), online: true, slots: own, room: capped(fleet.machine, own), running: here, freeMb: Math.round(freemem() / 1048576) }]
   for (const b of beats) {
     if (b.name === fleet.machine || b.name.includes('.sync-conflict-')) continue
     const m = machines.get(b.name), s = m?.status
-    list.push({ name: b.name, role: b.role, control: false, online: !!s, slots: s?.slots ?? 0, room: capped(b.name, s?.slots ?? 0), running: s?.running ?? 0, freeMb: s?.freeMb ?? 0 })
+    // a standby doesn't poll the other machines' workers (the control plane does): their heartbeat says they are up
+    list.push({ name: b.name, role: b.role, control: !!b.active, online: !!s || (b.agoS ?? Infinity) < 90, slots: s?.slots ?? 0, room: capped(b.name, s?.slots ?? 0), running: s?.running ?? 0, freeMb: s?.freeMb ?? 0 })
   }
   return c.json({ machines: list, workMachine: state.settings.workMachine, workSlots: state.settings.workSlots ?? 1, several: !!fleet.machine })
 })

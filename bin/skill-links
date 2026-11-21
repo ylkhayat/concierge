@@ -72,6 +72,10 @@ def main():
         if folder:
             print(folder)
         return
+    # where your tool folders aren't visible (a fleet standby runs bin/update in its own container) the links can't be
+    # seen: keep what .env says instead of clearing it
+    if not any(os.path.isdir(t) for t in TOOLS):
+        return
     path = os.path.join(ROOT, '.env')
     try:
         lines = open(path).read().splitlines()
