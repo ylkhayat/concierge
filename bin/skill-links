@@ -81,12 +81,17 @@ def main():
         lines = open(path).read().splitlines()
     except FileNotFoundError:
         return
-    had = env('SKILL_LINKS') or ''
-    if had == folder:
+    # the container's home can differ from yours (DECK_HOME, the same on every machine): a relative link from ~/.claude
+    # lands under it, so the folder is mounted there too (an absolute link still finds it at its own path)
+    home = env('DECK_HOME') or ''
+    at = home + folder[len(HOME):] if folder.startswith(HOME + os.sep) and home and home != HOME else ''
+    if (env('SKILL_LINKS') or '', env('SKILL_LINKS_AT') or '') == (folder, at):
         return
-    lines = [l for l in lines if not l.startswith('SKILL_LINKS=')]
+    lines = [l for l in lines if not l.startswith(('SKILL_LINKS=', 'SKILL_LINKS_AT='))]
     if folder:
         lines.append(f'SKILL_LINKS={folder}')
+    if at:
+        lines.append(f'SKILL_LINKS_AT={at}')
     with open(path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
     os.chmod(path, 0o600)

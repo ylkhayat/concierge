@@ -57,6 +57,7 @@ services:
       # the folder your skills' links point into (a skills repository you keep elsewhere, whichever tool they are for), at
       # the same path so they work here: bin/skill-links finds it (bin/up, bin/update). None: an empty folder, out of the way
       - ${SKILL_LINKS:-${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/no-links}:${SKILL_LINKS:-/.no-skill-links}
+      - ${SKILL_LINKS:-${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/no-links}:${SKILL_LINKS_AT:-/.no-skill-links-at}
       # your Codex config and skills, read the same way
       - ${HOME}/.codex:${DECK_HOME:-${HOME}}/.codex
       # crit reviews: kept in a volume, not your host ~/.crit (its session files hold pids that mean
