@@ -26,7 +26,7 @@ import { RepoList } from './components/RepoList.tsx'
 import { ExecHome } from './components/ExecHome.tsx'
 import { RepoPicker } from './components/RepoPicker.tsx'
 import { knowApps } from './appColor.ts'
-import { lazy, Suspense } from 'react'
+import { Activity, lazy, Suspense } from 'react'
 import { Machine } from './components/Machine.tsx'
 import { Read } from './components/Read.tsx'
 import { Focus } from './components/Focus.tsx'
@@ -37,7 +37,7 @@ import { useNewVersion } from './fresh.ts'
 
 // the graph libraries load only when the codebase view opens
 const CodebaseView = lazy(() => import('./components/Codebase.tsx'))
-import { ago, api, critUrl, enc, isTyping, param, setParam, useDeck, useNow, useTheme } from './lib.ts'
+import { ago, api, critUrl, enc, isTyping, param, setParam, useDeck, useNow, useTheme, type PrView, type TicketView } from './lib.ts'
 
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
@@ -143,6 +143,10 @@ export function App() {
   const tickets = exec?.tickets ?? []
   const ticket = mode !== 'review' ? tickets.find((t) => t.id === selected) : undefined
   useEffect(() => { setFeedKey(ticket ? `ticket:${ticket.id}` : undefined) }, [ticket?.id]) // its whole timeline, every run a chapter
+  // the last pages opened, kept alive hidden (Activity, below): back on one, it is there as you left it (ponytail: 4)
+  const [recentT, setRecentT] = useState<string[]>([])
+  useEffect(() => { if (ticket) setRecentT((r) => [ticket.id, ...r.filter((x) => x !== ticket.id)].slice(0, 4)) }, [ticket?.id])
+  const recentTickets = recentT.map((id) => tickets.find((t) => t.id === id)).filter((t): t is TicketView => !!t)
   // the focus: which application you are working on, shared by every workspace (Review, Ship, Codebase); per browser
   const [focus, setFocusState] = useState<string | undefined>(() => { try { return param('focus') || localStorage.getItem('focus') || localStorage.getItem('exec-repo') || undefined } catch { return param('focus') } })
   const setFocus = (r?: string) => { setFocusState(r); setParam('focus', r); try { if (r) localStorage.setItem('focus', r); else localStorage.removeItem('focus') } catch { /* private window */ } }
@@ -162,6 +166,9 @@ export function App() {
   const [pickedTab, setTabState] = useState<Tab | undefined>(() => { const l = param('list'); return l === 'review' || l === 'mine' ? l : undefined }) // a link with another value falls back, it never breaks the page
   const setTab = (t?: Tab) => { setTabState(t); setParam('list', t) }
   const pr = mode !== 'exec' ? prs?.find((p) => p.id === selected) : undefined
+  const [recentP, setRecentP] = useState<string[]>([])
+  useEffect(() => { if (pr) setRecentP((r) => [pr.id, ...r.filter((x) => x !== pr.id)].slice(0, 4)) }, [pr?.id])
+  const recentPrs = recentP.map((id) => prs?.find((p) => p.id === id)).filter((p): p is PrView => !!p)
   // "codebase:owner/repo" selects the codebase view instead of a PR
   const codebaseRepo = mode === 'review' && selected?.startsWith('codebase:') ? selected.slice('codebase:'.length) : undefined
   // "stack:<any of its PRs>" selects the stack itself: found from that PR as the stack is now, so a link survives restacking
@@ -387,14 +394,17 @@ export function App() {
               <CodebaseView repo={codebaseRepo} repos={repos} onRepo={(r) => select(`codebase:${r}`)} health={health} toast={toast} />
             </Suspense>
           </div>
-        ) : stackPage ? stackPage : pr ? (
-          // keyed: each PR gets a fresh detail that fades in, instead of morphing the previous one
-          <Detail key={pr.id}>
-            <PrPage pr={pr} feed={feed} now={now} onBack={() => select(undefined)} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => (l.kind === 'ticket' ? goTicket(l.id) : select(l.id))} sync={{ at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }} />
-          </Detail>
-        ) : (
+        ) : stackPage ? stackPage : pr ? null : (
           <Today missing={missing} onSkills={() => setSettingsOpen('skills')} me={me?.name ?? me?.login} prs={focusedPrs ?? []} tickets={scoped} focus={focus} health={health} now={now} onPr={select} onTicket={goTicket} />
         )}
+        {/* the last PRs opened stay alive, hidden (Activity): back on one, it is there at once, as you left it */}
+        {recentPrs.map((p) => (
+          <Activity key={p.id} mode={!codebaseRepo && !stackPage && p.id === pr?.id ? 'visible' : 'hidden'}>
+          <Detail>
+              <PrPage pr={p} feed={feedOf(p.id)} now={now} onBack={() => select(undefined)} toast={toast} prs={prs ?? []} onSelect={select} onOpenLinked={(l) => (l.kind === 'ticket' ? goTicket(l.id) : select(l.id))} sync={{ at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }} />
+          </Detail>
+          </Activity>
+        ))}
       </main>
     </div>
   )
@@ -416,13 +426,16 @@ export function App() {
         </div>
       </aside>
       <main className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
-        {stackPage ? stackPage : ticket ? (
-          <Detail key={ticket.id}>
-            <TicketPage t={ticket} actions={exec?.actions ?? []} missing={exec?.missing} feed={ticket ? feedOf(`ticket:${ticket.id}`) : []} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
-          </Detail>
-        ) : (
+        {stackPage ? stackPage : ticket ? null : (
           <ExecHome repo={focus} tickets={scoped} prs={prs ?? []} now={now} onTicket={select} onPr={goPr} onMap={focus && repos.includes(focus) ? () => goCodebase(focus) : undefined} />
         )}
+        {recentTickets.map((t) => (
+          <Activity key={t.id} mode={!stackPage && t.id === ticket?.id ? 'visible' : 'hidden'}>
+          <Detail>
+              <TicketPage t={t} actions={exec?.actions ?? []} missing={exec?.missing} feed={feedOf(`ticket:${t.id}`)} onSelect={select} toast={toast} onOpenLinked={(l) => (l.kind === 'pr' ? goPr(l.id) : select(l.id))} sync={{ at: exec?.at, syncing: !!exec?.polling, onSync: () => void api('/exec/poll', {}).catch(() => {}) }} />
+          </Detail>
+          </Activity>
+        ))}
       </main>
     </div>
   )

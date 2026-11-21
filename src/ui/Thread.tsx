@@ -152,7 +152,7 @@ function Quotable({ children, onAsk, fill }: { children: ReactNode; onAsk?: (q: 
   const quote = () => {
     onAsk!(`${sel!.text.split('\n').map((l) => `> ${l}`).join('\n')}\n\n`)
     getSelection()?.removeAllRanges(); setSel(undefined)
-    requestAnimationFrame(() => (document.querySelector('textarea[data-composer]') as HTMLTextAreaElement | null)?.focus())
+    requestAnimationFrame(() => [...document.querySelectorAll<HTMLTextAreaElement>('textarea[data-composer]')].find((el) => el.offsetParent)?.focus()) // the shown page's box (others are kept hidden)
   }
   return (
     <div ref={ref} onMouseUp={read} onKeyUp={read} className={`relative min-h-0 flex-1 animate-[detail-in_180ms_var(--ease-snappy)] ${fill ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
