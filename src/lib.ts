@@ -182,17 +182,12 @@ export type Theme = 'system' | 'light' | 'dark'
  *  is its look in a picker: page, card, tint, as [lightness, chroma, hue] for light and for dark. */
 export const PALETTES = [
   { id: '', label: 'Concierge', hint: 'The default: a quiet violet grey', swatch: { h: 265, c: 0.013, d: 0.225, l: 0.975 } },
-  { id: 'dim', label: 'Dim', hint: 'Slightly dark: soft greys that are easy on the eyes all day', swatch: { h: 265, c: 0.01, d: 0.3, l: 0.945 } },
   { id: 'midnight', label: 'Midnight', hint: 'Deep blue-black, for late hours', swatch: { h: 262, c: 0.022, d: 0.175, l: 0.975 } },
-  { id: 'graphite', label: 'Graphite', hint: 'Pure neutral grey, no tint at all', swatch: { h: 0, c: 0, d: 0.2, l: 0.975 } },
-  { id: 'nord', label: 'Nord', hint: 'Cool arctic blue-grey: calm and clear', swatch: { h: 232, c: 0.026, d: 0.255, l: 0.975 } },
-  { id: 'forest', label: 'Forest', hint: 'Green and low: for focus', swatch: { h: 165, c: 0.02, d: 0.215, l: 0.975 } },
-  { id: 'ember', label: 'Ember', hint: 'Warm amber: for getting things done', swatch: { h: 55, c: 0.018, d: 0.22, l: 0.975 } },
   { id: 'paper', label: 'Paper', hint: 'Warm cream and sepia: for long reading', swatch: { h: 80, c: 0.02, d: 0.235, l: 0.965 } },
-  { id: 'plum', label: 'Plum', hint: 'Dusky purple, with character', swatch: { h: 320, c: 0.022, d: 0.21, l: 0.975 } },
 ] as const
 export type Palette = (typeof PALETTES)[number]['id']
-export const paletteNow = (): Palette => { try { return (localStorage.getItem('palette') ?? '') as Palette } catch { return '' } }
+// one saved before the list was cut to three falls back to the default
+export const paletteNow = (): Palette => { try { const p = localStorage.getItem('palette') ?? ''; return (PALETTES.some((x) => x.id === p) ? p : '') as Palette } catch { return '' } }
 export function setPalette(p: Palette) {
   const root = document.documentElement
   root.classList.add('theming')
@@ -201,6 +196,25 @@ export function setPalette(p: Palette) {
   setTimeout(() => root.classList.remove('theming'), 300)
 }
 if (paletteNow()) document.documentElement.dataset.palette = paletteNow() // before the first paint
+
+/** A surface over the whole app (index.css, "Textures"): the touch of paper, film or a drafting table. */
+export const TEXTURES = [
+  { id: '', label: 'None', hint: 'Clean surfaces' },
+  { id: 'grain', label: 'Grain', hint: 'Film grain, barely there' },
+  { id: 'paper', label: 'Paper', hint: 'Fibres, warm and quiet' },
+  { id: 'dots', label: 'Dots', hint: 'A dotted notebook' },
+  { id: 'grid', label: 'Grid', hint: 'A drafting table' },
+  { id: 'contours', label: 'Contours', hint: 'A topographic map' },
+  { id: 'aurora', label: 'Aurora', hint: 'Soft light in the workspace colour' },
+] as const
+export type Texture = (typeof TEXTURES)[number]['id']
+export const textureNow = (): Texture => { try { return (localStorage.getItem('texture') ?? '') as Texture } catch { return '' } }
+export function setTexture(t: Texture) {
+  const root = document.documentElement
+  if (t) root.dataset.texture = t; else delete root.dataset.texture
+  try { localStorage.setItem('texture', t) } catch { /* private window */ }
+}
+if (textureNow()) document.documentElement.dataset.texture = textureNow() // before the first paint
 const dark = matchMedia('(prefers-color-scheme: dark)')
 
 /** Per-browser preference, so localStorage (guarded: it can throw in private windows). */

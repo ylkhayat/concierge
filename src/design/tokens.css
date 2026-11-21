@@ -84,20 +84,8 @@
    workspace's. Light and dark each get their own step of the same palette */
 :root[data-palette='midnight'] { --n-h: 262; --n-c: 0.01; }
 :root.dark[data-palette='midnight'] { --d: 0.175; --n-c: 0.022; }
-:root[data-palette='dim'] { --l: 0.945; }
-:root.dark[data-palette='dim'] { --d: 0.3; --n-c: 0.01; }
-:root[data-palette='graphite'] { --n-c: 0; }
-:root.dark[data-palette='graphite'] { --d: 0.2; --n-c: 0; }
-:root[data-palette='nord'] { --n-h: 232; --n-c: 0.012; }
-:root.dark[data-palette='nord'] { --d: 0.255; --n-c: 0.026; }
-:root[data-palette='forest'] { --n-h: 165; --n-c: 0.012; }
-:root.dark[data-palette='forest'] { --d: 0.215; --n-c: 0.02; }
-:root[data-palette='ember'] { --n-h: 55; --n-c: 0.012; }
-:root.dark[data-palette='ember'] { --d: 0.22; --n-c: 0.018; }
 :root[data-palette='paper'] { --n-h: 85; --n-c: 0.018; --l: 0.965; --surface-1: oklch(0.99 0.01 85); --surface-2: oklch(0.995 0.008 85); }
 :root.dark[data-palette='paper'] { --n-h: 70; --d: 0.235; --n-c: 0.02; }
-:root[data-palette='plum'] { --n-h: 320; --n-c: 0.012; }
-:root.dark[data-palette='plum'] { --d: 0.21; --n-c: 0.022; }
 /* each workspace's hue: the accent (and every violet utility, below) follows it, easing on a switch */
 :root[data-mode='exec'], [data-accent='exec'] { --accent-h: 55; }
 :root[data-mode='desk'], :root[data-mode='focus'], :root[data-mode='read'] { --accent-h: 268; }

@@ -139,3 +139,36 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 [data-detail]::view-transition-group(*) { animation-duration: 200ms; animation-timing-function: var(--ease-snappy); }
 [data-detail]::view-transition-old(*) { animation: 90ms var(--ease-in) both fade-out; }
 [data-detail]::view-transition-new(*) { animation: 180ms 40ms var(--ease-out) both rise-in; }
+
+/* Textures (Settings → Appearance): a faint surface over the whole app, the tactile touch of 2026's interfaces. One
+   fixed layer that takes no clicks, at very low opacity and with no blend mode, so it costs nothing to draw. Grain and
+   paper are SVG noise; dots, grid, contours and aurora are gradients. Each is also a preview tile (.tex-tile). */
+:root {
+  --tex-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --tex-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.035 .9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .12 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)'/%3E%3C/svg%3E");
+  --tex-ink: oklch(0.2 0.02 var(--n-h));
+}
+:root.dark { --tex-ink: oklch(0.95 0.02 var(--n-h)); }
+:root[data-texture] body::after, .tex-tile::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 2147483000; }
+.tex-tile { position: relative; overflow: hidden; }
+.tex-tile::after { position: absolute; z-index: 1; }
+:root[data-texture='grain'] body::after, .tex-tile[data-t='grain']::after { background-image: var(--tex-grain); opacity: 0.09; }
+:root.dark[data-texture='grain'] body::after, .dark .tex-tile[data-t='grain']::after { opacity: 0.16; filter: invert(1); }
+:root[data-texture='paper'] body::after, .tex-tile[data-t='paper']::after { background-image: var(--tex-paper); opacity: 0.1; }
+:root.dark[data-texture='paper'] body::after, .dark .tex-tile[data-t='paper']::after { opacity: 0.14; filter: invert(1) hue-rotate(180deg); }
+:root[data-texture='dots'] body::after, .tex-tile[data-t='dots']::after {
+  background-image: radial-gradient(color-mix(in oklch, var(--tex-ink) 22%, transparent) 1px, transparent 1.4px); background-size: 20px 20px; opacity: 0.55; }
+:root[data-texture='grid'] body::after, .tex-tile[data-t='grid']::after {
+  background-image: linear-gradient(color-mix(in oklch, var(--tex-ink) 9%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--tex-ink) 9%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px; opacity: 0.6; }
+:root[data-texture='contours'] body::after, .tex-tile[data-t='contours']::after {
+  background-image: repeating-radial-gradient(ellipse at 18% 28%, transparent 0 26px, color-mix(in oklch, var(--tex-ink) 10%, transparent) 26px 27px),
+    repeating-radial-gradient(ellipse at 82% 76%, transparent 0 34px, color-mix(in oklch, var(--tex-ink) 8%, transparent) 34px 35px);
+  opacity: 0.5; }
+:root[data-texture='aurora'] body::after, .tex-tile[data-t='aurora']::after {
+  background: radial-gradient(60% 50% at 12% 0%, oklch(0.7 0.16 var(--accent-h, 290) / 0.22), transparent 70%),
+    radial-gradient(50% 45% at 100% 30%, oklch(0.72 0.14 calc(var(--accent-h, 290) + 70) / 0.16), transparent 70%),
+    radial-gradient(55% 50% at 40% 100%, oklch(0.7 0.13 calc(var(--accent-h, 290) - 60) / 0.14), transparent 70%);
+  opacity: 0.9; }
+@media (prefers-reduced-transparency: reduce) { :root[data-texture] body::after { display: none; } }
+@media print { :root[data-texture] body::after { display: none; } }
