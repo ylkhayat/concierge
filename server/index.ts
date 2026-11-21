@@ -577,14 +577,18 @@ app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
 // What acts on this machine itself stays here, on any machine: updating it, its own sign-ins, its clones and worktrees,
 // a terminal on it. None of it is the shared state
 const HERE_ONLY = /^\/api\/(update$|claude-auth\/|azure\/login$|github\/login$|connections\/login|accounts\/[^/]+\/(login|adopt-login)$|setup\/(clone|validate|skills)$|worktrees\/clean$|debug\/|(prs|exec)\/[^/]+\/resume-terminal$)/
+// what only the main server knows whole (every machine, how full each is, the joins, where they differ): a follower
+// shows the main server's, so Settings → Machines lists the whole fleet on any machine's localhost
+const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment)$/
 app.use('*', async (c, next) => {
-  if (c.req.method === 'GET' || fleet.mayWrite() || HERE_ONLY.test(c.req.path)) return next()
+  if (fleet.mayWrite() || (c.req.method === 'GET' ? !FLEET_VIEW.test(c.req.path) : HERE_ONLY.test(c.req.path))) return next()
   const main = (await replicaPeers()).find((p) => p.active)
   if (main) try {
     const r = await call<{ status: number; text: string; type?: string }>(main.base, machineToken(), 'POST', '/x/api',
       { method: c.req.method, path: c.req.path + (new URL(c.req.url).search), body: await c.req.text(), role: c.req.header('x-concierge-role') }, 120_000)
     return new Response(r.text, { status: r.status, headers: { 'content-type': r.type ?? 'application/json' } })
   } catch (e) { console.warn(`api: couldn't hand ${c.req.method} ${c.req.path} to ${main.name}: ${(e as Error).message}`) }
+  if (c.req.method === 'GET') return next() // the main server didn't answer: this machine's own view, as before
   return c.json({ error: fleet.whyNot?.() ?? `${fleet.elsewhere() ?? 'Another machine'} runs Concierge now: nothing done here is kept. Reload in a moment.` }, 409)
 })
 app.get('/alerts', (c) => c.json(alerts()))
@@ -3084,8 +3088,8 @@ serveMachine(() => state.settings.maxJobs, ownUsage, {
   api: async (b: { method?: string; path?: string; body?: string; role?: string }) => {
     if (!fleet.mayWrite()) throw new Error('this machine does not run Concierge now')
     const method = String(b.method ?? ''), path = String(b.path ?? '')
-    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || !path.startsWith('/api/') || path.includes('..')) throw new Error('bad request')
-    const r = await app.request(path, { method, body: b.body || undefined, headers: { 'content-type': 'application/json', ...(b.role && { 'x-concierge-role': String(b.role) }) } })
+    if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || !path.startsWith('/api/') || path.includes('..')) throw new Error('bad request')
+    const r = await app.request(path, { method, body: method === 'GET' ? undefined : b.body || undefined, headers: { 'content-type': 'application/json', ...(b.role && { 'x-concierge-role': String(b.role) }) } })
     return { status: r.status, text: await r.text(), type: r.headers.get('content-type') ?? undefined }
   },
   // the control plane's connectors, made this machine's too (applyConnectors)
