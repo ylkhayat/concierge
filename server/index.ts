@@ -377,9 +377,11 @@ whenMissingChanges(() => { bus.emit('exec'); bus.emit('change') })
 // --- linked work: a PR and the Linear ticket it ships (named in its title, branch or description) ------------
 export type Linked = { kind: 'pr' | 'ticket'; id: string; label: string; title: string; url?: string; agent: 'working' | 'asks' | 'idle' | 'none'; said?: string; area?: string; suggest?: string }
 const firstLine = (t?: string) => t?.replace(/[#*_`>]/g, '').split('\n').map((l) => l.trim()).find(Boolean)?.slice(0, 180)
-/** The tickets a PR names that are on your Exec board. */
+// its own: named in its title or branch, or one its body closes ("Fixes AI-12"). A body that only mentions tickets (a
+// release's list, an ADR's references) would tie every one of them, and their PRs, into one Work
 const ticketsOf = (p: Pr) => {
-  const ids = new Set(`${p.title} ${p.head} ${p.body ?? ''}`.toUpperCase().match(/\b[A-Z]{2,4}-\d{1,6}\b/g) ?? [])
+  const closes = [...(p.body ?? '').matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|part of|implements?)[:\s]+([A-Za-z]{2,4}-\d{1,6})\b/gi)].map((m) => m[1])
+  const ids = new Set([...(`${p.title} ${p.head}`.toUpperCase().match(/\b[A-Z]{2,4}-\d{1,6}\b/g) ?? []), ...closes.map((x) => x.toUpperCase())])
   return execBoard.tickets.filter((t) => ids.has(t.id))
 }
 const ticketLink = (id: string, views: TicketView[]): Linked | undefined => {
