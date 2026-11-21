@@ -105,7 +105,7 @@ export function App() {
   const [machines, setMachines] = useState(0)
   // opened on this machine's localhost: its own view; through the tailnet link: the whole fleet (scope.ts)
   useEffect(() => { if (me && machines) scopeDefault(!!me.viewer?.here, machines > 1) }, [me, machines])
-  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.clones); setMachineNames(s.machineNames); setMachines(s.machines?.length ?? 0); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
+  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.away, s.clones); setMachineNames(s.machineNames); setMachines(s.machines?.length ?? 0); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
   // Linear links open in the desktop app: linear://<same path>. One listener covers every link on the page.
   useEffect(() => {
     if (!linearApp) return

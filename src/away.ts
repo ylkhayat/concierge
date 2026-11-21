@@ -5,8 +5,9 @@ import { useScope } from './scope.ts'
 
 let away = new Set<string>()
 const EVENT = 'concierge:away'
-export function setAway(clones: Record<string, string> = {}) {
-  away = new Set(Object.entries(clones).filter(([, v]) => v === 'not-here' || v.startsWith('kept:')).map(([r]) => r))
+/** The server's list (setup: away, from the rules); an older server sends only the clone states. */
+export function setAway(list?: string[], clones: Record<string, string> = {}) {
+  away = new Set(list ?? Object.entries(clones).filter(([, v]) => v === 'not-here' || v.startsWith('kept:')).map(([r]) => r))
   dispatchEvent(new CustomEvent(EVENT))
 }
 const none = new Set<string>()

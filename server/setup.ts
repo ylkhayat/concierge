@@ -183,6 +183,13 @@ const clones = new Map<string, string>() // repo → 'cloning', 'not-here' (not 
 export const unticked = (repo: string) => !!fleet.machine && !!config.removeFrom?.[repo]?.includes(fleet.machine)
 export const mayClone = (repo: string) => !unticked(repo) && !fleet.machine || [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(fleet.machine!))
 export const cloneState = () => Object.fromEntries(clones)
+/** Not to be used on this machine: a rule (Settings → Repositories) leaves it off, or it was unticked here. Straight from
+ *  the rules, so settings that just arrived apply at once; a repository nobody ruled on stays where it is checked out. */
+export const notHere = (repo: string) => {
+  const s = clones.get(repo)
+  if (s === 'not-here' || s?.startsWith('kept:')) return true
+  return !!fleet.machine && [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]) && !mayClone(repo)
+}
 let cloningNow = false
 export async function ensureClones() {
   // said at once, so the page that just saved it shows "cloning" rather than a git error from the missing folder

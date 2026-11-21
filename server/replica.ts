@@ -197,7 +197,8 @@ async function pullFiles() {
           from += buf.length
         }
         if (!append) await rename(tmp, abs)
-        if (k === 'config:config.json') void reloadConfig() // the main server's settings apply at once, not at the next 5-minute check
+        // the main server's settings apply at once, not at the next 5-minute check, and the clones follow them
+        if (k === 'config:config.json') void reloadConfig().then(() => import('./setup.ts')).then((m) => m.ensureClones())
         // their time on our copy: the other side then sees the same file, and never pulls it back
         await utimes(abs, new Date(), new Date(mtimeMs)).catch(() => {})
         const st = await stat(abs).catch(() => undefined)

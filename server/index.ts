@@ -74,7 +74,7 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from '
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
-import { brokenSkillLinks, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
+import { brokenSkillLinks, notHere, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
@@ -565,7 +565,7 @@ const scopeOf = (c: { req: { query: (k: string) => string | undefined; header: (
   return c.req.header('x-forwarded-for') ? 'fleet' : 'self'
 }
 /** The repositories this machine doesn't have (not allowed here, or unticked and kept for now): what self leaves out. */
-const awayHere = () => new Set(Object.entries(cloneState()).filter(([, v]) => v === 'not-here' || v.startsWith('kept:')).map(([r]) => r))
+const awayHere = () => new Set(Object.keys(config.repos).filter(notHere))
 const repoOfPr = (id: string) => state.prs[id]?.repo ?? id.split('#')[0]
 
 // the role the page is in comes with each request: what it starts runs that role's commands (roles.ts)
@@ -1873,7 +1873,7 @@ const setupView = async (light = false) => ({
   configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []),
   // your skills that are links this machine can't follow (Docker: the folder they point into isn't mounted; bin/up mounts it)
   brokenLinks: light ? [] : await brokenSkillLinks(), skillSources: skillSources(),
-  workDir: WORK_DIR, clones: cloneState(), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
+  workDir: WORK_DIR, clones: cloneState(), away: Object.keys(config.repos).filter(notHere), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
   // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
