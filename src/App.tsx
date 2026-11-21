@@ -591,7 +591,7 @@ function ExecSetupHint({ onOpen, hasKey }: { onOpen: () => void; hasKey: boolean
     <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
       <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/10"><Rocket className="size-6 text-accent" /></span>
       <p className="text-body font-medium">Ship your Linear tickets from here</p>
-      <p className="text-small text-fg-3">{hasKey ? 'Pick the exec command (ship-tickets, from your skill source, works out of the box) and which repo each team maps to.' : 'Set LINEAR_API_KEY in the environment Concierge starts from (or .env with Docker), then pick the exec command.'}</p>
+      <p className="text-small text-fg-3">{hasKey ? 'Pick the exec command (ship-tickets, from your skill source, works out of the box) and which repo each team maps to.' : 'Connect Linear with your API key (Settings → Machines), then pick the exec command.'}</p>
       <button onClick={onOpen} className="btn-primary transition-all hover:bg-accent">Open Ship settings</button>
     </div>
   )

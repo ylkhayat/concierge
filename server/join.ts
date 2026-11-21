@@ -73,7 +73,8 @@ async function setup(j: Join) {
     // the container paths are the same on every machine (state, sessions and worktrees line up): the main server's
     deckHome: process.env.HOME, deckCode: process.env.DECK_CODE || process.env.CODE_DIR, dirName: process.env.CONCIERGE_DIRNAME || 'review-deck',
     fleetRepo: fleetRepo || undefined,
-    env: Object.fromEntries(['GITHUB_TOKEN', 'LINEAR_API_KEY'].filter((k) => process.env[k]).map((k) => [k, process.env[k]!])),
+    // the GitHub token, only to clone the private fleet extension there; never written to its .env (bin/join)
+    env: Object.fromEntries(['GITHUB_TOKEN'].filter((k) => process.env[k]).map((k) => [k, process.env[k]!])),
   }
 }
 

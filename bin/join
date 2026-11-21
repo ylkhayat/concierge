@@ -219,14 +219,19 @@ def env_get(key):
     return None
 
 
-def clone_fleet(repo, token):
-    """The fleet extension (private) into fleet/, with the shared GitHub token: given to git through a helper that reads
-    .env, so it never sits in a remote URL or a command line, and later pulls (bin/update) work the same way."""
+def clone_fleet(repo, token, dir_name):
+    """The fleet extension (private) into fleet/, with the shared GitHub token. Never in .env, a remote URL or a command
+    line: the clone gets it through the environment, and later pulls (bin/update) through a helper that reads the app's
+    secrets.json, which reaches this machine with its settings."""
     dest = os.path.join(ROOT, 'fleet')
-    helper = f'!f() {{ echo username=x-access-token; echo "password=$(grep ^GITHUB_TOKEN= {os.path.join(ROOT, ".env")} | cut -d= -f2-)"; }}; f'
+    secrets = os.path.join(HOME, '.config', dir_name, 'secrets.json')
+    read = f"python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[\"shared\"][\"GITHUB_TOKEN\"][\"value\"])' {secrets}"
+    helper = f'!f() {{ [ "$1" = get ] || exit 0; t=$({read} 2>/dev/null) || exit 0; echo username=x-access-token; echo "password=$t"; }}; f'
     if not os.path.isdir(os.path.join(dest, '.git')):
         say(f'fetching the fleet extension ({repo})')
-        subprocess.run(['git', '-c', 'credential.helper=', '-c', f'credential.helper={helper}', 'clone', '-q', f'https://github.com/{repo}.git', dest], check=True)
+        once = '!f() { [ "$1" = get ] || exit 0; echo username=x-access-token; echo "password=$JOIN_GH_TOKEN"; }; f'
+        subprocess.run(['git', '-c', 'credential.helper=', '-c', f'credential.helper={once}', 'clone', '-q', f'https://github.com/{repo}.git', dest],
+                       check=True, env={**os.environ, 'JOIN_GH_TOKEN': token or ''})
     subprocess.run(['git', '-C', dest, 'config', 'credential.helper', helper], check=True)
 
 
@@ -277,17 +282,17 @@ def main():
     s = r['setup']
     say(f"approved: setting {name} up as the {s['role']} beside {s['main']}")
 
-    # .env: what this machine needs to run it, and the keys every machine shares
+    # .env: what this machine needs to run it. No keys: they come over with the settings (secrets.json)
     code = env_get('CODE_DIR')
     if not code or '/you/' in code:  # unset, or .env.example's placeholder
         code = os.path.join(HOME, 'code')
     os.makedirs(code, exist_ok=True)
-    env_set({'CODE_DIR': code, 'CONCIERGE_DIRNAME': s['dirName'], **s.get('env', {})})
+    env_set({'CODE_DIR': code, 'CONCIERGE_DIRNAME': s['dirName']})
     # the machine key, where the app and bin/standby read it
     state = os.path.join(HOME, '.local/state', s['dirName'])
     os.makedirs(os.path.join(state, 'hosts'), exist_ok=True)
     if s.get('fleetRepo'):
-        clone_fleet(s['fleetRepo'], s.get('env', {}).get('GITHUB_TOKEN'))
+        clone_fleet(s['fleetRepo'], s.get('env', {}).get('GITHUB_TOKEN'), s['dirName'])
     if not os.path.exists(os.path.join(ROOT, 'fleet', 'bin', 'sync-setup')):
         sys.exit('join: the fleet extension is missing (fleet/): ask for access to it, clone it into fleet/, and run this again')
     # the rest is the fleet's own setup: .env's roles and paths, the boot service; the standby, or a worker beside one

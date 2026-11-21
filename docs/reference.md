@@ -9,7 +9,7 @@ Everything the [README](../README.md) leaves out: requirements, Docker, configur
 | macOS | Opening Terminal or iTerm for *Resume*. The dashboard itself runs anywhere. |
 | Node ≥ 22.18 | The server is TypeScript run directly by Node; there is no build step for it. |
 | pnpm | Installs dependencies. |
-| [GitHub CLI](https://cli.github.com) (`gh`), logged in | Concierge reads your token from `gh auth token` (or `GITHUB_TOKEN`). |
+| [GitHub CLI](https://cli.github.com) (`gh`), logged in | Onboarding signs you in to GitHub; the CLI itself is what that sign-in and `git push` use. |
 | [Claude Code](https://claude.com/claude-code) (`claude`), logged in | Runs the review, revise and explain agents. |
 | [crit](https://crit.md/) (`brew install crit`) | The review surface `review-pr` and `revise` use. |
 
@@ -40,13 +40,10 @@ Everything (Node, pnpm, `gh`, `claude`, `crit`, `uv`) comes in the image. You fi
 
 ```bash
 gh repo clone ylkhayat/concierge && cd concierge
-cp .env.example .env        # fill it: CODE_DIR, HOST_UID/GID, GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, git name/email
-mkdir -p ~/.config/concierge ~/.local/state/concierge ~/.claude ~/.codex
-docker compose up -d --build
-open http://127.0.0.1:4747
+bin/up                      # .env (CODE_DIR, HOST_UID/GID), the folders it mounts, build, start, host networking check, open
 ```
 
-- **Auth comes from `.env` only.** `GITHUB_TOKEN` (try `gh auth token`) serves Concierge, `gh` and `git push`. `CLAUDE_CODE_OAUTH_TOKEN` comes from `claude setup-token` and uses your subscription; `ANTHROPIC_API_KEY` works instead, billed per token. `LINEAR_API_KEY` is only for Ship.
+- **Sign-ins happen in the app, never in `.env`.** Onboarding signs you in to GitHub (a code at github.com/login/device, or a pasted token), Tailscale when the fleet is loaded, and your agents (claude.ai, ChatGPT, Copilot, Ollama). The keys are kept in `~/.config/concierge/secrets.json` (readable only by you), shared by every machine, and handed to Concierge, `gh` and `git push` from there. The Linear key for Ship is set the same way (onboarding, or Settings → Machines).
 - **Your clones are mounted at the same path** (`CODE_DIR`), and `HOME` inside matches yours. Repo paths in `config.json`, `~` paths and the worktrees agents make all line up. Keep every repo you watch under `CODE_DIR`.
 - **It reads your setup and keeps its own.** `~/.config/concierge` and `~/.local/state/concierge` are mounted, so a native install and the container see the same settings and history. Your `~/.claude` and `~/.codex` are mounted for your skills, commands and settings. Each agent tool (Claude Code, Codex, Copilot) keeps its own files in `~/.local/state/concierge/<tool>-home`, per machine: its sign-in, connectors and sessions, and for Claude the plugins you enabled. It never writes them into yours. Your skills are read from wherever you keep them (`~/.claude/skills`, else `~/.codex/skills`) and every tool gets the same ones.
 - **Agents run as you** (`HOST_UID`/`HOST_GID`), never root, so files they write in your repos stay yours.

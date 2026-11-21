@@ -659,6 +659,12 @@ export function blocked(a: AccountView): string {
   return a.available ? '' : a.why ?? 'unavailable'
 }
 
+const signedOut = (a: AccountView) => (a.kind === 'claude' && a.signedIn === false) || (a.kind === 'openai' && a.openai === 'none')
+/** What a signed-out account would run on, in onboarding's words. */
+const SIGN_IN_HINT: Record<Kind, string> = {
+  claude: 'Your claude.ai plan (Pro or Max)', openai: 'Your ChatGPT plan', llama: 'Local models through Ollama', copilot: 'Your GitHub Copilot plan',
+}
+
 /** Whose plan a Claude account spends, in one line: the login's email and tier, or what is known of a setup token. */
 function whoText(a: AccountView): string {
   const w = a.who
@@ -696,10 +702,14 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
   if (!v) return <Skeleton rows={4} />
   const set = (body: object, msg: string) => api('/providers', body).then((r) => { setV(r as ProvidersView); toast(msg) }, (e: Error) => toast(e.message, 'error'))
   const test = (a: AccountView) => { setTested((t) => ({ ...t, [a.id]: { busy: true } })); api(`/providers/${encodeURIComponent(a.id)}/test`, {}).then((r) => setTested((t) => ({ ...t, [a.id]: r })), (e: Error) => setTested((t) => ({ ...t, [a.id]: { ok: false, error: e.message } }))) }
-  const signIn = (a: AccountView) => api(`/accounts/${encodeURIComponent(a.id)}/login`, {}).then((r: { url: string; code?: string }) => {
-    setSigning({ id: a.id, kind: a.kind, ...r })
-    if (a.kind === 'claude') window.open(r.url, '_blank')
-  }, (e: Error) => toast(e.message, 'error'))
+  const signIn = (a: AccountView) => {
+    // the tab opens now, while the click still counts (a popup opened after the call is blocked), then goes to claude.ai
+    const tab = a.kind === 'claude' ? window.open('about:blank', '_blank') : null
+    api(`/accounts/${encodeURIComponent(a.id)}/login`, {}).then((r: { url: string; code?: string }) => {
+      setSigning({ id: a.id, kind: a.kind, ...r })
+      if (a.kind === 'claude') { if (tab) tab.location.href = r.url; else window.open(r.url, '_blank') }
+    }, (e: Error) => { tab?.close(); toast(e.message, 'error') })
+  }
   const add = () => adding && api('/accounts', { kind: adding.kind, label: adding.label, host: adding.host || undefined })
     .then((r) => { setV(r as ProvidersView); setAdding(undefined); toast(`${adding.label} added: sign it in below`) }, (e: Error) => toast(e.message, 'error'))
   const remove = (a: AccountView) => fetch(`/api/accounts/${encodeURIComponent(a.id)}`, { method: 'DELETE' }).then((r) => r.json())
@@ -767,30 +777,32 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
       </>}
 
       <section className="space-y-2">
-        <header className="px-0.5"><h3 className="text-small font-semibold text-fg-1">Accounts</h3><p className="text-meta text-fg-3">Each signs in on its own. Claude and Llama run through Claude Code, OpenAI through Codex, Copilot through its CLI.</p></header>
-        <div className={`grid gap-3 ${compact ? '' : 'md:grid-cols-2'}`}>
+        {!compact && <header className="px-0.5"><h3 className="text-small font-semibold text-fg-1">Accounts</h3><p className="text-meta text-fg-3">Each signs in on its own. Claude and Llama run through Claude Code, OpenAI through Codex, Copilot through its CLI.</p></header>}
+        <div className={`grid ${compact ? 'gap-2' : 'gap-3 md:grid-cols-2'}`}>
         {v.accounts.map((a) => (
-          <div key={a.id} className="card flex flex-col px-4 py-3.5">
-            <div className="flex items-start gap-3">
-              <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
+          <div key={a.id} className={`card flex flex-col ${compact ? 'px-3.5 py-3' : 'px-4 py-3.5'}`}>
+            <div className={`flex gap-3 ${compact ? 'items-center' : 'items-start'}`}>
+              <span className={`${compact ? '' : 'mt-0.5'} flex size-8 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-body font-semibold text-fg-1">{a.label}</span>
-                  <StatusPill a={a} />
+                  {(!compact || !signedOut(a)) && <StatusPill a={a} />}
                 </div>
                 <div className="truncate text-meta text-fg-3" title={a.kind === 'claude' ? whoText(a) : undefined}>
-                  {a.kind === 'claude' ? whoText(a)
+                  {compact && signedOut(a) ? SIGN_IN_HINT[a.kind]
+                    : a.kind === 'claude' ? whoText(a)
                     : a.kind === 'openai' ? (a.openai === 'none' ? 'Not signed in' : `${a.openai === 'chatgpt' ? 'ChatGPT plan' : 'API key, billed per token'} · agents ${a.models.large ?? 'its default'}, quick calls ${a.models.small}`)
                     : a.kind === 'copilot' ? (a.available ? `Your GitHub Copilot plan, through its CLI · model ${a.models.large ?? 'auto'} (auto: Copilot picks)` : `Can't run now: ${a.why ?? 'checking its CLI'}`)
                     : `${a.host ?? 'This machine'} · ${a.llama?.models.length ?? 0} model${a.llama?.models.length === 1 ? '' : 's'} · agents ${a.models.large ?? 'its default'}, quick calls ${a.models.small}`}
                 </div>
-                {a.id === 'claude' && <div className="mt-0.5"><ClaudeAccount toast={toast} /></div>}
+                {a.id === 'claude' && !compact && <div className="mt-0.5"><ClaudeAccount toast={toast} /></div>}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {(a.kind === 'openai' || (a.kind === 'claude' && !a.builtIn)) && signing?.id !== a.id && (a.signedIn === false || a.openai === 'none'
+                {/* onboarding signs the built-in Claude in here too; Settings keeps its claude.ai/token switch (ClaudeAccount) */}
+                {(a.kind === 'openai' || (a.kind === 'claude' && (!a.builtIn || (compact && signedOut(a))))) && signing?.id !== a.id && (signedOut(a)
                   ? <button onClick={() => signIn(a)} className={primary}>Sign in</button>
                   : <button onClick={() => signIn(a)} className={`${quiet} px-2`} title="Sign in again" aria-label={`Sign ${a.label} in again`}><RotateCcw className="size-3.5" /></button>)}
-                <button onClick={() => test(a)} disabled={tested[a.id]?.busy} className={`${quiet} px-2`} title="Test: ask it one tiny question, the way a run would, and show what comes back" aria-label={`Test ${a.label}`}>{tested[a.id]?.busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}</button>
+                {!compact && <button onClick={() => test(a)} disabled={tested[a.id]?.busy} className={`${quiet} px-2`} title="Test: ask it one tiny question, the way a run would, and show what comes back" aria-label={`Test ${a.label}`}>{tested[a.id]?.busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}</button>}
                 {!a.builtIn && <button onClick={() => remove(a)} className={`${quiet} px-2 hover:text-fail-text`} aria-label={`Remove ${a.label}`} title="Remove this account"><Trash2 className="size-3.5" /></button>}
               </div>
             </div>
@@ -820,7 +832,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
             </div>}
             {/* which model each kind of work runs on here: inherited unless picked (Llama's are picked with its speed checks below) */}
             {!compact && a.kind !== 'llama' && <AccountModels a={a} set={set} />}
-            {a.kind === 'llama' && a.llama?.up && (
+            {!compact && a.kind === 'llama' && a.llama?.up && (
               <details className="group/models mt-2">
                 <summary className="flex cursor-pointer list-none items-center gap-1 text-meta font-medium text-fg-3 hover:text-fg-1">
                   <ChevronRight className="size-3.5 transition-transform group-open/models:rotate-90" />Models and speed checks
@@ -838,7 +850,8 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
             <button onClick={add} disabled={!adding.label.trim()} className={primary}><Plus className="size-3.5" />Add</button>
             <button onClick={() => setAdding(undefined)} className={quiet}>Cancel</button>
           </div>
-        ) : <button onClick={() => setAdding({ kind: 'claude', label: '', host: '' })} className="flex min-h-24 w-full items-center justify-center gap-3 rounded-card border border-dashed border-line-strong px-4 py-3 text-small font-medium text-fg-3 transition-colors hover:border-accent/50 hover:bg-hover hover:text-fg-1"><span className="flex size-8 items-center justify-center rounded-lg border border-dashed border-line"><Plus className="size-3.5" /></span>Add an account</button>}
+        ) : compact ? <button onClick={() => setAdding({ kind: 'claude', label: '', host: '' })} className="inline-flex items-center gap-1.5 justify-self-start rounded-md px-1 py-1 text-small font-medium text-fg-3 transition-colors hover:text-fg-1"><Plus className="size-3.5" />Add another account</button>
+          : <button onClick={() => setAdding({ kind: 'claude', label: '', host: '' })} className="flex min-h-24 w-full items-center justify-center gap-3 rounded-card border border-dashed border-line-strong px-4 py-3 text-small font-medium text-fg-3 transition-colors hover:border-accent/50 hover:bg-hover hover:text-fg-1"><span className="flex size-8 items-center justify-center rounded-lg border border-dashed border-line"><Plus className="size-3.5" /></span>Add an account</button>}
         </div>
       </section>
 

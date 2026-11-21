@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Start Concierge in Docker, from a fresh clone to the onboarding in your browser:
+#   gh repo clone ylkhayat/concierge && cd concierge && bin/up
+# It writes .env (your code folder and ids; no tokens: those are signed in from the onboarding), adds the fleet's layer
+# when fleet/ is there, builds and starts it, and checks your browser can reach it. On Docker Desktop that needs host
+# networking, which is off by default: it walks you through turning it on, then checks again. Safe to run again.
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")/.."
+
+say() { printf '\033[1m%s\033[0m\n' "$*"; }
+warn() { printf '\033[33m%s\033[0m\n' "$*"; }
+fail() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
+get() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- || true; }
+# set KEY=value in .env, keeping everything else (and the file yours alone)
+put() { local k=$1 v=$2; { grep -vE "^$k=" .env || true; printf '%s=%s\n' "$k" "$v"; } > .env.tmp && mv .env.tmp .env && chmod 600 .env; }
+
+command -v docker >/dev/null 2>&1 || fail "Docker is missing: install Docker Desktop (https://docs.docker.com/desktop/) or Docker Engine."
+docker info >/dev/null 2>&1 || {
+  [[ $(uname) == Darwin ]] && { say "Starting Docker Desktop"; open -a Docker 2>/dev/null || true; }
+  for _ in $(seq 60); do docker info >/dev/null 2>&1 && break; sleep 2; done
+  docker info >/dev/null 2>&1 || fail "Docker isn't running: start it, then run bin/up again."
+}
+
+# --- .env: where your clones are, and who you are; nothing secret
+if [[ ! -f .env ]]; then
+  cp .env.example .env && chmod 600 .env
+  say "Made .env from .env.example"
+fi
+code=$(get CODE_DIR)
+if [[ -z $code || $code == */you/* ]]; then
+  guess="$HOME/code"; [[ -d $guess ]] || guess="$(dirname "$PWD")"
+  if [[ -t 0 ]]; then read -r -p "The folder that holds your clones [$guess]: " code; fi
+  code="${code:-$guess}"; code="${code/#\~/$HOME}"
+  mkdir -p "$code" && put CODE_DIR "$code"
+fi
+[[ $(get HOST_UID) == "$(id -u)" ]] || put HOST_UID "$(id -u)"
+[[ $(get HOST_GID) == "$(id -g)" ]] || put HOST_GID "$(id -g)"
+# the fleet (several machines; a private extension cloned into fleet/): its layer and its Tailscale link, which the
+# onboarding signs in. sync-setup adds the machine roles once there is a second machine
+if [[ -f fleet/compose.fleet.yml && -z $(get COMPOSE_FILE) ]]; then
+  put COMPOSE_FILE docker-compose.yml:fleet/compose.fleet.yml
+  [[ -n $(get COMPOSE_PROFILES) ]] || put COMPOSE_PROFILES link
+  say "Fleet found: its Tailscale link starts too (you sign it in from the onboarding)"
+fi
+dir=$(get CONCIERGE_DIRNAME); dir=${dir:-concierge}
+# what the container mounts: made here, so Docker doesn't make them as root
+mkdir -p "$HOME/.config/$dir" "$HOME/.local/state/$dir" "$HOME/.claude" "$HOME/.codex"
+
+say "Building and starting Concierge (a few minutes the first time)"
+docker compose up -d --build
+
+port=$(get CONCIERGE_PORT); port=${port:-4747}
+url="http://127.0.0.1:$port"
+health() { docker inspect -f '{{.State.Health.Status}}' concierge 2>/dev/null || echo none; }
+reachable() { curl -sf -m 3 "$url/api/alive" >/dev/null 2>&1; }
+# up inside the container (its own health check) and reachable from here: the same check twice, from both sides
+wait_up() {
+  for _ in $(seq 90); do
+    reachable && return 0
+    [[ $(health) == healthy ]] && { sleep 3; reachable && return 0; return 1; }
+    sleep 2
+  done
+  return 1
+}
+
+desktop=0; docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -qi 'docker desktop' && desktop=1
+until wait_up; do
+  if [[ $(health) != healthy ]]; then
+    docker compose logs --tail 30 review-deck >&2 || true
+    fail "Concierge didn't start: its log is above (docker compose logs -f review-deck for more)."
+  fi
+  # running, yet out of reach from this machine: Docker Desktop without host networking
+  [[ $desktop == 1 ]] || fail "Concierge runs but $url doesn't answer from here. Is something else on port $port? (CONCIERGE_PORT in .env)"
+  echo
+  warn "One setting in Docker Desktop is needed: host networking (off by default)."
+  echo "  Concierge and every review it opens listen on this machine's ports, which Docker Desktop keeps"
+  echo "  inside its VM unless host networking is on."
+  echo
+  echo "  1. Docker Desktop → Settings → Resources → Network"
+  echo "  2. Tick \"Enable host networking\" (Docker Desktop 4.34 or newer)"
+  echo "  3. Apply & restart"
+  echo
+  [[ $(uname) == Darwin ]] && open -a Docker 2>/dev/null || true
+  [[ -t 0 ]] || fail "Turn it on, then run bin/up again."
+  read -r -p "Press Enter once Docker Desktop has restarted… "
+  for _ in $(seq 60); do docker info >/dev/null 2>&1 && break; sleep 2; done
+  docker compose up -d
+done
+
+say "Concierge is up: $url"
+case $(uname) in Darwin) open "$url" ;; Linux) command -v xdg-open >/dev/null && xdg-open "$url" >/dev/null 2>&1 || true ;; esac
+say "The onboarding signs you in to GitHub$([[ -n $(get COMPOSE_FILE) ]] && echo ', Tailscale') and your agents. Updates: bin/update"

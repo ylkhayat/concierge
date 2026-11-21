@@ -1,9 +1,10 @@
 import {
-  ArrowLeft, ArrowRight, Check, CircleAlert, CircleCheck, Copy, FolderGit2, GitPullRequestArrow, Layers, LayoutGrid, LoaderCircle, Monitor,
-  Moon, Plus, RefreshCw, Rocket, Settings2, Sparkles, SquareTerminal, Sun, Wallet, Wand, Wrench, X, Zap, type LucideIcon,
+  ArrowLeft, ArrowRight, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, FolderGit2, GitPullRequestArrow, Layers, LayoutGrid, LoaderCircle, Monitor,
+  Moon, Network, Plus, Rocket, Settings2, Sparkles, SquareTerminal, Sun, Wallet, Wand, X, Zap, type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
+import type { TailscaleView } from '../../server/tailscale.ts'
 import { api, type Health, type Theme } from '../lib.ts'
 import { Agents, blocked, Exec as ExecSetup, guessSkill, skillsFor, Toggle, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
 import { Tabs } from './Tabs.tsx'
@@ -12,8 +13,17 @@ import { Pick } from '../ui/Pick.tsx'
 type Suggestion = { repo: string; prs: number; paths: string[]; watched: boolean }
 type RepoPick = { on: boolean; path: string; status?: 'ok' | 'checking' | string }
 
-const STEPS: { id: string; title: string; hint: string; icon: LucideIcon }[] = [
-  { id: 'tools', title: 'Connect', hint: 'GitHub and your agents', icon: Wrench },
+type Icon = ComponentType<{ className?: string }>
+/** GitHub's mark (lucide carries no brand icons). */
+function GithubMark({ className }: { className?: string }) {
+  return <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" /></svg>
+}
+
+// GitHub first (everything reads it), then Tailscale when the fleet is loaded (its machines meet there), then the agents
+const STEPS: { id: string; title: string; hint: string; icon: Icon }[] = [
+  { id: 'github', title: 'GitHub', hint: 'Your PRs and repositories', icon: GithubMark },
+  { id: 'tailscale', title: 'Tailscale', hint: 'Your machines, one link', icon: Network },
+  { id: 'agents', title: 'Agents', hint: 'Who does the work', icon: Bot },
   { id: 'spaces', title: 'Workspaces', hint: 'Review, Ship, or both', icon: LayoutGrid },
   { id: 'repos', title: 'Repositories', hint: 'Which PRs to watch', icon: FolderGit2 },
   { id: 'skills', title: 'Skills', hint: 'What reviews your PRs', icon: Wand },
@@ -29,9 +39,9 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   health?: Health; theme: Theme; onTheme: (t: Theme) => void; onDone: () => void; onClose?: () => void
   toast: (m: string, tone?: 'ok' | 'error') => void
 }) {
-  const [step, setStep] = useState(onClose ? 1 : 0) // reopening from Settings starts at the repositories
+  const [step, setStep] = useState(0)
   const [setup, setSetup] = useState<SetupView>()
-  const [rechecking, setRechecking] = useState(false)
+  const [ts, setTs] = useState<TailscaleView>()
   const [suggested, setSuggested] = useState<Suggestion[]>()
   const [picks, setPicks] = useState<Record<string, RepoPick>>({})
   const [extra, setExtra] = useState({ repo: '', path: '' })
@@ -43,13 +53,16 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   const [agents, setAgents] = useState<ProvidersView>()
   // the skills on this machine (yours, plugins', the org's), per kind of work: what onboarding offers and picks from
   const [found, setFound] = useState<Record<'review' | 'revise' | 'exec', FoundSkill[]>>({ review: [], revise: [], exec: [] })
-  // the agents' sign-ins, re-read while the first step is open: a sign-in finishes in another tab
+  // the steps follow the setup: Tailscale only with the fleet, skills are Review's, the exec command is Exec's
+  const steps = STEPS.filter((s) => (s.id !== 'tailscale' || !!setup?.fleet) && (s.id !== 'skills' || spaces.includes('review')) && (s.id !== 'exec' || spaces.includes('exec')))
+  const id = steps[Math.min(step, steps.length - 1)].id
+  // the agents' sign-ins, and Tailscale's, re-read while their step is open: a sign-in finishes in another tab
   useEffect(() => {
-    if (step !== 0) return
-    const read = () => api('/providers').then(setAgents, () => {})
-    read(); const t = setInterval(read, 4000)
+    if (id !== 'agents' && id !== 'tailscale') return
+    const read = () => id === 'agents' ? api('/providers').then(setAgents, () => {}) : api('/tailscale').then(setTs, () => {})
+    read(); const t = setInterval(read, 3000)
     return () => clearInterval(t)
-  }, [step])
+  }, [id])
   useEffect(() => { void Promise.all((['review', 'revise', 'exec'] as const).map((w) => skillsFor(w))).then(([review, revise, exec]) => setFound({ review, revise, exec })) }, [])
   const guess = { review: guessSkill(found.review, 'review'), revise: guessSkill(found.revise, 'revise'), exec: guessSkill(found.exec, 'exec') }
   // a first setup on a machine that already has a review and a revise skill: those, not the starters. "First" is how
@@ -63,8 +76,18 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     setMode('own'); setCommands({ review: guess.review.command, revise: guess.revise.command })
   }, [setup, guess.review?.command, guess.revise?.command]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const opened = useRef(false)
   const load = () => api('/setup').then((s: SetupView) => {
     setSetup(s)
+    if (!opened.current) {
+      opened.current = true
+      // the steps as this setup has them (before the state above is in)
+      const list = STEPS.filter((x) => (x.id !== 'tailscale' || s.fleet) && (x.id !== 'skills' || s.config.workspaces.includes('review')) && (x.id !== 'exec' || s.config.workspaces.includes('exec')))
+      const at = (k?: string) => Math.max(0, list.findIndex((x) => x.id === k))
+      // reopening from Settings starts at the workspaces: the sign-ins are done by then. A first setup goes back to
+      // where it was left (a GitHub sign-in that lapsed since comes first again)
+      setStep(onClose ? at('spaces') : s.checks && !s.checks.github.ok ? 0 : at(s.onboardingStep))
+    }
     setSpaces(s.config.workspaces)
     setCommands({ review: s.config.review, revise: s.config.revise })
     setMode(s.config.review.startsWith('/review-pr') && s.config.revise.startsWith('/revise') ? 'starter' : 'own')
@@ -83,7 +106,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
 
   // repositories: suggestions from GitHub activity, matched to checkouts found on disk
   useEffect(() => {
-    if (step !== 1 || suggested) return
+    if (id !== 'repos' || suggested) return
     api('/setup/repos').then((list: Suggestion[]) => {
       setSuggested(list)
       const watched = setup?.config.repos ?? {}
@@ -92,7 +115,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
         return [s.repo, { on: s.watched || (!Object.keys(watched).length && s.paths.length > 0 && s.prs > 0), path, status: path ? 'ok' : undefined }]
       })))
     }, () => setSuggested([]))
-  }, [step, suggested, setup])
+  }, [id, suggested, setup])
 
   const check = async (repo: string, path: string) => {
     setPicks((p) => ({ ...p, [repo]: { ...p[repo], path, status: 'checking' } }))
@@ -142,12 +165,17 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
 
   const c = setup?.checks
   const agentReady = !!agents?.accounts.some((a) => !blocked(a))
-  const toolsReady = !!c?.github.ok && agentReady
-  // the steps follow the workspaces you pick: skills are Review's, the exec command is Exec's
-  const steps = STEPS.filter((s) => (s.id !== 'skills' || spaces.includes('review')) && (s.id !== 'exec' || spaces.includes('exec')))
-  const id = steps[Math.min(step, steps.length - 1)].id
+  // where you are, kept on the server: a reload, another browser or a rebuild opens onboarding here again
+  useEffect(() => { if (setup && !onClose) void api('/setup/step', { step: id }).catch(() => {}) }, [id, !!setup]) // eslint-disable-line react-hooks/exhaustive-deps
+  // a sign-in that finishes while its step is open moves on by itself (the agents' step waits: you may add more)
+  const signedIn = id === 'github' ? !!c?.github.ok : id === 'tailscale' ? !!ts?.signedIn : undefined
+  const wasIn = useRef(signedIn)
+  useEffect(() => {
+    const before = wasIn.current; wasIn.current = signedIn
+    if (signedIn && before === false) { const t = setTimeout(() => setStep((n) => n + 1), 900); return () => clearTimeout(t) }
+  }, [id, signedIn])
   const canNext = {
-    tools: toolsReady, spaces: spaces.length > 0, repos: reposReady, prefs: true,
+    github: !!c?.github.ok, tailscale: !!ts?.signedIn, agents: agentReady, spaces: spaces.length > 0, repos: reposReady, prefs: true,
     skills: mode === 'starter' ? !!setup?.skills.every((s) => s.installed) : !!commands.review.trim() && !!commands.revise.trim(),
     exec: !!setup?.config.exec.command,
   }[id]
@@ -163,9 +191,9 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   const toggleSpace = (w: 'review' | 'exec') => setSpaces((x) => (x.includes(w) ? x.filter((y) => y !== w) : [...x, w]))
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-fill/60 p-4 sm:p-8">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-fill/60 p-4 sm:p-8">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-80 bg-[radial-gradient(60%_100%_at_50%_0%,rgb(139_92_246/0.12),transparent)]" />
-      <div className="relative flex w-full max-w-4xl animate-[toast-in_300ms_var(--ease-snappy)] flex-col overflow-hidden rounded-3xl bg-surface-1 shadow-2xl ring-1 ring-line md:min-h-[600px] md:flex-row ">
+      <div className="relative flex max-h-full w-full max-w-4xl animate-[toast-in_300ms_var(--ease-snappy)] flex-col overflow-hidden rounded-3xl bg-surface-1 shadow-2xl ring-1 ring-line md:h-[min(680px,100%)] md:flex-row">
         {/* step rail */}
         <aside className="flex shrink-0 flex-col gap-6 border-b border-line bg-fill/60 p-6 md:w-64 md:border-b-0 md:border-r">
           <div className="flex items-center gap-2.5">
@@ -198,30 +226,22 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
         </aside>
 
         {/* step body */}
-        <section className="flex min-w-0 flex-1 flex-col">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           {onClose && (
             <button onClick={onClose} className="absolute right-4 top-4 rounded-lg p-1.5 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close"><X className="size-4" /></button>
           )}
-          <div key={step} className="flex-1 animate-[rise-in_260ms_var(--ease-snappy)] overflow-y-auto p-6 sm:p-8">
-            {!setup ? <Loading text="Checking your setup" /> : id === 'tools' ? (
-              <Step title="Connect your accounts" lead="Concierge works with your GitHub, private repositories included, and runs the agents you already pay for. Sign in once here; everything stays on this machine.">
-                <div className="space-y-2">
-                  <ToolRow name="GitHub" required c={c!.github} />
-                  {!c!.github.ok && <GithubSignIn onSaved={load} toast={toast} />}
-                  {!c!.github.ok && <KeyField label="Or paste a token" name="GITHUB_TOKEN" placeholder="ghp_… or github_pat_…" hint={<>A token with <b>repo</b> access. With the GitHub CLI: <code className="font-mono">gh auth token</code>. Or create one at github.com/settings/tokens.</>} onSaved={load} toast={toast} />}
-                  <ToolRow name="crit" c={c!.crit} note="Used by the review and revise skills" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-baseline justify-between">
-                    <h3 className="text-body font-semibold">Agents</h3>
-                    <span className={`text-small ${agentReady ? 'text-ok-text' : 'text-fg-3'}`}>{agentReady ? 'Ready to work' : 'Sign in to at least one'}</span>
-                  </div>
-                  <p className="text-small text-fg-3">Claude (a claude.ai plan or an API key), OpenAI (a ChatGPT plan or an API key) or Llama (local models through Ollama). Add more accounts later and the work is spread across them.</p>
-                  <Agents compact toast={toast} onConnections={() => {}} />
-                </div>
-                <button onClick={() => { setRechecking(true); load().finally(() => setRechecking(false)) }} className={`${quietBtn} -ml-3`}>
-                  <RefreshCw className={`size-4 ${rechecking ? 'animate-spin' : ''}`} />Check again
-                </button>
+          <div key={step} className="min-h-0 flex-1 animate-[rise-in_260ms_var(--ease-snappy)] overflow-y-auto p-6 sm:p-8">
+            {!setup ? <Loading text="Checking your setup" /> : id === 'github' ? (
+              <Step title="Connect GitHub" lead="Concierge reads the pull requests you are asked to review and pushes fixes to your own, private repositories included. You sign in here once; nothing goes in a file.">
+                <GithubCard c={c!.github} onSaved={load} toast={toast} />
+              </Step>
+            ) : id === 'tailscale' ? (
+              <Step title="Join your tailnet" lead="The fleet runs Concierge on your machines one at a time and gives them one shared link, all over Tailscale. Sign this machine's link in to your tailnet.">
+                <TailscaleCard ts={ts} />
+              </Step>
+            ) : id === 'agents' ? (
+              <Step title="Sign in your agents" lead="The agents run on plans you already pay for. Sign in to at least one; add more later and the work is spread across them.">
+                <Agents compact toast={toast} onConnections={() => {}} />
               </Step>
             ) : id === 'spaces' ? (
               <Step title="What will you use it for?" lead="Each workspace is its own place in the app, with its own setup. Pick one or both; Settings can change it later.">
@@ -291,6 +311,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               </div>
             ) : id === 'skills' ? (
               <Step title="Choose the skills that do the work" lead="A review request runs a review skill; your own PRs run a revise skill. Both are Claude Code slash commands you can change any time.">
+                {c && !c.crit.ok && <ToolRow name="crit" c={c.crit} note="The review and revise skills open their findings in it" />}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Choice on={mode === 'starter'} onClick={() => { picked.current = true; setMode('starter') }} icon={Sparkles} title="From the skill source" body={`review-pr, revise, ship-tickets and the skills behind explain, briefs, plans and the standup, from ${setup.skillSource.replace(/^https:\/\/(www\.)?github\.com\//, '')}. Installed into ~/.claude/skills, yours to edit; change the source in Settings.`} />
                   <Choice on={mode === 'own'} onClick={() => { picked.current = true; setMode('own') }} icon={SquareTerminal} title="My own commands" body="Point Concierge at slash commands you already use." />
@@ -357,7 +378,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
 
           <footer className="flex items-center gap-2 border-t border-line px-6 py-4 sm:px-8 ">
             {step > 0 && <button onClick={() => setStep(step - 1)} className={quietBtn}><ArrowLeft className="size-4" />Back</button>}
-            <span className="flex-1" />
+            <span className="flex-1 text-center text-meta text-fg-4 tabular-nums">Step {Math.min(step, steps.length - 1) + 1} of {steps.length}</span>
             {id === 'repos' && chosen.length > 0 && !reposReady && <span className="text-small text-fg-3">Each picked repo needs a valid checkout</span>}
             {id === 'exec' && !canNext && <span className="text-small text-fg-3">Save an exec command to continue</span>}
             {step < steps.length - 1
@@ -386,22 +407,44 @@ function Loading({ text }: { text: string }) {
   return <div className="flex items-center gap-2.5 py-10 text-body text-fg-3"><LoaderCircle className="size-4 animate-spin text-accent" />{text}…</div>
 }
 
-function ToolRow({ name, c, required, note }: { name: string; c: { ok: boolean; detail: string; fix?: string }; required?: boolean; note?: string }) {
-  const [copied, setCopied] = useState(false)
-  const Icon = c.ok ? CircleCheck : CircleAlert
+function ToolRow({ name, c, note }: { name: string; c: { ok: boolean; detail: string; fix?: string }; note?: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl px-3.5 py-3 ring-1 ring-line ">
-      <Icon className={`size-5 shrink-0 ${c.ok ? 'text-ok' : required ? 'text-fail' : 'text-wait'}`} />
+    <div className="flex items-center gap-3 rounded-2xl bg-wait/6 px-3.5 py-3 ring-1 ring-wait/20">
+      <CircleAlert className="size-5 shrink-0 text-wait" />
       <div className="min-w-0 flex-1">
-        <div className="text-body font-medium">{name} {required && !c.ok && <span className="text-meta font-normal text-fail">required</span>}</div>
-        <div className="truncate text-small text-fg-3">{c.detail}{note && c.ok ? ` · ${note}` : ''}</div>
+        <div className="text-body font-medium">{name}: {c.detail}</div>
+        {note && <div className="text-small text-fg-3">{note}</div>}
       </div>
-      {!c.ok && c.fix && (
-        <button onClick={() => navigator.clipboard.writeText(c.fix!).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
-                className="group flex shrink-0 items-center gap-1.5 rounded-lg bg-fill px-2.5 py-1.5 font-mono text-meta text-fg-2 transition-colors hover:bg-active" title="Copy">
-          {c.fix}{copied ? <Check className="size-3 text-ok" /> : <Copy className="size-3 opacity-50 group-hover:opacity-100" />}
-        </button>
-      )}
+      {c.fix && <CopyCommand text={c.fix} />}
+    </div>
+  )
+}
+
+function CopyCommand({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button onClick={() => navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
+            className="group flex max-w-full shrink-0 items-center gap-1.5 rounded-lg bg-fill px-2.5 py-1.5 font-mono text-meta text-fg-2 transition-colors hover:bg-active" title="Copy">
+      <span className="truncate">{text}</span>{copied ? <Check className="size-3 shrink-0 text-ok" /> : <Copy className="size-3 shrink-0 opacity-50 group-hover:opacity-100" />}
+    </button>
+  )
+}
+
+/** One service to connect, as one card: its mark, where it stands, and the one thing to do next. */
+function ServiceCard({ icon: Icon, name, ok, detail, action, children }: { icon: Icon; name: string; ok: boolean; detail: ReactNode; action?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex items-center gap-3.5 p-4">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-fill text-fg-1"><Icon className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-reading font-semibold">{name}
+            {ok && <span className="inline-flex items-center gap-1 rounded-full bg-ok/10 px-2 py-px text-micro font-medium text-ok-text ring-1 ring-inset ring-ok/20"><Check className="size-3" strokeWidth={3} />Connected</span>}
+          </div>
+          <div className="truncate text-small text-fg-3">{detail}</div>
+        </div>
+        {action}
+      </div>
+      {children && <div className="space-y-3 border-t border-line bg-fill/40 p-4">{children}</div>}
     </div>
   )
 }
@@ -438,16 +481,16 @@ function Pref({ icon: Icon, title, hint, children }: { icon: LucideIcon; title: 
 }
 
 /** A key pasted into the page: checked by the server against GitHub or Linear, then kept for every machine. */
-function KeyField({ name, placeholder, hint, onSaved, toast, label }: { name: string; placeholder: string; hint: ReactNode; onSaved: () => void; toast: (m: string, tone?: 'ok' | 'error') => void; label?: string }) {
+function KeyField({ name, placeholder, hint, onSaved, toast, label, bare }: { name: string; placeholder: string; hint: ReactNode; onSaved: () => void; toast: (m: string, tone?: 'ok' | 'error') => void; label?: string; bare?: boolean }) {
   const [v, setV] = useState('')
   const [busy, setBusy] = useState(false)
   const save = () => { setBusy(true); api('/shared-keys', { name, value: v.trim() }).then((r: { who?: string }) => { toast(r.who ? `Connected as ${r.who}` : 'Connected'); setV(''); onSaved() }, (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
   return (
-    <div className="space-y-1.5 card p-3">
+    <div className={`space-y-1.5 ${bare ? '' : 'card p-3'}`}>
       {label && <p className="text-meta font-medium text-fg-3">{label}</p>}
       <div className="flex gap-2">
         <input type="password" autoComplete="off" value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && v.trim() && save()} placeholder={placeholder} aria-label={name} className={`${field} font-mono`} />
-        <button onClick={save} disabled={!v.trim() || busy} className={`${primaryBtn} shrink-0`}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : 'Connect'}</button>
+        <button onClick={save} disabled={!v.trim() || busy} className="inline-flex shrink-0 items-center gap-1.5 btn-outline">{busy ? <LoaderCircle className="size-4 animate-spin" /> : 'Connect'}</button>
       </div>
       <p className="text-small text-fg-3">{hint}</p>
     </div>
@@ -455,12 +498,13 @@ function KeyField({ name, placeholder, hint, onSaved, toast, label }: { name: st
 }
 
 /**
- * GitHub without a token: the GitHub CLI's device sign-in. A code to enter at github.com, then Concierge keeps the
- * token it got (server/githubLogin.ts). An organisation that blocks that app still takes a pasted token (below it).
+ * GitHub, as one card: the GitHub CLI's device sign-in (a code to enter at github.com; Concierge keeps the token it got,
+ * server/githubLogin.ts), or a pasted token for an organisation that blocks that app.
  */
-function GithubSignIn({ onSaved, toast }: { onSaved: () => void; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+function GithubCard({ c, onSaved, toast }: { c: { ok: boolean; detail: string }; onSaved: () => void; toast: (m: string, tone?: 'ok' | 'error') => void }) {
   const [code, setCode] = useState<{ code: string; url: string }>()
   const [busy, setBusy] = useState(false)
+  const [paste, setPaste] = useState(false)
   useEffect(() => {
     if (!code) return
     const t = setInterval(() => {
@@ -473,22 +517,45 @@ function GithubSignIn({ onSaved, toast }: { onSaved: () => void; toast: (m: stri
     return () => clearInterval(t)
   }, [code?.code]) // eslint-disable-line react-hooks/exhaustive-deps
   const start = () => { setBusy(true); api('/github/login', {}).then(setCode, (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false)) }
+  if (c.ok) return <ServiceCard icon={GithubMark} name="GitHub" ok detail={c.detail} />
   return (
-    <div className="space-y-1.5 card p-3">
+    <ServiceCard icon={GithubMark} name="GitHub" ok={false} detail="Repositories, pull requests and their checks"
+                 action={!code && <button onClick={start} disabled={busy} className={`${primaryBtn} shrink-0`}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <GithubMark className="size-4" />}Sign in</button>}>
       {code ? (
-        <>
-          <p className="text-small text-fg-2">Open <a href={code.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">{code.url.replace('https://', '')}</a> and enter</p>
-          <div className="flex items-center gap-2">
-            <button onClick={() => void navigator.clipboard?.writeText(code.code).then(() => toast('Code copied'))} title="Copy the code" className="rounded-lg bg-fill px-3 py-1.5 font-mono text-title font-semibold tracking-widest text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}</button>
-            <span className="flex items-center gap-1.5 text-meta text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Waiting for you to approve it on GitHub…</span>
+        <div className="space-y-2.5">
+          <p className="text-small text-fg-2">Open <a href={code.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent-text hover:underline">{code.url.replace('https://', '')}<ExternalLink className="size-3" /></a> and enter this code:</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={() => void navigator.clipboard?.writeText(code.code).then(() => toast('Code copied'))} title="Copy the code" className="flex items-center gap-2 rounded-lg bg-surface-1 px-3 py-1.5 font-mono text-title font-semibold tracking-widest text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}<Copy className="size-3.5 text-fg-3" /></button>
+            <span className="flex items-center gap-1.5 text-meta text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Waiting for you to approve it…</span>
           </div>
-        </>
-      ) : (
-        <div className="flex items-center gap-3">
-          <button onClick={start} disabled={busy} className={`${primaryBtn} shrink-0`}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : 'Sign in with GitHub'}</button>
-          <p className="text-small text-fg-3">A code to enter on github.com: no token to create. Access to your repositories, your organisations’ pull requests and their checks.</p>
         </div>
+      ) : paste ? (
+        <KeyField bare label="A token with repo access" name="GITHUB_TOKEN" placeholder="ghp_… or github_pat_…" onSaved={onSaved} toast={toast}
+                  hint={<>From <code className="font-mono">gh auth token</code>, or create one at github.com/settings/tokens. For an organisation that blocks the GitHub CLI’s sign-in.</>} />
+      ) : (
+        <p className="text-small text-fg-3">A code to enter on github.com; no token to create. <button onClick={() => setPaste(true)} className="font-medium text-fg-2 underline decoration-line-strong underline-offset-2 hover:text-fg-1">Use a token instead</button></p>
       )}
-    </div>
+    </ServiceCard>
+  )
+}
+
+/** The fleet's link (its Tailscale, in Docker Compose): signed in with the address its own status gives, no auth key. */
+function TailscaleCard({ ts }: { ts?: TailscaleView }) {
+  if (!ts) return <Loading text="Asking Tailscale" />
+  if (ts.signedIn) return <ServiceCard icon={Network} name="Tailscale" ok detail={[ts.name, ts.tailnet].filter(Boolean).join(' · ') || 'Signed in'} />
+  return (
+    <ServiceCard icon={Network} name="Tailscale" ok={false} detail={!ts.running ? 'The link isn’t running' : ts.authUrl ? 'Waiting for you to sign in' : 'Starting…'}
+                 action={ts.authUrl && <a href={ts.authUrl} target="_blank" rel="noreferrer" className={`${primaryBtn} shrink-0`}>Sign in<ExternalLink className="size-3.5" /></a>}>
+      {!ts.running ? (
+        <div className="space-y-2">
+          <p className="text-small text-fg-2">The fleet’s Tailscale runs in Docker Compose beside Concierge. Start it on this machine:</p>
+          <CopyCommand text="docker compose --profile link up -d link" />
+        </div>
+      ) : ts.authUrl ? (
+        <p className="text-small text-fg-3">Opens login.tailscale.com. Approve this machine there and it comes back here by itself.</p>
+      ) : (
+        <p className="flex items-center gap-1.5 text-small text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Waiting for Tailscale to give a sign-in address…</p>
+      )}
+    </ServiceCard>
   )
 }

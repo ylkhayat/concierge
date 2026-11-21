@@ -85,11 +85,18 @@ as() { setpriv --reuid="$uid" --regid="$gid" --clear-groups env HOME="$HOME" "$@
 if [ -n "${DNS_SERVERS:-}" ]; then
   { printf 'nameserver %s\n' $DNS_SERVERS; cat /etc/resolv.conf; } > /tmp/resolv.conf && cat /tmp/resolv.conf > /etc/resolv.conf
 fi
+# GitHub: the token you signed in with in the app (onboarding, Settings → Machines), kept with its other keys in
+# secrets.json; never in .env. Used here for the steps below only: the app hands its own copy to gh and git (sharedEnv.ts)
+for f in "$HOME/.config/${CONCIERGE_DIRNAME:-concierge}/secrets.json" "$HOME/.config/review-deck/secrets.json"; do
+  if [ -z "${GH_TOKEN:-}" ] && [ -r "$f" ]; then GH_TOKEN=$(jq -r '.shared.GITHUB_TOKEN.value // empty' "$f" 2>/dev/null || true); fi
+done
+if [ -n "${GH_TOKEN:-}" ]; then export GH_TOKEN; else unset GH_TOKEN; fi
 # git: who commits, and push over https with the GitHub token (ssh remotes are rewritten)
 [ -n "${GIT_AUTHOR_NAME:-}" ] && as git config --global user.name "$GIT_AUTHOR_NAME"
 [ -n "${GIT_AUTHOR_EMAIL:-}" ] && as git config --global user.email "$GIT_AUTHOR_EMAIL"
-# none set: commit as the GitHub account the token belongs to, with its private noreply address
-if [ -z "${GIT_AUTHOR_NAME:-}" ] || [ -z "${GIT_AUTHOR_EMAIL:-}" ]; then
+# none set: commit as the GitHub account the token belongs to, with its private noreply address (before the first
+# sign-in there is none: the app sets it once you sign in, gitIdentity.ts)
+if [ -n "${GH_TOKEN:-}" ] && { [ -z "${GIT_AUTHOR_NAME:-}" ] || [ -z "${GIT_AUTHOR_EMAIL:-}" ]; }; then
   who=$(as gh api user --jq '"\(.name // .login)\t\(.id)+\(.login)@users.noreply.github.com"' 2>/dev/null) || who=
   if [ -n "$who" ]; then
     [ -n "${GIT_AUTHOR_NAME:-}" ] || as git config --global user.name "$(printf '%s' "$who" | cut -f1)"
@@ -98,14 +105,18 @@ if [ -z "${GIT_AUTHOR_NAME:-}" ] || [ -z "${GIT_AUTHOR_EMAIL:-}" ]; then
 fi
 as git config --global url."https://github.com/".insteadOf "git@github.com:"
 as git config --global --add safe.directory '*'
-as gh auth setup-git >/dev/null 2>&1 || echo "gh auth setup-git failed: is GITHUB_TOKEN set?" >&2
+# git asks gh for the token at each push, which reads the app's GH_TOKEN: set up before any sign-in (--force)
+as gh auth setup-git --hostname github.com --force >/dev/null 2>&1 || echo "gh auth setup-git failed" >&2
 # gh stack, which exec runs open their PRs with (kept in a volume; installed once)
 GH_STACK_VERSION="${GH_STACK_VERSION:-v0.1.0}"
 # mount points Docker made as root: the parents of the bind mounts, and the crit volume
 for d in "$HOME/.claude" "$HOME/.codex" "$HOME/.local" "$HOME/.local/state" "$HOME/.local/state/review-pr" "$HOME/.local/state/revise" "$HOME/.config" "$HOME/.crit" "$HOME/.npm" "$HOME/.cache" "$HOME/.config/atlascli" "$HOME/.azure" "$HOME/.local/share" "$HOME/.local/share/gh"; do mkdir -p "$d" && chown "$uid:$gid" "$d"; done
 # the Atlas sign-in is yours even if something ran atlas as root
 chown -R "$uid:$gid" "$HOME/.config/atlascli" "$HOME/.azure"
-as sh -c "gh extension list 2>/dev/null | grep -q gh-stack || gh extension install github/gh-stack --pin $GH_STACK_VERSION >/dev/null" || echo "gh stack could not be installed" >&2
+if [ -n "${GH_TOKEN:-}" ]; then
+  as sh -c "gh extension list 2>/dev/null | grep -q gh-stack || gh extension install github/gh-stack --pin $GH_STACK_VERSION >/dev/null" || echo "gh stack could not be installed" >&2
+else echo "gh stack: installed at the next start, once you sign in to GitHub" >&2; fi
+unset GH_TOKEN # the app's own copy (secrets.json, re-read every 30s) is the one that counts from here
 exec setpriv --reuid="$uid" --regid="$gid" --clear-groups env HOME="$HOME" "$@"
 EOF
 RUN chmod 0755 /usr/local/bin/review-deck-entrypoint

@@ -796,15 +796,14 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
       <h2>Getting started.</h2>
     </div>
     <div class="steps">
-      <div class="step reveal"><h3>Clone and fill one file</h3><p>Copy <code>.env.example</code> to <code>.env</code>, and set the folder with your clones and a GitHub token.</p></div>
-      <div class="step reveal"><h3>Start it</h3><p><code>docker compose up -d</code>, then open <code>127.0.0.1:4747</code>. On Docker Desktop, turn on host networking first (Settings → Resources → Network).</p></div>
-      <div class="step reveal"><h3>Pick repos, sign in</h3><p>A short setup signs you in to an agent, finds your repos, and clones the ones you don't have yet.</p></div>
+      <div class="step reveal"><h3>Clone and run one command</h3><p><code>bin/up</code> asks for the folder with your clones, builds and starts it. No tokens in files.</p></div>
+      <div class="step reveal"><h3>It opens by itself</h3><p>At <code>127.0.0.1:4747</code>. On Docker Desktop it checks host networking and walks you through turning it on.</p></div>
+      <div class="step reveal"><h3>Pick repos, sign in</h3><p>A short setup signs you in to GitHub and an agent, finds your repos, and clones the ones you don't have yet.</p></div>
     </div>
     <div class="term reveal">
       <div class="term-bar"><i></i><i></i><i></i><span>Terminal</span><button id="copy" type="button">Copy</button></div>
 <pre id="cmd"><span class="p">$ </span>gh repo clone ylkhayat/concierge &amp;&amp; cd concierge
-<span class="p">$ </span>cp .env.example .env   <span class="c"># CODE_DIR and GITHUB_TOKEN</span>
-<span class="p">$ </span>docker compose up -d</pre>
+<span class="p">$ </span>bin/up                 <span class="c"># sign-ins happen in the app</span></pre>
     </div>
     <p class="sub reveal" style="margin:16px auto 0;text-align:center;font-size:14px">No Docker? Run <code>./install.sh</code> instead.</p>
   </section>

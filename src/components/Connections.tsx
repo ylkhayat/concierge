@@ -457,7 +457,7 @@ export function ClaudeAccount({ toast }: { toast: Toast }) {
       {a.usingLogin
         ? <p className="flex items-center gap-1.5 text-meta text-fg-3"><CircleCheck className="size-3.5 text-ok-text" />Through claude.ai, with its connectors
             <span className="text-fg-4">·</span><button onClick={backToToken} className="hover:text-fg-1 hover:underline">Use the token instead</button></p>
-        : !a.loggedIn ? <p className="text-meta text-fg-3">Sign in with your claude.ai plan, or set an API key or setup token in .env.</p>
+        : !a.loggedIn ? <p className="text-meta text-fg-3">Sign in with your claude.ai plan.</p>
         : <p className="text-meta text-fg-3">On the setup token: models only, without claude.ai connectors.
             {a.lapsed && <span className="text-wait-text"> The claude.ai sign-in expired {new Date(a.lapsed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.</span>}</p>}
       {!a.usingLogin && !waiting && <button onClick={start} className="rounded-md px-2 py-0.5 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10">Sign in with claude.ai</button>}

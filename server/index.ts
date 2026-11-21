@@ -8,7 +8,6 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
 import { execFile } from 'node:child_process'
-import { get as httpGet } from 'node:http'
 import { commandFor, scanSkills } from './skillScan.ts'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
@@ -78,6 +77,8 @@ import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, 
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
+import { tailscaleView, tsStatus, type TsPeer } from './tailscale.ts'
+import { gitIdentity } from './gitIdentity.ts'
 import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
 import { stateEpoch, transition } from './lifecycle.ts'
@@ -676,10 +677,11 @@ app.get('/github/login', (c) => c.json(githubLoginState() ?? null))
 function sharedChanged(changed: SharedKey[]) {
   if (!changed.length) return
   rereadSecrets()
-  if (changed.includes('GITHUB_TOKEN')) { tokenChanged(); void checks(true) } // a new sign-in: the GitHub check reads it again
+  if (changed.includes('GITHUB_TOKEN')) { tokenChanged(); void checks(true); void gitIdentity() } // a new sign-in: the GitHub check reads it again
   if (changed.includes('LINEAR_API_KEY')) void pollTickets()
 }
 setInterval(() => sharedChanged(applyShared()), 30_000).unref()
+void gitIdentity() // a token from an earlier sign-in: commits carry its account from the start
 // a machine's recent log (scrubbed), this one's or another's through its worker
 // the page's slow moments (src/slowUi.ts), into this machine's log, where its logs page shows them
 app.post('/debug/ui', async (c) => {
@@ -759,23 +761,14 @@ app.post('/machines', async (c) => {
   return c.json({ ok: true })
 })
 // the tailnet as this machine's Tailscale sees it (Settings → Machines), read-only; no Tailscale here says so
-type TsPeer = { HostName?: string; DNSName?: string; OS?: string; Online?: boolean; Tags?: string[]; TailscaleIPs?: string[]; LastSeen?: string }
 app.get('/tailnet', async (c) => {
-  // the link container's tailscaled, through the socket it shares (fleet compose), else a tailscale command here
-  const sock = process.env.TAILSCALE_SOCKET ?? '/var/run/tailscale/tailscaled.sock'
-  const out = await new Promise<string | null>((resolve) => {
-    const req = httpGet({ socketPath: sock, path: '/localapi/v0/status', headers: { Host: 'local-tailscaled.sock' }, timeout: 5000 }, (res) => {
-      let body = ''; res.setEncoding('utf8'); res.on('data', (d) => { body += d }); res.on('end', () => resolve(res.statusCode === 200 ? body : null))
-    })
-    req.on('error', () => resolve(null)); req.on('timeout', () => { req.destroy(); resolve(null) })
-  }) ?? await new Promise<string | null>((resolve) => execFile('tailscale', ['status', '--json'], { timeout: 5000, maxBuffer: 4 << 20 }, (e, o) => resolve(e ? null : o)))
-  if (!out) return c.json({ available: false })
-  try {
-    const j = JSON.parse(out) as { Self?: TsPeer; Peer?: Record<string, TsPeer>; MagicDNSSuffix?: string; CurrentTailnet?: { Name?: string } }
-    const dev = (p: TsPeer, self: boolean) => ({ name: p.HostName ?? p.DNSName?.split('.')[0] ?? '?', dns: p.DNSName?.replace(/\.$/, ''), os: p.OS, online: self || !!p.Online, tagged: !!p.Tags?.length, ip: p.TailscaleIPs?.[0], lastSeen: p.LastSeen, self })
-    return c.json({ available: true, tailnet: j.CurrentTailnet?.Name, devices: [...(j.Self ? [dev(j.Self, true)] : []), ...Object.values(j.Peer ?? {}).map((p) => dev(p, false))] })
-  } catch { return c.json({ available: false }) }
+  const j = await tsStatus()
+  if (!j) return c.json({ available: false })
+  const dev = (p: TsPeer, self: boolean) => ({ name: p.HostName ?? p.DNSName?.split('.')[0] ?? '?', dns: p.DNSName?.replace(/\.$/, ''), os: p.OS, online: self || !!p.Online, tagged: !!p.Tags?.length, ip: p.TailscaleIPs?.[0], lastSeen: p.LastSeen, self })
+  return c.json({ available: true, tailnet: j.CurrentTailnet?.Name, devices: [...(j.Self ? [dev(j.Self, true)] : []), ...Object.values(j.Peer ?? {}).map((p) => dev(p, false))] })
 })
+// onboarding with the fleet: is the link's Tailscale signed in, and if not, the address that signs it in
+app.get('/tailscale', async (c) => c.json(await tailscaleView()))
 // the run history, from the event log: the latest runs (each as it ended) and per-day totals (Settings → Usage)
 // standup: since the start of the last working day by default (?since=ISO for another start)
 const standupFacts = async (since: Date) =>
@@ -1805,6 +1798,9 @@ const setupView = async (light = false) => ({
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
+  // the fleet extension is loaded (fleet/compose.fleet.yml sets it): onboarding then signs Tailscale in after GitHub
+  fleet: !!process.env.CONCIERGE_FLEET,
+  onboardingStep: state.onboardingStep,
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
   needed: await skillsNeeded([config.agent.review.command, config.agent.revise.command, config.agent.stack ?? '', config.exec.command, ...config.exec.actions.map((x) => x.prompt)]),
   commands: { review: await skillExists(config.agent.review.command), revise: await skillExists(config.agent.revise.command), stack: !!config.agent.stack && await skillExists(config.agent.stack) },
@@ -1813,6 +1809,13 @@ export type SetupView = Awaited<ReturnType<typeof setupView>>
 // light: what the app needs to start (no CLI checks, no skill source): it shows its boot screen until this answers
 app.get('/setup', async (c) => c.json(await setupView(c.req.query('light') === '1')))
 app.get('/setup/repos', async (c) => c.json(await suggestions()))
+// where onboarding was left: the step's id, kept so it opens there again
+app.post('/setup/step', async (c) => {
+  const { step } = await c.req.json<{ step?: unknown }>().catch(() => ({ step: undefined }))
+  if (typeof step !== 'string' || !/^[a-z]{1,20}$/.test(step)) return c.json({ error: 'Not a step' }, 400)
+  if (state.onboardingStep !== step) { state.onboardingStep = step; save() }
+  return c.json({ ok: true })
+})
 app.get('/setup/my-skills', async (c) => c.json(await mySkills()))
 /** Which machines may clone a repository (several machines: a company may keep one off some). Allowing it here clones it. */
 app.post('/repos/clone-on', async (c) => {

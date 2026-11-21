@@ -16,13 +16,12 @@ spreads the work across them.
 
 ```bash
 gh repo clone ylkhayat/concierge && cd concierge
-cp .env.example .env    # set CODE_DIR (the folder with your clones) and GITHUB_TOKEN
-docker compose up -d
+bin/up    # writes .env (your code folder; no tokens), builds, starts, and opens the onboarding
 ```
 
-Open http://127.0.0.1:4747. A short setup signs you in to an agent and picks your repos (it can clone them for you).
+Open http://127.0.0.1:4747. A short setup signs you in to GitHub and an agent (no tokens to paste into files) and picks your repos (it can clone them for you).
 
-On Docker Desktop, turn on host networking once first: Settings → Resources → Network → Enable host networking.
+On Docker Desktop it needs host networking (Settings → Resources → Network → Enable host networking): `bin/up` notices when it's off and walks you through turning it on.
 
 Without Docker, run `./install.sh` instead.
 

@@ -69,7 +69,7 @@ export const DONE_DAYS = 3
 /** Issues assigned to you in Triage, Todo or a started state (In Progress, In Review), in the watched teams. */
 export async function myTickets(): Promise<Ticket[]> {
   const teams = config.exec.teams
-  if (!hasKey()) throw new Error('LINEAR_API_KEY is not set')
+  if (!hasKey()) throw new Error('Linear isn\'t connected: add your API key in Settings → Machines')
   // the ones done or cancelled lately too: the list keeps them under Done for DONE_DAYS, then lets them go
   const since = new Date(Date.now() - DONE_DAYS * 86_400_000).toISOString()
   const ask = (filter: string, fields = FIELDS) => gql<{ viewer: { assignedIssues: { nodes: any[] } } }>(`

@@ -23,7 +23,6 @@ services:
       CLAUDE_CONFIG_DIR: ${DECK_HOME:-${HOME}}/.local/state/${CONCIERGE_DIRNAME:-concierge}/claude-home
       CODEX_HOME: ${DECK_HOME:-${HOME}}/.local/state/${CONCIERGE_DIRNAME:-concierge}/codex-home
       COPILOT_HOME: ${DECK_HOME:-${HOME}}/.local/state/${CONCIERGE_DIRNAME:-concierge}/copilot-home
-      GH_TOKEN: ${GITHUB_TOKEN:-}       # the gh CLI reads GH_TOKEN; Concierge itself reads GITHUB_TOKEN
       # the Azure sign-in in the config folder, which every machine syncs: one az login (Settings) for all of them
       AZURE_CONFIG_DIR: ${DECK_HOME:-${HOME}}/.config/${CONCIERGE_DIRNAME:-concierge}/azure
       # agents start their connectors with npx: use what's in the cache instead of asking the registry every time

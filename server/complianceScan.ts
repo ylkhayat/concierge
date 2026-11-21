@@ -93,7 +93,7 @@ let cache: { at: number; v: ComplianceSuggestion } | undefined
 export async function suggestCompliance(fresh = false, paths?: Record<string, string>): Promise<ComplianceSuggestion> {
   if (cache && !fresh && Date.now() - cache.at < 10 * 60_000) return cache.v
   const [lin, code] = await Promise.all([
-    hasKey() ? fromLinear().catch((e: Error) => ({ error: e.message })) : Promise.resolve({ error: 'LINEAR_API_KEY is not set: only your code was read' }),
+    hasKey() ? fromLinear().catch((e: Error) => ({ error: e.message })) : Promise.resolve({ error: 'Linear isn\'t connected (Settings → Machines): only your code was read' }),
     scanCode(paths),
   ])
   const v: ComplianceSuggestion = { team: [], teams: [], ...('error' in lin ? { error: lin.error } : lin), ...code.found, scanned: code.scanned }

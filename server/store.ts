@@ -233,6 +233,7 @@ type State = {
   background?: Record<string, import('./background.ts').BgTask[]> // what agents started in the background, per run key
   claudeLogin?: boolean // agents run on your full claude.ai login (its connectors come with it), not the model-only token
   claudeLoginLapsed?: string // when that login last stopped working (agents fell back to the token)
+  onboardingStep?: string // the onboarding step you were on last (its id): a reload, another browser or a rebuild opens it there
   usageBy?: Record<string, import('./usage.ts').Usage> // the plan windows of Claude accounts beyond the first (that one's: usage)
   skillModes?: Record<string, import('./orgSkills.ts').Mode> // per org skill: offered by fit, loaded on every run, or never
   skillUse?: Record<string, { count: number; lastAt: string; lastFor: string }>
