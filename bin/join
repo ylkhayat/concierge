@@ -34,18 +34,35 @@ def say(msg):
     print(f'join: {msg}', flush=True)
 
 
-def tailscale():
-    """The tailnet as this machine's Tailscale sees it: (this device, the other devices online)."""
+LINK_SOCKET = '/var/run/tailscale/tailscaled.sock'
+# the fleet's link container (Tailscale in Docker Compose): its local proxy onto the tailnet, for a machine with no
+# Tailscale of its own (fleet/compose.fleet.yml)
+PROXY = 'http://127.0.0.1:1055'
+
+
+def via_link():
+    """This machine reaches the tailnet only through the link container: no Tailscale of its own, the link running."""
+    return not tailscale_cli() and shutil.which('docker') and subprocess.run(
+        ['docker', 'exec', 'concierge-link', 'tailscale', f'--socket={LINK_SOCKET}', 'version'], capture_output=True).returncode == 0
+
+
+def tailscale(everyone=False):
+    """The tailnet as this machine's Tailscale sees it (its own, else the link container's): (this device, the other
+    devices online, or every one with `everyone`)."""
     cli = tailscale_cli()
-    if not cli:
-        sys.exit('join: Tailscale is not installed here (https://tailscale.com/download), or not on PATH')
-    r = subprocess.run([cli, 'status', '--json'], capture_output=True, text=True, timeout=20)
+    if cli:
+        r = subprocess.run([cli, 'status', '--json'], capture_output=True, text=True, timeout=20)
+    elif via_link():
+        r = subprocess.run(['docker', 'exec', 'concierge-link', 'tailscale', f'--socket={LINK_SOCKET}', 'status', '--json'], capture_output=True, text=True, timeout=20)
+    else:
+        sys.exit('join: no Tailscale here: start Concierge first (bin/up: its link brings Tailscale, and the setup signs it in), '
+                 'or install Tailscale (https://tailscale.com/download)')
     if r.returncode:
         sys.exit(f'join: Tailscale is not signed in here ({r.stderr.strip() or r.stdout.strip()[:200]}): sign in, then run this again')
     st = json.loads(r.stdout)
     if st.get('BackendState') != 'Running':
         sys.exit(f"join: Tailscale is {st.get('BackendState', 'not running')}: sign in, then run this again")
-    peers = [p for p in (st.get('Peer') or {}).values() if p.get('Online') and p.get('TailscaleIPs')]
+    peers = [p for p in (st.get('Peer') or {}).values() if (everyone or p.get('Online')) and p.get('TailscaleIPs')]
     return st.get('Self') or {}, peers
 
 
@@ -163,15 +180,26 @@ def hello(ip):
         return {}
 
 
+_opener = None
+
+
+def opener():
+    """Through the link's proxy when this machine reaches the tailnet only that way, else directly."""
+    global _opener
+    if _opener is None:
+        _opener = urllib.request.build_opener(urllib.request.ProxyHandler({'http': PROXY} if via_link() else {}))
+    return _opener
+
+
 def get(url, timeout=3):
-    with urllib.request.urlopen(url, timeout=timeout) as r:
+    with opener().open(url, timeout=timeout) as r:
         return json.load(r)
 
 
 def post(url, body, timeout=30):
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method='POST', headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with opener().open(req, timeout=timeout) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         try:
@@ -252,11 +280,23 @@ def main():
     me, peers = tailscale()
     say(f"signed in to Tailscale as {me.get('HostName', '?')}; looking for Concierge on {len(peers)} machine(s) online")
     found = find(peers)
-    if not found:
-        answers = {p['HostName']: reach(next((a for a in p['TailscaleIPs'] if '.' in a), p['TailscaleIPs'][0])) for p in peers if 'tag:concierge' in (p.get('Tags') or [])}
-        for _, what, fix in explain_tailnet(peers, answers):
-            say(f'{what}' + (f'\n      fix: {fix}' if fix else ''))
-        sys.exit('join: no Concierge answered on your tailnet: bin/join --check checks everything else too')
+    # none online yet (you're away from home, the others asleep): wait for one, however long, then go on by itself
+    waited = 0
+    while not found:
+        _, everyone = tailscale(everyone=True)
+        ours = [p for p in everyone if 'tag:concierge' in (p.get('Tags') or []) and p.get('HostName') != me.get('HostName')]
+        if not ours and not waited:
+            answers = {p['HostName']: reach(next((a for a in p['TailscaleIPs'] if '.' in a), p['TailscaleIPs'][0])) for p in peers if 'tag:concierge' in (p.get('Tags') or [])}
+            for _, what, fix in explain_tailnet(peers, answers):
+                say(f'{what}' + (f'\n      fix: {fix}' if fix else ''))
+            sys.exit('join: no Concierge on your tailnet to join: bin/join --check checks everything else too')
+        if waited % 300 == 0:  # said again every five minutes, so a glance at the terminal tells where it stands
+            seen = ', '.join(f"{p['HostName'].removeprefix('concierge-')} ({'online, not answering yet' if p.get('Online') else 'offline, last seen ' + (p.get('LastSeen') or '?')[:16].replace('T', ' ')})" for p in ours)
+            say(f'your other machines: {seen}. Waiting for one to be online (Ctrl-C to stop; run it again any time)')
+        time.sleep(15)
+        waited += 15
+        _, peers = tailscale()
+        found = find(peers)
     main_name = next((h['main'] for h in found if h.get('main')), None)
     main_server = next((h for h in found if h['name'] == main_name), None) or found[0]
     others = ', '.join(h['name'] for h in found if h is not main_server)
@@ -273,15 +313,15 @@ def main():
     if r.get('state') == 'waiting':
         say(f"waiting for approval on {main_server['name']}: open the dashboard, Settings → Machines, and approve {name} "
             f"if it shows the code {r['code']}")
-        end = time.time() + 30 * 60
-        while r.get('state') == 'waiting' and time.time() < end:
+        # as long as it takes: approve it whenever you're back at a screen with Concierge open
+        while r.get('state') == 'waiting':
             time.sleep(3)
             try:
                 r = get(f"{base}/join/{r['id']}", timeout=10) | {'id': r['id']}
             except Exception:
                 pass
     if r.get('state') != 'approved' or not r.get('setup'):
-        sys.exit('join: not approved' if r.get('state') == 'denied' else 'join: no answer in 30 minutes: run it again')
+        sys.exit('join: not approved' if r.get('state') == 'denied' else 'join: the main server gave no setup: run it again')
     s = r['setup']
     say(f"approved: setting {name} up as the {s['role']} beside {s['main']}")
 

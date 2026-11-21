@@ -4,8 +4,8 @@
 import { execFile } from 'node:child_process'
 import { get as httpGet } from 'node:http'
 
-export type TsPeer = { HostName?: string; DNSName?: string; OS?: string; Online?: boolean; Tags?: string[]; TailscaleIPs?: string[]; LastSeen?: string }
-export type TsStatus = { BackendState?: string; AuthURL?: string; Self?: TsPeer; Peer?: Record<string, TsPeer>; MagicDNSSuffix?: string; CurrentTailnet?: { Name?: string } }
+export type TsPeer = { HostName?: string; DNSName?: string; OS?: string; Online?: boolean; Tags?: string[]; TailscaleIPs?: string[]; LastSeen?: string; UserID?: number; ID?: string }
+export type TsStatus = { BackendState?: string; AuthURL?: string; Self?: TsPeer; Peer?: Record<string, TsPeer>; MagicDNSSuffix?: string; CurrentTailnet?: { Name?: string }; User?: Record<string, { LoginName?: string }> }
 
 /** The raw status, or null when no Tailscale answers here. */
 export async function tsStatus(): Promise<TsStatus | null> {
@@ -31,4 +31,31 @@ export async function tailscaleView(): Promise<TailscaleView> {
     running: true, signedIn, state: s.BackendState, authUrl: signedIn ? undefined : s.AuthURL || undefined,
     tailnet: s.CurrentTailnet?.Name, name: s.Self?.DNSName?.replace(/\.$/, '') ?? s.Self?.HostName,
   }
+}
+
+/**
+ * Whose tailnet this is: the one login every person's device on it is signed in as (the link itself is a tagged
+ * device, which belongs to nobody). Several people on the tailnet, or none seen yet: undefined, nothing is guessed.
+ */
+export async function tailnetOwner(): Promise<string | undefined> {
+  const s = await tsStatus()
+  if (!s || s.BackendState !== 'Running') return undefined
+  const people = new Set([s.Self, ...Object.values(s.Peer ?? {})].filter((d): d is TsPeer => !!d && !d.Tags?.length && d.UserID != null)
+    .map((d) => s.User?.[String(d.UserID)]?.LoginName).filter((l): l is string => !!l && l !== 'tagged-devices'))
+  return people.size === 1 ? [...people][0] : undefined
+}
+
+export type Nearby = { name: string; host: string; online: boolean; lastSeen?: string; ip?: string }
+/**
+ * The other Concierge machines on the tailnet, online or not: each one's link is a device tagged tag:concierge, named
+ * concierge-<machine>. What setup shows before this machine joins them, and while it waits for one to be online.
+ */
+export async function nearbyMachines(): Promise<Nearby[]> {
+  const s = await tsStatus()
+  if (!s || s.BackendState !== 'Running') return []
+  const me = s.Self?.HostName
+  return Object.values(s.Peer ?? {})
+    .filter((p) => p.HostName && p.HostName !== me && (p.Tags?.includes('tag:concierge') || /^concierge-/.test(p.HostName)))
+    .map((p) => ({ name: p.HostName!.replace(/^concierge-/, ''), host: p.HostName!, online: !!p.Online, lastSeen: p.LastSeen && !p.LastSeen.startsWith('0001') ? p.LastSeen : undefined, ip: p.TailscaleIPs?.find((a) => a.includes('.')) }))
+    .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name))
 }

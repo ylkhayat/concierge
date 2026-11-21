@@ -1318,7 +1318,7 @@ function ComplianceSettings({ setup, saveConfig }: { setup?: SetupView; saveConf
  * this machine itself it always opens. When the link doesn't say who is calling, only a password protects it.
  */
 function Access({ toast }: { toast: Toast }) {
-  const q = useApi<{ logins: string[]; you?: string; fromEnv: string[] }>('/access')
+  const q = useApi<{ logins: string[]; you?: string; proxied?: boolean; fromEnv: string[] }>('/access')
   const [add, setAdd] = useState('')
   const v = q.data
   if (!v) return <Skeleton rows={2} />
@@ -1326,14 +1326,17 @@ function Access({ toast }: { toast: Toast }) {
   const go = () => { const l = add.trim(); if (!l || v.logins.includes(l)) return; void save([...v.logins, l], `${l} can open it`); setAdd('') }
   return (
     <Group title="Who can open it" hint="Through your tailnet link, only these people (as Tailscale knows them). On this machine itself it always opens.">
-      {v.you === undefined && <p className="flex items-start gap-2 bg-wait/6 px-4 py-2.5 text-small text-wait-text"><CircleAlert className="mt-px size-3.5 shrink-0" />
-        <span>This page didn’t come through a link that says who you are, so nobody can be checked this way. On a tailnet others use, set <code className="font-mono">CONCIERGE_PASSWORD</code> in .env to ask for a password.</span></p>}
+      {/* through the Tailscale link, Tailscale says who is asking: no password. Opened on this machine: always yours.
+          Only a request from elsewhere that carries no login (the port exposed some other way) can't be checked */}
+      {v.proxied && !v.you && <p className="flex items-start gap-2 bg-wait/6 px-4 py-2.5 text-small text-wait-text"><CircleAlert className="mt-px size-3.5 shrink-0" />
+        <span>This page reached it from another device without Tailscale saying who you are (not through the tailnet link), so nobody can be checked this way. Open it through the link, or set <code className="font-mono">CONCIERGE_PASSWORD</code> in .env to ask for a password.</span></p>}
+      {!v.proxied && <p className="px-4 py-2.5 text-small text-fg-3">You opened it on this machine, where it always opens. Through the tailnet link, Tailscale tells Concierge who is asking, so only the people below get in: no password needed.</p>}
       {v.logins.map((l) => (
         <Row key={l} icon={UsersRound} title={l} hint={l === v.you ? 'You' : v.fromEnv.includes(l) ? 'From CONCIERGE_ALLOW in .env' : undefined}>
           {l !== v.you && !v.fromEnv.includes(l) && <button onClick={() => void save(v.logins.filter((x) => x !== l), `${l} can no longer open it`)} aria-label={`Remove ${l}`} className="rounded-lg p-1.5 text-fg-4 transition-colors hover:bg-fail/10 hover:text-fail-text"><Trash2 className="size-3.5" /></button>}
         </Row>
       ))}
-      {!v.logins.length && <p className="px-4 py-3 text-small text-fg-3">Nobody yet: the first person to open it through the link becomes its owner.</p>}
+      {!v.logins.length && <p className="px-4 py-3 text-small text-fg-3">Nobody yet. Once this machine is on your tailnet, the person whose devices are on it is let in by themselves; on a tailnet several people share, the first to open it through the link becomes its owner.</p>}
       <div className="flex items-center gap-2 px-3.5 py-2.5">
         <input value={add} onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go() }} placeholder="their Tailscale login, e.g. sam@example.com" aria-label="Tailscale login" className={`${input} min-w-0 flex-1`} />
         <button onClick={go} disabled={!add.trim()} className={primary}><Plus className="size-3.5" />Let them in</button>

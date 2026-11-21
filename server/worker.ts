@@ -11,7 +11,8 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { createServer, request, type IncomingMessage, type Server } from 'node:http'
+import { createServer, request, type ClientRequest, type IncomingMessage, type RequestOptions, type Server } from 'node:http'
+import { connect } from 'node:net'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import type { AgentProcess } from './providers.ts'
@@ -108,10 +109,32 @@ export function serveWorker(o: { port: number; host: string; token: () => string
   return { server, hosted }
 }
 
+// --- reaching another machine. Its address is on the tailnet; a machine whose only Tailscale is the fleet's link
+// container (Tailscale in Docker Compose, none of its own) can't route there itself, so the link offers a local proxy
+// (fleet/compose.fleet.yml: TAILNET_PROXY). Used while it answers; a machine with Tailscale of its own, or whose link is
+// stopped (a standby), goes direct as before.
+const TAILNET = /^(100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+|\[?fd7a:115c:a1e0:.*|.+\.ts\.net)$/i
+const PROXY = process.env.TAILNET_PROXY ? new URL(process.env.TAILNET_PROXY) : undefined
+let proxyUp = false
+if (PROXY) {
+  const probe = () => {
+    const s = connect(Number(PROXY.port) || 80, PROXY.hostname)
+    s.setTimeout(2000, () => s.destroy())
+    s.on('connect', () => { proxyUp = true; s.destroy() }).on('error', () => { proxyUp = false })
+  }
+  probe(); setInterval(probe, 15_000).unref()
+}
+/** A request to another machine at `url`: through the link's proxy when this machine reaches the tailnet only that way. */
+export function machineRequest(url: string, opts: RequestOptions, cb: (res: IncomingMessage) => void): ClientRequest {
+  const u = new URL(url)
+  if (PROXY && proxyUp && TAILNET.test(u.hostname)) return request({ ...opts, host: PROXY.hostname, port: PROXY.port || 80, path: url, headers: { ...opts.headers, host: u.host } }, cb)
+  return request(url, opts, cb)
+}
+
 /** Ask a worker something: JSON in, JSON out. */
 export function call<T>(base: string, token: string, method: string, path: string, payload?: unknown, timeout = 10_000): Promise<T> {
   return new Promise((ok, no) => {
-    const req = request(base + path, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, timeout }, (res) => {
+    const req = machineRequest(base + path, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, timeout }, (res) => {
       let s = ''
       res.on('data', (c) => { s += c })
       res.on('end', () => { try { const v = JSON.parse(s); (res.statusCode ?? 500) < 300 ? ok(v) : no(new Error(v.error ?? `HTTP ${res.statusCode}`)) } catch (e) { no(e) } })
@@ -151,7 +174,7 @@ export function remoteAgent(machine: string, base: string, token: string, s: Spa
     stdout.end(); stderr.end()
     setImmediate(() => proc.emit('close', code, signal))
   }
-  const req = request(base + '/run', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } }, (res) => {
+  const req = machineRequest(base + '/run', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } }, (res) => {
     if (res.statusCode !== 200) {
       let s2 = ''
       res.on('data', (c) => { s2 += c })

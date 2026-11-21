@@ -10,6 +10,7 @@ import { api, type Health, type Theme } from '../lib.ts'
 import { Agents, blocked, Exec as ExecSetup, forgetSkills, guessSkill, SkillSources, skillsFor, Toggle, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
 import { Tabs } from './Tabs.tsx'
 import { Pick } from '../ui/Pick.tsx'
+import { NearbyMachines } from './NearbyMachines.tsx'
 
 type Suggestion = { repo: string; prs: number; paths: string[]; watched: boolean }
 type RepoPick = { on: boolean; path: string; status?: 'ok' | 'checking' | string }
@@ -184,8 +185,9 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   useEffect(() => setReached((r) => Math.max(r, step)), [step])
   const furthest = steps[Math.min(reached, steps.length - 1)].id
   useEffect(() => { if (setup && !onClose) void api('/setup/step', { step: furthest }).catch(() => {}) }, [furthest, !!setup]) // eslint-disable-line react-hooks/exhaustive-deps
-  // a sign-in that finishes while its step is open moves on by itself (the agents' step waits: you may add more)
-  const signedIn = id === 'github' ? !!c?.github.ok : id === 'tailscale' ? !!ts?.signedIn : undefined
+  // a sign-in that finishes while its step is open moves on by itself (the agents' step waits: you may add more; so does
+  // Tailscale's, which then shows the machines it found)
+  const signedIn = id === 'github' ? !!c?.github.ok : undefined
   const wasIn = useRef(signedIn)
   useEffect(() => {
     const before = wasIn.current; wasIn.current = signedIn
@@ -256,6 +258,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
             ) : id === 'tailscale' ? (
               <Step title="Join your tailnet" lead="The fleet runs Concierge on your machines one at a time and gives them one shared link, all over Tailscale. Sign this machine's link in to your tailnet.">
                 <TailscaleCard ts={ts} />
+                {ts?.signedIn && <NearbyMachines />}
               </Step>
             ) : id === 'agents' ? (
               <Step title="Sign in your agents" lead="The agents run on plans you already pay for. Sign in to at least one; add more later and the work is spread across them.">

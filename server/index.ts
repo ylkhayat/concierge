@@ -77,7 +77,7 @@ import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, 
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
-import { tailscaleView, tsStatus, type TsPeer } from './tailscale.ts'
+import { nearbyMachines, tailnetOwner, tailscaleView, tsStatus, type TsPeer } from './tailscale.ts'
 import { gitIdentity } from './gitIdentity.ts'
 import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
@@ -772,6 +772,13 @@ app.get('/tailnet', async (c) => {
 })
 // onboarding with the fleet: is the link's Tailscale signed in, and if not, the address that signs it in
 app.get('/tailscale', async (c) => c.json(await tailscaleView()))
+// the other Concierge machines on the tailnet (online or not), and whether this one is with them yet: a machine that
+// isn't joins them (bin/join, which waits for one to be online), never as the main one
+app.get('/fleet/nearby', async (c) => {
+  const near = await nearbyMachines()
+  const mine = new Set([fleet.machine, ...machines.keys()].filter(Boolean))
+  return c.json({ joined: !!fleet.machine, machine: fleet.machine, machines: near.map((m) => ({ ...m, ours: mine.has(m.name) })) })
+})
 // the run history, from the event log: the latest runs (each as it ended) and per-day totals (Settings → Usage)
 // standup: since the start of the last working day by default (?since=ISO for another start)
 const standupFacts = async (since: Date) =>
@@ -1869,7 +1876,18 @@ const withoutName = (c?: Compliance) => { const { name: _, ...rest } = (c ?? {})
 app.get('/compliance/suggest', async (c) => c.json(await suggestCompliance(c.req.query('fresh') === '1')))
 // who may open it through the tailnet link: the list, and changes to it (never empty while someone is on it: the last
 // one can't be removed from a request through the link, so the owner can't lock themselves out)
-app.get('/access', (c) => c.json({ logins: allowedLogins(), you: whoFrom((n) => c.req.header(n)).login, fromEnv: (setting('ALLOW') ?? '').split(',').map((x) => x.trim()).filter(Boolean) }))
+// nobody allowed through the link yet, and the tailnet is one person's (every untagged device signed in as one login):
+// that person, without waiting for them to open it first. Checked every minute on the main server
+const ownerIn = () => {
+  if (fleet.elsewhere() || allowedLogins().length) return
+  void tailnetOwner().then((who) => {
+    if (!who || allowedLogins().length) return
+    saveConfig({ access: { logins: [who] } })
+    console.log(`access: ${who} may open it through the link (every person's device on the tailnet is theirs)`)
+  }, () => {})
+}
+setTimeout(ownerIn, 10_000).unref(); setInterval(ownerIn, 60_000).unref()
+app.get('/access', (c) => c.json({ logins: allowedLogins(), you: whoFrom((n) => c.req.header(n)).login, proxied: whoFrom((n) => c.req.header(n)).proxied, fromEnv: (setting('ALLOW') ?? '').split(',').map((x) => x.trim()).filter(Boolean) }))
 app.post('/access', async (c) => {
   const { logins } = await c.req.json<{ logins: string[] }>()
   if (!Array.isArray(logins) || logins.some((l) => typeof l !== 'string' || !/^[^\s@]+@[^\s@]+$|^[\w.-]+@github$|^[\w.-]+$/.test(l) || l.length > 120)) return c.json({ error: 'A login is an email, as Tailscale shows it' }, 400)
