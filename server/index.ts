@@ -1142,7 +1142,14 @@ function askEnv(t: Ticket) {
 const prsOf = (t: Ticket, run = Object.values(state.execs).filter((r) => r.ids.includes(t.id)).sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))[0]) =>
   ([...t.prs, ...(run?.prs ?? []).filter((p) => p.repo in config.repos)].filter((p, i, a) => a.findIndex((q) => q.url === p.url) === i) as Ticket['prs'])
     .map((p) => ({ ...p, title: p.title ?? t.prs.find((q) => q.url === p.url)?.title }))
+// built once for the PR list and the board together (both read it on every change), kept half a second
+let ticketCache: { at: number; v: TicketView[] } | undefined
 function ticketViews(): TicketView[] {
+  if (ticketCache && Date.now() - ticketCache.at < 500) return ticketCache.v
+  ticketCache = { at: Date.now(), v: buildTicketViews() }
+  return ticketCache.v
+}
+function buildTicketViews(): TicketView[] {
   const runs = Object.values(state.execs).sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))
   const views: TicketView[] = execBoard.tickets.map((t) => {
     const run = runs.find((r) => r.ids.includes(t.id))
@@ -2526,7 +2533,18 @@ const answeredAt = (p: Pr) => {
 }
 const answered = (p: Pr) => !!answeredAt(p)
 const driveKey = (p: Pr) => { const c = treeChain(p); return `STACK-${p.repo.split('/')[1]}-${c[0]?.number ?? p.number}` }
-const driveOf = (key: string) => Object.values(state.execs).filter((r) => r.ids[0] === key).sort((a, b) => (b.queuedAt ?? '').localeCompare(a.queuedAt ?? ''))[0]
+// each stack's latest drive, from one pass over the runs, kept half a second: every PR of the list asks (profiled: a
+// scan of every run per PR was the PR list's heaviest part)
+let drives: { at: number; n: number; by: Map<string, ExecRun> } | undefined
+const driveOf = (key: string) => {
+  const n = Object.keys(state.execs).length
+  if (!drives || drives.n !== n || Date.now() - drives.at > 500) {
+    const by = new Map<string, ExecRun>()
+    for (const r of Object.values(state.execs)) { const k = r.ids[0]; if (k?.startsWith('STACK-') && (!by.has(k) || (r.queuedAt ?? '') > (by.get(k)!.queuedAt ?? ''))) by.set(k, r) }
+    drives = { at: Date.now(), n, by }
+  }
+  return drives.by.get(key)
+}
 app.get('/stacks/drive', (c) => {
   const p = pr(c.req.query('pr') ?? '')
   const r = p && driveOf(driveKey(p))
