@@ -27,6 +27,7 @@ import { ExecHome } from './components/ExecHome.tsx'
 import { RepoPicker } from './components/RepoPicker.tsx'
 import { knowApps } from './appColor.ts'
 import { Activity, lazy, Suspense } from 'react'
+import { useWebMcp } from './webmcp.ts'
 import { Machine } from './components/Machine.tsx'
 import { Read } from './components/Read.tsx'
 import { Focus } from './components/Focus.tsx'
@@ -245,6 +246,7 @@ export function App() {
   }
   const goTicket = (id: string) => { history.pushState(null, '', `/ship${location.search}#${enc(id)}`); setModeState('exec'); setSelected(id) }
   const goPr = (id: string) => { history.pushState(null, '', `/${location.search}#${enc(id)}`); setModeState('review'); setSelected(id) }
+  useWebMcp({ prs, tickets, openPr: goPr, openTicket: goTicket }) // the agent in the browser (Gemini in Chrome) can use Concierge
   const openAlert = (a: Alert) => (a.kind === 'pr' ? goPr(a.target) : a.kind === 'ticket' ? goTicket(a.target) : undefined)
   usePinNotifications(alerts, openAlert)
   const waitingBadge = (n: number) => n > 0 && (
