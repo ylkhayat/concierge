@@ -47,6 +47,7 @@ export type Job = {
   critPort?: number // read from the agent's output ("crit is at http://localhost:<port>")
   critKey?: string
   critCwd?: string // the folder the crit daemon ran in, so it can be restarted after it stops
+  machine?: string // where it last ran (several machines: the repository's route, machines.ts): a follow-up goes back there
   continuing?: boolean // a restart stopped it mid-run: the next start continues its session instead of sending the command again
   continued?: number // restarts in a row it was picked up after
   deployStop?: boolean // the server stopped it on purpose (a deploy): its pick-up doesn't count toward MAX_CONTINUES

@@ -105,7 +105,8 @@ function Section({ title, hint, children }: { title: string; hint: string; child
 }
 
 /** Each machine's state of an account's connectors (several machines), for the markers on each row. */
-type Where = { machines: string[]; has?: Record<string, Record<string, string>>; signedIn?: Record<string, boolean | null>; silent?: string[] } // null, silent: didn't answer
+// who: the login on each machine; login: the one the account is (one account, one login); off: machines signed in as another
+type Where = { machines: string[]; has?: Record<string, Record<string, string>>; signedIn?: Record<string, boolean | null>; silent?: string[]; who?: Record<string, string | undefined>; login?: string; off?: string[] } // null, silent: didn't answer
 function useWhere(account: string) {
   const [w, setW] = useState<Where>()
   const [n, setN] = useState(0)
@@ -137,20 +138,30 @@ function SignedInOn({ a, w, onDone }: { a: AccountRow; w?: Where; onDone: () => 
     else setFlow((f) => f && { ...f, waiting: false, error: 'Not signed in yet: try again' })
   }, () => {})
   const silent = (m: string) => w.signedIn![m] === null || !!w.silent?.includes(m)
-  const missing = w.machines.filter((m) => w.signedIn![m] === false)
+  const off = (m: string) => !!w.off?.includes(m)
+  const missing = w.machines.filter((m) => w.signedIn![m] === false || off(m))
+  const adopt = (m: string) => api(`/accounts/${encodeURIComponent(a.id)}/adopt-login`, { machine: m }).then(onDone, () => {})
   const quiet = w.machines.filter(silent)
   return (
     <div className="card p-3">
       <div className="flex flex-wrap items-center gap-2 text-small">
         <span className="font-medium text-fg-1">Signed in on</span>
         {w.machines.map((m) => (
-          <span key={m} title={silent(m) ? `${m} didn't answer: it's offline, or still on an older version (it updates by itself)` : w.signedIn![m] ? `Signed in on ${m}` : `Not signed in on ${m}`}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta ring-1 ${silent(m) ? 'text-fg-4 ring-line' : w.signedIn![m] ? 'text-fg-2 ring-line' : 'text-wait-text ring-wait/30'}`}>
-            <span className={`size-1.5 rounded-full ${silent(m) ? 'bg-fill-strong' : w.signedIn![m] ? 'bg-ok' : 'bg-wait'}`} />{m}{silent(m) ? ' · no answer' : ''}
+          <span key={m} title={silent(m) ? `${m} didn't answer: it's offline, or still on an older version (it updates by itself)` : off(m) ? `Signed in on ${m} as ${w.who?.[m]}, not ${w.login}: it takes none of this account's work` : w.signedIn![m] ? `Signed in on ${m}${w.who?.[m] ? ` as ${w.who[m]}` : ''}` : `Not signed in on ${m}`}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta ring-1 ${silent(m) ? 'text-fg-4 ring-line' : off(m) ? 'text-fail-text ring-fail/30' : w.signedIn![m] ? 'text-fg-2 ring-line' : 'text-wait-text ring-wait/30'}`}>
+            <span className={`size-1.5 rounded-full ${silent(m) ? 'bg-fill-strong' : off(m) ? 'bg-fail' : w.signedIn![m] ? 'bg-ok' : 'bg-wait'}`} />{m}{silent(m) ? ' · no answer' : w.who?.[m] ? <span className="text-fg-4">· {w.who[m]}</span> : ''}
           </span>
         ))}
-        <span className="ml-auto flex gap-1.5">{missing.map((m) => <button key={m} onClick={() => start(m)} disabled={flow?.machine === m} className={btn}>Sign in on {m}</button>)}</span>
+        <span className="ml-auto flex gap-1.5">{missing.map((m) => <button key={m} onClick={() => start(m)} disabled={flow?.machine === m} className={btn}>{off(m) ? 'Sign in again' : 'Sign in'} on {m}</button>)}</span>
       </div>
+      {w.login && <p className="mt-1 text-meta text-fg-3">This account is <b className="font-medium text-fg-2">{w.login}</b> on every machine: its plan, limits and spend are that login&apos;s.</p>}
+      {w.off?.map((m) => (
+        <p key={m} className="mt-1.5 rounded-lg bg-fail/7 px-2.5 py-1.5 text-meta text-fail-text ring-1 ring-fail/20">
+          {m} has it signed in as {w.who?.[m]}, so {m} takes none of its work. Sign it in again there as {w.login}, or{' '}
+          <button onClick={() => adopt(m)} className="font-medium underline decoration-fail/40 hover:decoration-current">make {w.who?.[m]} this account&apos;s login</button>{' '}
+          (the other machines then sign in again). Two plans? Add the other as its own account.
+        </p>
+      ))}
       {!missing.length && !quiet.length && <p className="mt-1 text-meta text-fg-3">Every machine is signed in: connectors added on claude.ai for this account work everywhere.</p>}
       {!!quiet.length && <p className="mt-1 text-meta text-fg-3">{quiet.join(', ')} didn&apos;t answer: offline, or still updating to this version. Its markers fill in once it does.</p>}
       {flow && (

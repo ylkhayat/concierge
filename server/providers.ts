@@ -4,10 +4,11 @@
 // Claude Code's flags and reading its stream, translated for Codex on the way in and out, so every run reads the same.
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
 import { codexBank, copilotBank } from './bank.ts'
-import { agentSkills, CLAUDE_HOME, CODEX_HOME, link, USER_CLAUDE, userSkills } from './agentHome.ts'
+import { agentSkills, CLAUDE_HOME, claudeSkills, CODEX_HOME, CONCIERGE_SKILLS, link, USER_CLAUDE, userSkills } from './agentHome.ts'
 import { join } from 'node:path'
 import { PassThrough, type Readable, type Writable } from 'node:stream'
 import { config, state } from './store.ts'
@@ -22,7 +23,9 @@ export type Work = 'review' | 'revise' | 'exec' | 'small' // what a run is for; 
  * (CLAUDE_CONFIG_DIR), an OpenAI account's in its own Codex folder (CODEX_HOME); none: the usual ~/.claude or ~/.codex.
  * A Llama account is an Ollama: this machine's, or another at `host`.
  */
-export type Account = { id: string; label: string; kind: Kind; home?: string; host?: string }
+// login: who it is signed in as (identityOf), pinned when first seen with several machines: each machine must sign it in
+// as that one, or it takes none of the account's work there (machines.ts)
+export type Account = { id: string; label: string; kind: Kind; home?: string; host?: string; login?: string }
 const BUILT_IN: Account[] = [{ id: 'claude', label: 'Claude', kind: 'claude' }, { id: 'openai', label: 'OpenAI', kind: 'openai' }, { id: 'llama', label: 'Llama', kind: 'llama' }, { id: 'copilot', label: 'Copilot', kind: 'copilot' }]
 export const accounts = (): Account[] => {
   const mine = config.accounts ?? []
@@ -188,15 +191,33 @@ export function envOf(p: ProviderId, base: NodeJS.ProcessEnv = process.env): Nod
 // --- OpenAI's sign-in per account, as Codex has it (a ChatGPT login or an API key), read now and then
 const auths = new Map<ProviderId, 'chatgpt' | 'api-key' | 'none'>()
 export const openaiAuth = (p: ProviderId = 'openai') => auths.get(p) ?? 'none'
+/** Who Codex is signed in as: the ChatGPT login's email (its id token says), or which API key (a hash, never the key). */
+function codexLogin(env: NodeJS.ProcessEnv): string | undefined {
+  try {
+    const j = JSON.parse(readFileSync(join(env.CODEX_HOME ?? CODEX_HOME, 'auth.json'), 'utf8')) as { OPENAI_API_KEY?: string | null; tokens?: { id_token?: string } }
+    const claims = j.tokens?.id_token ? JSON.parse(Buffer.from(j.tokens.id_token.split('.')[1] ?? '', 'base64url').toString('utf8')) as { email?: string } : undefined
+    if (claims?.email) return `login:${claims.email}|?`
+    if (j.OPENAI_API_KEY) return `key:${createHash('sha256').update(j.OPENAI_API_KEY).digest('hex').slice(0, 12)}`
+  } catch { /* not signed in, or a format this doesn't know: no identity, so nothing is compared */ }
+  return undefined
+}
+/** An identity in words: the login's email (and organization), or which kind of key. */
+export function loginText(who?: string): string {
+  if (!who) return 'not signed in'
+  if (who.startsWith('login:')) { const [email, org] = who.slice(6).split('|'); return org && org !== '?' ? `${email} (${org})` : email }
+  return who.startsWith('token:') ? 'a setup token' : who.startsWith('key:') ? 'an API key' : who
+}
 export const readOpenaiAuth = () => Promise.all(accounts().filter((a) => a.kind === 'openai').map((a) => new Promise<void>((resolve) =>
   execFile('codex', ['login', 'status'], { timeout: 20_000, env: envOf(a.id) }, (e, out, err) => {
     const t = `${out}${err}`
     auths.set(a.id, e ? 'none' : /ChatGPT/i.test(t) ? 'chatgpt' : /API key/i.test(t) ? 'api-key' : 'none')
+    const who = auths.get(a.id) === 'none' ? undefined : codexLogin(envOf(a.id))
+    if (who) setIdentity(a.id, who)
     resolve()
   })))).then(() => {})
 
 // --- a slash command is a Claude Code thing: for Codex it becomes "follow this skill's file"
-const SKILL_DIRS = () => [join(homedir(), '.claude', 'skills'), join(homedir(), '.claude', 'commands')]
+const SKILL_DIRS = () => [join(homedir(), '.claude', 'skills'), join(homedir(), '.claude', 'commands'), CONCIERGE_SKILLS] // your skill sources' last
 function skillPath(name: string): string | undefined {
   const bare = name.split(':').pop()!
   for (const d of SKILL_DIRS()) for (const f of [join(d, bare, 'SKILL.md'), join(d, `${bare}.md`)]) if (existsSync(f)) return f
@@ -554,7 +575,7 @@ export async function prepareHome(home: string, kind: 'claude' | 'openai') {
   if (kind === 'openai') { await link(join(CODEX_HOME, 'config.toml'), join(home, 'config.toml'), true); await link(await agentSkills(), join(home, 'skills')); return }
   // yours: what you wrote. Concierge's own Claude folder: the settings as adapted for it, and the plugins installed for
   // this machine. A copy another machine sent in a link's place (links don't travel) is replaced by the link
-  await link(await userSkills('claude'), join(home, 'skills'))
+  await link(await claudeSkills(), join(home, 'skills')) // yours and Concierge's (agentHome.ts): never written into yours
   for (const name of ['commands', 'agents', 'CLAUDE.md']) await link(join(USER_CLAUDE, name), join(home, name), name === 'CLAUDE.md')
   for (const name of ['plugins', 'settings.json']) await link(join(CLAUDE_HOME, name), join(home, name), name === 'settings.json')
 }

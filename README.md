@@ -21,6 +21,8 @@ bin/up    # writes .env (your code folder; no tokens), builds, starts, and opens
 
 Open http://127.0.0.1:4747. A short setup signs you in to GitHub and an agent (no tokens to paste into files) and picks your repos (it can clone them for you).
 
+Several machines: clone the fleet extension into `fleet/` first; `docker compose` picks it up by itself (`docker-compose.override.yml` links to it). Have overrides of your own? List every file in `COMPOSE_FILE` in `.env` instead, e.g. `docker-compose.yml:fleet/compose.fleet.yml:mine.yml`.
+
 On Docker Desktop it needs host networking (Settings → Resources → Network → Enable host networking): `bin/up` notices when it's off and walks you through turning it on.
 
 Without Docker, run `./install.sh` instead.

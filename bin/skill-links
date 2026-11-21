@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Where your skills' links point, for Docker. Whichever agent tool you keep them for (~/.claude, ~/.codex), your
+skills, commands or prompts may be links into a folder of yours (a skills repository you keep elsewhere): inside the
+container only those tool folders and your code folder are there, so such a link leads nowhere, and neither the agents
+nor Concierge can read that skill. This finds the one folder holding every link's target outside those, which
+docker-compose.yml mounts at the same path (SKILL_LINKS).
+
+  bin/skill-links          print it (nothing: no such links)
+  bin/skill-links --write  and keep it in .env as SKILL_LINKS (bin/up and bin/update do this)
+
+It never mounts your whole home or more: links spread that wide are named instead, to move or mount yourself."""
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+HOME = os.path.expanduser('~')
+# each agent tool's folder, and the folders in it that hold what you wrote for it
+TOOLS = {os.path.join(HOME, '.claude'): ('skills', 'commands', 'agents'), os.path.join(HOME, '.codex'): ('skills', 'prompts')}
+
+
+def env(key):
+    val = None
+    for name in ('.env', '.env.fleet'):
+        try:
+            for line in open(os.path.join(ROOT, name)):
+                if line.startswith(f'{key}='):
+                    val = line.split('=', 1)[1].strip()
+        except FileNotFoundError:
+            pass
+    return val
+
+
+def targets():
+    out = []
+    for tool, subs in TOOLS.items():
+        for sub in subs:
+            d = os.path.join(tool, sub)
+            try:
+                names = os.listdir(d)
+            except FileNotFoundError:
+                continue
+            for n in names:
+                p = os.path.join(d, n)
+                if os.path.islink(p):
+                    to = os.path.realpath(p)
+                    if os.path.exists(to):
+                        out.append(to)
+    return out
+
+
+def outside(paths):
+    """The targets not already in the container: under a tool's folder, or the code folder."""
+    code = env('CODE_DIR') or ''
+    mounted = list(TOOLS) + ([os.path.realpath(os.path.expanduser(code))] if code else [])
+    return [t for t in paths if not any(t == m or t.startswith(m + os.sep) for m in mounted)]
+
+
+def main():
+    found = outside(targets())
+    folder = ''
+    if found:
+        common = os.path.commonpath(found)
+        # a skill folder itself is one level too deep to share: its parent, the folder of skills
+        if len(found) == 1:
+            common = os.path.dirname(common)
+        if common in ('/', HOME) or not common.startswith(HOME + os.sep) and not common.startswith('/opt') and not common.startswith('/srv'):
+            print(f'skill-links: your links point too far apart to mount one folder ({", ".join(sorted(set(os.path.dirname(t) for t in found)))}): '
+                  f'keep them under one folder, or set SKILL_LINKS in .env yourself', file=sys.stderr)
+        else:
+            folder = common
+    if '--write' not in sys.argv:
+        if folder:
+            print(folder)
+        return
+    path = os.path.join(ROOT, '.env')
+    try:
+        lines = open(path).read().splitlines()
+    except FileNotFoundError:
+        return
+    had = env('SKILL_LINKS') or ''
+    if had == folder:
+        return
+    lines = [l for l in lines if not l.startswith('SKILL_LINKS=')]
+    if folder:
+        lines.append(f'SKILL_LINKS={folder}')
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    os.chmod(path, 0o600)
+    print(f'skill-links: {"mounting " + folder + " (your skills point into it)" if folder else "no links to mount"}')
+
+
+main()

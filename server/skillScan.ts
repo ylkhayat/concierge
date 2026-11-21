@@ -1,6 +1,6 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, readlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { CLAUDE_HOME } from './agentHome.ts'
+import { CLAUDE_HOME, CONCIERGE_SKILLS } from './agentHome.ts'
 import { join } from 'node:path'
 import { orgSkills } from './orgSkills.ts'
 
@@ -54,6 +54,8 @@ async function read(file: string, fallback: string, invoke: (name: string) => st
 }
 
 let cache: { at: number; found: Promise<Found[]> } | undefined
+/** Read again on the next ask: the skill sources were just fetched. */
+export const forgetSkillScan = () => { cache = undefined }
 /** Every skill and command on this setup: yours (~/.claude), each plugin's (its newest version), the org's. Cached a minute. */
 export function scanSkills(): Promise<Found[]> {
   if (cache && Date.now() - cache.at < 60_000) return cache.found
@@ -61,6 +63,11 @@ export function scanSkills(): Promise<Found[]> {
     const home = join(homedir(), '.claude'), out: Promise<Found | undefined>[] = []
     for (const d of await list(join(home, 'skills'))) if (!d.name.startsWith('.')) out.push(read(join(home, 'skills', d.name, 'SKILL.md'), d.name, (n) => `/${n}`, 'yours', 'skill'))
     for (const d of await list(join(home, 'commands'))) if (d.name.endsWith('.md')) out.push(read(join(home, 'commands', d.name), d.name.slice(0, -3), (n) => `/${n}`, 'yours', 'command'))
+    // the skill sources you added (Concierge's folder of links into their clones): after yours, so yours win a name
+    for (const d of await list(CONCIERGE_SKILLS)) if (!d.name.startsWith('.')) {
+      const from = (await readlink(join(CONCIERGE_SKILLS, d.name)).catch(() => '')).split('/skill-sources/')[1]?.split('/')[0]
+      out.push(read(join(CONCIERGE_SKILLS, d.name, 'SKILL.md'), d.name, (n) => `/${n}`, from ? `from ${from}` : 'added', 'skill'))
+    }
     // plugins: cache/<marketplace>/<plugin>/<version>/{skills/*/SKILL.md, commands/*.md}, newest version only
     const cacheDir = join(CLAUDE_HOME, 'plugins', 'cache')
     for (const m of await list(cacheDir)) for (const p of await list(join(cacheDir, m.name))) {
@@ -74,7 +81,9 @@ export function scanSkills(): Promise<Found[]> {
     for (const s of orgSkills()) out.push(read(s.file, s.name, (n) => `/${n}`, 'org', 'skill'))
     const all = (await Promise.all(out)).filter((x): x is Found => !!x)
     // the same invocation from two places (a skill synced into ~/.claude from the org): the first wins
-    return [...new Map(all.map((x) => [x.invoke, x])).values()].sort((a, b) => a.invoke.localeCompare(b.invoke))
+    const first = new Map<string, Found>()
+    for (const x of all) if (!first.has(x.invoke)) first.set(x.invoke, x) // a Map from pairs keeps the last: this keeps the first
+    return [...first.values()].sort((a, b) => a.invoke.localeCompare(b.invoke))
   })()
   cache = { at: Date.now(), found }
   return found

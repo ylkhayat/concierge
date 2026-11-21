@@ -1,12 +1,13 @@
 import {
   ArrowLeft, ArrowRight, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, FolderGit2, GitPullRequestArrow, Layers, LayoutGrid, LoaderCircle, Monitor,
-  Moon, Network, Plus, Rocket, Settings2, Sparkles, SquareTerminal, Sun, Wallet, Wand, X, Zap, type LucideIcon,
+  Lock, Moon, Network, Rocket, Search, Settings2, Sparkles, SquareTerminal, Sun, Wallet, Wand, X, Zap, type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import type { TailscaleView } from '../../server/tailscale.ts'
+import type { RepoFound } from '../../server/setup.ts'
 import { api, type Health, type Theme } from '../lib.ts'
-import { Agents, blocked, Exec as ExecSetup, guessSkill, skillsFor, Toggle, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
+import { Agents, blocked, Exec as ExecSetup, forgetSkills, guessSkill, SkillSources, skillsFor, Toggle, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
 import { Tabs } from './Tabs.tsx'
 import { Pick } from '../ui/Pick.tsx'
 
@@ -44,8 +45,6 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   const [ts, setTs] = useState<TailscaleView>()
   const [suggested, setSuggested] = useState<Suggestion[]>()
   const [picks, setPicks] = useState<Record<string, RepoPick>>({})
-  const [extra, setExtra] = useState({ repo: '', path: '' })
-  const [mode, setMode] = useState<'starter' | 'own'>('starter')
   const [commands, setCommands] = useState({ review: '', revise: '' })
   const [prefs, setPrefs] = useState({ autoStart: true, maxJobs: 2, budget: '', terminal: 'Terminal' as 'Terminal' | 'iTerm' })
   const [saving, setSaving] = useState(false)
@@ -63,7 +62,9 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     read(); const t = setInterval(read, 3000)
     return () => clearInterval(t)
   }, [id])
-  useEffect(() => { void Promise.all((['review', 'revise', 'exec'] as const).map((w) => skillsFor(w))).then(([review, revise, exec]) => setFound({ review, revise, exec })) }, [])
+  // read again once skill sources are added: their skills join the suggestions
+  const [sourcesAt, setSourcesAt] = useState(0)
+  useEffect(() => { void Promise.all((['review', 'revise', 'exec'] as const).map((w) => skillsFor(w))).then(([review, revise, exec]) => setFound({ review, revise, exec })) }, [sourcesAt])
   const guess = { review: guessSkill(found.review, 'review'), revise: guessSkill(found.revise, 'revise'), exec: guessSkill(found.exec, 'exec') }
   // a first setup on a machine that already has a review and a revise skill: those, not the starters. "First" is how
   // the setup was when onboarding opened (saving the repositories on the way marks it configured), and never once you
@@ -73,7 +74,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   useEffect(() => {
     if (picked.current || !first.current || !guess.review || !guess.revise) return
     picked.current = true
-    setMode('own'); setCommands({ review: guess.review.command, revise: guess.revise.command })
+    setCommands({ review: guess.review.command, revise: guess.revise.command })
   }, [setup, guess.review?.command, guess.revise?.command]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const opened = useRef(false)
@@ -90,7 +91,6 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     }
     setSpaces(s.config.workspaces)
     setCommands({ review: s.config.review, revise: s.config.revise })
-    setMode(s.config.review.startsWith('/review-pr') && s.config.revise.startsWith('/revise') ? 'starter' : 'own')
     setPrefs((p) => ({ ...p, terminal: s.config.terminal }))
   })
   useEffect(() => { load() }, [])
@@ -131,26 +131,34 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   const chosen = useMemo(() => Object.entries(picks).filter(([, p]) => p.on), [picks])
   const reposReady = chosen.length > 0 && chosen.every(([, p]) => p.status === 'ok')
 
-  const addExtra = () => {
-    const repo = extra.repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return toast('Use the owner/repo form, e.g. acme/api', 'error')
-    setSuggested((s) => [{ repo, prs: 0, paths: [], watched: false }, ...(s ?? []).filter((x) => x.repo.toLowerCase() !== repo.toLowerCase())])
-    setPicks((p) => ({ ...p, [repo]: { on: true, path: extra.path } }))
-    if (extra.path) check(repo, extra.path)
-    setExtra({ repo: '', path: '' })
+  // one found by search (or pasted as a link): on top of the list, picked, with its checkout here if it has one
+  const addFound = (f: RepoFound) => {
+    const key = f.repo.toLowerCase()
+    setSuggested((s) => {
+      const had = (s ?? []).find((x) => x.repo.toLowerCase() === key)
+      return [{ repo: had?.repo ?? f.repo, prs: had?.prs ?? 0, paths: had?.paths.length ? had.paths : f.paths, watched: f.watched }, ...(s ?? []).filter((x) => x.repo.toLowerCase() !== key)]
+    })
+    setPicks((p) => {
+      const had = Object.entries(p).find(([r]) => r.toLowerCase() === key)?.[1]
+      const path = had?.path || f.paths[0] || ''
+      return { ...p, [f.repo]: { on: true, path, status: had?.status ?? (path ? 'ok' : undefined) } }
+    })
   }
 
-  const installSkills = () => api('/setup/skills', {}).then(() => { toast('Skills installed in ~/.claude/skills'); load() }, (e: Error) => toast(e.message, 'error'))
+  // the skill repositories you add: fetched into Concierge's own folder, their skills offered for review and revise
+  const saveSources = (list: string[]) => api('/config', { skillSources: list }).then((s: SetupView) => {
+    setSetup(s); forgetSkills(); setSourcesAt(Date.now()); picked.current = false
+    toast(list.length ? `${s.skills.length} skill${s.skills.length === 1 ? '' : 's'} from ${list.length} source${list.length === 1 ? '' : 's'}` : 'No skill sources')
+  }, (e: Error) => { toast(e.message, 'error'); throw e })
 
   const finish = async () => {
     setSaving(true)
     try {
-      const starter = mode === 'starter'
       await api('/config', {
         repos: Object.fromEntries(chosen.map(([r, p]) => [r, p.path])),
         workspaces: spaces,
-        review: starter ? '/review-pr {number}' : commands.review,
-        revise: starter ? '/revise {repo}#{number}' : commands.revise,
+        review: commands.review,
+        revise: commands.revise,
         terminal: prefs.terminal,
       })
       const budget = prefs.budget.trim() === '' ? null : Number(prefs.budget)
@@ -176,7 +184,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   }, [id, signedIn])
   const canNext = {
     github: !!c?.github.ok, tailscale: !!ts?.signedIn, agents: agentReady, spaces: spaces.length > 0, repos: reposReady, prefs: true,
-    skills: mode === 'starter' ? !!setup?.skills.every((s) => s.installed) : !!commands.review.trim() && !!commands.revise.trim(),
+    skills: !!commands.review.trim() && !!commands.revise.trim(),
     exec: !!setup?.config.exec.command,
   }[id]
   // Exec maps tickets to watched repos, so the repos are saved on the way out of their step
@@ -259,9 +267,10 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               </Step>
             ) : id === 'repos' ? (
               <Step title="Pick the repositories to watch" lead="Concierge reviews PRs in these repos, using a local checkout of each. Suggestions come from your recent PR activity and the clones it found on this machine.">
+                <RepoSearch onPick={addFound} picked={chosen.map(([r]) => r.toLowerCase())} />
                 {!suggested ? <Loading text="Looking through GitHub and your code folders" /> : (
                   <div className="space-y-2">
-                    {suggested.length === 0 && <p className="text-body text-fg-3">No suggestions. Add a repo below.</p>}
+                    {suggested.length === 0 && <p className="text-body text-fg-3">No suggestions from your recent pull requests: search for a repository above.</p>}
                     {suggested.map((s) => {
                       const p = picks[s.repo] ?? { on: false, path: '' }
                       return (
@@ -291,11 +300,6 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                         </div>
                       )
                     })}
-                    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-line-strong p-3 sm:flex-row">
-                      <input value={extra.repo} onChange={(e) => setExtra({ ...extra, repo: e.target.value })} placeholder="owner/repo" className={`${field} font-mono sm:w-56`} />
-                      <input value={extra.path} onChange={(e) => setExtra({ ...extra, path: e.target.value })} placeholder="~/code/repo" className={`${field} font-mono`} onKeyDown={(e) => e.key === 'Enter' && addExtra()} />
-                      <button onClick={addExtra} className={`${quietBtn} shrink-0 ring-1 ring-line-strong`}><Plus className="size-4" />Add</button>
-                    </div>
                   </div>
                 )}
               </Step>
@@ -310,32 +314,21 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                 </Step>
               </div>
             ) : id === 'skills' ? (
-              <Step title="Choose the skills that do the work" lead="A review request runs a review skill; your own PRs run a revise skill. Both are Claude Code slash commands you can change any time.">
+              <Step title="Choose the skills that do the work" lead="A review request runs a review skill; your own PRs run a revise skill. Use your own, or add repositories of skills: Concierge keeps them in its own folder for its agents and never touches your ~/.claude.">
                 {c && !c.crit.ok && <ToolRow name="crit" c={c.crit} note="The review and revise skills open their findings in it" />}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Choice on={mode === 'starter'} onClick={() => { picked.current = true; setMode('starter') }} icon={Sparkles} title="From the skill source" body={`review-pr, revise, ship-tickets and the skills behind explain, briefs, plans and the standup, from ${setup.skillSource.replace(/^https:\/\/(www\.)?github\.com\//, '')}. Installed into ~/.claude/skills, yours to edit; change the source in Settings.`} />
-                  <Choice on={mode === 'own'} onClick={() => { picked.current = true; setMode('own') }} icon={SquareTerminal} title="My own commands" body="Point Concierge at slash commands you already use." />
-                </div>
-                {mode === 'starter' ? (
-                  <div className="mt-4 space-y-2">
-                    {setup.skills.map((s) => (
-                      <div key={s.name} className="flex items-center gap-3 rounded-xl px-3 py-2 ring-1 ring-line ">
-                        <Wand className="size-4 text-accent" />
-                        <span className="flex-1 font-mono text-body">{s.name}</span>
-                        {s.installed ? <span className="flex items-center gap-1 text-small text-ok-text"><CircleCheck className="size-4" />Installed</span>
-                          : <span className="text-small text-fg-3">Not installed</span>}
-                      </div>
-                    ))}
-                    {!setup.skills.every((s) => s.installed) && <button onClick={installSkills} className={`${primaryBtn} mt-2`}><Sparkles className="size-4" />Install them</button>}
-                  </div>
-                ) : (
-                  <div className="mt-4 space-y-3">
-                    {guess.review && guess.revise && first.current && commands.review === guess.review.command && <p className="flex items-center gap-1.5 text-small text-ok-text"><CircleCheck className="size-4" />Found your own review and revise skills on this machine: picked them for you.</p>}
-                    <WorkflowCard work="review" title="Review someone else’s PR" icon={GitPullRequestArrow} trigger="When your review is requested" value={commands.review} suggested={guess.review?.command} onSave={(v) => setCommands((x) => ({ ...x, review: v }))} />
-                    <WorkflowCard work="revise" title="Revise your own PR" icon={Wand} trigger="When new feedback lands on your PR" value={commands.revise} suggested={guess.revise?.command} onSave={(v) => setCommands((x) => ({ ...x, revise: v }))} />
-                    <p className="text-small text-fg-3">Your skill should print <code className="rounded bg-fill px-1">crit is at http://localhost:&lt;port&gt;</code> and end its turn once ready. The README lists the full contract.</p>
+                {setup.brokenLinks.length > 0 && (
+                  <div className="rounded-2xl bg-wait/6 px-3.5 py-3 text-small ring-1 ring-wait/20">
+                    <p className="flex items-center gap-2 font-medium text-wait-text"><CircleAlert className="size-4 shrink-0" />Some of your skills are links Concierge can&apos;t follow here</p>
+                    <p className="mt-1 text-fg-3">{setup.brokenLinks.map((l) => l.name).join(', ')} point into {[...new Set(setup.brokenLinks.map((l) => l.to.replace(/\/[^/]+\/?$/, '')))].join(', ')}, which the container doesn&apos;t see. Run <code className="font-mono">bin/up</code> again: it mounts that folder. Nothing of yours is changed meanwhile.</p>
                   </div>
                 )}
+                <SkillSources list={setup.skillSources} skills={setup.skills} onSave={saveSources} />
+                <div className="space-y-3">
+                  {guess.review && guess.revise && first.current && commands.review === guess.review.command && <p className="flex items-center gap-1.5 text-small text-ok-text"><CircleCheck className="size-4" />Picked the review and revise skills found here: change them below.</p>}
+                  <WorkflowCard work="review" title="Review someone else’s PR" icon={GitPullRequestArrow} trigger="When your review is requested" value={commands.review} suggested={guess.review?.command} onSave={(v) => setCommands((x) => ({ ...x, review: v }))} />
+                  <WorkflowCard work="revise" title="Revise your own PR" icon={Wand} trigger="When new feedback lands on your PR" value={commands.revise} suggested={guess.revise?.command} onSave={(v) => setCommands((x) => ({ ...x, revise: v }))} />
+                  <p className="text-small text-fg-3">Your skill should print <code className="rounded bg-fill px-1">crit is at http://localhost:&lt;port&gt;</code> and end its turn once ready. The README lists the full contract.</p>
+                </div>
               </Step>
             ) : (
               <Step title="Set how it behaves" lead="All of these live in Settings too.">
@@ -449,6 +442,66 @@ function ServiceCard({ icon: Icon, name, ok, detail, action, children }: { icon:
   )
 }
 
+/**
+ * Search every repository your GitHub account reaches, or paste a link to one (a public one outside it too). Results
+ * come as you type; Enter or a click adds the first or the chosen one to the list above it, picked.
+ */
+function RepoSearch({ onPick, picked }: { onPick: (f: RepoFound) => void; picked: string[] }) {
+  const [q, setQ] = useState('')
+  const [found, setFound] = useState<{ q: string; list: RepoFound[]; error?: string }>()
+  const [busy, setBusy] = useState(false)
+  const [at, setAt] = useState(0)
+  useEffect(() => {
+    const t = q.trim()
+    if (!t) { setFound(undefined); return }
+    setBusy(true)
+    const h = setTimeout(() => {
+      api(`/setup/repos/search?q=${encodeURIComponent(t)}`).then((list: RepoFound[]) => { setFound({ q: t, list }); setAt(0) },
+        (e: Error) => setFound({ q: t, list: [], error: e.message })).finally(() => setBusy(false))
+    }, 180)
+    return () => clearTimeout(h)
+  }, [q])
+  const pick = (f?: RepoFound) => { if (!f) return; onPick(f); setQ(''); setFound(undefined) }
+  const list = found?.list ?? []
+  return (
+    <div className="space-y-1.5">
+      <label className="relative block">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-3" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your repositories, or paste a GitHub link" aria-label="Search repositories" spellCheck={false} autoComplete="off"
+               onKeyDown={(e) => {
+                 if (e.key === 'ArrowDown') { e.preventDefault(); setAt((n) => Math.min(n + 1, list.length - 1)) }
+                 if (e.key === 'ArrowUp') { e.preventDefault(); setAt((n) => Math.max(n - 1, 0)) }
+                 if (e.key === 'Enter') { e.preventDefault(); pick(list[at]) }
+                 if (e.key === 'Escape' && q) { e.preventDefault(); e.stopPropagation(); setQ('') }
+               }}
+               className={`${field} pl-9 pr-9`} />
+        {busy && <LoaderCircle className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-fg-3" />}
+      </label>
+      {found && (
+        <div className="card max-h-72 overflow-y-auto p-1" role="listbox" aria-label="Repositories found">
+          {found.error ? <p className="px-3 py-2.5 text-small text-fail-text">{found.error}</p>
+            : !list.length ? <p className="px-3 py-2.5 text-small text-fg-3">Nothing matches “{found.q}”. A full link (github.com/owner/repo) finds one outside your account.</p>
+            : list.map((f, i) => {
+              const on = picked.includes(f.repo.toLowerCase())
+              return (
+                <button key={f.repo} role="option" aria-selected={i === at} onMouseEnter={() => setAt(i)} onClick={() => pick(f)}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${i === at ? 'bg-hover' : ''}`}>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 font-mono text-body font-medium text-fg-1">
+                      <span className="truncate">{f.repo}</span>{f.private && <Lock className="size-3 shrink-0 text-fg-3" aria-label="Private" />}
+                    </span>
+                    {f.description && <span className="block truncate text-meta text-fg-3">{f.description}</span>}
+                  </span>
+                  <span className="shrink-0 text-meta text-fg-3">{on ? <span className="flex items-center gap-1 text-ok-text"><Check className="size-3.5" />Added</span> : f.paths.length ? 'On this machine' : 'Clone it'}</span>
+                </button>
+              )
+            })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PathStatus({ status }: { status?: string }) {
   if (status === 'checking') return <LoaderCircle className="size-4 shrink-0 animate-spin text-fg-3" />
   if (status === 'ok') return <CircleCheck className="size-4 shrink-0 text-ok" />
@@ -549,7 +602,7 @@ function TailscaleCard({ ts }: { ts?: TailscaleView }) {
       {!ts.running ? (
         <div className="space-y-2">
           <p className="text-small text-fg-2">The fleet’s Tailscale runs in Docker Compose beside Concierge. Start it on this machine:</p>
-          <CopyCommand text="docker compose --profile link up -d link" />
+          <CopyCommand text="docker compose up -d link" />
         </div>
       ) : ts.authUrl ? (
         <p className="text-small text-fg-3">Opens login.tailscale.com. Approve this machine there and it comes back here by itself.</p>

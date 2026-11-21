@@ -16,8 +16,13 @@ import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import type { AgentProcess } from './providers.ts'
 
-export type Spawn = { provider: string; args: string[]; cwd: string; stdin?: boolean }
-export type WorkerStatus = { name: string; role?: string; slots: number; running: number; freeMb: number; cores?: number; mb?: number; cpu?: number; usedMb?: number; can?: string[]; repos?: string[] } // cpu, usedMb: what its agents use; can: the accounts it can run
+// untrusted: it reads someone else's work (their PR): the worker fences its tools and keeps its secrets to what it needs,
+// as the control plane does for one it runs itself (untrusted.ts)
+export type Spawn = { provider: string; args: string[]; cwd: string; stdin?: boolean; untrusted?: boolean }
+export type WorkerStatus = { name: string; role?: string; slots: number; running: number; freeMb: number; cores?: number; mb?: number; cpu?: number; usedMb?: number; can?: string[]; repos?: string[]
+  who?: Record<string, string> // each account's login there (providers.ts identityOf): one account is one login on every machine
+  crit?: { key: string; port?: number }[] // the crit sessions running there, so the page finds a review's crit on the machine that ran it
+} // cpu, usedMb: what its agents use; can: the accounts it can run
 
 /** The token both machines share: made by the first that needs it, in a folder the sync carries to the other. */
 export function tokenIn(dir: string): string {

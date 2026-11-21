@@ -11,6 +11,8 @@ const AI_AUTHOR = 'Claude Code'
 export type Crit = {
   port?: number
   live: boolean
+  machine?: string // another machine runs it (several machines): its link reaches it there, not this machine's
+  host?: string // that machine's address on the tailnet, for the link (index.ts)
   cwd?: string // where the daemon runs (only known while it is live)
   pid?: number
   sessionKey?: string
@@ -26,7 +28,14 @@ export type Crit = {
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 
 // crit's files, read off the thread every few seconds into a snapshot; building the page only looks things up
-type Session = { key: string; port?: number; cwd?: string; pid?: number; review_path?: string }
+type Session = { key: string; port?: number; cwd?: string; pid?: number; review_path?: string; machine?: string }
+// the crit sessions other machines run (each says so every 15s, machines.ts): their pids mean nothing here, so they are
+// live by that machine's word. Its review files reach this machine with the synced state
+const elsewhere = new Map<string, { key: string; port?: number }[]>()
+/** What `machine` says it runs now (nothing: it stopped saying, or went offline). */
+export const critElsewhere = (machine: string, sessions?: { key: string; port?: number }[]) => { if (sessions?.length) elsewhere.set(machine, sessions); else elsewhere.delete(machine) }
+/** The crit sessions alive on this machine, for the control plane (as of the last read, every few seconds). */
+export const liveCrit = () => snap.sessions.filter((x) => !x.machine).map((x) => ({ key: x.key, port: x.port }))
 type Counts = { aiComments: number; blocking: number; drift: number; myComments: number; unresolved: number }
 type C = { id?: string; author?: string; body?: string; start_line?: number; resolved?: boolean | null; replies?: { author?: string; body?: string }[] }
 /** A NORM finding (review-exchange): the code works and differs from a written convention. */
@@ -56,8 +65,12 @@ async function read() {
   {
     const dir = join(CRIT_DIR, 'sessions')
     const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith('.json'))
-    const sessions: Session[] = (await Promise.all(files.map(async (f) => ({ key: f.slice(0, -5), ...(await readJson(join(dir, f))) }))))
-      .filter((x) => x.pid && alive(x.pid))
+    const all: Session[] = await Promise.all(files.map(async (f) => ({ key: f.slice(0, -5), ...(await readJson(join(dir, f))) })))
+    const remote = new Map([...elsewhere].flatMap(([machine, list]) => list.map((x) => [x.key, { machine, port: x.port }] as const)))
+    const sessions: Session[] = [
+      ...all.filter((x) => x.pid && alive(x.pid) && !remote.has(x.key)),
+      ...[...remote].map(([key, r]) => ({ ...all.find((x) => x.key === key), key, port: r.port, machine: r.machine, pid: undefined })),
+    ]
     const keys = new Set([...sessions.map((x) => x.key), ...wanted])
     const counts = new Map<string, Counts>(), finish = new Map<string, Finish>(), norms = new Map<string, Norm[]>()
     await Promise.all([...keys].map(async (key) => {
@@ -95,7 +108,7 @@ export function critFor(seen: { port?: number; key?: string }, worktree?: string
   if (sessionKey) wanted.add(sessionKey)
   const c = (sessionKey && snap.counts.get(sessionKey)) || { aiComments: 0, blocking: 0, drift: 0, myComments: 0, unresolved: 0 }
   const f = (sessionKey && snap.finish.get(sessionKey)) || { finishes: 0 }
-  return { port: session?.port ?? seen.port, live: !!session, cwd: session?.cwd, pid: session?.pid, sessionKey, ...c, ...f }
+  return { port: session?.port ?? seen.port, live: !!session, machine: session?.machine, cwd: session?.cwd, pid: session?.pid, sessionKey, ...c, ...f }
 }
 
 export type Status =

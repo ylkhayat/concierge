@@ -196,11 +196,14 @@ def find(peers):
     return list({h['name']: h for h in found if h.get('name')}.values())
 
 
-def env_set(updates):
-    """Set keys in .env (made from .env.example if there is none yet), keeping everything else."""
-    path = os.path.join(ROOT, '.env')
+def env_set(updates, name='.env'):
+    """Set keys in .env (made from .env.example if there is none yet), or the fleet's .env.fleet, keeping everything else."""
+    path = os.path.join(ROOT, name)
     if not os.path.exists(path):
-        shutil.copy(os.path.join(ROOT, '.env.example'), path)
+        if name == '.env':
+            shutil.copy(os.path.join(ROOT, '.env.example'), path)
+        else:
+            open(path, 'w').close()
     lines = open(path).read().splitlines()
     out = [l for l in lines if not ('=' in l and l.split('=', 1)[0].strip() in updates)]
     out += [f'{k}={v}' for k, v in updates.items()]
@@ -300,7 +303,7 @@ def main():
            '--key', s['key'], *(['--deck-home', s['deckHome']] if s.get('deckHome') else []), *(['--deck-code', s['deckCode']] if s.get('deckCode') else [])]
     subprocess.run(cmd, cwd=ROOT, check=True)
     if s['role'] == 'worker':
-        env_set({'DECK_ROLE': 'worker'})  # bin/standby restarts with it
+        env_set({'DECK_ROLE': 'worker'}, '.env.fleet')  # bin/standby restarts with it
     say('building Concierge here (a few minutes the first time)')
     subprocess.run([os.path.join(ROOT, 'bin', 'update'), '--force'], cwd=ROOT)
     say(f"done: {name} is the {s['role']}. Its state, settings and sessions come over from {s['main']} within a minute.\n"

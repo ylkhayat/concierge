@@ -369,6 +369,30 @@ export async function searchRepos(): Promise<Map<string, number>> {
   return counts
 }
 
+export type RepoHit = { repo: string; private: boolean; description?: string; pushedAt?: string }
+type ApiRepo = { full_name: string; private: boolean; description: string | null; pushed_at: string | null; archived?: boolean }
+const hit = (r: ApiRepo): RepoHit => ({ repo: r.full_name, private: r.private, description: r.description ?? undefined, pushedAt: r.pushed_at ?? undefined })
+let mine: { at: number; list: Promise<RepoHit[]> } | undefined
+/** Every repository your account reaches (yours, as a collaborator, your organisations'), most recently pushed first:
+ *  read once and kept 10 minutes, so searching it is instant. Up to 1000. */
+export function myRepos(): Promise<RepoHit[]> {
+  if (mine && Date.now() - mine.at < 10 * 60_000) return mine.list
+  const list = (async () => {
+    const out: RepoHit[] = []
+    for (let page = 1; page <= 10; page++) {
+      const batch = await gh<ApiRepo[]>(`/user/repos?per_page=100&page=${page}&sort=pushed&affiliation=owner,collaborator,organization_member`)
+      out.push(...batch.filter((r) => !r.archived).map(hit))
+      if (batch.length < 100) break
+    }
+    return out
+  })()
+  mine = { at: Date.now(), list }
+  list.catch(() => { mine = undefined })
+  return list
+}
+/** One repository by name, any you can read (a public one outside your account too), or undefined. */
+export const repoByName = (repo: string): Promise<RepoHit | undefined> => gh<ApiRepo>(`/repos/${repo}`).then(hit, () => undefined)
+
 /** The repo's default branch (develop, main…), the one the codebase map follows. */
 // a repo's default branch practically never changes: asked once per repo per run of the server
 const trunks = new Map<string, Promise<string>>()

@@ -173,7 +173,8 @@ export function useNow(ms = 15000) {
 // crit runs where the server does: the machine running Concierge, as reached from this page (it must listen
 // there, CRIT_HOST). See hosts.ts, also for the localhost links agents print.
 let reach: Reach | undefined
-export const critUrl = (pr: PrView) => (pr.crit?.live && pr.crit.port ? `http://${serverHost(location.hostname, reach)}:${pr.crit.port}` : undefined)
+// a review another machine ran has its crit there: that machine's tailnet address (several machines), else this server's
+export const critUrl = (pr: PrView) => (pr.crit?.live && pr.crit.port ? `http://${pr.crit.host ?? serverHost(location.hostname, reach)}:${pr.crit.port}` : undefined)
 export const here = (url: string) => reachable(url, location.hostname, reach)
 export const hereIn = (text: string) => reachableIn(text, location.hostname, reach)
 

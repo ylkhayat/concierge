@@ -11,7 +11,11 @@ services:
     # are reachable from your browser as-is. On Docker Desktop turn it on once:
     # Settings → Resources → Network → "Enable host networking" (Docker Desktop 4.34+).
     network_mode: host
-    env_file: .env
+    # your settings, then the fleet's (.env.fleet: several machines, written by its bin/sync-setup) when there is one
+    env_file:
+      - .env
+      - path: .env.fleet
+        required: false
     environment:
       # the home and code paths inside the container: by default the same as on your machine, so ~ and absolute
       # paths in config.json work; with two machines both set the same DECK_HOME/DECK_CODE, so state, sessions
@@ -28,16 +32,17 @@ services:
       # agents start their connectors with npx: use what's in the cache instead of asking the registry every time
       npm_config_prefer_offline: "true"
       # uv's Pythons next to your clones, so a worktree's .venv resolves inside the container and on a Linux host alike
-      UV_PYTHON_INSTALL_DIR: ${DECK_CODE:-${CODE_DIR}}/.uv-python
+      UV_PYTHON_INSTALL_DIR: ${DECK_CODE:-${CODE_DIR:-${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/codebases}}/.uv-python
       # worktrees share one installed copy of each package: pnpm's global virtual store links a worktree's node_modules into
       # it (a new worktree installs in seconds and takes ~1 MB instead of a minute and 1.2 GB), and uv's cache sits on the
       # clones' drive (hard links work there, not across from a volume), so a .venv is links instead of copies. Your own installs on the host are untouched.
       pnpm_config_virtual_store_type: global
-      UV_CACHE_DIR: ${DECK_CODE:-${CODE_DIR}}/.uv-cache
+      UV_CACHE_DIR: ${DECK_CODE:-${CODE_DIR:-${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/codebases}}/.uv-cache
       UV_LINK_MODE: hardlink
     volumes:
       # your clones, at the SAME absolute path, so config.json's repo paths and agent worktrees line up
-      - ${CODE_DIR:?set CODE_DIR in .env}:${DECK_CODE:-${CODE_DIR}}
+      # CODE_DIR empty: Concierge's own folder for clones, in its state (setup says so, and where)
+      - ${CODE_DIR:-${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/codebases}:${DECK_CODE:-${CODE_DIR:-${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/codebases}}
       # its settings and state, shared with a native install (CONCIERGE_DIRNAME: the folders' name; an install from
       # before the rename keeps review-deck, which bin/update writes into .env)
       - ${HOME}/.config/${CONCIERGE_DIRNAME:-concierge}:${DECK_HOME:-${HOME}}/.config/${CONCIERGE_DIRNAME:-concierge}
@@ -49,6 +54,9 @@ services:
       # your Claude Code skills, commands and settings: read by the agents, and changed only by what you do on the
       # Skills page (install, remove). each tool's own files go to its folder above, not here
       - ${HOME}/.claude:${DECK_HOME:-${HOME}}/.claude
+      # the folder your skills' links point into (a skills repository you keep elsewhere, whichever tool they are for), at
+      # the same path so they work here: bin/skill-links finds it (bin/up, bin/update). None: an empty folder, out of the way
+      - ${SKILL_LINKS:-${HOME}/.local/state/${CONCIERGE_DIRNAME:-concierge}/no-links}:${SKILL_LINKS:-/.no-skill-links}
       # your Codex config and skills, read the same way
       - ${HOME}/.codex:${DECK_HOME:-${HOME}}/.codex
       # crit reviews: kept in a volume, not your host ~/.crit (its session files hold pids that mean

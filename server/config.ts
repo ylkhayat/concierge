@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
-import { CONFIG_DIR, setting } from './paths.ts'
+import { CONFIG_DIR, setting, STATE_DIR } from './paths.ts'
 import { fleet } from './fleet.ts'
 
 /** A skill a ticket run loads by rule (Config.exec.rules). `match`/`unless`: regular expressions over the ticket's
@@ -49,6 +49,7 @@ export type Config = {
   compliance?: import('./readiness.ts').Compliance // where its users are, its certifications, data, required reviews, and the people who build it: what every plan is checked against
   skills?: Partial<Record<import('./method.ts').Feature, string>> // which skill each feature uses (method.ts); unset: its default
   skillSource?: string // the git repo a new setup's skills come from (Settings → Skills); unset: github.com/ylkhayat/skills
+  skillSources?: string[] // git repositories of skills you added (onboarding, Settings → Skills): their skills reach the agents (setup.ts)
   // Exec mode: ship your Linear tickets with a command such as /my-exec
   exec: {
     command: string // {ids} becomes the ticket ids in order, space separated; '' turns exec mode off
@@ -175,9 +176,12 @@ function write(u: UserConfig) {
 }
 
 const expand = (p: string) => p.replace(/^~(?=\/|$)/, homedir())
+/** Whether this machine says where its clones live (CODE_DIR); without it they go to Concierge's own folder below. */
+export const CODE_DIR_SET = !!(process.env.DECK_CODE || process.env.CODE_DIR)
 /** This machine's working directory: where its repositories live, and where a missing one is cloned (each machine's
- *  CODE_DIR, mounted in the container at DECK_CODE; ~/code without either). */
-export const WORK_DIR = expand(process.env.DECK_CODE || process.env.CODE_DIR || '~/code')
+ *  CODE_DIR, mounted in the container at DECK_CODE). Neither: ~/code on a native install that has one, else
+ *  Concierge's own codebases folder in its state (docker-compose.yml mounts the same one). */
+export const WORK_DIR = expand(process.env.DECK_CODE || process.env.CODE_DIR || (!process.env.CLAUDE_CONFIG_DIR && existsSync(join(homedir(), 'code')) ? '~/code' : join(STATE_DIR, 'codebases')))
 /** A repository's checkout on this machine: a bare folder name sits in the working directory. */
 export const repoPath = (v: string) => { const p = expand(v); return isAbsolute(p) ? p : join(WORK_DIR, p) }
 function resolve(u: UserConfig): Config {

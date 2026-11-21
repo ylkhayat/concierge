@@ -30,7 +30,7 @@ import { fleet } from './fleet.ts'
 import { mine, readLines } from './perMachine.ts'
 import { scrub } from './scrub.ts'
 import { busyUnder, newRun, watch as watchBackground } from './background.ts'
-import { draining, machines, place, slotsHere, token } from './machines.ts'
+import { draining, machines, place, slotsHere, token, whyNowhere } from './machines.ts'
 import { remoteAgent } from './worker.ts'
 import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
@@ -571,6 +571,8 @@ export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: str
 // the agents' Claude folder is still being set up (the first start after it became Concierge's own): runs wait for it
 let homeReady = false
 void agentHomesReady().then(() => { homeReady = true; pump() })
+/** Explanations and codebase maps read the checkout on this machine (the main server) themselves: only once it has it. */
+const hereHas = (repo: string) => !fleet.machine || !(repo in cloneState())
 /** A planned review waits while the PR below it is at work, or queued ahead of it (two waiting on each other: neither waits). */
 const waitsBelow = (p: Pr) => { const b = state.prs[p.job?.after ?? '']?.job; return !!b && (b.state === 'running' || (b.state === 'queued' && b.after !== p.id)) }
 export function pump() {
@@ -591,26 +593,28 @@ export function pump() {
   if (short !== held) { held = short; console.log(short ? `queue held: under ${LOW_MB} MB free` : 'queue resumed: memory is free again'); bus.emit('held', short) }
   if (short && !machines.size) return
   // reviews and explanations share the parallel cap, oldest first; the codebase map only takes what is left
-  const waiting: { prio: number; at: string; go: () => void; exec?: ExecRun }[] = [
+  // place: work that may run on any machine with its checkout (the matrix: machines.ts route); the rest runs here
+  const waiting: { prio: number; at: string; go: (on?: string) => void; exec?: ExecRun; place?: { repo: string; provider: ProviderId; prefer?: string } }[] = [
     ...Object.values(state.prs).flatMap((p) => [
       // a planned review waits while the one below it in its stack is still queued or running
-      ...(p.job?.state === 'queued' && !children.has(p.id) && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review', p.repo) && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: () => start(p) }] : []),
+      ...(p.job?.state === 'queued' && !children.has(p.id) && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review', p.repo) && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: (on?: string) => start(p, on),
+        place: { repo: p.repo, provider: p.job.provider ?? providerFor(p.mine ? 'revise' : 'review', p.repo), prefer: p.job.machine } }] : []),
       // an explanation waits while one below it in the stack is still being written: it reads theirs
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
-        && available(providerFor('review', p.repo)) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
+        && available(providerFor('review', p.repo)) && hereHas(p.repo) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
     ]),
-    ...Object.values(state.execs).filter((r) => r.state === 'queued' && !r.planning && canRun(r, 'exec', r.repo) && waited(r)).map((r) => ({ prio: 0, at: r.queuedAt, go: () => startExec(r), exec: r })),
-    ...Object.entries(state.base).filter(([repo, t]) => t.state === 'queued' && available(providerFor('review', repo))).map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: () => startBase(repo) })),
+    ...Object.values(state.execs).filter((r) => r.state === 'queued' && !r.planning && canRun(r, 'exec', r.repo) && waited(r)).map((r) => ({ prio: 0, at: r.queuedAt, go: (on?: string) => startExec(r, on), exec: r })),
+    ...Object.entries(state.base).filter(([repo, t]) => t.state === 'queued' && available(providerFor('review', repo)) && hereHas(repo)).map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: () => startBase(repo) })),
   ].sort((a, b) => a.prio - b.prio || a.at.localeCompare(b.at))
+  const slots = drain ? 0 : Math.min(state.settings.maxJobs, slotsHere(state.settings.maxJobs))
   for (const w of waiting) {
-    if (!w.exec) {
-      if (drain || short || here >= state.settings.maxJobs) continue
-      here++; w.go(); continue
-    }
-    // an exec run goes where there is room: the machine it ran on before first, else the one with the most room
-    const to = place(w.exec.machine, { running: here, slots: drain ? 0 : Math.min(state.settings.maxJobs, slotsHere(state.settings.maxJobs)), freeMb: short ? 0 : freemem() / 1048576, lacks: w.exec.repo in cloneState() }, out, w.exec.provider ?? providerFor('exec', w.exec.repo), w.exec.repo)
+    const p = w.exec ? { repo: w.exec.repo, provider: w.exec.provider ?? providerFor('exec', w.exec.repo), prefer: w.exec.machine } : w.place
+    if (!p) { if (drain || short || here >= state.settings.maxJobs) continue; here++; w.go(); continue }
+    // the machine its repository's route picks (the main server when it has the checkout), with room and the account
+    // signed in as itself; the machine it ran on before first, where its worktree and session are
+    const to = place(p.prefer, { running: here, slots, freeMb: short ? 0 : freemem() / 1048576, lacks: p.repo in cloneState() }, out, p.provider, p.repo)
     if (to === undefined) continue
-    if (!to || to === fleet.machine) { here++; startExec(w.exec) } else { out.set(to, (out.get(to) ?? 0) + 1); startExec(w.exec, to) }
+    if (!to || to === fleet.machine) { here++; w.go() } else { out.set(to, (out.get(to) ?? 0) + 1); w.go(to) }
   }
 }
 
@@ -768,7 +772,7 @@ export function runAgent(o: {
   const provider = o.provider ?? 'claude'
   const m = o.on ? machines.get(o.on) : undefined
   const start = (args: string[], stdin: boolean) => m
-    ? remoteAgent(m.name, m.base, token(), { provider, args, cwd: o.cwd, stdin, label: o.label })
+    ? remoteAgent(m.name, m.base, token(), { provider, args, cwd: o.cwd, stdin, label: o.label, untrusted: o.untrusted })
     : spawnAgent(provider, o.untrusted ? [...args, ...UNTRUSTED_ARGS] : args, { cwd: o.cwd, stdin, ...(o.untrusted && { env: untrustedEnv() }) })
   // its part of the connection bank (bank.ts): every run, on whichever account. Not a review of someone else's PR,
   // which is kept away from your keys
@@ -914,6 +918,9 @@ const fresh = (t: { provider?: ProviderId; continuing?: boolean; resumed?: boole
 const canRun = (_t: Parameters<typeof fresh>[0], work: Work, repo?: string) => available(providerFor(work, repo))
 /** What queued work waits for, when it can't start: the account the order picks, why, and until when. */
 export function waitingOn(t: Parameters<typeof fresh>[0], work: Work, repo?: string) {
+  // several machines: none that may have the repository can take it (machines.ts whyNowhere)
+  const nowhere = repo ? whyNowhere(repo, t.provider ?? providerFor(work, repo)) : undefined
+  if (nowhere) return { label: 'Machines', why: nowhere, until: undefined }
   if (canRun(t, work, repo)) return undefined
   const p = providerFor(work, repo), w = whyNot(p)
   return { label: accountOf(p).label, why: w?.why ?? 'busy', until: w?.until }
@@ -951,9 +958,10 @@ const handoffNote = (prev: ProviderId, last?: string) => `(Picking up from an ea
   + (last?.trim() ? ` Its last message was:\n\n${last.trim().slice(0, 4000)}\n\n` : ' ')
   + 'Read the current state (the PR, its threads, the ticket) before you act.)'
 
-function start(pr: Pr) {
+function start(pr: Pr, on?: string) {
   const cwd = config.repos[pr.repo]
   const job = pr.job!
+  job.machine = on ?? fleet.machine // where its session lives now: a follow-up goes back there
   settle(job, pr.mine ? 'revise' : 'review', pr.id, (prev) => {
     // a new session: a follow-up carries the last words and its own; a review or revise starts its command again
     if (isFollowUp(job.kind)) job.prompt = `${handoffNote(prev, job.lastWords)}\n\n${job.prompt ?? ''}`
@@ -987,7 +995,7 @@ function start(pr: Pr) {
   bus.emit('started', pr.id, job)
 
   const go = () => runAgent({
-    key: pr.id, label: `${LABEL[job.kind]} #${pr.number}`, cwd, provider: job.provider,
+    key: pr.id, label: `${LABEL[job.kind]} #${pr.number}`, cwd, provider: job.provider, on,
     onSession: (id) => { if (job.sessionId !== id) { job.sessionId = id; save() } },
     args: [
       ...(job.continuing ? ['-p', continuePrompt(asked), '--resume', job.sessionId]

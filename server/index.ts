@@ -39,7 +39,7 @@ import { freemem, homedir, tmpdir } from 'node:os'
 import { fleet } from './fleet.ts'
 import { fleetMachines } from './perMachine.ts'
 import { behind, latestHeads, overdue, readLatest, runningHere, type Running } from './versions.ts'
-import { capped, machines, serve as serveMachine, slotsHere, token as machineToken, rotateToken, ask, onCameBack, hosted, statsHere, type Stats } from './machines.ts'
+import { capped, machines, serve as serveMachine, slotsHere, token as machineToken, rotateToken, ask, matrix, onCameBack, hosted, statsHere, type Stats } from './machines.ts'
 import { updateStatus } from './updateStatus.ts'
 import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey } from './sharedEnv.ts'
 import { call } from './worker.ts'
@@ -58,8 +58,8 @@ import { spentText } from './usage.ts'
 import { belongsTo, cleanWorktrees, sweepDue, worktrees } from './worktrees.ts'
 import { flowInOf, flowOf, type Flow } from './flow.ts'
 import { planStacks, valid, validPrep, type Prep } from './plan.ts'
-import { CONFIG_FILE, WORK_DIR, configured, reloadConfig, repoPath, fill, saveConfig, userConfig, workspaces, type Workspace } from './config.ts'
-import { accountOf, accounts, available, modelsOf, spawnAgent, identityOf, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
+import { CONFIG_FILE, WORK_DIR, CODE_DIR_SET, configured, reloadConfig, repoPath, fill, saveConfig, userConfig, workspaces, type Workspace } from './config.ts'
+import { accountOf, accounts, available, modelsOf, spawnAgent, identityOf, loginText, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
 import { orgSkills, setMode, syncOrgSkills } from './orgSkills.ts'
 import { improveSkill, removeSkill, skillsView, suggestSkills } from './skills.ts'
 import { adopt as adoptCards, ask as askCard, discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
@@ -72,7 +72,7 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from '
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
-import { checks, cloneRepo, cloneState, ensureClones, installSourceSkills, DEFAULT_SOURCE, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
+import { brokenSkillLinks, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
@@ -120,7 +120,10 @@ const days = (n: number) => Array.from({ length: n }, (_, i) => new Date(Date.no
 
 const critOfView = (p: Pr) => {
   const repoPath = config.repos[p.repo]
-  return repoPath ? critFor({ port: p.job?.critPort, key: p.job?.critKey }, config.agent.worktree && fill(config.agent.worktree, { repoPath, number: p.number, repo: p.repo })) : undefined
+  const crit = repoPath ? critFor({ port: p.job?.critPort, key: p.job?.critKey }, config.agent.worktree && fill(config.agent.worktree, { repoPath, number: p.number, repo: p.repo })) : undefined
+  // a review another machine ran: its crit is there, reached at that machine's tailnet address
+  const base = crit?.machine ? machines.get(crit.machine)?.base : undefined
+  return base ? { ...crit!, host: new URL(base).hostname } : crit
 }
 // remember each live crit session's key, so its counts survive the daemon stopping: done here, every 10s, never
 // while reading the views (a read path that writes is how a page refresh used to change what's saved)
@@ -1792,7 +1795,9 @@ app.post('/base', async (c) => {
 
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async (light = false) => ({
-  configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
+  configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []),
+  // your skills that are links this machine can't follow (Docker: the folder they point into isn't mounted; bin/up mounts it)
+  brokenLinks: light ? [] : await brokenSkillLinks(), skillSources: skillSources(),
   workDir: WORK_DIR, clones: cloneState(), machine: fleet.machine, machines: fleetMachines(), cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
   // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
@@ -1800,6 +1805,8 @@ const setupView = async (light = false) => ({
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // the fleet extension is loaded (fleet/compose.fleet.yml sets it): onboarding then signs Tailscale in after GitHub
   fleet: !!process.env.CONCIERGE_FLEET,
+  codeDirSet: CODE_DIR_SET, // CODE_DIR unset: clones go to Concierge's own folder (workDir), and setup says so
+  placement: fleet.machine ? matrix() : [], // where each repository's work runs (machines.ts route)
   onboardingStep: state.onboardingStep,
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
   needed: await skillsNeeded([config.agent.review.command, config.agent.revise.command, config.agent.stack ?? '', config.exec.command, ...config.exec.actions.map((x) => x.prompt)]),
@@ -1809,6 +1816,10 @@ export type SetupView = Awaited<ReturnType<typeof setupView>>
 // light: what the app needs to start (no CLI checks, no skill source): it shows its boot screen until this answers
 app.get('/setup', async (c) => c.json(await setupView(c.req.query('light') === '1')))
 app.get('/setup/repos', async (c) => c.json(await suggestions()))
+// the onboarding's repository search: every repository you reach, by name or description, or one pasted as a link
+app.get('/setup/repos/search', async (c) => {
+  try { return c.json(await findRepos((c.req.query('q') ?? '').slice(0, 200))) } catch (e) { return c.json({ error: (e as Error).message }, 502) }
+})
 // where onboarding was left: the step's id, kept so it opens there again
 app.post('/setup/step', async (c) => {
   const { step } = await c.req.json<{ step?: unknown }>().catch(() => ({ step: undefined }))
@@ -1847,7 +1858,7 @@ app.post('/setup/validate', async (c) => {
 app.post('/setup/skills', async (c) => c.json(await installSourceSkills()))
 // Settings → Skills: which skill each feature uses (method.ts), its default, and whether it is installed here
 app.get('/method', async (c) => c.json({
-  source: config.skillSource?.trim() || DEFAULT_SOURCE,
+  source: skillSources().join(', '),
   features: await Promise.all((Object.keys(FEATURES) as (keyof typeof FEATURES)[]).map(async (k) => ({
     key: k, label: FEATURES[k].label, hint: FEATURES[k].hint, default: FEATURES[k].skill, skill: skillFor(k), found: !!(await skillPath(skillFor(k))),
   }))),
@@ -1868,7 +1879,7 @@ app.post('/access', async (c) => {
   return c.json({ logins: allowedLogins(), you })
 })
 app.post('/config', async (c) => {
-  const b = await c.req.json() as { repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string }
+  const b = await c.req.json() as { repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string; skillSources?: string[] }
   const errors: string[] = []
   if (b.repos) {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
@@ -1897,6 +1908,7 @@ app.post('/config', async (c) => {
   // which skill each feature uses (method.ts): a skill name, or empty for its default
   if (b.skills !== undefined && (typeof b.skills !== 'object' || Object.entries(b.skills).some(([k, v]) => !(k in FEATURES) || typeof v !== 'string' || !/^[\w:./-]{0,120}$/.test(v)))) errors.push('Each feature takes a skill name')
   if (b.skillSource !== undefined && (typeof b.skillSource !== 'string' || (b.skillSource.trim() && !/^(https:\/\/|git@)[\w.@:/~-]+$/.test(b.skillSource.trim())))) errors.push('The skill source is a git repository URL (https:// or git@)')
+  if (b.skillSources !== undefined && (!Array.isArray(b.skillSources) || b.skillSources.length > 20 || b.skillSources.some((u) => typeof u !== 'string' || !/^(https:\/\/|git@)[\w.@:/~-]+$/.test(u.trim())))) errors.push('Each skill source is a git repository link (https:// or git@)')
   if (b.compliance !== undefined) {
     const k = b.compliance, known: Record<string, [string, string][]> = { regions: REGIONS, certifications: CERTIFICATIONS, data: DATA, reviews: REVIEWS }
     for (const [f, list] of Object.entries(known)) { const v = (k as Record<string, unknown>)[f]; if (v !== undefined && (!Array.isArray(v) || v.some((x) => !list.some(([id]) => id === x)))) errors.push(`Unknown ${f}`) }
@@ -1918,6 +1930,8 @@ app.post('/config', async (c) => {
     ...(b.compliance && { compliance: { ...withoutName(config.compliance), ...b.compliance }, company: undefined }),
     ...(b.skills && { skills: Object.fromEntries(Object.entries({ ...config.skills, ...b.skills }).filter(([, v]) => v?.trim())) }),
     ...(b.skillSource !== undefined && { skillSource: b.skillSource.trim() || undefined }),
+    // the list replaces the single source of before
+    ...(b.skillSources !== undefined && { skillSources: [...new Set(b.skillSources.map((u) => u.trim().replace(/\/$/, '')))], skillSource: undefined }),
     ...((b.review || b.revise || b.stack !== undefined) && { agent: {
       ...(b.stack !== undefined && { stack: b.stack.trim() }),
       ...(b.review && { review: { ...prev?.review, command: b.review.trim() } }),
@@ -1965,6 +1979,51 @@ const readIdentities = () => Promise.all(accounts().filter((a) => a.kind === 'cl
   condition('same-plan', 'Claude accounts', twins.length ? `${twins.map((a) => a.label).join(' and ')} are signed in as the same claude.ai account (${identityOf(twins[0].id)!.slice(6).split('|')[0]}), so they share one plan. Sign one in to another account (Settings → Accounts → Sign in again, approved in a browser signed in to that account).` : undefined)
 })
 setTimeout(() => void readIdentities(), 5_000).unref(); setInterval(() => void readIdentities(), 5 * 60_000).unref()
+
+// --- one account, one login, on every machine (several machines) -------------------------------------------------------
+/** Each machine's login for `account`: this one's and what every other one says (machines.ts status.who). */
+const loginsOf = (account: string): Record<string, string | undefined> => ({
+  [fleet.machine!]: identityOf(account), ...Object.fromEntries([...machines.values()].filter((m) => m.status).map((m) => [m.name, m.status!.who?.[account]])),
+})
+/** Keep (or change) the login an account is: the synced config, so every machine compares itself with the same one. */
+function pinLogin(id: string, login: string) {
+  const mine = userConfig().accounts ?? [], had = mine.find((a) => a.id === id)
+  const a = accountOf(id)
+  saveConfig({ accounts: had ? mine.map((x) => (x.id === id ? { ...x, login } : x)) : [...mine, { id, label: a.label, kind: a.kind, login }] })
+}
+// every 30s on the main server: an account without a login yet takes the first one seen (here first); a machine signed in
+// as someone else under its name takes none of its work (machines.ts loginOk), and the page says where and who
+setInterval(() => {
+  if (!fleet.machine || fleet.elsewhere() || !machines.size) return
+  const off: string[] = []
+  for (const a of accounts()) {
+    const by = loginsOf(a.id)
+    if (!a.login) { const first = by[fleet.machine] ?? Object.values(by).find(Boolean); if (first) pinLogin(a.id, first); continue }
+    const other = Object.entries(by).filter(([, w]) => w && w !== a.login)
+    if (other.length) off.push(`${a.label} is ${loginText(a.login)}, but ${other.map(([m, w]) => `${m} has it signed in as ${loginText(w)}`).join(', ')}`)
+  }
+  condition('logins', 'Accounts', off.length ? `${off.join('; ')}. That machine takes none of the account's work until it signs in again as its login, or you make its login the account's (Settings → Agents).` : undefined)
+}, 30_000).unref()
+// make `machine`'s login the account's own (it was signed in as another one on purpose): the others then sign in again
+app.post('/accounts/:id/adopt-login', async (c) => {
+  const { machine } = await c.req.json<{ machine?: string }>().catch(() => ({ machine: undefined }))
+  const id = c.req.param('id'), who = machine ? loginsOf(id)[machine] : undefined
+  if (!isAccount(id) || !who) return c.json({ error: 'That machine has no login for this account' }, 400)
+  pinLogin(id, who)
+  return c.json({ ok: true, login: loginText(who) })
+})
+
+// --- the placement matrix: where each repository's work runs (machines.ts route), logged when it moves
+app.get('/placement', (c) => c.json(matrix().map((r) => ({ ...r, main: fleet.machine }))))
+let placedAs = ''
+setInterval(() => {
+  if (!fleet.machine || fleet.elsewhere()) return
+  const m = matrix(), now = JSON.stringify(m.map((r) => [r.repo, r.order]))
+  if (now === placedAs) return
+  if (placedAs) console.log(`placement: ${m.map((r) => `${r.repo} → ${r.order.join(', ') || `nowhere (${r.why})`}`).join('; ')}`)
+  placedAs = now
+  bus.emit('change'); pump()
+}, 15_000).unref()
 const providersView = async () => ({
   use: config.providers?.use ?? {}, fallback: config.providers?.fallback ?? [], budgets: config.providers?.budgets ?? {}, stopAt: Math.round(stopAt() * 100),
   login: { claude: claudeLoginState(), openai: openaiLoginState() }, routing: routing(),
@@ -3017,6 +3076,10 @@ app.get('/connections/where', async (c) => {
     machines: [fleet.machine, ...others.map(([n]) => n)], has: { [fleet.machine!]: here, ...Object.fromEntries(others.filter(([, r]) => r)) },
     // a machine that didn't answer (offline, or an older version) is said apart: neither signed in nor not
     signedIn: { [fleet.machine!]: inHere, ...Object.fromEntries(inThere.map(([n, r]) => [n, r === undefined ? null : !!r])) },
+    // who it is on each machine, and who it should be (one account, one login)
+    who: Object.fromEntries(Object.entries(loginsOf(account)).map(([m, w]) => [m, w ? loginText(w) : undefined])),
+    login: accountOf(account).login ? loginText(accountOf(account).login) : undefined,
+    off: Object.entries(loginsOf(account)).filter(([, w]) => w && accountOf(account).login && w !== accountOf(account).login).map(([m]) => m),
     silent: [...others, ...inThere].filter(([, r]) => r === undefined).map(([n]) => n).filter((n, i, a) => a.indexOf(n) === i),
   })
 })

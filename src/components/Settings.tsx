@@ -411,6 +411,7 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
           )}
           <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
                     machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org} removed={setup?.removeFrom?.[repo] ?? []} here={Object.entries(setup?.checkedOut ?? {}).filter(([, rs]) => rs.includes(repo)).map(([m]) => m)}
+                    route={setup?.placement?.find((r) => r.repo === repo)}
                     onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${m}` : `${repo} stays off ${m}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
                     accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
           </Fragment>
@@ -442,7 +443,8 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   )
 }
 
-function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow }: {
+function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow, route }: {
+  route?: { order: string[]; why?: string } // where its work runs, best first (the placement matrix: machines.ts route)
   clone?: string // not on this machine yet: 'cloning', 'not-here' (not allowed on it), or why the clone failed
   machines?: string[]; machine?: string; allowed?: string[]; byOrg?: string[]; removed?: string[]; here?: string[]; onAllow?: (machine: string, on: boolean) => void // several machines: where it may be cloned
   repo: string; path: string; meta?: BaseInfo['meta']; task?: NonNullable<Health['base']>[string]; toast: Toast; onRemove: () => void
@@ -482,6 +484,16 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
             <Pick multi label={`Machines that may clone ${repo}`} value={machines.filter((m) => !removed.includes(m) && (allowed.includes(m) || byOrg.includes(m) || here.includes(m)))}
                   options={machines.map((m) => ({ value: m, label: m === machine ? <>{m} <span className="font-normal opacity-60">this one</span></> : m }))}
                   onChange={(_, m, on) => onAllow(m, on)} />
+          </Field>
+        )}
+        {machines.length > 1 && route && (
+          <Field label="Runs on" hint="Where its reviews, revisions and tickets run: the main server when it may have it, then the machine you work on, then the others; each once it has the checkout">
+            {route.order.length
+              ? <span className="flex flex-wrap items-center gap-1.5 text-small">
+                  <span className="rounded-full bg-accent/10 px-2 py-0.5 font-medium text-accent-text ring-1 ring-accent/20">{route.order[0]}</span>
+                  {route.order.length > 1 && <span className="text-meta text-fg-3">then {route.order.slice(1).join(', ')} when it's full or offline</span>}
+                </span>
+              : <span className="text-small text-wait-text">Nowhere now: {route.why}</span>}
           </Field>
         )}
         {accounts.length > 1 && (
@@ -562,25 +574,61 @@ function FeatureSkills({ saveConfig }: { saveConfig: SaveConfig }) {
 
 // --- Skills ----------------------------------------------------------------------------------------
 
+/**
+ * The git repositories of skills you added: paste one link or several (any space or line between them), take any off.
+ * Each is fetched into Concierge's own folder for its agents; your ~/.claude is never touched. `skills`: what they give.
+ */
+export function SkillSources({ list, skills, onSave }: { list: string[]; skills: SetupView['skills']; onSave: (list: string[]) => Promise<unknown> }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const links = text.split(/[\s,]+/).map((x) => x.trim().replace(/\/$/, '')).filter(Boolean)
+  const bad = links.filter((l) => !/^(https:\/\/|git@)[\w.@:/~-]+$/.test(l))
+  const save = (next: string[]) => { setBusy(true); void onSave(next).then(() => setText(''), () => {}).finally(() => setBusy(false)) }
+  const name = (url: string) => url.replace(/^https:\/\/(www\.)?github\.com\//, '').replace(/^git@github\.com:/, '').replace(/\.git$/, '')
+  const slug = (url: string) => url.replace(/\.git$/, '').split(/[/:]/).filter(Boolean).slice(-2).join('-').replace(/[^\w.-]/g, '_')
+  return (
+    <div className="card overflow-hidden">
+      {list.map((url) => {
+        const from = skills.filter((x) => x.source === slug(url))
+        return (
+          <div key={url} className="flex items-center gap-3 border-b border-line px-3.5 py-2.5">
+            <Sparkles className="size-4 shrink-0 text-accent" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-mono text-small font-medium text-fg-1" title={url}>{name(url)}</div>
+              <div className="truncate text-meta text-fg-3" title={from.map((x) => x.name).join(', ')}>{from.length ? `${from.length} skill${from.length === 1 ? '' : 's'}: ${from.map((x) => x.name).join(', ')}` : busy ? 'Fetching…' : 'No skills found there yet'}</div>
+            </div>
+            <button onClick={() => save(list.filter((x) => x !== url))} disabled={busy} aria-label={`Take ${name(url)} off`} title="Take it off: its skills leave the agents" className={`${quiet} px-2`}><X className="size-3.5" /></button>
+          </div>
+        )
+      })}
+      <div className="space-y-1.5 px-3.5 py-3">
+        <div className="flex gap-2">
+          <input value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} aria-label="Skill repository links" placeholder={list.length ? 'Another repository of skills: its link' : 'A repository of skills: its link (paste several at once if you like)'}
+                 onKeyDown={(e) => e.key === 'Enter' && links.length && !bad.length && save([...list, ...links.filter((l) => !list.includes(l))])} className={`${input} min-w-0 flex-1 font-mono`} />
+          <button onClick={() => save([...list, ...links.filter((l) => !list.includes(l))])} disabled={!links.length || !!bad.length || busy} className={primary}>{busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Add</button>
+        </div>
+        <p className={`text-meta ${bad.length ? 'text-fail-text' : 'text-fg-3'}`}>{bad.length ? `Not a git repository link: ${bad.join(', ')}` : 'A git repository (https:// or git@) whose skills/ folder holds one folder per skill. Yours win on the same name.'}</p>
+      </div>
+    </div>
+  )
+}
+
 function Skills({ setup, toast, saveConfig, reload }: { setup?: SetupView; toast: Toast; saveConfig: SaveConfig; reload: () => void }) {
-  const [source, setSource] = useState('')
-  useEffect(() => setSource(setup?.skillSource ?? ''), [setup?.skillSource])
   if (!setup) return <Skeleton rows={4} />
-  const install = () => api('/setup/skills', {}).then(() => { toast('Installed in ~/.claude/skills'); reload(); refresh('/method') }, (e: Error) => toast(e.message, 'error'))
+  const install = () => api('/setup/skills', {}).then(() => { toast('Concierge’s skills are up to date for its agents'); reload(); refresh('/method') }, (e: Error) => toast(e.message, 'error'))
   const missing = setup.skills.filter((s) => !s.installed)
 
   return (
     <>
       <OrgSkills toast={toast} />
-      <Group title="Skill source" hint="A git repository of skills. A new setup installs its skills into ~/.claude/skills, never over one you have; Concierge ships none of its own.">
-        <div className="flex flex-wrap items-center gap-2 px-3.5 py-3">
-          <input value={source} onChange={(e) => setSource(e.target.value)} spellCheck={false} aria-label="Skill source" className={`${input} min-w-0 flex-1 basis-64 font-mono`} />
-          <button onClick={() => saveConfig({ skillSource: source.trim() }, 'Skill source saved')} disabled={source.trim() === setup.skillSource} className={primary}><Check className="size-3.5" />Save</button>
-          {missing.length > 0 && <button onClick={install} className={quiet}><Sparkles className="size-3.5" />Install {missing.length} missing</button>}
+      <Group title="Skill sources" hint="Git repositories of skills, kept in Concierge's own folder and given to its agents beside yours: on the same name yours wins. Nothing is written into your ~/.claude.">
+        <div className="p-3">
+          <SkillSources list={setup.skillSources} skills={setup.skills} onSave={(list) => Promise.resolve(saveConfig({ skillSources: list }, 'Skill sources saved')).then(() => { forgetSkills(); refresh('/method') })} />
+          {setup.skillSources.length > 0 && <button onClick={install} className={`${quiet} mt-2`}><Sparkles className="size-3.5" />{missing.length ? `Get ${missing.length} missing` : 'Fetch them again now'}</button>}
         </div>
         <div className="flex flex-wrap gap-1.5 px-3.5 pb-3">
           {setup.skills.map((s) => (
-            <span key={s.name} title={s.installed ? 'Installed' : 'Not installed here'} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-meta ${s.installed ? 'bg-fill text-fg-2' : 'bg-wait/10 text-wait-text ring-1 ring-wait/30'}`}>
+            <span key={s.name} title={s.yours ? 'Yours (~/.claude/skills): the agents use it' : s.installed ? "Concierge's copy, in its own folder" : 'Not available to the agents here'} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-meta ${s.installed ? 'bg-fill text-fg-2' : 'bg-wait/10 text-wait-text ring-1 ring-wait/30'}`}>
               {s.installed ? <CircleCheck className="size-3 text-ok" /> : <CircleAlert className="size-3" />}{s.name}
             </span>
           ))}
@@ -1872,6 +1920,8 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
 export { guessSkill } from '../skillGuess.ts'
 export type FoundSkill = { name: string; invoke: string; description?: string; argumentHint?: string; source: string; kind: 'skill' | 'command'; command: string; args: { word: string; token?: string }[] }
 const skillCache = new Map<string, Promise<FoundSkill[]>>()
+/** Read the skills again on the next ask: a skill source was added or taken off. */
+export const forgetSkills = () => skillCache.clear()
 export const skillsFor = (work: string) => { if (!skillCache.has(work)) skillCache.set(work, api(`/skills?work=${work}`).catch(() => [])); return skillCache.get(work)! }
 // what each placeholder becomes in the preview
 const SAMPLE: Record<string, string> = { '{number}': '4649', '{repo}': 'acme/api', '{ids}': 'ENG-1435 ENG-1221', '{stack}': '12' }

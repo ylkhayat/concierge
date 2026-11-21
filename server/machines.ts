@@ -16,7 +16,10 @@ import { scrub } from './scrub.ts'
 import { randomBytes } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { state } from './store.ts'
-import { spawnAgent, type ProviderId } from './providers.ts'
+import { accountOf, accounts, identityOf, loginText, spawnAgent, type ProviderId } from './providers.ts'
+import { UNTRUSTED_ARGS, untrustedEnv } from './untrusted.ts'
+import { critElsewhere, liveCrit } from './crit.ts'
+import { fleetMachines } from './perMachine.ts'
 import { call, serveWorker, tokenIn, type WorkerStatus } from './worker.ts'
 import { runningHere, type Running } from './versions.ts'
 
@@ -76,30 +79,87 @@ async function refresh() {
     if (!!status !== !!was?.status) console.log(`machines: ${name} ${status ? `answers at ${b.worker} (${status.slots} slots)` : `doesn't answer at ${b.worker}`}`)
     if (status && !was?.status) cameBack?.(name, !looked)
     machines.set(name, { name, base: b.worker, status, seen: status ? Date.now() : was?.seen ?? 0 })
+    critElsewhere(name, status?.crit)
   }
-  for (const n of machines.keys()) if (!names.has(n)) machines.delete(n)
+  for (const n of machines.keys()) if (!names.has(n)) { machines.delete(n); critElsewhere(n) }
   looked = true
 }
 let looked = false // the first look after a start: every machine is "new" then, not back
 if (fleet.machine) { void refresh(); setInterval(() => void refresh(), 15_000).unref() }
 
+// --- which machine does a repository's work: the placement matrix ----------------------------------------------------
+// A repository is allowed on a machine or not (Settings → Repositories, config.cloneOn: the repository, or its whole
+// organization). Its work goes, in order: the main server (the control plane) when it is allowed there, then the
+// machine you work on, then the others by name; each only once it has the checkout. Computed from what every machine
+// says every 15s, so a machine joining, leaving or finishing a clone, or a change of who may have what, moves it at once.
+
+/** Is `repo` allowed on `machine`: itself, or its whole organization. */
+export const allowedOn = (repo: string, machine: string) => [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(machine))
+/** The machine this server runs on, as the matrix names it (one machine: none). */
+const main = () => fleet.machine
+export type Route = { repo: string; order: string[]; allowed: string[]; home?: string; why?: string }
+/** Where `repo`'s work goes, best first: the machines that have its checkout now, in the matrix's order. */
+export function route(repo: string): Route {
+  const all = [...new Set([main(), ...fleetMachines(), ...machines.keys()])].filter((m): m is string => !!m)
+  const allowed = all.filter((m) => allowedOn(repo, m))
+  const ready = allowed.filter((m) => m === main() ? !(repo in cloneState()) : !!machines.get(m)?.status?.repos?.includes(repo))
+  const rank = (m: string) => (m === main() ? 0 : m === state.settings.workMachine ? 1 : 2)
+  const order = ready.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+  const offline = allowed.filter((m) => m !== main() && !machines.get(m)?.status)
+  const why = order.length ? undefined : !allowed.length ? `${repo} isn't allowed on any machine (Settings → Repositories)`
+    : offline.length === allowed.length ? `${repo} is only allowed on ${offline.join(' and ')}, which ${offline.length === 1 ? "isn't" : "aren't"} online`
+    : `${repo} is still being cloned on ${allowed.join(' and ')}`
+  return { repo, order, allowed, home: order[0], why }
+}
+/** Every watched repository's route: what Settings shows, and what changes are logged by. */
+export const matrix = () => Object.keys(config.repos).map(route)
+
 /**
- * Where a run goes: the machine it ran on before (its worktree and session are there) if it has room, else the one
- * with the most room left, this one included. `here` is how many this machine runs and may run; `out` how many this
- * control plane already sent to each machine. Undefined: nowhere has room.
+ * Does `machine` run `account` as the account's own login? An account is one login (its plan, limits and spend):
+ * another machine signed in as someone else under its name takes none of its work, and says so (index.ts).
+ */
+export function loginOk(machine: string | undefined, account: string): boolean {
+  const pinned = accountOf(account).login
+  if (!pinned || !fleet.machine) return true
+  const there = !machine || machine === fleet.machine ? identityOf(account) : machines.get(machine)?.status?.who?.[account]
+  return !there || there === pinned
+}
+
+/** Why `repo`'s work on `account` can't go anywhere now, in a sentence; undefined when some machine can take it. */
+export function whyNowhere(repo: string, account: string): string | undefined {
+  if (!fleet.machine) return undefined
+  const r = route(repo)
+  if (r.why) return r.why
+  const a = accountOf(account)
+  const can = (m: string) => { const c = machines.get(m)?.status?.can; return !c || c.includes(account) } // one that doesn't say: as place() takes it
+  const signed = r.order.filter((m) => m === fleet.machine || can(m))
+  if (!signed.length) return `${repo} runs on ${r.order.join(' or ')}, where ${a.label} isn't signed in`
+  if (!signed.some((m) => loginOk(m, account))) return `${repo} runs on ${signed.join(' or ')}, where ${a.label} is signed in as someone other than ${loginText(a.login)}`
+  return undefined
+}
+
+/**
+ * Where a run goes. With a repository, the first machine in its route (the matrix) that has room; the machine it ran on
+ * before (its worktree and session are there) first, if that one has room and is in the route. Without one, the
+ * machine with the most room. Each only where its account is signed in as that account's login. `here` is how many
+ * this machine runs and may run; `out` how many this control plane already sent to each machine. Undefined: nowhere
+ * can take it now. '' is this machine with one machine.
  */
 export function place(prefer: string | undefined, here: { running: number; slots: number; freeMb: number; lacks?: boolean }, out: Map<string, number>, provider?: string, repo?: string): string | undefined {
   const room = new Map<string, number>()
   // a machine without the repository's checkout (not allowed there, or still cloning) gets none of its runs
-  if (!here.lacks && (here.freeMb >= LOW_MB || here.running === 0)) room.set(fleet.machine ?? '', capped(fleet.machine, here.slots) - here.running)
+  if (!here.lacks && (here.freeMb >= LOW_MB || here.running === 0) && (!provider || loginOk(undefined, provider))) room.set(fleet.machine ?? '', capped(fleet.machine, here.slots) - here.running)
   for (const m of machines.values()) {
     if (!m.status || m.status.freeMb < LOW_MB) continue
     if (provider && m.status.can && !m.status.can.includes(provider)) continue // that account isn't signed in (or its Ollama isn't running) there
+    if (provider && !loginOk(m.name, provider)) continue // signed in there as someone else
     if (repo && m.status.repos && !m.status.repos.includes(repo)) continue
     room.set(m.name, capped(m.name, m.status.slots) - Math.max(m.status.running, out.get(m.name) ?? 0))
   }
   for (const [k, v] of room) if (v <= 0) room.delete(k)
   if (prefer && room.has(prefer)) return prefer
+  // several machines: the matrix's order, and only it (a repository is allowed on a machine or not)
+  if (repo && fleet.machine) return route(repo).order.find((m) => room.has(m))
   return [...room.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
 }
 
@@ -151,12 +211,14 @@ export function serve(cap: () => number, own: () => Promise<{ cpu: number; mb: n
   const host = process.env.DECK_WORKER_HOST || (process.env.LINK === 'host' ? '0.0.0.0' : '127.0.0.1')
   served = serveWorker({
     port, host, token: accepted,
-    start: (s) => spawnAgent(s.provider as ProviderId, s.args, { cwd: s.cwd, stdin: s.stdin }),
+    // someone else's work keeps its fence here too: the control plane only marks it (runner.ts runAgent)
+    start: (s) => spawnAgent(s.provider as ProviderId, s.untrusted ? [...s.args, ...UNTRUSTED_ARGS] : s.args, { cwd: s.cwd, stdin: s.stdin, ...(s.untrusted && { env: untrustedEnv() }) }),
     // no room while this machine is the control plane itself (it runs its own), or low on memory
     status: () => {
       const freeMb = Math.round(freemem() / 1048576)
       return { name: fleet.machine!, role: process.env.DECK_ROLE, slots: fleet.elsewhere() && freeMb >= LOW_MB && !draining() ? slotsHere(cap()) : 0, running: served?.hosted.size ?? 0, freeMb,
-        cores: availableParallelism(), mb: Math.round(totalmem() / 1048576), cpu: usage.cpu, usedMb: usage.mb, can: can(), repos: Object.keys(config.repos).filter((r) => !(r in cloneState())) } // checked out here (what isn't is in cloneState)
+        cores: availableParallelism(), mb: Math.round(totalmem() / 1048576), cpu: usage.cpu, usedMb: usage.mb, can: can(), repos: Object.keys(config.repos).filter((r) => !(r in cloneState())), // checked out here (what isn't is in cloneState)
+        who: Object.fromEntries(accounts().flatMap((a) => { const w = identityOf(a.id); return w ? [[a.id, w]] : [] })), crit: liveCrit() }
     },
     busy: busyUnder,
     logs: () => recentLines().map(scrub),

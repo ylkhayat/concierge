@@ -2,13 +2,15 @@
 import { fleet } from './fleet.ts'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { access, cp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { access, lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
-import { config, repoPath, WORK_DIR } from './config.ts'
+import { config, configured, repoPath, WORK_DIR } from './config.ts'
 import { STATE_DIR } from './paths.ts'
-import { getMe, searchRepos } from './github.ts'
+import { CONCIERGE_SKILLS, ownHomes, refreshSkills } from './agentHome.ts'
+import { forgetSkillScan } from './skillScan.ts'
+import { getMe, myRepos, repoByName, searchRepos, type RepoHit } from './github.ts'
 
 const run = promisify(execFile)
 import { CLAUDE_HOME } from './agentHome.ts'
@@ -95,6 +97,36 @@ export async function suggestions() {
   return [...repos.values()].sort((a, b) => Number(b.watched) - Number(a.watched) || Number(b.paths.length > 0) - Number(a.paths.length > 0) || b.prs - a.prs)
 }
 
+/** owner/repo out of what was typed or pasted: a GitHub link (https, ssh, a PR or file inside it), or owner/repo itself. */
+export function repoOf(text: string): string | undefined {
+  const t = text.trim().replace(/\.git$/, '')
+  const m = t.match(/github\.com[:/]([\w.-]+)\/([\w.-]+)/i) ?? t.match(/^([\w.-]+)\/([\w.-]+)\/?$/)
+  return m ? `${m[1]}/${m[2].replace(/\.git$/, '')}` : undefined
+}
+
+export type RepoFound = RepoHit & { paths: string[]; watched: boolean }
+/**
+ * Repositories for the onboarding's search: yours whose name or description has every word typed, best first (the name
+ * itself, one that starts with it, then one that has it); a link or owner/repo is looked up as it is, so one outside your account
+ * works too. Each with its checkouts on this machine.
+ */
+export async function findRepos(q: string): Promise<RepoFound[]> {
+  const [list, local] = await Promise.all([myRepos(), localCheckouts()])
+  const exact = repoOf(q)
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean)
+  let hits: RepoHit[]
+  if (exact) {
+    const known = list.find((r) => r.repo.toLowerCase() === exact.toLowerCase())
+    const one = known ?? await repoByName(exact)
+    hits = one ? [one] : []
+  } else {
+    const score = (r: RepoHit) => { const name = r.repo.toLowerCase().split('/')[1], w = words[0] ?? ''; return name === w ? 0 : name.startsWith(w) ? 1 : r.repo.toLowerCase().includes(w) ? 2 : 3 }
+    hits = list.filter((r) => words.every((w) => `${r.repo} ${r.description ?? ''}`.toLowerCase().includes(w)))
+      .map((r, i) => ({ r, i, s: score(r) })).sort((a, b) => a.s - b.s || a.i - b.i).map((x) => x.r)
+  }
+  return hits.slice(0, 20).map((r) => ({ ...r, paths: local.get(r.repo.toLowerCase()) ?? [], watched: Object.keys(config.repos).some((w) => w.toLowerCase() === r.repo.toLowerCase()) }))
+}
+
 /** Is `path` a checkout of `repo`? */
 export async function validate(repo: string, path: string): Promise<{ ok: boolean; error?: string; clone?: boolean }> {
   const p = repoPath(path)
@@ -173,40 +205,92 @@ export async function ensureClones() {
 
 // --- skills --------------------------------------------------------------------------------
 
-// the skill source: a git repo of skills (Settings → Skills; github.com/ylkhayat/skills unless you pick another). A new
-// setup copies its skills into ~/.claude/skills; Concierge itself ships none.
-export const DEFAULT_SOURCE = 'https://github.com/ylkhayat/skills'
-const SOURCE_DIR = join(STATE_DIR, 'skill-source')
-let fetched: { url: string; at: number } | undefined
-/** The source's clone, fetched again when it is older than 10 minutes or the source changed. */
+// skill sources: git repositories of skills you add (onboarding, Settings → Skills), as many as you like. Each is cloned
+// into Concierge's state and kept current; their skills reach the agents through one folder of links
+// (agentHome.ts CONCIERGE_SKILLS: the first source wins a name, and yours win over all of them). Nothing is ever written
+// into your ~/.claude. A new setup has none: you add the ones you want.
+export const DEFAULT_SOURCE = 'https://github.com/ylkhayat/skills' // what a setup from before the list used, unless it picked one
+const SOURCES_DIR = join(STATE_DIR, 'skill-sources')
+/** The sources this setup uses: its list; else the one source it picked before; else, set up before sources were
+ *  chosen, the one it used then. A new setup: none. */
+export const skillSources = (): string[] => config.skillSources ?? (config.skillSource?.trim() ? [config.skillSource.trim()] : configured() ? [DEFAULT_SOURCE] : [])
+/** A source's folder: its owner and name, readable (github.com/acme/skills → acme-skills). */
+export const sourceSlug = (url: string) => url.replace(/\.git$/, '').split(/[/:]/).filter(Boolean).slice(-2).join('-').replace(/[^\w.-]/g, '_')
+let fetched: { key: string; at: number } | undefined
+/** Every source cloned and current (fetched again after 10 minutes, or when the list changed), and the agents' links redone. */
 async function sourceClone() {
-  const url = config.skillSource?.trim() || DEFAULT_SOURCE
-  if (fetched?.url === url && Date.now() - fetched.at < 600_000) return SOURCE_DIR
-  const had = (await run('git', ['-C', SOURCE_DIR, 'remote', 'get-url', 'origin'], { timeout: 5000 }).catch(() => ({ stdout: '' }))).stdout.trim()
-  if (had === url) {
-    // fetched and reset, not pulled: a source whose history was rewritten still updates
-    await run('git', ['-C', SOURCE_DIR, 'fetch', '-q', '--depth', '1', 'origin', 'HEAD'], { timeout: 60_000 })
-    await run('git', ['-C', SOURCE_DIR, 'reset', '-q', '--hard', 'FETCH_HEAD'], { timeout: 10_000 })
-  } else {
-    await rm(SOURCE_DIR, { recursive: true, force: true })
-    await run('git', ['clone', '-q', '--depth', '1', url, SOURCE_DIR], { timeout: 120_000 })
+  const urls = skillSources(), key = urls.join(' ')
+  if (fetched?.key === key && Date.now() - fetched.at < 600_000) return
+  await mkdir(SOURCES_DIR, { recursive: true })
+  for (const url of urls) {
+    const dir = join(SOURCES_DIR, sourceSlug(url))
+    const had = (await run('git', ['-C', dir, 'remote', 'get-url', 'origin'], { timeout: 5000 }).catch(() => ({ stdout: '' }))).stdout.trim()
+    try {
+      if (had === url) {
+        // fetched and reset, not pulled: a source whose history was rewritten still updates
+        await run('git', ['-C', dir, 'fetch', '-q', '--depth', '1', 'origin', 'HEAD'], { timeout: 60_000 })
+        await run('git', ['-C', dir, 'reset', '-q', '--hard', 'FETCH_HEAD'], { timeout: 10_000 })
+      } else {
+        await rm(dir, { recursive: true, force: true })
+        await run('git', ['clone', '-q', '--depth', '1', url, dir], { timeout: 120_000 })
+      }
+    } catch (e) { console.warn(`skills: ${url}: ${String((e as { stderr?: string }).stderr || (e as Error).message).trim().split('\n').pop()}`) }
   }
-  fetched = { url, at: Date.now() }
-  return SOURCE_DIR
+  // a source taken off the list goes
+  const kept = new Set(urls.map(sourceSlug))
+  for (const d of await readdir(SOURCES_DIR).catch(() => [] as string[])) if (!kept.has(d)) await rm(join(SOURCES_DIR, d), { recursive: true, force: true })
+  // one folder of links: each source's skills (its skills/ folder, else its top level), the first source's on a name
+  await rm(CONCIERGE_SKILLS, { recursive: true, force: true })
+  await mkdir(CONCIERGE_SKILLS, { recursive: true })
+  for (const url of urls) {
+    const root = join(SOURCES_DIR, sourceSlug(url)), dir = (await stat(join(root, 'skills')).then((x) => x.isDirectory(), () => false)) ? join(root, 'skills') : root
+    for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      if (!e.isDirectory() || e.name.startsWith('.') || !(await exists(join(dir, e.name, 'SKILL.md')))) continue
+      await symlink(join(dir, e.name), join(CONCIERGE_SKILLS, e.name)).catch(() => {}) // taken already: an earlier source has it
+    }
+  }
+  fetched = { key, at: Date.now() }
+  forgetSkillScan()
+  await refreshSkills().catch((e: Error) => console.warn('skills: relinking:', e.message)) // the agents see what was fetched
 }
-/** The source's skills, and whether each is installed here. */
+/** Every skill the sources give, with the source it comes from, and whether the agents have it (yours, or Concierge's). */
 export async function sourceSkills() {
-  const dir = join(await sourceClone(), 'skills')
-  const names = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name)
-  return Promise.all(names.map(async (name) => ({ name, installed: !!(await stat(join(SKILLS_DIR, name, 'SKILL.md')).catch(() => undefined)) })))
-}
-/** Copy the source's skills into ~/.claude/skills. Never overwrites one that is already there. */
-export async function installSourceSkills() {
-  const dir = join(await sourceClone(), 'skills')
-  return Promise.all((await sourceSkills()).map(async (s) => {
-    if (!s.installed) await cp(join(dir, s.name), join(SKILLS_DIR, s.name), { recursive: true })
-    return { ...s, installed: true }
+  await sourceClone()
+  const names = await Promise.all((await readdir(CONCIERGE_SKILLS).catch(() => [] as string[])).filter((n) => !n.startsWith('.')).sort().map(async (name) => {
+    const to = await readlink(join(CONCIERGE_SKILLS, name)).catch(() => '')
+    return { name, source: to.slice(SOURCES_DIR.length + 1).split('/')[0] }
   }))
+  return Promise.all(names.map(async ({ name, source }) => {
+    const at = join(SKILLS_DIR, name)
+    const entry = await lstat(at).catch(() => undefined)
+    const follows = !!(await stat(join(at, 'SKILL.md')).catch(() => undefined))
+    // yours: anything of that name in your skills (a folder, a link, even one this machine can't follow); the agents use
+    // it. Not yours: the agents use the source's, through Concierge's own folder (agentHome.ts), when they run in its folders
+    return { name, source, yours: !!entry, installed: !!entry || ownHomes, ...(entry?.isSymbolicLink() && !follows && { brokenLink: await readlink(at).catch(() => '?') }) }
+  }))
+}
+/**
+ * Make the source's skills the agents': fetch them into Concierge's own folder and relink the agents' skill folders.
+ * Nothing is written into your ~/.claude. A native install runs your own Claude Code in your folder, so there is no
+ * way to add them without touching yours: it says so instead.
+ */
+export async function installSourceSkills() {
+  if (!ownHomes) throw new Error('This install runs your own Claude Code in your ~/.claude, and Concierge never writes there: point it at commands of your own, or run it in Docker (bin/up), where its skills sit in its own folder')
+  fetched = undefined // fetched now, not from the last ten minutes
+  return sourceSkills()
+}
+
+/** Your skills and commands that are links this machine can't follow (in Docker: their target isn't mounted). */
+export async function brokenSkillLinks(): Promise<{ name: string; to: string }[]> {
+  const out: { name: string; to: string }[] = []
+  for (const d of [SKILLS_DIR, join(homedir(), '.claude', 'commands')]) {
+    for (const e of await readdir(d, { withFileTypes: true }).catch(() => [])) {
+      if (!e.isSymbolicLink()) continue
+      const at = join(d, e.name)
+      if (!(await stat(at).then(() => true, () => false))) out.push({ name: e.name.replace(/\.md$/, ''), to: await readlink(at).catch(() => '?') })
+    }
+  }
+  return out
 }
 
 /** The skills and commands already on this machine (~/.claude), to suggest instead of typing a name. */
@@ -235,12 +319,12 @@ export async function skillFile(name: string): Promise<string | undefined> {
   const nested = (await Promise.all((await dirs(SKILLS_DIR)).map(async (d) => ((await dirs(join(SKILLS_DIR, d))).includes(name) ? [join(SKILLS_DIR, d, name, 'SKILL.md')] : []))) ).flat()
   // ponytail: two levels covers ~/.claude/skills/synced/<bucket>/<name>
   const deeper = (await dirs(join(SKILLS_DIR, 'synced'))).map((b) => join(SKILLS_DIR, 'synced', b, name, 'SKILL.md'))
-  return firstThat([...direct, ...nested, ...deeper])
+  return firstThat([...direct, ...nested, ...deeper, join(CONCIERGE_SKILLS, name, 'SKILL.md')]) // a skill source's, last: yours win
 }
 
 export const skillExists = async (command: string) => {
   const name = command.trim().match(/^\/([\w:-]+)/)?.[1]
-  return !!name && !!(await firstThat([join(SKILLS_DIR, name, 'SKILL.md'), join(homedir(), '.claude', 'commands', `${basename(name)}.md`)]))
+  return !!name && !!(await firstThat([join(SKILLS_DIR, name, 'SKILL.md'), join(homedir(), '.claude', 'commands', `${basename(name)}.md`), join(CONCIERGE_SKILLS, name, 'SKILL.md')]))
 }
 
 /** A plugin skill (`plugin:name`): somewhere under ~/.claude/plugins as skills/<name>/SKILL.md or commands/<name>.md. */

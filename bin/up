@@ -10,7 +10,8 @@ cd "$(dirname "$(readlink -f "$0")")/.."
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33m%s\033[0m\n' "$*"; }
 fail() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
-get() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- || true; }
+get() { cat .env .env.fleet 2>/dev/null | grep -E "^$1=" | tail -1 | cut -d= -f2- || true; } # .env, then the fleet's .env.fleet
+[[ -f .env.fleet ]] && export COMPOSE_ENV_FILES=.env,.env.fleet # Compose fills ${...} from both
 # set KEY=value in .env, keeping everything else (and the file yours alone)
 put() { local k=$1 v=$2; { grep -vE "^$k=" .env || true; printf '%s=%s\n' "$k" "$v"; } > .env.tmp && mv .env.tmp .env && chmod 600 .env; }
 
@@ -27,24 +28,23 @@ if [[ ! -f .env ]]; then
   say "Made .env from .env.example"
 fi
 code=$(get CODE_DIR)
-if [[ -z $code || $code == */you/* ]]; then
-  guess="$HOME/code"; [[ -d $guess ]] || guess="$(dirname "$PWD")"
-  if [[ -t 0 ]]; then read -r -p "The folder that holds your clones [$guess]: " code; fi
-  code="${code:-$guess}"; code="${code/#\~/$HOME}"
-  mkdir -p "$code" && put CODE_DIR "$code"
-fi
+[[ $code == */you/* ]] && { put CODE_DIR ''; code=; } # .env.example's old placeholder
+if [[ -z $code ]]; then
+  say "CODE_DIR is empty: clones go to Concierge's own folder, ~/.local/state/${CONCIERGE_DIRNAME:-concierge}/codebases"
+  echo "  (set CODE_DIR in .env to the folder with your clones to use those instead)"
+else mkdir -p "$code"; fi
 [[ $(get HOST_UID) == "$(id -u)" ]] || put HOST_UID "$(id -u)"
 [[ $(get HOST_GID) == "$(id -g)" ]] || put HOST_GID "$(id -g)"
-# the fleet (several machines; a private extension cloned into fleet/): its layer and its Tailscale link, which the
-# onboarding signs in. sync-setup adds the machine roles once there is a second machine
-if [[ -f fleet/compose.fleet.yml && -z $(get COMPOSE_FILE) ]]; then
-  put COMPOSE_FILE docker-compose.yml:fleet/compose.fleet.yml
-  [[ -n $(get COMPOSE_PROFILES) ]] || put COMPOSE_PROFILES link
-  say "Fleet found: its Tailscale link starts too (you sign it in from the onboarding)"
-fi
+# the fleet (several machines; a private extension cloned into fleet/): Compose layers it in by itself
+# (docker-compose.override.yml links to it), with its Tailscale link, which the onboarding signs in
+[[ -f fleet/compose.fleet.yml ]] && say "Fleet found: its Tailscale link starts too (you sign it in from the onboarding)"
 dir=$(get CONCIERGE_DIRNAME); dir=${dir:-concierge}
 # what the container mounts: made here, so Docker doesn't make them as root
 mkdir -p "$HOME/.config/$dir" "$HOME/.local/state/$dir" "$HOME/.claude" "$HOME/.codex"
+[[ -n $code ]] || mkdir -p "$HOME/.local/state/$dir/codebases"
+# your skills that are links into a folder of yours (a skills repo you keep elsewhere, for any agent tool): that
+# folder is mounted too, at the same path, so the links work inside (SKILL_LINKS in .env)
+bin/skill-links --write
 
 say "Building and starting Concierge (a few minutes the first time)"
 docker compose up -d --build
@@ -89,4 +89,4 @@ done
 
 say "Concierge is up: $url"
 case $(uname) in Darwin) open "$url" ;; Linux) command -v xdg-open >/dev/null && xdg-open "$url" >/dev/null 2>&1 || true ;; esac
-say "The onboarding signs you in to GitHub$([[ -n $(get COMPOSE_FILE) ]] && echo ', Tailscale') and your agents. Updates: bin/update"
+say "The onboarding signs you in to GitHub$([[ -f fleet/compose.fleet.yml ]] && echo ', Tailscale') and your agents. Updates: bin/update"

@@ -11,8 +11,15 @@
 #   * * * * * ~/code/concierge/bin/update --if-asked >> ~/.local/state/concierge/update.log 2>&1
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
+# the settings: .env, then the fleet's own .env.fleet (several machines) on top; Compose reads both too
+envs() { cat .env .env.fleet 2>/dev/null || true; }
+# one value, the last one said; nothing (not a failure) when it isn't there
+envv() { envs | grep "^$1=" | tail -1 | cut -d= -f2- || true; }
+[[ -f .env.fleet ]] && export COMPOSE_ENV_FILES=.env,.env.fleet
+# your skills' links into a folder of yours: mounted too, so they work in the container (SKILL_LINKS)
+bin/skill-links --write || true
 force=0 asked=0 upstream=0
-grep -q '^CONCIERGE_UPSTREAM=merge' .env 2>/dev/null && upstream=1
+envs | grep -q '^CONCIERGE_UPSTREAM=merge' && upstream=1
 for a in "$@"; do case $a in --force) force=1 ;; --if-asked) asked=1 ;; --upstream) upstream=1 ;; --when-idle) ;; *) echo "bin/update: unknown option $a" >&2; exit 2 ;; esac; done
 # --when-idle: the default now, kept for old cron lines
 # a swap stops every agent mid-run (their background tests and evals die with it): it waits for a quiet moment unless
@@ -22,11 +29,11 @@ state="$HOME/.local/state/concierge"
 # an install from before the rename keeps its folders: the container mounts them by this name (docker-compose.yml)
 if [[ -d $HOME/.local/state/review-deck ]]; then
   state="$HOME/.local/state/review-deck"
-  grep -q '^CONCIERGE_DIRNAME=' .env 2>/dev/null || printf '\nCONCIERGE_DIRNAME=review-deck\n' >> .env
+  envs | grep -q '^CONCIERGE_DIRNAME=' || printf '\nCONCIERGE_DIRNAME=review-deck\n' >> .env
 fi
 # the container leaves this file when you press the button: it can't rebuild itself. The state folder syncs between
 # machines, so each one notes which ask it handled instead of deleting it (a delete let one machine eat the other's ask)
-name=$(grep '^DECK_NAME=' .env 2>/dev/null | cut -d= -f2-)
+name=$(envv DECK_NAME)
 # its own log per machine: the state folder syncs between machines, and one shared log mixed their updates, so each
 # one's Settings read the other's progress. Every line in UTC. (Cron's or the standby's own redirect still gets a copy.)
 # (one machine: cron already writes update.log, so only a run by hand in a terminal adds its copy)
@@ -103,10 +110,10 @@ if [[ -n $sync ]]; then
   docker rm -f $sync >/dev/null 2>&1 && echo "$(date -u): stopped the file sync (Syncthing): the machines keep in step over their own link now"
 fi
 # with its own Tailscale (LINK=host), the app asks that one who a machine asking to join is (join.ts): its socket goes in
-if grep -q '^LINK=host' .env 2>/dev/null && [[ -S /var/run/tailscale/tailscaled.sock ]] && ! grep -q '^TAILSCALE_SOCK_DIR=' .env; then
-  printf '\nTAILSCALE_SOCK_DIR=/var/run/tailscale\n' >> .env
+if envs | grep -q '^LINK=host' && [[ -S /var/run/tailscale/tailscaled.sock ]] && ! envs | grep -q '^TAILSCALE_SOCK_DIR='; then
+  printf '\nTAILSCALE_SOCK_DIR=/var/run/tailscale\n' >> "$([[ -f .env.fleet ]] && echo .env.fleet || echo .env)"
 fi
-if grep -qE '^COMPOSE_PROFILES=(.*,)?sync(,|$)' .env 2>/dev/null; then
+if envs | grep -qE '^COMPOSE_PROFILES=(.*,)?sync(,|$)'; then
   awk -F= '/^COMPOSE_PROFILES=/ { n = split($2, p, ","); o = ""; for (i = 1; i <= n; i++) if (p[i] != "sync") o = o (o ? "," : "") p[i]; print "COMPOSE_PROFILES=" o; next } { print }' .env > .env.tmp && mv .env.tmp .env
 fi
 # the commit deployed: the app's, and the extension's when there is one
@@ -128,13 +135,13 @@ swap() {
   mkdir -p "$state/review-pr" "$state/revise" # made here, not by Docker (which would make them root's on Linux)
   for d in review-pr revise; do
     if [[ -z $(ls -A "$state/$d" 2>/dev/null) ]] && c=$(docker compose ps -aq review-deck) && [[ -n $c ]]; then
-      home=$(grep '^DECK_HOME=' .env 2>/dev/null | cut -d= -f2-)
+      home=$(envv DECK_HOME)
       docker cp "$c:${home:-$HOME}/.local/state/$d/." "$state/$d/" >/dev/null 2>&1 || true
     fi
   done
   # something else decides where it runs (DECK_RESTART=no, an extension in fleet/): where it isn't running, only the
   # build is new, and it starts with it when it is started here
-  if grep -q '^DECK_RESTART=no' .env 2>/dev/null && [[ -z $(docker compose ps --status running -q review-deck) ]]; then
+  if envs | grep -q '^DECK_RESTART=no' && [[ -z $(docker compose ps --status running -q review-deck) ]]; then
     echo "$built" > "$deployed"
     echo "$(date -u): built $built_short; not running here, it starts with it when it is started here"; return
   fi
@@ -145,10 +152,10 @@ swap() {
   # Docker can reach one (its runtime or CDI devices), else on the CPU, so a missing GPU never takes Llama down
   # (profile ollama-windows: the Ollama app on Windows runs the models, bin/ollama-windows.ps1; only the passage to it
   # lives here)
-  if grep -qE '^COMPOSE_PROFILES=(.*,)?ollama-windows(,|$)' .env 2>/dev/null; then
+  if envs | grep -qE '^COMPOSE_PROFILES=(.*,)?ollama-windows(,|$)'; then
     docker compose up -d --quiet-pull ollama-windows && echo "$(date -u): ollama in the Windows app"
-  elif grep -qE '^COMPOSE_PROFILES=(.*,)?ollama(,|$)' .env 2>/dev/null; then
-    files=$(grep '^COMPOSE_FILE=' .env 2>/dev/null | cut -d= -f2-); files=${files:-docker-compose.yml}
+  elif envs | grep -qE '^COMPOSE_PROFILES=(.*,)?ollama(,|$)'; then
+    files=$(envv COMPOSE_FILE); files=${files:-docker-compose.yml}
     if docker info 2>/dev/null | grep -qi 'nvidia'; then
       COMPOSE_FILE="$files:compose.gpu.yml" docker compose up -d --quiet-pull ollama && echo "$(date -u): ollama on the GPU" \
         || { echo "$(date -u): ollama couldn't start on the GPU; on the CPU instead"; docker compose up -d --quiet-pull ollama; }
