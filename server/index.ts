@@ -78,7 +78,7 @@ import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
 import { bankView, writeBank } from './bank.ts'
 import { refusedForLimit } from './usage.ts'
-import { transition } from './lifecycle.ts'
+import { stateEpoch, transition } from './lifecycle.ts'
 import { cachedStackCheck, checkingStack, checkStack, partOf } from './stackCheck.ts'
 import { directionOf, setDirection } from './stackDirection.ts'
 import { planStack, type PlanItem } from './stackPlan.ts'
@@ -1142,7 +1142,17 @@ function askEnv(t: Ticket) {
 }
 
 // the PRs linked on Linear plus the ones its latest run opened, in repos you track (a run's text can name example URLs)
-const prsOf = (t: Ticket, run = Object.values(state.execs).filter((r) => r.ids.includes(t.id)).sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))[0]) =>
+// each ticket's latest run, from one pass over the runs, kept until one changes state (prsOf asked a pass per ticket)
+let latestRuns: { epoch: number; at: number; by: Map<string, ExecRun> } | undefined
+function latestRun(id: string) {
+  if (!latestRuns || latestRuns.epoch !== stateEpoch || Date.now() - latestRuns.at > 2000) {
+    const by = new Map<string, ExecRun>()
+    for (const r of Object.values(state.execs)) for (const t of r.ids) if (!by.has(t) || r.queuedAt > by.get(t)!.queuedAt) by.set(t, r)
+    latestRuns = { epoch: stateEpoch, at: Date.now(), by }
+  }
+  return latestRuns.by.get(id)
+}
+const prsOf = (t: Ticket, run = latestRun(t.id)) =>
   ([...t.prs, ...(run?.prs ?? []).filter((p) => p.repo in config.repos)].filter((p, i, a) => a.findIndex((q) => q.url === p.url) === i) as Ticket['prs'])
     .map((p) => ({ ...p, title: p.title ?? t.prs.find((q) => q.url === p.url)?.title }))
 // built once for the PR list and the board together (both read it on every change), kept half a second

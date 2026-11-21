@@ -54,12 +54,15 @@ type Thing = { state: RunState; error?: string }
  * alongside. An illegal move is still made (stopping a run halfway would be worse) but logged loudly and marked in
  * the event log, so a lifecycle bug shows up instead of hiding in a state nobody expected.
  */
+/** Bumped on every state change: what is worked out from the runs' states can be kept until it moves. */
+export let stateEpoch = 0
 export function transition<T extends Thing>(entity: Entity, id: string, run: string, thing: T, to: RunState, cause: string,
   extra: Partial<T> = {}, facts: Pick<RunEvent, 'kind' | 'costUsd' | 'turns' | 'refused' | 'skills' | 'steers'> = {}): T {
   const from = thing.state
   const ok = legal(from, to)
   if (!ok) console.warn(`lifecycle: ${entity} ${id} went ${from} → ${to} (${cause}), which the table doesn't allow`)
   Object.assign(thing, extra, { state: to })
+  stateEpoch++
   record({ at: new Date().toISOString(), entity, id, run, from, to, cause, ...facts, ...(to === 'failed' || to === 'interrupted' ? { error: thing.error?.slice(0, 300) } : {}), ...(ok ? {} : { illegal: true as const }) })
   return thing
 }

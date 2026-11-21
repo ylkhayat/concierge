@@ -42,6 +42,7 @@ export function verdict(w: { path: string; gone: boolean; dirty: number; unpushe
 }
 
 let cache: { at: number; list: Worktree[] } | undefined
+const asked = new Map<string, { sig: string; at: number; dirty: number; unpushed: number }>()
 
 // sizes: du takes seconds per big worktree through a container's file sharing, and they barely change, so each is
 // measured in the background, one at a time, and remembered for 30 minutes; the list never waits for it
@@ -67,6 +68,7 @@ function sizeLater(path: string) {
 
 export async function worktrees(fresh = false): Promise<Worktree[]> {
   if (!fresh && cache && Date.now() - cache.at < 60_000) return cache.list
+  if (fresh) asked.clear() // before removing anything, git is asked again about every one
   const crit = await liveCritDirs()
   // where open PRs' crit reviews live (so Restart crit keeps working), and which PRs Concierge still tracks open
   const openPrs = Object.values(state.prs).filter((p) => !p.closed)
@@ -83,14 +85,18 @@ export async function worktrees(fresh = false): Promise<Worktree[]> {
     })).filter((e) => e.path && e.path !== main)
     await Promise.all(entries.map(async (e) => {
       const gone = e.gone || !(await there(e.path))
-      const [dirty, unpushed, gitdir] = gone ? [0, 0, ''] : await Promise.all([
+      // its git folder, from the ".git" file a worktree has (no git process: starting one blocks the server a moment,
+      // and this ran three per worktree every minute; profiled, it was most of the server's busy time)
+      const gd = gone ? '' : await readFile(join(e.path, '.git'), 'utf8').then((t) => { const g = /^gitdir: (.+)$/m.exec(t)?.[1]?.trim() ?? ''; return g && (g.startsWith('/') ? g : join(e.path, g)) }, () => join(e.path, '.git'))
+      // "last used": its HEAD and HEAD log move on every checkout and commit (not its index: git status rewrites that)
+      const marks = gd ? (await Promise.all([join(gd, 'HEAD'), join(gd, 'logs', 'HEAD')].map((f) => stat(f).then((x) => x.mtimeMs, () => undefined)))).filter((m): m is number => m != null) : []
+      // what git says (changes, unpushed commits) is asked again only when its HEAD, log or index moved, or 10 minutes on
+      const sig = gd ? [...marks, await stat(join(gd, 'index')).then((x) => x.mtimeMs, () => 0)].join(',') : ''
+      const had = asked.get(e.path)
+      const [dirty, unpushed] = gone ? [0, 0] : had && had.sig === sig && Date.now() - had.at < 10 * 60_000 ? [had.dirty, had.unpushed] : await Promise.all([
         git(e.path, 'status', '--porcelain').then((s) => s.split('\n').filter(Boolean).length, () => 0),
         git(e.path, 'rev-list', '--count', 'HEAD', '--not', '--remotes').then((s) => Number(s.trim()) || 0, () => 0),
-        git(e.path, 'rev-parse', '--git-dir').then((s) => s.trim(), () => ''),
-      ])
-      // "last used": its HEAD and HEAD log move on every checkout and commit (not its index: git status rewrites that)
-      const gd = gitdir && (gitdir.startsWith('/') ? gitdir : join(e.path, gitdir))
-      const marks = gd ? (await Promise.all([join(gd, 'HEAD'), join(gd, 'logs', 'HEAD')].map((f) => stat(f).then((x) => x.mtimeMs, () => undefined)))).filter((m): m is number => m != null) : []
+      ]).then(([d, u]) => { asked.set(e.path, { sig, at: Date.now(), dirty: d, unpushed: u }); return [d, u] })
       const touchedAgo = marks.length ? Date.now() - Math.max(...marks) : Infinity
       const name = e.path.startsWith(OWN) ? e.path.slice(OWN.length + 1) : undefined
       const v = verdict({

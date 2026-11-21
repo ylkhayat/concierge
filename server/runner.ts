@@ -24,7 +24,7 @@ import { bankArgs } from './bank.ts'
 import { directionNote } from './stackDirection.ts'
 import { brief, capOf, GATHER_S, keepSession, modelOf, routeReply } from './replyRoute.ts'
 import { accountOf, accounts, available, chosenFor, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
-import { eventsSync, eventsWritten, transition } from './lifecycle.ts'
+import { eventsSync, eventsWritten, stateEpoch, transition } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
 import { mine, readLines } from './perMachine.ts'
 import { scrub } from './scrub.ts'
@@ -1184,7 +1184,16 @@ const runKey = (r: ExecRun) => `exec:${r.id}`
 /** Where the exec command keeps a repo's ticket worktrees: <clones>/worktrees/<repo name>. */
 const execWorktrees = (repo: string) => join(dirname(config.repos[repo]), 'worktrees', repo.split('/').pop()!)
 /** Is any of these tickets already queued or running? */
-export const ticketBusy = (id: string) => Object.values(state.execs).some((r) => (r.state === 'queued' || r.state === 'running') && r.ids.includes(id))
+// the tickets of runs queued or running, from one pass over the runs, kept until a run changes state (a new run is
+// queued through a state change too):
+// the board asks for each of its tickets on every rebuild (profiled: a pass over every run per ticket)
+let busyIds: { epoch: number; at: number; ids: Set<string> } | undefined
+export const ticketBusy = (id: string) => {
+  if (!busyIds || busyIds.epoch !== stateEpoch || Date.now() - busyIds.at > 2000) {
+    busyIds = { epoch: stateEpoch, at: Date.now(), ids: new Set(Object.values(state.execs).filter((r) => r.state === 'queued' || r.state === 'running').flatMap((r) => r.ids)) }
+  }
+  return busyIds.ids.has(id)
+}
 
 export function enqueueExec(ids: string[], repo: string, auto = false, action?: { label?: string; prompt?: string; resume?: string; costBefore?: number; allowedTools?: string[]; said?: string; batch?: string; role?: ExecRun['role']; brief?: string }): ExecRun | undefined {
   if (!ids.length || ids.some(ticketBusy) || !config.repos[repo] || (!config.exec.command && !action && !ids.every((id) => issueOf(id)))) return undefined
