@@ -1,15 +1,20 @@
 import { Bookmark } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Alert } from '../../server/alerts.ts'
 import { api } from '../lib.ts'
 import { focusBlock } from '../deskTime.ts'
 
 /** Bookmark a PR or ticket: it leads its list until it's done, and each change of its state is an alert (and a system notification). */
-export function PinButton({ pinKey, on, className, toast }: { pinKey: string; on?: boolean; className: string; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+export function PinButton({ pinKey, on: given, className, toast }: { pinKey: string; on?: boolean; className: string; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+  // shown at once, before the server answers; back as it was if it refuses; the list's own word wins once it comes
+  const [mine, setMine] = useState<boolean>()
+  useEffect(() => setMine(undefined), [given])
+  const on = mine ?? given
   const click = () => {
+    setMine(!on)
     // the browser asks once, on this click: notifications need a gesture
     if (!on && 'Notification' in window && Notification.permission === 'default') void Notification.requestPermission()
-    api('/pins', { key: pinKey, on: !on }).then(() => toast(on ? 'Bookmark removed' : 'Bookmarked: it stays on top, and each change of its state is an alert'), (e: Error) => toast(e.message, 'error'))
+    api('/pins', { key: pinKey, on: !on }).then(() => toast(on ? 'Bookmark removed' : 'Bookmarked: it stays on top, and each change of its state is an alert'), (e: Error) => { setMine(undefined); toast(e.message, 'error') })
   }
   return (
     <button className={className} onClick={click} aria-pressed={!!on} aria-label={on ? 'Remove bookmark' : 'Bookmark'}

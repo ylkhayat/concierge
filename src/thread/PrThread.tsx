@@ -12,6 +12,7 @@ import { Md } from '../components/Md.tsx'
 import { NextSteps } from '../components/NextSteps.tsx'
 import { Description, ghost, SubmitDialog, Turns, usePrThread, type PrThreadProps } from '../components/PrDetail.tsx'
 import { api, enc, param, setParam, useFeedLoading } from '../lib.ts'
+import { explainPath } from '../query.ts'
 import { appendDraft } from '../draft.ts'
 import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
 import { sayTo, useDiscussions, useWork, useWorkFeed, withTurns, WorkStrip, type View } from './Discussion.tsx'
@@ -194,7 +195,7 @@ export function PrThread(props: PrThreadProps) {
             <WorkStrip work={work} here={`pr:${pr.id}`} toast={toast} onOpen={(k) => k.startsWith('pr:') ? props.onSelect(k.slice(3)) : x.onOpenLinked({ kind: 'ticket', id: k.slice(7), label: k.slice(7), title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' })} />
             <Vitals key={whole && !shared ? 'stack' : 'own'} scope={stack && !shared ? { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } } : undefined}
                     shipping={<ShippingVital update={lastUpdate(feed)} title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
-                    topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number, prId: pr.id }} />
+                    topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number, prId: pr.id, explainPath: explainPath(pr) }} />
         </>)}
         pane={pane === 'overview' ? <Overview pr={pr} prs={prs} onSelect={props.onSelect} toast={toast} onOpen={(t) => setPane(t === 'stack' && !stackNext ? 'overview' : t)} /> : pane === 'stack' && stackNext ? <div className="flex h-full min-h-0 flex-col p-4">{stackNext}</div> : pane === 'explain' ? (
             <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>}>

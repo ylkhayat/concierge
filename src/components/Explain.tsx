@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Facts, Mark, Overlay, Skeleton, System } from '../../server/explain.ts'
-import { useApi } from '../query.ts'
+import { useApi, explainPath, keepSame } from '../query.ts'
 import { param, setParam, api, enc, flowControls, isTyping, useIsDark, type PrView } from '../lib.ts'
 
 type NodeInfo = { summary: string; responsibilities: string[]; businessRole?: string }
@@ -507,7 +507,7 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
 
   const task = pr.explain
   // cached per PR and per state of its explanation and push: back on a PR it shows at once, a new run or push reads it again
-  const q = useApi<Data>(`/prs/${enc(pr.id)}/explain?v=${task?.state ?? ''}:${task?.endedAt ?? ''}:${pr.headSha}`, { placeholderData: (prev) => prev })
+  const q = useApi<Data>(explainPath(pr), { placeholderData: keepSame(`/prs/${enc(pr.id)}/explain`) })
   const d = q.data ?? (q.isError ? { nodes: {}, stale: false } as Data : undefined)
 
   // start at an intermediate level: the most-changed system is open one level, the rest show previews

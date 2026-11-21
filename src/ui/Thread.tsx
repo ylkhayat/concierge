@@ -193,18 +193,17 @@ export function ThreadHeader({ crumb, title, status, meta, links, nav, actions, 
   crumb: ReactNode; title: string; status?: ReactNode; meta?: ReactNode; links?: ReactNode; nav?: ReactNode; actions?: ReactNode; back?: ReactNode
 }) {
   return (
-    <header className="space-y-2 px-3 pb-3 pt-3 sm:px-5 sm:pt-4 lg:px-7">
+    // compact: the crumb and title, then everything else on one row that wraps only when it must
+    <header className="space-y-1.5 px-3 pb-2 pt-2 sm:px-5 lg:px-7">
       {back}
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-fg-3">{crumb}</div>
-          <h1 className="mt-0.5 text-title font-semibold tracking-tight text-fg-1 [overflow-wrap:anywhere]">{title}</h1>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-meta text-fg-3">{crumb}</div>
+          <h1 className="line-clamp-2 text-reading font-semibold leading-snug tracking-tight text-fg-1 [overflow-wrap:anywhere]" title={title}>{title}</h1>
         </div>
         {actions && <div className="flex shrink-0 items-center gap-0.5">{actions}</div>}
       </div>
-      {status && <div className="flex flex-wrap items-center gap-2">{status}</div>}
-      {meta && <div className="flex flex-wrap items-center gap-1.5">{meta}</div>}
-      {(links || nav) && <div className="flex flex-wrap items-center gap-2">{links}{nav}</div>}
+      {(status || meta || links || nav) && <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">{status}{meta}{links}{nav}</div>}
     </header>
   )
 }

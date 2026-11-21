@@ -146,9 +146,9 @@ const PHASE: Record<NonNullable<D['phase']>, string> = { refreshing: 'Catching u
 
 /** Intent or Understanding: a card that knows one side of the work. Its few words on the tile, its gist on hover, the
  *  whole page when clicked; asked from the chat's box (Send to Intent / Understanding), it lights up and answers here. */
-export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen , prId }: {
+export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen, prId, explainPath }: {
   target: string; topic: Topic; d?: D; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>
-  onSteerPr?: (number: number, text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast; here?: number; prId?: string
+  onSteerPr?: (number: number, text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast; here?: number; prId?: string; explainPath?: string
   open?: boolean; onOpen?: () => void
 }): { tile: ReactNode; details: ReactNode } {
   const t = TOPIC[topic], b = d?.brief, started = !!b || !!d?.messages.length, busy = !!d?.busy
@@ -213,7 +213,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
       {prId ? (
         <div className="min-h-0 flex-1">
           <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>}>
-            {topic === 'understanding' ? <UnderstandingMap prId={prId} toast={toast} /> : <IntentFlow prId={prId} fork={b?.diagram?.kind === 'fork' ? b.diagram : undefined} toast={toast} />}
+            {topic === 'understanding' ? <UnderstandingMap prId={prId} path={explainPath} toast={toast} /> : <IntentFlow prId={prId} path={explainPath} fork={b?.diagram?.kind === 'fork' ? b.diagram : undefined} toast={toast} />}
           </Suspense>
         </div>
       ) : b || d?.messages.length ? <Slides slides={[...slidesOf(b, d?.messages ?? []), ...perPrSlides]} /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}

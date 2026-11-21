@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import type { Overlay } from '../../server/explain.ts'
 import { api, type PrView, type TicketView } from '../lib.ts'
 import { ciLabel, ciTone } from '../components/PrStack.tsx'
-import { useApi } from '../query.ts'
+import { useApi, explainPath, keepSame } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 import { Md } from '../components/Md.tsx'
 
@@ -33,7 +33,7 @@ export function Overview({ pr, prs, onSelect, onOpen, toast }: {
 }) {
   // the same read as the Explain tab (so it is already there when you open the tour)
   const task = pr.explain
-  const q = useApi<{ overlay?: Overlay; stale: boolean }>(`/prs/${enc(pr.id)}/explain?v=${task?.state ?? ''}:${task?.endedAt ?? ''}:${pr.headSha}`, { placeholderData: (prev) => prev })
+  const q = useApi<{ overlay?: Overlay; stale: boolean }>(explainPath(pr), { placeholderData: keepSame(`/prs/${enc(pr.id)}/explain`) })
   const b = q.data?.overlay?.business
   const writing = task?.state === 'running' || task?.state === 'queued'
   const explain = () => api(`/prs/${enc(pr.id)}/explain`, {}).then(() => toast('Explaining this PR'), (e: Error) => toast(e.message, 'error'))

@@ -11,13 +11,14 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Diagram } from '../../server/discussions.ts'
 import type { Overlay, Shape, Touched } from '../../server/explain.ts'
 import { api, enc } from '../lib.ts'
-import { useApi } from '../query.ts'
+import { keepSame, useApi } from '../query.ts'
 
 type Explained = { overlay?: Overlay; stale?: boolean; task?: { state: string } }
 
 /** The PR's explanation, or a way to have it written. */
-function useExplained(prId: string) {
-  return useApi<Explained>(`/prs/${enc(prId)}/explain`, { staleTime: 60_000 })
+function useExplained(prId: string, path?: string) {
+  // the same read as Explain and Overview (explainPath), so the picture opens at once when they already have it
+  return useApi<Explained>(path ?? `/prs/${enc(prId)}/explain`, { staleTime: 60_000, placeholderData: keepSame(`/prs/${enc(prId)}/explain`) })
 }
 
 function Missing({ prId, busy, toast }: { prId: string; busy: boolean; toast: (m: string, tone?: 'ok' | 'error') => void }) {
@@ -139,8 +140,8 @@ function MapCanvas({ o }: { o: Overlay }) {
   )
 }
 
-export function UnderstandingMap({ prId, toast }: { prId: string; toast: (m: string, tone?: 'ok' | 'error') => void }) {
-  const q = useExplained(prId), o = q.data?.overlay
+export function UnderstandingMap({ prId, path, toast }: { prId: string; path?: string; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+  const q = useExplained(prId, path), o = q.data?.overlay
   if (q.isLoading) return <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>
   if (q.isError) return <div className="flex h-full items-center justify-center px-6 text-center text-small text-fg-3">This PR isn’t tracked any more (closed, or never opened here), so there is no explanation to draw from.</div>
   if (!o) return <Missing prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} toast={toast} />
@@ -170,8 +171,8 @@ const Step = ({ label, children, strong }: { label: string; children: React.Reac
 )
 const Down = () => <ArrowDown className="mx-auto my-1 size-4 text-fg-4" aria-hidden />
 
-export function IntentFlow({ prId, fork, toast }: { prId: string; fork?: Extract<Diagram, { kind: 'fork' }>; toast: (m: string, tone?: 'ok' | 'error') => void }) {
-  const q = useExplained(prId), o = q.data?.overlay, s = o?.tour?.story
+export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: string; fork?: Extract<Diagram, { kind: 'fork' }>; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+  const q = useExplained(prId, path), o = q.data?.overlay, s = o?.tour?.story
   if (q.isLoading) return <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>
   if (q.isError) return <div className="flex h-full items-center justify-center px-6 text-center text-small text-fg-3">This PR isn’t tracked any more (closed, or never opened here), so there is no explanation to draw from.</div>
   if (!o) return <Missing prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} toast={toast} />

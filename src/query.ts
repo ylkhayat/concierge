@@ -52,3 +52,13 @@ export function useLive(prefixes: string[], read: () => unknown, fallback = 60_0
     return () => { removeEventListener('deck-stale', on); clearInterval(slow); if (t) clearTimeout(t) }
   }, [prefixes.join()])
 }
+
+/**
+ * placeholderData that keeps showing what a read said last while its next version loads, only for the same thing
+ * (`prefix`): switching to another PR shows its own loading, never the previous PR's answer for a moment.
+ */
+export const keepSame = (prefix: string) => <T,>(prev: T | undefined, q?: { queryKey: readonly unknown[] }) =>
+  typeof q?.queryKey[0] === 'string' && q.queryKey[0].startsWith(prefix) ? prev : undefined
+/** A PR's explanation, one read for Explain, Overview and the cards: versioned by its run and push, so a new one reads again. */
+export const explainPath = (pr: { id: string; headSha: string; explain?: { state?: string; endedAt?: string } }) =>
+  `/prs/${encodeURIComponent(pr.id)}/explain?v=${pr.explain?.state ?? ''}:${pr.explain?.endedAt ?? ''}:${pr.headSha}`

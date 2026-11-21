@@ -17,6 +17,7 @@ import { streamSSE } from 'hono/streaming'
 import { live, stale } from './live.ts'
 import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
+import { etag } from 'hono/etag'
 import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
@@ -536,6 +537,14 @@ app.use('*', async (c, next) => {
 // a route that throws answers with what went wrong, as JSON like every other answer (not the framework's bare
 // "Internal Server Error", which the page can't read), and says so in the log with the route
 app.onError((e, c) => { console.error(`[api] ${c.req.method} ${c.req.path}:`, e); return c.json({ error: e instanceof Error ? e.message : String(e) }, 500) })
+// an answer that hasn't changed goes back as an empty 304 (the page's browser keeps the last one and asks with its
+// ETag): the big reads (an explanation, a feed, the setup) aren't sent and parsed again. Never the live stream or a profile
+const tagged = etag({ weak: true })
+app.use('*', async (c, next) => {
+  if (c.req.method !== 'GET' || c.req.path.endsWith('/events') || c.req.path.includes('/debug/')) return next()
+  await tagged(c, next)
+  if (c.res.status === 200 || c.res.status === 304) c.header('Cache-Control', 'no-cache') // kept, but asked again every time
+})
 // the role the page is in comes with each request: what it starts runs that role's commands (roles.ts)
 app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
 // a machine that may not save (the other one holds the lease, or this one just woke) takes no clicks: a reply or a run
