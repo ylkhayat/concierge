@@ -1165,7 +1165,7 @@ function ticketViews(): TicketView[] {
 function buildTicketViews(): TicketView[] {
   const runs = Object.values(state.execs).sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))
   const views: TicketView[] = execBoard.tickets.map((t) => {
-    const run = runs.find((r) => r.ids.includes(t.id))
+    const run = latestRun(t.id) // the index, not a search of every run per ticket (profiled)
     // every PR the ticket has, bottom of the stack first, each with its own CI and threads
     const all = stackOrder(prsOf(t, run).map((p) => ({ ...p, ...execBoard.health[`${p.repo}#${p.number}`] })))
     const prs = all.filter((p) => !p.merged && p.state !== 'CLOSED')

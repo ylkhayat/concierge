@@ -411,7 +411,7 @@ export function save() {
       if (c.length) db.write(c)
       slow('save state', t)
     }).catch((e) => console.error('save state:', (e as Error).message))
-  }, 300)
+  }, 1000) // a busy run saves many times a second, and each save reads every entry for what changed: once a second is plenty
 }
 export function saveNow() {
   if (fence()) return

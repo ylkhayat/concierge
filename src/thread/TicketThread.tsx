@@ -101,7 +101,7 @@ export function TicketThread(props: TicketThreadProps) {
           <Vitals shipping={<ShippingVital update={lastUpdate(feed)} title={t.queued ? 'Queued' : t.busy ? 'The agent is working' : runAsks ? 'The agent asks you' : next ? TITLE[next](t) : 'All clear'} tone={t.busy ? 'run' : runAsks || asking ? 'wait' : next ? 'run' : 'ok'} busy={t.busy}
                                            at={t.busy ? 1 : next === 'run' ? (run ? 2 : 1) : next === 'dock' ? 2 : next ? 3 : 4}
                                            why={t.queued ? queuedText(t.queued) : t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}
-                  topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: t.prs.length > 1 ? steerPr : undefined, toast }} />
+                  topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: t.prs.length > 1 ? steerPr : undefined, toast, prId: t.pr ? `${t.pr.repo}#${t.pr.number}` : undefined }} />
       </>)}
       pane={pane === 'overview' ? <TicketOverview t={t} why={!t.busy && next ? TITLE[next](t) : undefined} onPr={openPr} onOpen={() => setPane('ticket')} onStack={props.onSelect} /> : pane === 'domain' ? <DomainView path={`/exec/tickets/${encodeURIComponent(t.id)}/domain`} focus={role === 'design' ? 'design' : 'product'} />
         : ticketBody}

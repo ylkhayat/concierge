@@ -196,7 +196,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
   ) })
   // the whole card, under the row, when its tile is clicked: what it knows, then what you asked it
   const details = open ? (
-    <div className={`card flex h-full flex-col gap-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
+    <div className={`card flex ${prId ? 'h-full' : ''} flex-col gap-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
       <div className="flex flex-wrap items-center gap-2">
         <t.icon className="size-4" style={{ color: lane }} />
         <span className="text-small font-semibold text-fg-1">{t.label}</span>
@@ -279,7 +279,7 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
       )}
       {/* what a clicked one holds: floating over the panel under the row, so nothing below it moves */}
       {(v[0].details || v[1].details) && (
-        <div className={inline ? '' : 'absolute inset-x-3 top-full z-30 -mt-1 overflow-hidden rounded-card shadow-[var(--e3)]'} style={inline ? undefined : { height: room }}>{v[0].details}{v[1].details}</div>
+        <div className={inline ? '' : `absolute inset-x-3 top-full z-30 -mt-1 overflow-hidden rounded-card shadow-[var(--e3)] ${rest.prId ? '' : 'max-h-[min(70vh,560px)] overflow-y-auto'}`} style={inline || !rest.prId ? undefined : { height: room }}>{v[0].details}{v[1].details}</div>
       )}
     </div>
   )
