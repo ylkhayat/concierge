@@ -171,8 +171,11 @@ async function pullFiles() {
     try {
       const r = await call<Awaited<ReturnType<typeof filesSince>>>(peer.base, token(), 'POST', '/x/replica-files', { since: was?.ver ?? 0, proc: was?.proc }, 60_000)
       const todo = r.entries.filter(([k, size, mtimeMs]) => travels(k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)) && takes(k, peer, { size, mtimeMs }, index.get(k)))
-      // the settings first: a machine that just joined has thousands of files to take, and shows its onboarding until these come
-      todo.sort((a, b) => Number(b[0].startsWith('config:')) - Number(a[0].startsWith('config:')))
+      // the settings first: a machine that just joined has thousands of files to take, and shows its onboarding until
+      // these come. config.json and the other files at the top of the settings before the accounts' homes beside them
+      // (each a whole agent home, sessions and all: a hundred megabytes and more)
+      const first = (k: string) => k === 'config:config.json' ? 0 : k.startsWith('config:') && !k.slice(7).includes('/') ? 1 : k.startsWith('config:') ? 2 : 3
+      todo.sort((a, b) => first(a[0]) - first(b[0]))
       let left = todo.length
       const failed: string[] = []
       // how far it is, while it goes (a first pull takes a while): Settings → Machines and bin/standby read it
