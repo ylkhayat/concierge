@@ -15,7 +15,7 @@ function machine(name: string, port: number, peerPort: number, peer: string, tok
   const state = join(root, 'state', 'concierge'), config = join(root, 'config', 'concierge')
   mkdirSync(join(state, 'hosts'), { recursive: true }); mkdirSync(config, { recursive: true })
   writeFileSync(join(state, 'worker-token'), token + '\n')
-  writeFileSync(join(state, 'hosts', `${peer}.json`), JSON.stringify({ worker: `http://127.0.0.1:${peerPort}` }))
+  writeFileSync(join(state, 'hosts', `${peer}.json`), JSON.stringify({ worker: `http://127.0.0.1:${peerPort}`, active: peer === 'win' })) // win holds the lease (HOLDER)
   const p = spawn(process.execPath, [join(here, 'testdata', 'replica-machine.ts')], {
     env: { ...process.env, XDG_STATE_HOME: join(root, 'state'), XDG_CONFIG_HOME: join(root, 'config'), HOME: root, CONCIERGE_FLEET: join(here, 'testdata', 'fleet-test.mjs'),
       DECK_NAME: name, HOLDER: 'win', ...(holderFile && { HOLDER_FILE: holderFile }), DECK_WORKER_PORT: String(port), DECK_WORKER_HOST: '127.0.0.1', DECK_REPLICA_MS: '200', DECK_REPLICA_FILES_MS: '400', LINEAR_API_KEY: '', GITHUB_TOKEN: '' },
@@ -98,4 +98,14 @@ test("the agents' conversations travel by the folder each run worked in: clones 
   const p = sessionDir(STATE_DIR)
   assert.ok(`${p}-wt-5200`.startsWith(p)) // a worktree in Concierge's state folder is one of its runs
   assert.ok(!'-Users-me-somewhere-else'.startsWith(p))
+})
+
+test('the settings come only from the machine running Concierge, as it has them', async () => {
+  const { takes } = await import('./replica.ts')
+  const old = { size: 10, mtimeMs: 1 }, fresh = { size: 2, mtimeMs: 9 }
+  assert.equal(takes('config:config.json', { active: false }, fresh, old, false), false) // a new machine's own, newer: not taken
+  assert.equal(takes('config:config.json', { active: false }, fresh, old, true), false) // the holder takes none
+  assert.equal(takes('config:config.json', { active: true }, old, fresh, false), true) // the holder's, even older: taken
+  assert.equal(takes('config:config.json', { active: true }, old, old, false), false) // the same: nothing to do
+  assert.equal(takes('state:logs/a.log', { active: false }, fresh, old, true), true) // the rest: newest wins
 })

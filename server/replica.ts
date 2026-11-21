@@ -23,12 +23,12 @@ import { applyRemote, db } from './store.ts'
 import { call } from './worker.ts'
 
 // --- where the other machines answer: their heartbeats (hosts/<name>.json, bin/standby) say ------------------------
-export async function peers(): Promise<{ name: string; base: string }[]> {
-  const dir = join(STATE_DIR, 'hosts'), out: { name: string; base: string }[] = []
+export async function peers(): Promise<{ name: string; base: string; active?: boolean }[]> {
+  const dir = join(STATE_DIR, 'hosts'), out: { name: string; base: string; active?: boolean }[] = []
   for (const f of await readdir(dir).catch(() => [] as string[])) {
     if (!f.endsWith('.json') || f.startsWith('.') || f.slice(0, -5) === fleet.machine) continue
-    const b = JSON.parse(await readFile(join(dir, f), 'utf8').catch(() => '{}')) as { worker?: string }
-    if (b.worker && /^https?:\/\/[\w.:[\]-]+$/.test(b.worker)) out.push({ name: f.slice(0, -5), base: b.worker })
+    const b = JSON.parse(await readFile(join(dir, f), 'utf8').catch(() => '{}')) as { worker?: string; active?: boolean }
+    if (b.worker && /^https?:\/\/[\w.:[\]-]+$/.test(b.worker)) out.push({ name: f.slice(0, -5), base: b.worker, active: b.active })
   }
   return out
 }
@@ -155,13 +155,21 @@ const pulled = new Map<string, { proc: string; ver: number; at: number; pending:
 export const newer = (there: { size: number; mtimeMs: number }, here?: { size: number; mtimeMs: number }) =>
   !here || (there.mtimeMs > here.mtimeMs && (there.size !== here.size || there.mtimeMs - here.mtimeMs > 1))
 
+/** Whether to take that file from that machine. The settings come only from the machine running Concierge (the lease),
+ *  as it has them: a machine that just joined has newer ones of its own (its onboarding), and newest-wins would hand
+ *  those (no repositories) to every machine. Everything else: whichever copy is newer. */
+export function takes(k: string, peer: { active?: boolean }, there: { size: number; mtimeMs: number }, here: { size: number; mtimeMs: number } | undefined, holder = fleet.mayWrite()) {
+  if (!k.startsWith('config:')) return newer(there, here)
+  return !holder && !!peer.active && (!here || here.size !== there.size || here.mtimeMs !== there.mtimeMs)
+}
+
 async function pullFiles() {
   await (scanned ??= scan())
   for (const peer of await peers()) {
     const was = pulled.get(peer.name)
     try {
       const r = await call<Awaited<ReturnType<typeof filesSince>>>(peer.base, token(), 'POST', '/x/replica-files', { since: was?.ver ?? 0, proc: was?.proc }, 60_000)
-      const todo = r.entries.filter(([k, size, mtimeMs]) => travels(k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)) && newer({ size, mtimeMs }, index.get(k)))
+      const todo = r.entries.filter(([k, size, mtimeMs]) => travels(k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)) && takes(k, peer, { size, mtimeMs }, index.get(k)))
       let left = todo.length
       const failed: string[] = []
       for (const [k, size, mtimeMs] of todo) try {
