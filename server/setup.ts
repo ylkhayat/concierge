@@ -124,13 +124,32 @@ export async function cloneRepo(repo: string, at?: string): Promise<{ path: stri
   return { path }
 }
 
+/**
+ * Take a checkout off this machine (it was unticked here), but only when nothing would be lost: no uncommitted
+ * changes, no commits that aren't on the remote, and no worktree using it (an agent's run). Undefined when it went;
+ * otherwise why it stays.
+ */
+export async function takeOff(path: string): Promise<string | undefined> {
+  const git = (args: string[]) => run('git', ['-C', path, ...args], { timeout: 20_000 }).then((r) => r.stdout.trim())
+  try {
+    if (await git(['status', '--porcelain'])) return 'kept: it has uncommitted changes'
+    if (await git(['log', '--branches', '--not', '--remotes', '--oneline', '-1'])) return 'kept: it has commits not pushed'
+    if ((await git(['worktree', 'list', '--porcelain'])).split('\n').filter((l) => l.startsWith('worktree ')).length > 1) return 'kept: a worktree (an agent run) still uses it'
+  } catch (e) { return `kept: ${(e as Error).message.split('\n')[0].slice(0, 120)}` }
+  await rm(path, { recursive: true, force: true })
+  scanned = undefined
+  return undefined
+}
+
 // --- every watched repository on this machine -------------------------------------------
 // config.json is shared, checkouts are not: a machine missing one clones it into its working directory. One at a time,
 // in the background; what is cloning or failed shows on the repository's card.
 const clones = new Map<string, string>() // repo → 'cloning', 'not-here' (not allowed on this machine), or why it failed
 /** May this machine clone `repo`? With one machine always; with several, only where it is allowed (config.cloneOn). */
 // a key is a repository, or a whole organization as "owner/*" (its repositories now and later)
-export const mayClone = (repo: string) => !fleet.machine || [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(fleet.machine!))
+/** Was it unticked on this machine? Then the checkout goes (see takeOff), and it isn't cloned again. */
+export const unticked = (repo: string) => !!fleet.machine && !!config.removeFrom?.[repo]?.includes(fleet.machine)
+export const mayClone = (repo: string) => !unticked(repo) && !fleet.machine || [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(fleet.machine!))
 export const cloneState = () => Object.fromEntries(clones)
 let cloningNow = false
 export async function ensureClones() {
@@ -140,7 +159,10 @@ export async function ensureClones() {
   cloningNow = true
   try {
     for (const [repo, path] of Object.entries(config.repos)) {
-      if (await stat(path).then(() => true, () => false)) { clones.delete(repo); continue }
+      if (await stat(path).then(() => true, () => false)) {
+        if (unticked(repo)) { const why = await takeOff(path); clones.set(repo, why ?? 'not-here'); if (!why) console.log(`repos: took ${repo} off this machine`) } else clones.delete(repo)
+        continue
+      }
       if (!mayClone(repo)) { clones.set(repo, 'not-here'); continue }
       clones.set(repo, 'cloning')
       console.log(`repos: cloning ${repo} into ${path}`)

@@ -16,6 +16,8 @@ export type Config = {
   // with several machines: the ones each repository (or organization, "owner/*") may be cloned onto (a company may keep a repository off some). A
   // new machine clones none until you allow it; a checkout already there stays (delete the folder to take it off)
   cloneOn?: Record<string, string[]>
+  // the machines a repository was unticked on: each takes its checkout off (only when nothing would be lost)
+  removeFrom?: Record<string, string[]>
   port: number
   pollSeconds: number
   maxJobs: number

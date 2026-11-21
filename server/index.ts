@@ -1800,7 +1800,9 @@ app.post('/base', async (c) => {
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async (light = false) => ({
   configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
-  workDir: WORK_DIR, clones: cloneState(), machine: fleet.machine, machines: fleetMachines(), cloneOn: config.cloneOn ?? {},
+  workDir: WORK_DIR, clones: cloneState(), machine: fleet.machine, machines: fleetMachines(), cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
+  // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
+  checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
@@ -1823,9 +1825,11 @@ app.post('/repos/clone-on', async (c) => {
   void ensureClones()
   return c.json(await setupView())
 })
+// unticking also takes the checkout off that machine (when nothing would be lost: setup.ts takeOff); ticking again undoes it
 const allowClone = (repo: string, machine: string, on: boolean) => {
-  const now = new Set(config.cloneOn?.[repo] ?? []); if (on) now.add(machine); else now.delete(machine)
-  saveConfig({ cloneOn: { ...config.cloneOn, [repo]: [...now] } })
+  const now = new Set(config.cloneOn?.[repo] ?? []), off = new Set(config.removeFrom?.[repo] ?? [])
+  if (on) { now.add(machine); off.delete(machine) } else { now.delete(machine); if (!repo.endsWith('/*')) off.add(machine) }
+  saveConfig({ cloneOn: { ...config.cloneOn, [repo]: [...now] }, removeFrom: { ...config.removeFrom, [repo]: [...off] } })
 }
 app.post('/setup/clone', async (c) => {
   const { repo } = await c.req.json() as { repo: string }

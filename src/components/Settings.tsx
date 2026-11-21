@@ -408,7 +408,7 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
             </div>
           )}
           <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
-                    machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org}
+                    machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org} removed={setup?.removeFrom?.[repo] ?? []} here={Object.entries(setup?.checkedOut ?? {}).filter(([, rs]) => rs.includes(repo)).map(([m]) => m)}
                     onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${m}` : `${repo} stays off ${m}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
                     accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
           </Fragment>
@@ -447,7 +447,7 @@ function MachineChips({ label, machines, machine, on, locked, onToggle }: { labe
       <span className="mr-0.5 text-meta text-fg-4">Cloned on</span>
       {machines.map((m) => { const yes = on(m), why = locked?.(m); return (
         <button key={m} role="switch" aria-checked={yes} disabled={!!why} onClick={() => onToggle(m, !yes)}
-                title={why ?? (yes ? `Allowed on ${m}: click to stop cloning it there (a checkout already there stays until you delete it)` : `Not on ${m}: click to allow it and clone it there`)}
+                title={why ?? (yes ? `On ${m}: untick to take it off there (its checkout is removed once nothing would be lost: no uncommitted changes, unpushed commits or running agents)` : `Not on ${m}: tick to clone it there`)}
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta transition-colors disabled:cursor-default ${yes ? 'bg-accent-soft font-medium text-accent-text ring-1 ring-accent/30' : 'bg-fill text-fg-3 hover:text-fg-1'}`}>
           {yes ? <Check className="size-3" /> : <Plus className="size-3" />}{m}{m === machine && <span className="font-normal text-fg-4">· this one</span>}
         </button>
@@ -456,9 +456,9 @@ function MachineChips({ label, machines, machine, on, locked, onToggle }: { labe
   )
 }
 
-function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], onAllow }: {
+function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow }: {
   clone?: string // not on this machine yet: 'cloning', 'not-here' (not allowed on it), or why the clone failed
-  machines?: string[]; machine?: string; allowed?: string[]; byOrg?: string[]; onAllow?: (machine: string, on: boolean) => void // several machines: where it may be cloned
+  machines?: string[]; machine?: string; allowed?: string[]; byOrg?: string[]; removed?: string[]; here?: string[]; onAllow?: (machine: string, on: boolean) => void // several machines: where it may be cloned
   repo: string; path: string; meta?: BaseInfo['meta']; task?: NonNullable<Health['base']>[string]; toast: Toast; onRemove: () => void
   accounts: { id: string; label: string }[]; pin?: string; onPin: (account?: string) => void
 }) {
@@ -479,11 +479,11 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-body font-semibold">{repo}</div>
           <div className="truncate font-mono text-meta text-fg-3" title={path}>{home(path)}</div>
-          {clone && <div className={`mt-0.5 flex items-center gap-1.5 text-meta ${clone === 'cloning' ? 'text-run-text' : clone === 'not-here' ? 'text-fg-3' : 'text-fail-text'}`}>{clone === 'cloning' ? <><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine…</> : clone === 'not-here' ? 'Not cloned on this machine: allow it below to clone it here' : `Not on this machine: ${clone}`}</div>}
+          {clone && <div className={`mt-0.5 flex items-center gap-1.5 text-meta ${clone === 'cloning' ? 'text-run-text' : clone === 'not-here' ? 'text-fg-3' : 'text-fail-text'}`}>{clone === 'cloning' ? <><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine…</> : clone === 'not-here' ? 'Not on this machine: tick it below to clone it here' : clone.startsWith('kept:') ? `Unticked here, but ${clone}: it goes once that is cleared` : `Not on this machine: ${clone}`}</div>}
           {/* several machines: which may hold it (a company may keep a repository off some); a new one holds none until allowed */}
           {machines.length > 1 && onAllow && (
             <div className="mt-1.5"><MachineChips label={`Machines that may clone ${repo}`} machines={machines} machine={machine}
-                 on={(m) => allowed.includes(m) || byOrg.includes(m) || (m === machine && !clone)} locked={(m) => byOrg.includes(m) ? `Allowed for all of ${repo.split('/')[0]} on ${m}` : m === machine && !clone && !allowed.includes(m) ? `Already checked out on ${m}: delete the folder there to take it off` : undefined}
+                 on={(m) => !removed.includes(m) && (allowed.includes(m) || byOrg.includes(m) || here.includes(m))}
                  onToggle={onAllow} /></div>
           )}
         </div>
@@ -503,7 +503,7 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
       )}
 
       {/* the repo's codebase map (made from this machine's checkout: none while it isn't here) */}
-      {clone !== 'not-here' && <div className="ml-11 flex items-center gap-3 rounded-xl bg-fill/60 px-3 py-2.5 ring-1 ring-line ">
+      {clone !== 'not-here' && !clone?.startsWith('kept:') && <div className="ml-11 flex items-center gap-3 rounded-xl bg-fill/60 px-3 py-2.5 ring-1 ring-line ">
         <MapIcon className={`size-4 shrink-0 ${busy ? 'text-accent' : p && p.toMap === 0 ? 'text-ok' : 'text-fg-3'}`} />
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="truncate text-small text-fg-2 ">
