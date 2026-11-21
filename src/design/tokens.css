@@ -84,7 +84,9 @@
    workspace's. Light and dark each get their own step of the same palette */
 :root[data-palette='midnight'] { --n-h: 262; --n-c: 0.01; }
 :root.dark[data-palette='midnight'] { --d: 0.175; --n-c: 0.022; }
-:root[data-palette='paper'] { --n-h: 85; --n-c: 0.018; --l: 0.965; --surface-1: oklch(0.99 0.01 85); --surface-2: oklch(0.995 0.008 85); }
+:root[data-palette='paper'] { --n-h: 85; --n-c: 0.018; --l: 0.965; }
+/* its cream cards, in light only: in dark the surfaces follow the depth like every palette's */
+:root:not(.dark)[data-palette='paper'] { --surface-1: oklch(0.99 0.01 85); --surface-2: oklch(0.995 0.008 85); }
 :root.dark[data-palette='paper'] { --n-h: 70; --d: 0.235; --n-c: 0.02; }
 /* each workspace's hue: the accent (and every violet utility, below) follows it, easing on a switch */
 :root[data-mode='exec'], [data-accent='exec'] { --accent-h: 55; }
