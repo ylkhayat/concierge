@@ -171,8 +171,13 @@ async function pullFiles() {
     try {
       const r = await call<Awaited<ReturnType<typeof filesSince>>>(peer.base, token(), 'POST', '/x/replica-files', { since: was?.ver ?? 0, proc: was?.proc }, 60_000)
       const todo = r.entries.filter(([k, size, mtimeMs]) => travels(k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)) && takes(k, peer, { size, mtimeMs }, index.get(k)))
+      // the settings first: a machine that just joined has thousands of files to take, and shows its onboarding until these come
+      todo.sort((a, b) => Number(b[0].startsWith('config:')) - Number(a[0].startsWith('config:')))
       let left = todo.length
       const failed: string[] = []
+      // how far it is, while it goes (a first pull takes a while): Settings → Machines and bin/standby read it
+      const progress = () => pulled.set(peer.name, { proc: was?.proc ?? '', ver: was?.ver ?? 0, at: was?.at ?? 0, pending: left, ...(failed.length && { skipped: failed.length }) })
+      if (todo.length) progress()
       for (const [k, size, mtimeMs] of todo) try {
         const i = k.indexOf(':'), root = travels(k.slice(0, i), k.slice(i + 1))!, abs = join(root.dir, k.slice(i + 1))
         const here = index.get(k)
@@ -194,7 +199,7 @@ async function pullFiles() {
         await utimes(abs, new Date(), new Date(mtimeMs)).catch(() => {})
         const st = await stat(abs).catch(() => undefined)
         if (st) index.set(k, { size: st.size, mtimeMs: Math.floor(st.mtimeMs), v: ++ver })
-        left--
+        left--; if (left % 50 === 0) progress()
       } catch (e) {
         // this one can't be written here (a folder that is a link on this machine, a path it can't have): skipped and
         // said, so the rest still come over and the machines still count as in step
