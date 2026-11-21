@@ -15,6 +15,7 @@ export type Config = {
   repos: Record<string, string> // "owner/repo" → its checkout: a folder name in this machine's working directory (WORK_DIR), or an absolute path
   // with several machines: the ones each repository (or organization, "owner/*") may be cloned onto (a company may keep a repository off some). A
   // new machine clones none until you allow it; a checkout already there stays (delete the folder to take it off)
+  machineNames?: Record<string, string> // what you call each machine (its id stays DECK_NAME): shown everywhere instead
   cloneOn?: Record<string, string[]>
   // the machines a repository was unticked on: each takes its checkout off (only when nothing would be lost)
   removeFrom?: Record<string, string[]>

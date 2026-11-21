@@ -1,4 +1,5 @@
 import { Check, CircleAlert, Copy, LoaderCircle, Network, RefreshCw } from 'lucide-react'
+import { useMachineName } from '../machineNames.ts'
 import { useState } from 'react'
 import { api } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
@@ -83,6 +84,7 @@ type AlignView = { at?: string; asked: string[]; items: { machine: string; what:
  */
 export function Alignment() {
   const q = useApi<AlignView>('/fleet/alignment')
+  const called = useMachineName()
   const [busy, setBusy] = useState(false)
   const v = q.data
   if (!v) return null
@@ -99,7 +101,7 @@ export function Alignment() {
       </div>
       {machines.map((m) => (
         <div key={m} className="border-t border-line px-4 py-2.5">
-          <div className="mb-1 text-small font-medium text-fg-1">{m}</div>
+          <div className="mb-1 text-small font-medium text-fg-1">{called(m)}</div>
           {v.items.filter((x) => x.machine === m).map((x, i) => (
             <div key={i} className="flex items-start gap-2 py-0.5 text-small">
               {x.state === 'fixing' ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-fg-3" /> : <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-wait" />}

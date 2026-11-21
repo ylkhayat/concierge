@@ -2,6 +2,7 @@ import {
   ArrowLeft, ArrowRight, ChevronRight, BookOpen, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
   CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
+import { useMachineName } from '../machineNames.ts'
 import { Tabs } from './Tabs.tsx'
 import { label, sha, VERSION } from '../version.ts'
 import { Field, Pick, PickPill } from '../ui/Pick.tsx'
@@ -362,6 +363,7 @@ function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; 
 type Suggestion = { repo: string; prs: number; paths: string[]; watched: boolean }
 
 function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: SetupView; health?: Health; toast: Toast; saveConfig: SaveConfig; reload: () => Promise<unknown> }) {
+  const called = useMachineName()
   // a repository being cloned onto this machine: looked at again until it is there
   const cloning = Object.values(setup?.clones ?? {}).includes('cloning')
   useEffect(() => { if (!cloning) return; const t = setInterval(() => void reload().catch(() => {}), 4000); return () => clearInterval(t) }, [cloning])
@@ -405,7 +407,7 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
             <div className="flex flex-wrap items-center gap-2 bg-fill/40 px-4 py-2">
               <span className="font-mono text-small font-semibold text-fg-1">{owner}</span><span className="text-meta text-fg-3">all its repositories, now and later</span>
               <Pick multi label={`Machines that may clone ${owner}'s repositories`} value={org} className="ml-auto"
-                    options={setup!.machines.map((m) => ({ value: m, label: m === setup?.machine ? <>{m} <span className="font-normal opacity-60">this one</span></> : m }))}
+                    options={setup!.machines.map((m) => ({ value: m, label: m === setup?.machine ? <>{called(m)} <span className="font-normal opacity-60">this one</span></> : called(m) }))}
                     onChange={(_, m, on) => api('/repos/clone-on', { repo: `${owner}/*`, machine: m, on }).then(() => { toast(on ? `${owner}'s repositories may be cloned on ${m}` : `${owner} is no longer allowed on ${m} as a whole`); return reload() }, (e: Error) => toast(e.message, 'error'))} />
             </div>
           )}
@@ -450,6 +452,7 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
   repo: string; path: string; meta?: BaseInfo['meta']; task?: NonNullable<Health['base']>[string]; toast: Toast; onRemove: () => void
   accounts: { id: string; label: string }[]; pin?: string; onPin: (account?: string) => void
 }) {
+  const called = useMachineName()
   const [plan, setPlan] = useState<Plan | { error: string }>()
   const { armed, arm } = useArm() // stop watching takes a second click
   const busy = task?.state === 'running' || task?.state === 'queued'
@@ -482,7 +485,7 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
         {machines.length > 1 && onAllow && (
           <Field label="Machines" hint="Where it may be checked out: a new machine holds none until ticked; unticking takes the checkout off once nothing would be lost">
             <Pick multi label={`Machines that may clone ${repo}`} value={machines.filter((m) => !removed.includes(m) && (allowed.includes(m) || byOrg.includes(m) || here.includes(m)))}
-                  options={machines.map((m) => ({ value: m, label: m === machine ? <>{m} <span className="font-normal opacity-60">this one</span></> : m }))}
+                  options={machines.map((m) => ({ value: m, label: m === machine ? <>{called(m)} <span className="font-normal opacity-60">this one</span></> : called(m) }))}
                   onChange={(_, m, on) => onAllow(m, on)} />
           </Field>
         )}
@@ -1131,6 +1134,7 @@ const MODES: [Mode, string, string][] = [
 
 /** Your organization's skills from claude.ai: on which machines, how the agents use them, and how often they did. */
 function OrgSkills({ toast }: { toast: Toast }) {
+  const called = useMachineName()
   const [skills, setSkills] = useState<OrgSkill[]>()
   const [more, setMore] = useState(false)
   useEffect(() => { api('/org-skills?fresh=1').then(setSkills, () => setSkills([])) }, [])
@@ -1155,7 +1159,7 @@ function OrgSkills({ toast }: { toast: Toast }) {
           <span>updated {ago(s.updatedAt)}</span>
           {Object.entries(s.machines).map(([m, how]) => (
             <span key={m} title={how === 'current' ? `${m} has the newest from claude.ai` : `${m} runs the newest through Concierge's sync`} className="inline-flex items-center gap-1">
-              <span className={`size-1.5 rounded-full ${how === 'current' ? 'bg-ok' : 'bg-run'}`} />{m}{how === 'mirror' && ' (via deck)'}
+              <span className={`size-1.5 rounded-full ${how === 'current' ? 'bg-ok' : 'bg-run'}`} />{called(m)}{how === 'mirror' && ' (via deck)'}
             </span>
           ))}
           {s.used && <span className="truncate">last in {s.used.lastFor}</span>}

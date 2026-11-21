@@ -22,6 +22,7 @@ import { PrThread } from './thread/PrThread.tsx'
 import { TicketThread } from './thread/TicketThread.tsx'
 import { ROLES, useRole } from './role.ts'
 import { setAway, useAway } from './away.ts'
+import { setMachineNames } from './machineNames.ts'
 import { NotHere } from './components/NotHere.tsx'
 import { RoleSwitch } from './components/RoleSwitch.tsx'
 import { RepoList } from './components/RepoList.tsx'
@@ -100,7 +101,7 @@ export function App() {
   const [spaces, setSpaces] = useState<Mode[]>(['review', 'exec'])
   const [linearApp, setLinearApp] = useState(false)
   const [missing, setMissing] = useState<string[]>([]) // skills the settings run that this machine lacks
-  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.clones); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
+  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.clones); setMachineNames(s.machineNames); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
   // Linear links open in the desktop app: linear://<same path>. One listener covers every link on the page.
   useEffect(() => {
     if (!linearApp) return

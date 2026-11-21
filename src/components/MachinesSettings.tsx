@@ -3,7 +3,8 @@
 // from here (work machine, log, restart). Then the keys every machine shares, which fill themselves from the machines'
 // own .env files.
 import { Alignment, NearbyMachines } from './NearbyMachines.tsx'
-import { HardDrive, Laptop, Cpu, MemoryStick, Bot, Server, ShieldCheck } from 'lucide-react'
+import { HardDrive, Laptop, Cpu, MemoryStick, Bot, Server, ShieldCheck, Pencil } from 'lucide-react'
+import { setMachineNames, useMachineName } from '../machineNames.ts'
 import { Tabs } from './Tabs.tsx'
 import { useEffect, useState, type ReactNode } from 'react'
 import { api } from '../lib.ts'
@@ -33,6 +34,32 @@ const quiet = 'inline-flex shrink-0 items-center gap-1.5 btn-outline btn-sm'
 const gb = (mb: number) => `${(mb / 1024).toFixed(mb < 10240 ? 1 : 0)} GB`
 const pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : 0)
 const ROLE: Record<string, string> = { primary: 'main', standby: 'standby', worker: 'worker' }
+
+/** A machine's name, and renaming it in place: what you call it shows everywhere; its id stays (empty: back to the id). */
+function Name({ id }: { id: string }) {
+  const called = useMachineName()
+  const [draft, setDraft] = useState<string>()
+  const [err, setErr] = useState<string>()
+  const save = () => {
+    if (draft === undefined) return
+    const name = draft.trim()
+    setDraft(undefined)
+    if (name === called(id)) return
+    api('/machines', { rename: { machine: id, name } }).then((r: { names?: Record<string, string> }) => { setMachineNames(r.names); setErr(undefined) }, (e: Error) => setErr(e.message))
+  }
+  if (draft !== undefined) return (
+    <input autoFocus value={draft} maxLength={40} placeholder={id} aria-label={`Name for ${id}`} onChange={(e) => setDraft(e.target.value)} onBlur={save}
+           onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setDraft(undefined) }}
+           className="h-7 w-48 rounded-md bg-fill px-2 text-body font-semibold text-fg-1 outline-none ring-1 ring-accent/40" />
+  )
+  return (
+    <button type="button" onClick={() => setDraft(called(id))} title={called(id) === id ? 'Name this machine' : `${id}, named by you: click to rename`}
+            className="group inline-flex items-center gap-1.5 rounded-md text-body font-semibold text-fg-1 hover:text-accent-text">
+      {called(id)}<Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
+      {err && <span className="text-meta font-normal text-fail-text">{err}</span>}
+    </button>
+  )
+}
 
 /** One measure: a bar with the agents' share (accent) inside what the machine uses (muted), and the numbers. */
 /** `agents` undefined: nothing of it is the agents' own (disk). Units: one short number, the unit said once on the total. */
@@ -73,6 +100,7 @@ const Badge = ({ children, tone = 'muted' }: { children: ReactNode; tone?: keyof
   <span className={`rounded-full px-2 py-0.5 text-micro font-semibold ${BADGE[tone]}`}>{children}</span>
 
 export function MachinesSettings() {
+  const called = useMachineName()
   const [v, setV] = useState<View>()
   const [tab, setTab] = useState('all')
   const [log, setLog] = useState<{ name: string; lines?: string[]; error?: string }>()
@@ -104,7 +132,7 @@ export function MachinesSettings() {
       {v.several && <Alignment />}
       {v.several && (
         <Tabs as="tab" label="Machine" value={tab} onChange={setTab}
-              options={[{ id: 'all', label: 'All machines' }, ...ms.map((x) => ({ id: x.name, label: x.name, icon: x.work ? Laptop : Server, dot: x.behind?.length ? 'warn' as const : undefined, title: x.behind?.length ? 'Not on the latest version' : undefined }))]} />
+              options={[{ id: 'all', label: 'All machines' }, ...ms.map((x) => ({ id: x.name, label: called(x.name), icon: x.work ? Laptop : Server, dot: x.behind?.length ? 'warn' as const : undefined, title: x.behind?.length ? 'Not on the latest version' : undefined }))]} />
       )}
 
       {!m ? (
@@ -116,7 +144,7 @@ export function MachinesSettings() {
                 <li key={x.name}>
                   <button onClick={() => setTab(x.name)} className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-hover">
                     {x.work ? <Laptop className="size-4 text-fg-3" /> : <Server className="size-4 text-fg-3" />}
-                    <span className="text-body font-medium text-fg-1">{x.name}</span>
+                    <span className="text-body font-medium text-fg-1">{called(x.name)}</span>
                     {x.control && <Badge tone="accent">control plane</Badge>}
                     {x.work && <Badge>work machine</Badge>}
                     <Version m={x} latest={v.latest} />
@@ -133,7 +161,7 @@ export function MachinesSettings() {
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-body font-semibold text-fg-1">{m.name}</span>
+            <Name id={m.name} />
             {m.control && <Badge tone="accent">control plane</Badge>}
             {m.role && ROLE[m.role] && <Badge>{ROLE[m.role]}</Badge>}
             <span className="text-meta text-fg-4">{m.cores} cores · {gb(m.mb)}</span>

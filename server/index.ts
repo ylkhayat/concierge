@@ -754,7 +754,15 @@ app.post('/machines/rotate-key', async (c) => {
   return c.json({ ok: true })
 })
 app.post('/machines', async (c) => {
-  const b = await c.req.json() as { workMachine?: string | null; workSlots?: number }
+  const b = await c.req.json() as { workMachine?: string | null; workSlots?: number; rename?: { machine?: string; name?: string } }
+  if (b.rename) {
+    const id = String(b.rename.machine ?? ''), name = String(b.rename.name ?? '').trim()
+    if (!/^[\w.-]{1,64}$/.test(id)) return c.json({ error: 'Unknown machine' }, 400)
+    if (name.length > 40) return c.json({ error: 'A name is 40 characters at most' }, 400)
+    const { [id]: _, ...rest } = config.machineNames ?? {}
+    saveConfig({ machineNames: name && name !== id ? { ...rest, [id]: name } : rest }) // empty: back to its own name
+    return c.json({ ok: true, names: config.machineNames })
+  }
   if (b.workMachine !== undefined) {
     if (b.workMachine !== null && !/^[\w.-]{1,64}$/.test(b.workMachine)) return c.json({ error: 'Unknown machine' }, 400)
     if (b.workMachine === null) delete state.settings.workMachine; else state.settings.workMachine = b.workMachine
@@ -1821,7 +1829,7 @@ const setupView = async (light = false) => ({
   configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []),
   // your skills that are links this machine can't follow (Docker: the folder they point into isn't mounted; bin/up mounts it)
   brokenLinks: light ? [] : await brokenSkillLinks(), skillSources: skillSources(),
-  workDir: WORK_DIR, clones: cloneState(), machine: fleet.machine, machines: fleetMachines(), cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
+  workDir: WORK_DIR, clones: cloneState(), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
   // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
