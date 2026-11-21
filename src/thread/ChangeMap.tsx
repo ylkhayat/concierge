@@ -43,6 +43,7 @@ function AreaNode({ data }: NodeProps<Node<AreaData>>) {
   return (
     <div className={`w-[230px] cursor-pointer rounded-card bg-surface-1 p-3 text-left transition-shadow duration-150 ${on ? 'shadow-[0_0_0_2px_var(--lane),var(--e2)]' : 'shadow-[var(--e1)] ring-1 ring-line hover:ring-line-strong'}`}>
       <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-fg-4" />
+      <Handle type="target" id="r" position={Position.Right} className="!size-0 !border-0 !opacity-0" />
       <p className="truncate font-mono text-meta font-semibold text-fg-1" title={a.id}>{a.name}</p>
       <p className="mt-0.5 flex gap-2 text-micro tabular-nums">
         {n('added') > 0 && <span className={KIND.added}>+{n('added')} new</span>}
@@ -52,6 +53,7 @@ function AreaNode({ data }: NodeProps<Node<AreaData>>) {
       </p>
       {a.touched[0] && <p className="mt-1.5 line-clamp-2 text-small leading-snug text-fg-2">{a.touched[0].after}</p>}
       <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-fg-4" />
+      <Handle type="source" id="l" position={Position.Left} className="!size-0 !border-0 !opacity-0" />
     </div>
   )
 }
@@ -102,7 +104,9 @@ function MapCanvas({ o }: { o: Overlay }) {
     return () => { live = false }
   }, [areas, links])
   const nodes: Node<AreaData>[] = areas.map((a) => ({ id: a.id, type: 'area', position: pos?.get(a.id) ?? { x: 0, y: 0 }, data: { area: a, on: a.id === on }, draggable: false }))
-  const edges: Edge[] = links.map((l) => ({ id: `${l.from}>${l.to}`, source: l.from, target: l.to, type: 'default', style: { stroke: 'var(--line-strong)', strokeWidth: Math.min(3, 1 + l.count / 4) }, markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--line-strong)' } }))
+  // a link that points back (to a box on the left) leaves from the left and arrives on the right, so it is drawn in the open
+  const back = (l: { from: string; to: string }) => (pos?.get(l.to)?.x ?? 0) < (pos?.get(l.from)?.x ?? 0)
+  const edges: Edge[] = links.map((l) => ({ id: `${l.from}>${l.to}`, source: l.from, target: l.to, ...(back(l) && { sourceHandle: 'l', targetHandle: 'r' }), type: 'default', style: { stroke: 'var(--line-strong)', strokeWidth: Math.min(3, 1 + l.count / 4) }, markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--line-strong)' } }))
   const sel = areas.find((a) => a.id === on)
   return (
     <div className="flex min-h-0 flex-1 gap-3">
