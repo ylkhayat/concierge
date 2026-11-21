@@ -1,6 +1,7 @@
 import { Apple, ArrowRight, Monitor, Server } from 'lucide-react'
 import { useMachineName } from '../machineNames.ts'
 import type { Me } from '../../server/github.ts'
+import { setScope, useScope, type Scope } from '../scope.ts'
 
 const OS: Record<string, { label: string; icon: typeof Monitor; tone: string }> = {
   windows: { label: 'Windows', icon: Monitor, tone: 'bg-run/10 text-run-text ring-run/25' },
@@ -40,6 +41,22 @@ export function Machine({ me, className = '' }: { me?: Me; className?: string })
         </span>
         {me?.reach && !v?.here && <span className="block text-meta text-fg-4">Through your tailnet link (concierge.…), which goes to {serving}</span>}
       </span>
+    </span>
+  )
+}
+
+/** This machine or the whole fleet (scope.ts): shown only with several machines. */
+export function ScopeSwitch() {
+  const { scope, several } = useScope()
+  if (!several) return null
+  const opt = (s: Scope, label: string, title: string) => (
+    <button type="button" onClick={() => setScope(s)} aria-pressed={scope === s} title={title}
+            className={`rounded-full px-2 leading-[18px] transition-colors ${scope === s ? 'bg-accent-soft font-medium text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}>{label}</button>
+  )
+  return (
+    <span role="group" aria-label="Show" className="ml-1 inline-flex items-center rounded-full bg-fill p-px">
+      {opt('here', 'This machine', 'Only the repositories allowed on this machine')}
+      {opt('fleet', 'Fleet', 'Every repository, on every machine')}
     </span>
   )
 }

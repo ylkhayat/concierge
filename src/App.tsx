@@ -23,6 +23,7 @@ import { TicketThread } from './thread/TicketThread.tsx'
 import { ROLES, useRole } from './role.ts'
 import { setAway, useAway } from './away.ts'
 import { setMachineNames } from './machineNames.ts'
+import { scopeDefault } from './scope.ts'
 import { NotHere } from './components/NotHere.tsx'
 import { RoleSwitch } from './components/RoleSwitch.tsx'
 import { RepoList } from './components/RepoList.tsx'
@@ -31,7 +32,7 @@ import { RepoPicker } from './components/RepoPicker.tsx'
 import { knowApps } from './appColor.ts'
 import { Activity, lazy, Suspense } from 'react'
 import { useWebMcp } from './webmcp.ts'
-import { Machine } from './components/Machine.tsx'
+import { Machine, ScopeSwitch } from './components/Machine.tsx'
 import { Read } from './components/Read.tsx'
 import { Focus } from './components/Focus.tsx'
 import { stackAt, type Rules } from './desk.ts'
@@ -73,7 +74,7 @@ export function App() {
   const [query, setQueryState] = useState(() => param('q') ?? '')
   const setQuery = (q: string) => { setQueryState(q); setParam('q', q) }
   const [refreshing, setRefreshing] = useState(false)
-  const { me, prs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : feedKey ?? selected)
+  const { me, prs: allPrs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : feedKey ?? selected)
   const now = useNow()
   const [theme, setTheme] = useTheme()
   const role = useRole()
@@ -101,7 +102,10 @@ export function App() {
   const [spaces, setSpaces] = useState<Mode[]>(['review', 'exec'])
   const [linearApp, setLinearApp] = useState(false)
   const [missing, setMissing] = useState<string[]>([]) // skills the settings run that this machine lacks
-  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.clones); setMachineNames(s.machineNames); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
+  const [machines, setMachines] = useState(0)
+  // opened on this machine's localhost: its own view; through the tailnet link: the whole fleet (scope.ts)
+  useEffect(() => { if (me && machines) scopeDefault(!!me.viewer?.here, machines > 1) }, [me, machines])
+  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.clones); setMachineNames(s.machineNames); setMachines(s.machines?.length ?? 0); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
   // Linear links open in the desktop app: linear://<same path>. One listener covers every link on the page.
   useEffect(() => {
     if (!linearApp) return
@@ -119,7 +123,8 @@ export function App() {
   const toast = (msg: string, tone: Toast['tone'] = 'ok') => { if (tone === 'ok') sonner.success(msg); else sonner.error(msg) }
 
   const detailRef = useRef<HTMLElement>(null)
-  const away = useAway() // repositories not on this machine: their PRs and tickets don't open here
+  const away = useAway() // this machine's view: repositories not on it, whose PRs and tickets aren't listed or opened here
+  const prs = away.size && allPrs ? allPrs.filter((p) => !away.has(p.repo) || p.id === selected) : allPrs
   const select = (id?: string) => {
     if (id === selected) return
     // switching items: the browser crossfades the detail pane alone (an element-scoped view transition); the list,
@@ -150,7 +155,7 @@ export function App() {
   useEffect(() => { const f = () => { setModeState(modeOf()); setSelected(readHash()) }; addEventListener('popstate', f); return () => removeEventListener('popstate', f) }, [])
 
   // exec mode: the selected ticket and the feed of its latest run
-  const tickets = exec?.tickets ?? []
+  const tickets = (exec?.tickets ?? []).filter((t) => !t.repo || !away.has(t.repo) || t.id === selected)
   const ticket = mode !== 'review' ? tickets.find((t) => t.id === selected) : undefined
   useEffect(() => { setFeedKey(ticket ? `ticket:${ticket.id}` : undefined) }, [ticket?.id]) // its whole timeline, every run a chapter
   // the last pages opened, kept alive hidden (Activity, below): back on one, it is there as you left it (ponytail: 4)
@@ -498,7 +503,7 @@ export function App() {
         ) : reviewFrame}
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
         <footer className="relative z-30 flex h-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap border-t border-line bg-bg-rail px-2 text-meta text-fg-3 ">
-          <Machine me={me} />
+          <Machine me={me} /><ScopeSwitch />
           {syncState}{refreshBtn}
           <VpnChip machine={me?.machine} onOpen={() => setSettingsOpen('connections')} />
           <span className="flex-1" />

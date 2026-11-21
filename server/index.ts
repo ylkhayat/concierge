@@ -554,10 +554,18 @@ app.use('*', async (c, next) => {
 })
 // the role the page is in comes with each request: what it starts runs that role's commands (roles.ts)
 app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
-// a machine that may not save (the other one holds the lease, or this one just woke) takes no clicks: a reply or a run
-// started here would live only in its memory, and vanish once the page reaches the machine that does save
+// a machine that may not save (another one holds the lease, or this one just woke) does no click itself: a reply or a
+// run started here would live only in its memory. It hands the click to the machine that saves, over the machines' own
+// link (the machine key), so a page opened on any machine's localhost stays live; the result comes back here within 2s
+// (replica.ts). No machine that saves answering: refused, as before
 app.use('*', async (c, next) => {
   if (c.req.method === 'GET' || fleet.mayWrite()) return next()
+  const main = (await replicaPeers()).find((p) => p.active)
+  if (main) try {
+    const r = await call<{ status: number; text: string; type?: string }>(main.base, machineToken(), 'POST', '/x/api',
+      { method: c.req.method, path: c.req.path + (new URL(c.req.url).search), body: await c.req.text(), role: c.req.header('x-concierge-role') }, 120_000)
+    return new Response(r.text, { status: r.status, headers: { 'content-type': r.type ?? 'application/json' } })
+  } catch (e) { console.warn(`api: couldn't hand ${c.req.method} ${c.req.path} to ${main.name}: ${(e as Error).message}`) }
   return c.json({ error: fleet.whyNot?.() ?? `${fleet.elsewhere() ?? 'Another machine'} runs Concierge now: nothing done here is kept. Reload in a moment.` }, 409)
 })
 app.get('/alerts', (c) => c.json(alerts()))
@@ -3036,6 +3044,14 @@ fleet.watch?.(condition)
 serveMachine(() => state.settings.maxJobs, ownUsage, {
   // the state and the files the other machines follow this one by (replica.ts)
   ...replicaExtras,
+  // a click made on another machine's page (its localhost), done here, where the state is kept (the write hand-off above)
+  api: async (b: { method?: string; path?: string; body?: string; role?: string }) => {
+    if (!fleet.mayWrite()) throw new Error('this machine does not run Concierge now')
+    const method = String(b.method ?? ''), path = String(b.path ?? '')
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) || !path.startsWith('/api/') || path.includes('..')) throw new Error('bad request')
+    const r = await app.request(path, { method, body: b.body || undefined, headers: { 'content-type': 'application/json', ...(b.role && { 'x-concierge-role': String(b.role) }) } })
+    return { status: r.status, text: await r.text(), type: r.headers.get('content-type') ?? undefined }
+  },
   // the control plane's connectors, made this machine's too (applyConnectors)
   connectors: (b: { custom?: Record<string, string>; connected?: string[] }) => applyConnectors(b.custom ?? {}, b.connected ?? []),
   // which connectors this machine has for an account, and in what state (the markers on Settings → Connections)
