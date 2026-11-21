@@ -335,12 +335,12 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
   const chip = 'inline-flex items-center gap-1.5 rounded-full bg-fill px-2.5 py-1 text-meta font-medium text-fg-2 transition-colors hover:bg-accent-soft hover:text-accent-text disabled:opacity-40'
   const shown = hover && plays.find((x) => x.id === hover)
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line px-4 py-2 text-small">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-small">
       <span className="label text-fg-4">Plays</span>
       {plays.map((x) => <button key={x.id} title={x.hint} onMouseEnter={() => setHover(x.id)} onMouseLeave={() => setHover(undefined)} onFocus={() => setHover(x.id)} onBlur={() => setHover(undefined)} onClick={() => onTry(x.ops)} className={chip}><Zap className="size-3" />{x.label}</button>)}
       {ASK.map(([id, label, text]) => <button key={id} disabled={busy} title="The planner proposes it as a scenario to try" onClick={() => onAsk(text)} className={chip}><Sparkles className="size-3" />{label}</button>)}
       {shown && <span className="text-meta text-fg-3 animate-[detail-in_160ms_var(--ease-out)]">{preview(shown.ops)}</span>}
-      <span className="ml-auto inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-1.5">
         <span className="label text-fg-4">Colour</span>
         <span role="radiogroup" aria-label="Colour the tickets by" className="inline-flex rounded-ctl bg-fill p-0.5 text-meta font-medium">
           {([['epic', 'Epic'], ['owner', 'Owner'], ['moscow', 'MoSCoW']] as const).map(([v, l]) => <button key={v} role="radio" aria-checked={colorBy === v} onClick={() => onColorBy(v)} className={`rounded-lg px-2 py-0.5 ${colorBy === v ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{l}</button>)}
@@ -373,8 +373,8 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
     { id: 'risks', name: 'Risks', status: risks.length ? `${risks.length}${high ? ` · ${high} high` : ''}` : 'none', color: high ? 'var(--st-fail)' : lane(25), hint: risks[0] ? risks[0].risk!.note || risks[0].title : 'Ask the planner for the riskiest assumptions' },
   ]
   return (
-    <div className="border-b border-line px-4 py-1.5">
-      {/* one line: each area with how much is covered; a click opens what it misses */}
+    <div className="relative">
+      {/* one line: each area with how much is covered; a click opens what it misses (over the map, under the bar) */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="label mr-1 text-fg-4">Readiness</span>
         {pills.map((x) => (
@@ -383,10 +383,10 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
             <span className="size-1.5 rounded-full" style={{ background: x.color }} />{x.name}<span className="font-medium tabular-nums text-fg-1">{x.status}</span>
           </button>
         ))}
-        {!company?.regions?.length && !company?.certifications?.length && <span className="text-meta text-fg-4">Settings → Compliance sets what these check</span>}
+
       </div>
       {open && (
-        <div className="mt-2 max-h-64 overflow-y-auto rounded-card bg-surface-1 p-3 shadow-e1 animate-[detail-in_180ms_var(--ease-out)]">
+        <div className="absolute right-0 top-full z-30 mt-2 max-h-72 w-[min(560px,80vw)] overflow-y-auto rounded-card bg-surface-1 p-3 shadow-e3 ring-1 ring-line animate-[detail-in_180ms_var(--ease-out)]">
           {open === 'resources' ? (
             <div className="space-y-1.5 text-small text-fg-2">
               <p>In scope: <b className="text-fg-1">{res.demand} pt</b>. The team finishes about <b className="text-fg-1">{res.weekly} pt a week</b>{res.capacity !== undefined && <>, <b className="text-fg-1">{res.capacity} pt</b> inside the appetite</>}.</p>
@@ -637,10 +637,10 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
       {/* the board on top, the conversation docked under it (on a phone: the conversation alone) */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-2/40 lg:flex">
-          {p.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)} />}
-          {p.nodes.length > 0 && <Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />}
-          {p.nodes.length > 0 && <Readiness whatIf={whatIf} company={setup.data?.config.compliance} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
+          {p.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)}
+                                     status={<Readiness whatIf={whatIf} company={setup.data?.config.compliance} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
                                                 onAdd={(ob) => void ops([{ op: 'add', id: `r-${ob.id}`, kind: 'ticket', title: ob.title, description: ob.why, parent: p.nodes.find((n) => n.kind === 'goal')?.id, covers: [ob.id], moscow: 'must' }])} />}
+                                     tools={<Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />} />}
           {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} />}
           <div className="relative min-h-0 flex-1">
             {!p.nodes.length ? (
@@ -653,7 +653,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
         </section>
-        <section aria-label="Chat" className="flex min-h-0 flex-1 flex-col border-line bg-surface-1/60 lg:h-[clamp(240px,36%,460px)] lg:flex-none lg:border-t">
+        <section aria-label="Chat" className="flex min-h-0 flex-1 flex-col border-line bg-surface-1/60 lg:h-[clamp(200px,30%,400px)] lg:flex-none lg:border-t">
           {p.vision && <VisionCard p={p} set={set} toast={toast} />}
           <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} onReplay={replayFrom} />
         </section>
@@ -685,7 +685,7 @@ export function forecast(nodes: PlanNode[], people: number, pace: number, now = 
 type Level = 'overview' | 'streams' | 'tickets'
 /** The plan's one bar: where it stands and the verdict, how much of it to show, and the three numbers the forecast
  *  rests on (people, pace, appetite), all in reach. */
-function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegend }: { p: Plan; set: SetPlan; toast: Toast; say: (t: string) => unknown; refining: number; level?: Level; onLevel: (l: Level) => void; legend: boolean; onLegend: () => void }) {
+function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegend, status, tools }: { p: Plan; set: SetPlan; toast: Toast; say: (t: string) => unknown; refining: number; level?: Level; onLevel: (l: Level) => void; legend: boolean; onLegend: () => void; status?: ReactNode; tools?: ReactNode }) {
   const pr = p.project
   const [syncing, setSyncing] = useState(false)
   const sync = () => { setSyncing(true); api(`/plans/${p.id}/sync`, {}).then((r: Plan) => remember(`/plans/${p.id}`, r), (e: Error) => toast(e.message, 'error')).finally(() => setSyncing(false)) }
@@ -711,8 +711,8 @@ function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegen
     </span>
   )
   return (
-    <div className="space-y-2.5 border-b border-line px-4 py-3 text-small">
-      {/* where it stands */}
+    <div className="relative z-20 space-y-1.5 border-b border-line px-4 py-2 text-small">
+      {/* where it stands, and how ready (compliance, resources, risks) */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-semibold ${!known ? 'bg-fill text-fg-1' : bad ? 'bg-fail/10 text-fail-text' : 'bg-ok/10 text-ok-text'}`}>
           <span className={`size-1.5 rounded-full ${!known ? 'bg-fg-3' : bad ? 'bg-fail' : 'bg-ok'}`} />{verdict}
@@ -723,7 +723,7 @@ function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegen
         </span>
         <span className="text-fg-3"><b className="font-semibold text-fg-1">{f.points}</b> pt left{f.guessed ? ` (${f.guessed} guessed)` : ''} · lands <b className="font-semibold text-fg-1">~{fmt(f.at)}</b>{target ? ` · due ${fmt(target)}` : ''}</span>
         {refining > 0 && <span className="rounded-full bg-wait/10 px-2 py-0.5 text-meta font-medium text-wait-text">{refining} to refine</span>}
-        {!p.busy && (p.gaps?.length ?? 0) > 0 && <span className="rounded-full border border-dashed border-fg-4/60 px-2 py-0.5 text-meta text-fg-3">{p.gaps!.length} angles open</span>}
+        {status && <span className="ml-auto">{status}</span>}
         {pr && (
           <span className="ml-auto inline-flex items-center gap-2 text-meta text-fg-3">
             <a href={pr.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-fg-2 hover:text-fg-1" title={pr.lead ? 'You lead it: the plan may propose a new vision, applied when you accept it' : `Led by ${pr.leadName ?? 'someone else'}: the plan only adds tickets to it`}>{pr.lead ? 'You lead it' : 'Adds tickets only'}<ExternalLink className="size-3" /></a>
@@ -744,6 +744,7 @@ function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegen
           <Chips label="Appetite" value={p.appetite?.weeks ?? 0} options={[[0, 'None'] as [number, string], ...[...new Set([2, 4, 6, 12, p.appetite?.weeks ?? 2])].sort((a, b) => a - b).map((w, i) => [w, i ? String(w) : `${w} wk`] as [number, string])]} onChange={(w) => void set({ appetite: w || null })} />
         </span>
         <button onClick={onLegend} aria-pressed={legend} className={`rounded-ctl px-2.5 py-1 font-medium transition-colors ${legend ? 'bg-fill text-fg-1' : 'text-fg-3 hover:bg-hover hover:text-fg-1'}`}>Key</button>
+        {tools && <span className="ml-auto">{tools}</span>}
       </div>
     </div>
   )

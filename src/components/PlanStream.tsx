@@ -27,9 +27,10 @@ const nameHue = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)
 export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, onSelect, onExplore, compact, open, onToggle, legend, onMove, draft = [], fresh }: { p: Plan; base?: Plan; draft?: Op[]; fresh?: string; people: number; pace: number; selected?: string; onSelect: (id?: string) => void; onExplore?: (g: Gap) => void
   compact?: boolean; open?: Set<string>; onToggle?: (id: string) => void; legend?: boolean; onMove?: (m: Move) => void; colorBy?: ColorBy }) {
   const box = useRef<HTMLDivElement>(null)
-  const [w, setW] = useState(0)
+  // the room the map is drawn in: it fits it, never scrolls (unless every ticket is listed and even packed they don't fit)
+  const [w, setW] = useState(0), [room, setRoom] = useState(0)
   useLayoutEffect(() => {
-    const o = new ResizeObserver(([e]) => setW(Math.floor(e.contentRect.width)))
+    const o = new ResizeObserver(([e]) => { setW(Math.floor(e.contentRect.width)); setRoom(Math.floor(e.contentRect.height)) })
     if (box.current) o.observe(box.current)
     return () => o.disconnect()
   }, [])
@@ -60,30 +61,46 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   const span = Math.max(1, w - LEFT - RIGHT)
   const x = (t: number) => LEFT + ((t - t0) / (t1 - t0)) * span
   const maxPts = Math.max(1, ...s.streams.map((st) => st.points))
-  const thick = (pts: number) => (compact ? 10 : 12 + 26 * Math.sqrt(pts / maxPts))
-  const ROW = 26 // a ticket's line in an open stream
-  // rows: each stream's band, its title above it
-  let y = TOP + 18
+  // a stream's thickness at scale k (the fit below picks k: thinner when the room is short, fuller when there is plenty)
+  let k = 1
+  const thick = (pts: number) => Math.max(6, (compact ? 10 : 12 + 26 * Math.sqrt(pts / maxPts)) * k)
+  let ROW = 26 // a ticket's line in an open stream
   // each stream keeps its place and its colour while things move: in the plan's own order (the loose tickets last)
   const headAt = (id: string) => { const i = p.nodes.findIndex((n) => n.id === id); return i < 0 ? 1e9 : i }
   const streams = [...s.streams].sort((a, b) => headAt(a.id) - headAt(b.id))
   const headIds = p.nodes.filter((n) => n.kind === 'epic' || n.kind === 'milestone').map((n) => n.id)
   const hueOf = (id: string) => hue(headIds.includes(id) ? headIds.indexOf(id) : headIds.length)
-  const rows = streams.map((st) => {
-    // tickets worked at the same time (two people on one epic) stack in sub-rows of the stream, never over each other
-    const sub = new Map<string, number>(), ends: number[] = []
-    for (const sl of [...st.slots].sort((a, b) => a.start - b.start)) { let k = ends.findIndex((e) => e <= sl.start + 1e-6); if (k < 0) { k = ends.length; ends.push(0) } ends[k] = sl.end; sub.set(sl.id, k) }
-    const lanes = Math.max(1, ends.length), lanePh = Math.min(Math.max(8, thick(st.points) - 8), 22)
-    const t = compact || lanes === 1 ? thick(st.points) : Math.max(thick(st.points), lanes * (lanePh + 4) + 6)
-    const yOf = (id: string) => (lanes === 1 ? 0 : ((sub.get(id) ?? 0) - (lanes - 1) / 2) * (lanePh + 4))
-    const cy = y + 16 + t / 2; const isOpen = !!open?.has(st.id); const listY = cy + t / 2 + 10; y = cy + t / 2 + 22 + (isOpen ? st.slots.length * ROW + 4 : 0); return { st, t, cy, isOpen, listY, lanes, lanePh, yOf } })
-  // the angles not explored yet: faint streams of their own, under the real ones
+  // rows: each stream's band with its title above it (the angles not explored yet are chips under the map).
+  // Laid out for the room: `gap` is the air after each row; `top` centres it when there is room to spare
   const gaps = p.busy ? [] : p.gaps ?? []
-  const gapTop = y + (gaps.length ? 6 : 0)
-  if (gaps.length) y = gapTop + 22
-  const ghost = gaps.map((g) => { const cy = y + 16; y = cy + 30; return { g, cy } })
+  const layout = (gap: number, top: number) => {
+    let y = TOP + 18 + top
+    const rows = streams.map((st) => {
+      // tickets worked at the same time (two people on one epic) stack in sub-rows of the stream, never over each other
+      const sub = new Map<string, number>(), ends: number[] = []
+      for (const sl of [...st.slots].sort((a, b) => a.start - b.start)) { let j = ends.findIndex((e) => e <= sl.start + 1e-6); if (j < 0) { j = ends.length; ends.push(0) } ends[j] = sl.end; sub.set(sl.id, j) }
+      const lanes = Math.max(1, ends.length), lanePh = Math.min(Math.max(6, thick(st.points) - 8), 22)
+      const t = compact || lanes === 1 ? thick(st.points) : Math.max(thick(st.points), lanes * (lanePh + 4) + 6)
+      const yOf = (id: string) => (lanes === 1 ? 0 : ((sub.get(id) ?? 0) - (lanes - 1) / 2) * (lanePh + 4))
+      const cy = y + 16 + t / 2; const isOpen = !!open?.has(st.id); const listY = cy + t / 2 + 10; y = cy + t / 2 + gap + (isOpen ? st.slots.length * ROW + 4 : 0); return { st, t, cy, isOpen, listY, lanes, lanePh, yOf } })
+    return { rows, end: y + 10 }
+  }
+  // the fit: thinner streams and less air until it fits (down to a floor); with room to spare, fuller streams, more air
+  // between them, and the whole centred. ponytail: a few tries of a 1-D search, it's cheap at these sizes
+  const n = streams.length
+  let gap = 22, top = 0, L = layout(gap, 0)
+  if (room > 0 && L.end > room) {
+    for (k = 0.95; k >= 0.35 && L.end > room; k -= 0.05) { gap = Math.max(6, 22 * k); ROW = Math.max(15, 26 * k); L = layout(gap, 0) }
+  } else if (room > 0 && !compact) {
+    while (k < 1.4) { k += 0.05; if (layout(gap, 0).end > room) { k -= 0.05; break } }
+    L = layout(gap, 0)
+    gap = Math.min(72, gap + (room - L.end) / Math.max(1, n + 1)); L = layout(gap, 0)
+    top = Math.max(0, (room - L.end) / 2); L = layout(gap, top)
+  }
+  const { rows } = L
+  let y = L.end - 10
   const anyOpen = rows.some((r) => r.isOpen)
-  const H = Math.max(y + 10, 260)
+  const H = Math.max(y + 10, room || 260)
   const gx = w - RIGHT + 64, gy = rows.length ? (rows[0].cy + rows[rows.length - 1].cy) / 2 : H / 2
   const nodeOf = new Map(p.nodes.map((n) => [n.id, n]))
   const title = (id: string) => nodeOf.get(id)?.title ?? id
@@ -144,7 +161,8 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   }
 
   return (
-    <div ref={box} className="relative h-full min-h-0 w-full overflow-y-auto overflow-x-hidden">
+    <div className="relative flex h-full min-h-0 w-full flex-col">
+     <div ref={box} className={`relative min-h-0 flex-1 overflow-x-hidden ${room && H > room + 2 ? 'overflow-y-auto' : 'overflow-hidden'}`}>
       {legend && <Legend />}
       {w > 0 && (
         <svg ref={svgRef} width={w} height={H} className={`block select-none ${drag?.moved ? 'cursor-grabbing' : ''}`} role="img" aria-label="The plan over time">
@@ -299,31 +317,6 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
             const ax = x(from.sl.end), ay = from.cy, bx = x(to.sl.start), by = to.cy
             return <path key={l.from} d={`M ${ax} ${ay} C ${ax + 40} ${ay}, ${bx - 40} ${by}, ${bx} ${by}`} fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeDasharray="4 3" />
           })}
-          {/* the angles not explored yet */}
-          {gaps.length > 0 && <text x={LEFT} y={gapTop + 10} fontSize={10.5} fontWeight={600} letterSpacing="0.08em" className="fill-fg-3">NOT EXPLORED YET</text>}
-          {ghost.map(({ g, cy }, i) => {
-            const a = areaOf(g), c = `oklch(0.7 0.13 ${a.hue}`
-            const x0 = x(0), x1 = x0 + span * 0.3
-            const d = `M ${x0} ${cy} L ${x1} ${cy} C ${x1 + (gx - x1) * 0.55} ${cy}, ${gx - (gx - x1) * 0.45} ${gy}, ${gx} ${gy}`
-            const under = g.under && p.nodes.find((n) => n.id === g.under && n.kind !== 'goal')?.title
-            return (
-              <g key={g.id} role="button" tabIndex={0} aria-label={`Explore: ${g.title}`} className="group/gap cursor-pointer outline-none"
-                 onClick={() => onExplore?.(g)} onKeyDown={(e) => { if (e.key === 'Enter') onExplore?.(g) }}>
-                <title>{g.why}</title>
-                {/* a dotted stub where it would start, and a faint thread on to the goal: it never covers the real streams */}
-                <path d={d} fill="none" stroke={`${c} / 0.22)`} strokeWidth={2} strokeLinecap="round" strokeDasharray="1 7" style={{ animation: `gap-flow 2.4s linear infinite, fade-in 600ms ${i * 120}ms both` }} />
-                <path d={`M ${x0} ${cy} L ${x1} ${cy}`} fill="none" stroke={`${c} / 0.6)`} strokeWidth={7} strokeLinecap="round" strokeDasharray="2 10"
-                      className="transition-[stroke-width] group-hover/gap:[stroke-width:10]" style={{ animation: `gap-flow 1.6s linear infinite, fade-in 600ms ${i * 120}ms both` }} />
-                <circle cx={x0} cy={cy} r={9} fill="var(--surface-1)" stroke={`${c})`} strokeWidth={1.5} strokeDasharray="3 2" />
-                <text x={x0} y={cy + 3.5} textAnchor="middle" fontSize={10} fontWeight={700} fill={`${c})`}>?</text>
-                <text x={x0 + 16} y={cy - 9} fontSize={11.5} fontWeight={600} className="fill-fg-1">
-                  {g.title}
-                  <tspan dx={8} fontSize={10.5} fontWeight={500} fill={`${c})`}>{a.label}{under ? ` · ${under.length > 28 ? `${under.slice(0, 27)}…` : under}` : ''}</tspan>
-                  <tspan dx={8} fontSize={10.5} fontWeight={600} className="fill-[var(--accent-text)] opacity-0 transition-opacity group-hover/gap:opacity-100 group-focus/gap:opacity-100">+ Explore</tspan>
-                </text>
-              </g>
-            )
-          })}
           {/* the goal they flow into */}
           <circle cx={gx} cy={gy} r={46} fill="url(#goal-glow)" />
           <circle cx={gx} cy={gy} r={20} fill="var(--accent)" />
@@ -334,13 +327,28 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
           </foreignObject>
         </svg>
       )}
+     </div>
+      {/* under the map: the angles not explored yet (one click hands one to the planner), and Later, where cut work goes */}
+      {gaps.length > 0 && (
+        <div className="mx-4 mt-1 flex shrink-0 items-center gap-1.5 overflow-x-auto py-1">
+          <span className="label shrink-0 whitespace-nowrap text-fg-4">Not explored</span>
+          {gaps.map((g) => { const a = areaOf(g), I = a.icon; return (
+            <button key={g.id} onClick={() => onExplore?.(g)} title={`${a.label}: ${g.why}`}
+                    className="group/gap inline-flex max-w-[280px] shrink-0 items-center gap-1.5 rounded-full border border-dashed px-2.5 py-0.5 text-meta text-fg-2 transition-colors hover:bg-hover hover:text-fg-1"
+                    style={{ borderColor: `oklch(0.7 0.13 ${a.hue} / 0.6)` }}>
+              <I className="size-3 shrink-0" style={{ color: `oklch(0.7 0.13 ${a.hue})` }} /><span className="truncate">{g.title}</span>
+              <span className="shrink-0 text-accent-text opacity-0 transition-opacity group-hover/gap:opacity-100">+</span>
+            </button>
+          ) })}
+        </div>
+      )}
       {onMove && (
-        <div ref={laterRef} className={`mx-6 mb-6 mt-1 rounded-card border border-dashed px-3 py-2.5 transition-colors ${drag?.moved ? (drag.overLater ? 'border-fail bg-fail/10' : 'border-fg-4 bg-hover/40') : 'border-line-strong'}`}>
-          <p className="label mb-1.5 text-fg-4">Later · cut from this plan {cutNodes.length > 0 && <span className="normal-case tracking-normal text-fg-4">· {cutNodes.length}</span>}</p>
+        <div ref={laterRef} className={`mx-4 mb-3 mt-1 flex shrink-0 items-center gap-3 overflow-x-auto rounded-card border border-dashed px-3 py-1.5 transition-colors ${drag?.moved ? (drag.overLater ? 'border-fail bg-fail/10' : 'border-fg-4 bg-hover/40') : 'border-line-strong'}`}>
+          <p className="label shrink-0 whitespace-nowrap text-fg-4">Later · cut from this plan {cutNodes.length > 0 && <span className="normal-case tracking-normal text-fg-4">· {cutNodes.length}</span>}</p>
           {cutNodes.length ? (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex gap-1.5">
               {cutNodes.map((n) => (
-                <span key={n.id} className="group/c inline-flex max-w-full items-center gap-1 rounded-full bg-fill py-0.5 pl-2.5 pr-1 text-meta text-fg-2">
+                <span key={n.id} className="group/c inline-flex max-w-[260px] shrink-0 items-center gap-1 rounded-full bg-fill py-0.5 pl-2.5 pr-1 text-meta text-fg-2">
                   <button onClick={() => onSelect(n.id)} className="truncate hover:text-fg-1">{n.created?.identifier ? `${n.created.identifier} ` : ''}{n.title}</button>
                   <button onClick={() => onMove({ op: 'move', id: n.id, cut: false })} title="Bring it back" className="rounded-full px-1.5 py-0.5 text-micro font-medium text-accent-text hover:bg-accent-soft">Restore</button>
                 </span>
