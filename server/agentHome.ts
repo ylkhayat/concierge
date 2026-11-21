@@ -112,11 +112,22 @@ export const ownHomes = !!OWN
 const CLAUDE_SKILLS = OWN ? join(dirname(OWN), 'claude-skills') : undefined
 /** The skills folder Claude accounts read: Concierge's folder of links, or yours on a native install. */
 export const claudeSkills = async () => CLAUDE_SKILLS ?? userSkills('claude')
+let orgDirs = new Map<string, string>()
+/**
+ * Your organization's skills, as every machine shares them (orgSkills.ts: name → its folder, those not turned off):
+ * linked too, so a setting that runs one by name (/adr-authoring) works on a machine claude.ai never synced them to.
+ */
+export function setOrgSkills(dirs: Map<string, string>) {
+  const same = dirs.size === orgDirs.size && [...dirs].every(([k, v]) => orgDirs.get(k) === v)
+  orgDirs = dirs
+  return same ? Promise.resolve() : linkSkills()
+}
 async function linkSkills() {
   if (!CLAUDE_SKILLS) return
   const yours = await userSkills('claude'), want = new Map<string, string>()
   for (const n of await readdir(yours).catch(() => [] as string[])) if (!n.startsWith('.')) want.set(n, join(yours, n))
   for (const n of await readdir(CONCIERGE_SKILLS).catch(() => [] as string[])) if (!n.startsWith('.') && !want.has(n) && await there(join(CONCIERGE_SKILLS, n, 'SKILL.md'))) want.set(n, join(CONCIERGE_SKILLS, n))
+  for (const [n, d] of orgDirs) if (!want.has(n)) want.set(n, d)
   await mkdir(CLAUDE_SKILLS, { recursive: true })
   for (const n of await readdir(CLAUDE_SKILLS).catch(() => [] as string[])) if (!want.has(n)) await rm(join(CLAUDE_SKILLS, n), { recursive: true, force: true }) // a link: never what it points to
   for (const [n, to] of want) await link(to, join(CLAUDE_SKILLS, n))

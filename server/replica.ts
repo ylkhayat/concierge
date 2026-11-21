@@ -73,7 +73,9 @@ type Root = { id: string; dir: string; walk: string[]; keep?: (rel: string) => b
 const SESSION_DIRS = [process.env.DECK_CODE || process.env.CODE_DIR, STATE_DIR].filter((x): x is string => !!x).map(sessionDir)
 const CODE = process.env.DECK_CODE || process.env.CODE_DIR
 const ROOTS: Root[] = [
-  { id: 'state', dir: STATE_DIR, walk: ['logs', 'explain', 'domain', 'drafts', 'devlogs', 'atlas', 'crit', 'evals', 'review-records', 'review-pr-records', 'review-pr', 'revise', 'norms.json', 'events.jsonl'] },
+  { id: 'state', dir: STATE_DIR, walk: ['logs', 'explain', 'domain', 'drafts', 'devlogs', 'atlas', 'crit', 'evals', 'review-records', 'review-pr-records', 'review-pr', 'revise', 'norms.json', 'events.jsonl',
+    // your organization's skills, as every machine shares them (orgSkills.ts): a machine claude.ai never synced them to runs them from here
+    'org-skills'] },
   { id: 'config', dir: CONFIG_DIR, walk: [''] },
   // Claude files a session under its working directory with every other character a dash: Concierge's agents all work
   // under the clones folder, the same path on every machine. Your own sessions elsewhere stay where they are

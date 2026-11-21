@@ -2,7 +2,8 @@
 // state so every machine runs the newest, offered to every agent run, and counted when a run loads one.
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { setOrgSkills } from './agentHome.ts'
 import { fleet } from './fleet.ts'
 import { save, state, STATE_DIR } from './store.ts'
 
@@ -73,12 +74,15 @@ export async function syncOrgSkills() {
     })
   }
   catalog = next.sort((a, b) => Number(b.company) - Number(a.company) || a.name.localeCompare(b.name))
+  // the agents can run each one that's on by its name, wherever claude.ai synced it
+  await setOrgSkills(new Map(catalog.filter((s) => s.mode !== 'off').map((s) => [s.name, dirname(s.file)]))).catch(() => {})
 }
 
 export function setMode(name: string, mode: Mode) {
   state.skillModes = { ...state.skillModes, [name]: mode }
   save()
   for (const s of catalog) if (s.name === name) s.mode = mode
+  void setOrgSkills(new Map(catalog.filter((s) => s.mode !== 'off').map((s) => [s.name, dirname(s.file)]))).catch(() => {})
 }
 
 /** For a run's system prompt: the skills it loads every time, and the ones it picks from by fit. */

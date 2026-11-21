@@ -226,6 +226,7 @@ export async function ensureClones() {
 // into your ~/.claude. A new setup has none: you add the ones you want.
 export const DEFAULT_SOURCE = 'https://github.com/ylkhayat/skills' // what a setup from before the list used, unless it picked one
 const SOURCES_DIR = join(STATE_DIR, 'skill-sources')
+const ORG_SKILLS = join(STATE_DIR, 'org-skills', 'skills') // your organization's skills as every machine shares them (orgSkills.ts)
 /** The sources this setup uses: its list; else the one source it picked before; else, set up before sources were
  *  chosen, the one it used then. A new setup: none. */
 export const skillSources = (): string[] => config.skillSources ?? (config.skillSource?.trim() ? [config.skillSource.trim()] : configured() ? [DEFAULT_SOURCE] : [])
@@ -254,7 +255,8 @@ async function sourceClone() {
   // a source taken off the list goes
   const kept = new Set(urls.map(sourceSlug))
   for (const d of await readdir(SOURCES_DIR).catch(() => [] as string[])) if (!kept.has(d)) await rm(join(SOURCES_DIR, d), { recursive: true, force: true })
-  // one folder of links: each source's skills (its skills/ folder, else its top level), the first source's on a name
+  // one folder of links: each source's skills (its skills/ folder, else its top level), the first source's on a name;
+  // then its commands (commands/<name>.md), each as a skill of that name: a folder whose SKILL.md links to the command
   await rm(CONCIERGE_SKILLS, { recursive: true, force: true })
   await mkdir(CONCIERGE_SKILLS, { recursive: true })
   for (const url of urls) {
@@ -262,6 +264,15 @@ async function sourceClone() {
     for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
       if (!e.isDirectory() || e.name.startsWith('.') || !(await exists(join(dir, e.name, 'SKILL.md')))) continue
       await symlink(join(dir, e.name), join(CONCIERGE_SKILLS, e.name)).catch(() => {}) // taken already: an earlier source has it
+    }
+  }
+  for (const url of urls) {
+    const dir = join(SOURCES_DIR, sourceSlug(url), 'commands')
+    for (const f of await readdir(dir).catch(() => [] as string[])) {
+      const name = f.slice(0, -3)
+      if (!f.endsWith('.md') || f.startsWith('.') || await exists(join(CONCIERGE_SKILLS, name))) continue
+      await mkdir(join(CONCIERGE_SKILLS, name)).catch(() => {})
+      await symlink(join(dir, f), join(CONCIERGE_SKILLS, name, 'SKILL.md')).catch(() => {})
     }
   }
   fetched = { key, at: Date.now() }
@@ -272,7 +283,8 @@ async function sourceClone() {
 export async function sourceSkills() {
   await sourceClone()
   const names = await Promise.all((await readdir(CONCIERGE_SKILLS).catch(() => [] as string[])).filter((n) => !n.startsWith('.')).sort().map(async (name) => {
-    const to = await readlink(join(CONCIERGE_SKILLS, name)).catch(() => '')
+    // a skill: a link to its folder; a command: a folder whose SKILL.md links to it
+    const to = await readlink(join(CONCIERGE_SKILLS, name)).catch(() => readlink(join(CONCIERGE_SKILLS, name, 'SKILL.md'))).catch(() => '')
     return { name, source: to.slice(SOURCES_DIR.length + 1).split('/')[0] }
   }))
   return Promise.all(names.map(async ({ name, source }) => {
@@ -334,12 +346,13 @@ export async function skillFile(name: string): Promise<string | undefined> {
   const nested = (await Promise.all((await dirs(SKILLS_DIR)).map(async (d) => ((await dirs(join(SKILLS_DIR, d))).includes(name) ? [join(SKILLS_DIR, d, name, 'SKILL.md')] : []))) ).flat()
   // ponytail: two levels covers ~/.claude/skills/synced/<bucket>/<name>
   const deeper = (await dirs(join(SKILLS_DIR, 'synced'))).map((b) => join(SKILLS_DIR, 'synced', b, name, 'SKILL.md'))
-  return firstThat([...direct, ...nested, ...deeper, join(CONCIERGE_SKILLS, name, 'SKILL.md')]) // a skill source's, last: yours win
+  // a skill source's, then your organization's shared copy (orgSkills.ts), last: yours win
+  return firstThat([...direct, ...nested, ...deeper, join(CONCIERGE_SKILLS, name, 'SKILL.md'), join(ORG_SKILLS, name, 'SKILL.md')])
 }
 
 export const skillExists = async (command: string) => {
   const name = command.trim().match(/^\/([\w:-]+)/)?.[1]
-  return !!name && !!(await firstThat([join(SKILLS_DIR, name, 'SKILL.md'), join(homedir(), '.claude', 'commands', `${basename(name)}.md`), join(CONCIERGE_SKILLS, name, 'SKILL.md')]))
+  return !!name && !!(await firstThat([join(SKILLS_DIR, name, 'SKILL.md'), join(homedir(), '.claude', 'commands', `${basename(name)}.md`), join(CONCIERGE_SKILLS, name, 'SKILL.md'), join(ORG_SKILLS, name, 'SKILL.md')]))
 }
 
 /** A plugin skill (`plugin:name`): somewhere under ~/.claude/plugins as skills/<name>/SKILL.md or commands/<name>.md. */
