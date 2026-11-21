@@ -38,6 +38,11 @@ else mkdir -p "$code"; fi
 # the fleet's standby, which joins your other machines by itself, runs from this checkout under this computer's name
 [[ -n $(get DECK_APP) ]] || put DECK_APP "$PWD"
 [[ -n $(get HOST_NAME) ]] || put HOST_NAME "$(hostname -s)"
+# Linux: the standby writes as you and may use the Docker socket (on a Mac, Docker Desktop maps both by itself)
+if [[ $(uname) == Linux && -S /var/run/docker.sock ]]; then
+  [[ -n $(get STANDBY_USER) ]] || put STANDBY_USER "$(id -u):$(id -g)"
+  [[ -n $(get DOCKER_GID) ]] || put DOCKER_GID "$(stat -c %g /var/run/docker.sock)"
+fi
 # the fleet (several machines; a private extension cloned into fleet/): Compose layers it in by itself
 # (docker-compose.override.yml links to it), with its Tailscale link, which the onboarding signs in
 if [[ -f fleet/compose.fleet.yml ]]; then

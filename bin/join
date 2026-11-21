@@ -262,17 +262,40 @@ def get(url, timeout=3):
         return json.load(r)
 
 
+class Away(Exception):
+    """The main server doesn't answer for now: restarting (an update), asleep, or its link between two starts."""
+
+
 def post(url, body, timeout=30):
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method='POST', headers={'Content-Type': 'application/json'})
     try:
         with opener().open(req, timeout=timeout) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
+        if e.code >= 500:  # the link's proxy saying the server behind it is gone for now
+            raise Away(str(e))
         try:
             msg = json.load(e).get('error')
         except Exception:
             msg = None
         sys.exit(f'join: {msg or e}')
+    except (urllib.error.URLError, OSError) as e:
+        raise Away(str(getattr(e, 'reason', e)))
+
+
+def patiently(what, step, main):
+    """`step()` until the main server answers: while it restarts (an update) it is asked again, a little later each
+    time (up to a minute), only for as long as this join waits on it."""
+    pause, told = 3, False
+    while True:
+        try:
+            return step()
+        except Away as e:
+            if not told:
+                say(f"{main} doesn't answer for now ({e}): {what} again once it does")
+                told = True
+            time.sleep(pause)
+            pause = min(pause * 2, 60)
 
 
 def find(peers):
@@ -383,10 +406,12 @@ def main():
         sys.exit('join: not joined')
 
     base = f"http://{main_server['ip']}:{PORT}"
-    r = post(f'{base}/join', {'name': name})
+    ask = lambda: patiently('asking', lambda: post(f'{base}/join', {'name': name}), main_server['name'])  # noqa: E731
+    r = ask()
     said = None
     # as long as it takes: approve it whenever you're back at a screen with Concierge open. One open request at a time,
-    # answered when you decide (?wait); an ask the main server forgot (after 30 minutes, or a restart) is made again
+    # answered when you decide (?wait); an ask the main server forgot (after 30 minutes, or a restart: an update) is
+    # made again, with a new code
     while r.get('state') == 'waiting':
         if r['code'] != said:
             say(f"waiting for approval on {main_server['name']}: open the dashboard, Settings → Machines, and approve {name} "
@@ -396,10 +421,15 @@ def main():
         t = time.monotonic()
         try:
             r = get(f"{base}/join/{r['id']}?wait=50", timeout=70) | {'id': r['id']}
-        except urllib.error.HTTPError:
-            r = post(f'{base}/join', {'name': name})
+        except urllib.error.HTTPError as e:
+            if e.code < 500:  # it forgot this ask
+                r = ask()
+                continue
+            r = patiently('asking', lambda: post(f'{base}/join', {'name': name}), main_server['name'])  # restarted: forgot it too
+            continue
         except Exception:
-            pass  # not answering for now (asleep, a restart): ask again in a moment
+            r = patiently('asking', lambda: post(f'{base}/join', {'name': name}), main_server['name'])
+            continue
         if time.monotonic() - t < 2:
             time.sleep(3)  # a main server from before ?wait answers at once
     if r.get('state') != 'approved' or not r.get('setup'):
@@ -431,8 +461,13 @@ def main():
     subprocess.run(cmd, cwd=ROOT, check=True)
     if s['role'] == 'worker':
         env_set({'DECK_ROLE': 'worker'}, '.env.fleet')  # bin/standby restarts with it
+    if not env_get('LINK'):  # which Tailscale carries this machine's worker: the link when it has none of its own
+        env_set({'LINK': 'container' if via_link() else 'host'}, '.env.fleet')
     say('building Concierge here (a few minutes the first time)')
     subprocess.run([os.path.join(ROOT, 'bin', 'update'), '--force'], cwd=ROOT)
+    # the link takes this machine's name on the tailnet (concierge-<name>), the address it had stays
+    env = {**os.environ, 'COMPOSE_ENV_FILES': '.env,.env.fleet'}
+    subprocess.run(['docker', 'compose', '--profile', 'link', 'up', '-d', '--quiet-pull', 'link'], cwd=ROOT, env=env)
     note('joined', main=s['main'], name=name, role=s['role'])
     say(f"done: {name} is the {s['role']}. Its state, settings and sessions come over from {s['main']} within a minute.\n"
         f"      Sign in this machine's accounts (Claude, OpenAI, Azure): the dashboard, Settings → Accounts, {name}.")
