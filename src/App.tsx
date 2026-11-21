@@ -394,7 +394,7 @@ export function App() {
             : <div className="space-y-2 p-3 pt-16">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[46px] animate-pulse rounded-lg bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
-      <main ref={detailRef} className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
+      <main ref={detailRef} data-detail className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
         {codebaseRepo ? (
           <div key="codebase" className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
             <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}>
@@ -432,7 +432,7 @@ export function App() {
             : <div className="space-y-2 p-3 pt-6">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-xl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
-      <main ref={detailRef} className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
+      <main ref={detailRef} data-detail className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
         {stackPage ? stackPage : ticket ? null : (
           <ExecHome repo={focus} tickets={scoped} prs={prs ?? []} now={now} onTicket={select} onPr={goPr} onMap={focus && repos.includes(focus) ? () => goCodebase(focus) : undefined} />
         )}

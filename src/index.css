@@ -133,3 +133,9 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
    virtualization); each remembers its last height, so the scrollbar doesn't jump */
 [data-flip], .cv { content-visibility: auto; contain-intrinsic-size: auto 72px; }
 .cv { contain-intrinsic-size: auto 160px; }
+
+/* switching items: the detail pane's own view transition (App.tsx select) — the old page goes quickly, the new one
+   rises in a touch after it, so the text changes in one soft motion instead of two snapshots crossfading */
+[data-detail]::view-transition-group(*) { animation-duration: 200ms; animation-timing-function: var(--ease-snappy); }
+[data-detail]::view-transition-old(*) { animation: 90ms var(--ease-in) both fade-out; }
+[data-detail]::view-transition-new(*) { animation: 180ms 40ms var(--ease-out) both rise-in; }
