@@ -3,6 +3,7 @@ import { reviewStack, type StackItem } from './stackSteps.ts'
 import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.ts'
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
+import { profile } from './profile.ts'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
@@ -670,6 +671,8 @@ function sharedChanged(changed: SharedKey[]) {
 }
 setInterval(() => sharedChanged(applyShared()), 30_000).unref()
 // a machine's recent log (scrubbed), this one's or another's through its worker
+// where this server's thread spends its time, for a few seconds (profile.ts): ?seconds=10
+app.get('/debug/profile', async (c) => { try { return c.json(await profile(Number(c.req.query('seconds') ?? 10))) } catch (e) { return c.json({ error: (e as Error).message }, 409) } })
 app.get('/machines/:name/logs', async (c) => {
   const name = c.req.param('name')
   if (name === (fleet.machine ?? 'this machine')) return c.json({ lines: recentLines().map(scrub) })
