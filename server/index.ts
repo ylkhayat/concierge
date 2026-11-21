@@ -574,8 +574,11 @@ app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
 // run started here would live only in its memory. It hands the click to the machine that saves, over the machines' own
 // link (the machine key), so a page opened on any machine's localhost stays live; the result comes back here within 2s
 // (replica.ts). No machine that saves answering: refused, as before
+// What acts on this machine itself stays here, on any machine: updating it, its own sign-ins, its clones and worktrees,
+// a terminal on it. None of it is the shared state
+const HERE_ONLY = /^\/api\/(update$|claude-auth\/|azure\/login$|github\/login$|connections\/login|accounts\/[^/]+\/(login|adopt-login)$|setup\/(clone|validate|skills)$|worktrees\/clean$|debug\/|(prs|exec)\/[^/]+\/resume-terminal$)/
 app.use('*', async (c, next) => {
-  if (c.req.method === 'GET' || fleet.mayWrite()) return next()
+  if (c.req.method === 'GET' || fleet.mayWrite() || HERE_ONLY.test(c.req.path)) return next()
   const main = (await replicaPeers()).find((p) => p.active)
   if (main) try {
     const r = await call<{ status: number; text: string; type?: string }>(main.base, machineToken(), 'POST', '/x/api',
