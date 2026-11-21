@@ -773,43 +773,18 @@ app.get('/tailnet', async (c) => {
 })
 // onboarding with the fleet: is the link's Tailscale signed in, and if not, the address that signs it in
 app.get('/tailscale', async (c) => c.json(await tailscaleView()))
-// the other Concierge machines on the tailnet (online or not), and whether this one is with them yet: a machine that
-// isn't joins them (bin/join, which waits for one to be online), never as the main one
-// asks for this machine's host, which the app inside Docker can't act on itself: a file in asks/ wakes its helper
-// (bin/up sets it up: launchd's WatchPaths on a Mac, a systemd path unit on Linux), which runs bin/update --if-asked once
-// and empties the folder. Nothing runs in between
-const ASKS = join(STATE_DIR, 'asks'), JOIN_ASKED = join(STATE_DIR, 'join-asked'), HELPER = join(STATE_DIR, 'helper-installed')
-const askHost = (what: 'join-now' | 'update') => mkdir(ASKS, { recursive: true }).then(() => writeFile(join(ASKS, what), new Date().toISOString() + '\n')).catch((e: Error) => console.warn(`asks: ${what}: ${e.message}`))
-const joinAsked = () => stat(JOIN_ASKED).then(() => true, () => false)
-// Tailscale says when the tailnet changes (pushed, not polled): the page's list of your other machines follows, and one
-// coming online while you asked to join them starts the join
+// Tailscale says when the tailnet changes (pushed, not polled): the page's list of your other machines follows
 watchTailnet((now, before) => {
   stale('/fleet/nearby')
   const came = now.filter((m) => m.online && !before.some((b) => b.name === m.name && b.online))
-  if (!came.length) return
-  console.log(`tailnet: ${came.map((m) => m.name).join(' and ')} came online`)
-  if (!fleet.machine) void joinAsked().then((y) => { if (y) void askHost('join-now') })
+  if (came.length) console.log(`tailnet: ${came.map((m) => m.name).join(' and ')} came online`)
 })
+// the other Concierge machines on the tailnet (online or not), and whether this one is with them yet: a machine that
+// isn't joins them (bin/join, which waits for one to be online), never as the main one
 app.get('/fleet/nearby', async (c) => {
   const near = await nearbyMachines()
   const mine = new Set([fleet.machine, ...machines.keys()].filter(Boolean))
-  // asked: you chose to join them once one is online; helper: this machine's every-minute bin/update ran lately (it is
-  // what starts the join on the host, which the app inside Docker can't)
-  const asked = await readFile(JOIN_ASKED, 'utf8').then((t) => t.trim() || true, () => false)
-  const helper = await stat(HELPER).then(() => true, () => false)
-  return c.json({ joined: !!fleet.machine, machine: fleet.machine, asked: !!asked, helper, machines: near.map((m) => ({ ...m, ours: mine.has(m.name) })) })
-})
-// "Join them once one is online": a note this machine's helper (bin/update, every minute) acts on, running bin/join in
-// the background until it is done. Off again: the note goes (a join already under way finishes its current wait)
-// is this machine's host helper set up (bin/helper on)? The page asks for it, with why, when something needs it
-app.get('/helper', async (c) => c.json({ on: await stat(HELPER).then(() => true, () => false) }))
-app.post('/fleet/join', async (c) => {
-  const { on } = await c.req.json<{ on?: boolean }>().catch(() => ({ on: false }))
-  if (on) {
-    await writeFile(JOIN_ASKED, new Date().toISOString() + '\n') // bin/join names the machine itself (its host's name)
-    if ((await nearbyMachines()).some((m) => m.online)) await askHost('join-now') // one is online already: now
-  } else await rm(JOIN_ASKED, { force: true })
-  return c.json({ ok: true })
+  return c.json({ joined: !!fleet.machine, machine: fleet.machine, machines: near.map((m) => ({ ...m, ours: mine.has(m.name) })) })
 })
 // the run history, from the event log: the latest runs (each as it ended) and per-day totals (Settings → Usage)
 // standup: since the start of the last working day by default (?since=ISO for another start)
@@ -1128,7 +1103,9 @@ app.get('/update', async (c) => {
   // a fork: what the original repo has that it lacks, and bin/update's last word on merging it
   const up = await readUpstream()
   const note = up && full.split('\n').reverse().find((l) => /upstream/.test(l))
-  return c.json({ asked, deployed, log, version: process.env.DECK_VERSION, status, latest: latest && { sha: latest.sha.slice(0, 7), at: latest.at },
+  // standby: the fleet's standby does the update on this machine (it may run Docker; the app, which runs agents, may not).
+  // Without one, you run bin/update yourself (or a cron line of yours does)
+  return c.json({ asked, deployed, log, version: process.env.DECK_VERSION, status, standby: !!process.env.DECK_ROLE, latest: latest && { sha: latest.sha.slice(0, 7), at: latest.at },
     upstream: up && { ...up, note: note?.replace(/^.*?\d{4}: /, '') } }) // the build this server runs (bin/update)
 })
 /** A fork's distance from the original repo, as bin/update last fetched it ("<count> <at> <url>", then "<sha> <subject>" lines). */
@@ -1159,7 +1136,6 @@ app.post('/update', async (c) => {
   const lock = await stat(join(STATE_DIR, 'update.lock.d')).catch(() => undefined)
   if (!now && lock && Date.now() - lock.mtimeMs < 3 * 3600_000) return c.json({ error: 'An update is already under way: Settings → Machines shows where it stands' }, 409)
   await writeFile(join(STATE_DIR, 'update-asked'), now ? `now ${Math.floor(Date.now() / 1000)}` : `${upstream ? 'upstream ' : ''}${new Date().toISOString()}`)
-  await askHost('update') // wakes the helper at once (a cron line from before still finds update-asked within a minute)
   return c.json({ ok: true })
 })
 

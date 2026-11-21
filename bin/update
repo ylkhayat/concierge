@@ -44,13 +44,6 @@ name=$(envv DECK_NAME)
 if [[ -n $name || -t 1 ]]; then exec > >(tee -a "$state/update${name:+.$name}.log") 2>&1; fi
 handled="$state/update-handled${name:+.$name}"
 ask=$(cat "$state/update-asked" 2>/dev/null || true)
-# what woke this run (the helper: launchd or systemd watching asks/, which the app writes to): taken out first, so the
-# watch doesn't fire again for it. join-now: one of your other machines came online while you asked to join them
-woke=$(ls "$state/asks" 2>/dev/null || true); rm -f "$state/asks/"* 2>/dev/null || true
-if [[ $woke == *join-now* && -f $state/join-asked && -z $(envv DECK_ROLE) ]]; then
-  echo "$(date -u): one of your other machines is online: joining it (its log: join.log)"
-  bin/join --yes --once >> "$state/join.log" 2>&1 || echo "$(date -u): the join didn't finish (join.log); it tries again when one comes online"
-fi
 if [[ $asked == 1 ]]; then [[ -n $ask && $ask != "$(cat "$handled" 2>/dev/null)" ]] || exit 0; fi
 # one update at a time (a --when-idle run may still be waiting for a quiet moment)
 # mkdir is atomic everywhere (macOS has no flock); a lock whose update died (killed, rebooted) doesn't count

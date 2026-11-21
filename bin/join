@@ -46,6 +46,27 @@ def via_link():
         ['docker', 'exec', 'concierge-link', 'tailscale', f'--socket={LINK_SOCKET}', 'version'], capture_output=True).returncode == 0
 
 
+_watch = None
+
+
+def changed():
+    """Wait until Tailscale says the tailnet changed (a device came, went, or came online): its own change stream
+    (tailscale debug watch-ipn), this machine's Tailscale or the link container's. Nothing is polled meanwhile."""
+    global _watch
+    if _watch is None or _watch.poll() is not None:
+        cli = tailscale_cli()
+        cmd = [cli, 'debug', 'watch-ipn'] if cli else ['docker', 'exec', 'concierge-link', 'tailscale', f'--socket={LINK_SOCKET}', 'debug', 'watch-ipn']
+        _watch = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    if not _watch.stdout.readline():  # the stream ended (the link restarted): a moment, then a new one
+        _watch = None
+        time.sleep(5)
+    time.sleep(2)  # a burst of changes counts once
+    if _watch:  # what else arrived meanwhile is the same news
+        import select
+        while select.select([_watch.stdout], [], [], 0)[0] and _watch.stdout.readline():
+            pass
+
+
 def tailscale(everyone=False):
     """The tailnet as this machine's Tailscale sees it (its own, else the link container's): (this device, the other
     devices online, or every one with `everyone`)."""
@@ -224,16 +245,6 @@ def find(peers):
     return list({h['name']: h for h in found if h.get('name')}.values())
 
 
-def clear_ask():
-    """The page's "Join them once one is online" (join-asked) is done with: joined, or refused. Under either folder name."""
-    for n in ('concierge', 'review-deck'):
-        for f in ('join-asked', 'join.pid'):
-            try:
-                os.remove(os.path.join(HOME, '.local/state', n, f))
-            except FileNotFoundError:
-                pass
-
-
 def env_set(updates, name='.env'):
     """Set keys in .env (made from .env.example if there is none yet), or the fleet's .env.fleet, keeping everything else."""
     path = os.path.join(ROOT, name)
@@ -281,7 +292,6 @@ def main():
     a.add_argument('--name', help="this machine's name among them (default: its hostname)")
     a.add_argument('--yes', action='store_true', help="don't ask before joining")
     a.add_argument('--check', action='store_true', help='check everything a join needs, change nothing')
-    a.add_argument('--once', action='store_true', help="don't wait for one to be online: join now, or say none is and stop (Concierge's helper runs it when one comes online)")
     o = a.parse_args()
     if o.check:
         sys.exit(check())
@@ -291,9 +301,6 @@ def main():
     me, peers = tailscale()
     say(f"signed in to Tailscale as {me.get('HostName', '?')}; looking for Concierge on {len(peers)} machine(s) online")
     found = find(peers)
-    if not found and o.once:
-        say('none of your other machines answers yet: nothing done (this runs again when one comes online)')
-        return
     # none online yet (you're away from home, the others asleep): wait for one, however long, then go on by itself
     waited = 0
     while not found:
@@ -304,11 +311,11 @@ def main():
             for _, what, fix in explain_tailnet(peers, answers):
                 say(f'{what}' + (f'\n      fix: {fix}' if fix else ''))
             sys.exit('join: no Concierge on your tailnet to join: bin/join --check checks everything else too')
-        if waited % 300 == 0:  # said again every five minutes, so a glance at the terminal tells where it stands
+        if waited % 20 == 0:  # said again now and then, so a glance at the terminal tells where it stands
             seen = ', '.join(f"{p['HostName'].removeprefix('concierge-')} ({'online, not answering yet' if p.get('Online') else 'offline, last seen ' + (p.get('LastSeen') or '?')[:16].replace('T', ' ')})" for p in ours)
             say(f'your other machines: {seen}. Waiting for one to be online (Ctrl-C to stop; run it again any time)')
-        time.sleep(15)
-        waited += 15
+        changed()  # until Tailscale says something on the tailnet changed: no polling
+        waited += 1
         _, peers = tailscale()
         found = find(peers)
     main_name = next((h['main'] for h in found if h.get('main')), None)
@@ -337,8 +344,6 @@ def main():
                 r = get(f"{base}/join/{r['id']}", timeout=10) | {'id': r['id']}
             except Exception:
                 pass
-    if r.get('state') == 'denied':
-        clear_ask()  # refused: not asked again every minute
     if r.get('state') != 'approved' or not r.get('setup'):
         sys.exit('join: not approved' if r.get('state') == 'denied' else 'join: the main server gave no setup: run it again')
     s = r['setup']
@@ -363,7 +368,6 @@ def main():
     subprocess.run(cmd, cwd=ROOT, check=True)
     if s['role'] == 'worker':
         env_set({'DECK_ROLE': 'worker'}, '.env.fleet')  # bin/standby restarts with it
-    clear_ask()  # joined: the ask the page left is done
     say('building Concierge here (a few minutes the first time)')
     subprocess.run([os.path.join(ROOT, 'bin', 'update'), '--force'], cwd=ROOT)
     say(f"done: {name} is the {s['role']}. Its state, settings and sessions come over from {s['main']} within a minute.\n"

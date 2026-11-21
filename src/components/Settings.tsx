@@ -3,7 +3,6 @@ import {
   CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
-import { HelperPrompt } from './HelperPrompt.tsx'
 import { label, sha, VERSION } from '../version.ts'
 import { Field, Pick, PickPill } from '../ui/Pick.tsx'
 import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
@@ -1608,7 +1607,7 @@ function About({ setup, onSetup }: { setup?: SetupView; onSetup: () => void }) {
  * builds while things run and swaps the container once no agent is working. Its last log lines show here.
  */
 type UpdateView = {
-  asked: boolean; deployed?: string; log: string[]; version?: string; latest?: { sha: string; at: string }
+  asked: boolean; standby?: boolean; deployed?: string; log: string[]; version?: string; latest?: { sha: string; at: string }
   upstream?: { behind: number; at: string; url: string; note?: string; commits: { sha: string; subject: string }[] } // a fork: the original repo
   status?: { phase: 'idle' | 'queued' | 'building' | 'draining' | 'restarting' | 'updated' | 'current' | 'failed'; text: string; busy: boolean; sha?: string; until?: string }
 }
@@ -1644,8 +1643,9 @@ function Update() {
         </span>
       </Row>
       {err && <p role="alert" className="mx-3.5 mb-3 rounded-lg bg-fail/10 px-3 py-2 text-small text-fail">{err}</p>}
-      {/* asked: it only happens through the helper (or a cron line from before); say so the moment it matters */}
-      {(asking || u?.asked || busy) && <div className="mx-3.5 mb-3"><HelperPrompt why="Updating builds the new version on your computer and restarts Concierge with it." /></div>}
+      {/* one machine: no standby to build it, and the app (which runs agents) may not drive Docker: you run it */}
+      {u && !u.standby && (asking || u.asked) && !busy && <p className="mx-3.5 mb-3 rounded-lg bg-fill px-3 py-2 text-small text-fg-2">
+        Updating builds the new version on your computer and restarts Concierge with it, which Concierge can’t do from inside Docker. Run <code className="font-mono">bin/update</code> in its checkout (a cron line of yours with <code className="font-mono">--if-asked</code> does it for this button).</p>}
       {u?.upstream && <Upstream up={u.upstream} busy={busy || asking} onMerge={() => ask({ upstream: true })} />}
       {(busy || phase === 'updated') && at >= 0 && (
         <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-3.5 pb-3 text-meta" aria-label="Update progress">

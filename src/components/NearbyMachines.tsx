@@ -2,10 +2,9 @@ import { Check, CircleAlert, Copy, LoaderCircle, Network, RefreshCw } from 'luci
 import { useState } from 'react'
 import { api } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
-import { HelperPrompt } from './HelperPrompt.tsx'
 import { ago } from '../time.ts'
 
-type Nearby = { joined: boolean; machine?: string; asked: boolean; helper: boolean; machines: { name: string; host: string; online: boolean; lastSeen?: string; ours: boolean }[] }
+type Nearby = { joined: boolean; machine?: string; machines: { name: string; host: string; online: boolean; lastSeen?: string; ours: boolean }[] }
 
 /**
  * The other Concierge machines your tailnet has, read from Tailscale (online or not), before this machine is with them.
@@ -16,7 +15,6 @@ export function NearbyMachines() {
   const q = useApi<Nearby>('/fleet/nearby') // read again when Tailscale says the tailnet changed (the server's 'stale' push)
   const [copied, setCopied] = useState(false)
   const v = q.data
-  const ask = (on: boolean) => api('/fleet/join', { on }).then(() => refresh('/fleet/nearby'), () => {})
   if (!v || v.joined || !v.machines.length) return null
   const online = v.machines.filter((m) => m.online)
   const names = (xs: { name: string }[]) => xs.map((m) => m.name).join(' and ')
@@ -39,25 +37,15 @@ export function NearbyMachines() {
         ))}
       </div>
       <div className="space-y-2 border-t border-line bg-fill/40 p-4">
-        {v.asked ? (
-          <div className="flex flex-wrap items-center gap-2 text-small">
-            <span className="flex items-center gap-1.5 text-fg-2"><LoaderCircle className="size-3.5 animate-spin text-accent" />
-              {online.length ? `Joining ${names(online)} now.` : 'Joins them as soon as one is online, however long that takes.'}</span>
-            <button onClick={() => void ask(false)} className="ml-auto rounded-md px-2 py-0.5 text-meta text-fg-3 ring-1 ring-line hover:text-fg-1">Don’t join</button>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => void ask(true)} className="inline-flex items-center gap-1.5 btn-primary">Join them once one is online</button>
-            <span className="text-meta text-fg-3">{online.length ? `${names(online)} ${online.length === 1 ? 'is' : 'are'} online now.` : 'None is online now: it waits, then joins by itself.'}</span>
-          </div>
-        )}
-        {v.asked && <HelperPrompt why="Joining sets this computer up as one of your machines (its settings file, the services that keep them in step) the moment one of them comes online." />}
-        <p className="text-meta text-fg-3">By hand, in this checkout (it waits the same way):</p>
+        <p className="text-small text-fg-2">
+          {online.length ? <>{names(online)} {online.length === 1 ? 'is' : 'are'} online. Join from this computer’s terminal, in Concierge’s checkout:</>
+            : <>None is online now. Start the join from this computer’s terminal, in Concierge’s checkout: it waits until Tailscale says one is online (hours later is fine), then finishes by itself.</>}
+        </p>
         <button onClick={() => void navigator.clipboard?.writeText('bin/join').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
                 className="group flex items-center gap-1.5 rounded-lg bg-surface-1 px-2.5 py-1.5 font-mono text-meta text-fg-2 ring-1 ring-line hover:ring-line-strong" title="Copy">
           bin/join{copied ? <Check className="size-3 text-ok" /> : <Copy className="size-3 opacity-50 group-hover:opacity-100" />}
         </button>
-        <p className="text-meta text-fg-3">Until it joins, this machine works on its own, as now.</p>
+        <p className="text-meta text-fg-3">It sets this computer up as one of them, which Concierge can’t do from inside Docker. Until then this machine works on its own, as now.</p>
       </div>
     </div>
   )
