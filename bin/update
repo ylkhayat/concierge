@@ -18,6 +18,10 @@ envv() { envs | grep "^$1=" | tail -1 | cut -d= -f2- || true; }
 [[ -f .env.fleet ]] && export COMPOSE_ENV_FILES=.env,.env.fleet
 # your skills' links into a folder of yours: mounted too, so they work in the container (SKILL_LINKS)
 bin/skill-links --write || true
+# what Compose mounts and Docker would otherwise make as root (Linux): the empty stand-in for SKILL_LINKS, and with
+# CODE_DIR empty, Concierge's own folder for clones
+d="$HOME/.local/state/$(envv CONCIERGE_DIRNAME)"; [[ $d == */ ]] && d="${d}concierge"
+mkdir -p "$d/no-links"; [[ -n $(envv CODE_DIR) ]] || mkdir -p "$d/codebases"
 force=0 asked=0 upstream=0
 envs | grep -q '^CONCIERGE_UPSTREAM=merge' && upstream=1
 for a in "$@"; do case $a in --force) force=1 ;; --if-asked) asked=1 ;; --upstream) upstream=1 ;; --when-idle) ;; *) echo "bin/update: unknown option $a" >&2; exit 2 ;; esac; done

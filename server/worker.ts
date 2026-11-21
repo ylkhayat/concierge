@@ -22,6 +22,7 @@ export type Spawn = { provider: string; args: string[]; cwd: string; stdin?: boo
 export type WorkerStatus = { name: string; role?: string; slots: number; running: number; freeMb: number; cores?: number; mb?: number; cpu?: number; usedMb?: number; can?: string[]; repos?: string[]
   who?: Record<string, string> // each account's login there (providers.ts identityOf): one account is one login on every machine
   crit?: { key: string; port?: number }[] // the crit sessions running there, so the page finds a review's crit on the machine that ran it
+  takes?: string[] // what it runs beyond Ship runs: 'review' (fences someone else's PR, reports its crit). Older versions say nothing
 } // cpu, usedMb: what its agents use; can: the accounts it can run
 
 /** The token both machines share: made by the first that needs it, in a folder the sync carries to the other. */

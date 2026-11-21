@@ -37,11 +37,16 @@ else mkdir -p "$code"; fi
 [[ $(get HOST_GID) == "$(id -g)" ]] || put HOST_GID "$(id -g)"
 # the fleet (several machines; a private extension cloned into fleet/): Compose layers it in by itself
 # (docker-compose.override.yml links to it), with its Tailscale link, which the onboarding signs in
-[[ -f fleet/compose.fleet.yml ]] && say "Fleet found: its Tailscale link starts too (you sign it in from the onboarding)"
+if [[ -f fleet/compose.fleet.yml ]]; then
+  say "Fleet found: its Tailscale link starts too (you sign it in from the onboarding)"
+  # its settings for this machine, documented and all optional until a second machine (fleet/bin/sync-setup fills them)
+  [[ -f .env.fleet || ! -f fleet/env.fleet.example ]] || { cp fleet/env.fleet.example .env.fleet && chmod 600 .env.fleet; }
+fi
 dir=$(get CONCIERGE_DIRNAME); dir=${dir:-concierge}
 # what the container mounts: made here, so Docker doesn't make them as root
 mkdir -p "$HOME/.config/$dir" "$HOME/.local/state/$dir" "$HOME/.claude" "$HOME/.codex"
 [[ -n $code ]] || mkdir -p "$HOME/.local/state/$dir/codebases"
+mkdir -p "$HOME/.local/state/$dir/no-links"
 # your skills that are links into a folder of yours (a skills repo you keep elsewhere, for any agent tool): that
 # folder is mounted too, at the same path, so the links work inside (SKILL_LINKS in .env)
 bin/skill-links --write

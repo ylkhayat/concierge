@@ -36,7 +36,7 @@ test('a repository allowed on the main server runs there; one that is not goes t
 
 test('a repository allowed nowhere, or only on a machine that is offline, says why and runs nowhere', () => {
   config.repos = { 'bliro/app': '/code/app' }
-  config.cloneOn = {}
+  config.cloneOn = { 'bliro/app': [] } // unticked everywhere
   assert.equal(place(undefined, idle, new Map(), 'claude', 'bliro/app'), undefined)
   assert.match(whyNowhere('bliro/app', 'claude')!, /isn't allowed on any machine/)
   config.cloneOn = { 'bliro/app': ['mac'] }
@@ -59,5 +59,25 @@ test('an account is one login: a machine signed in as someone else under its nam
   setIdentity('claude', 'login:me@home.com|?') // this machine too: it doesn't run it either
   assert.equal(loginOk(undefined, 'claude'), false)
   delete config.accounts
+  machines.clear()
+})
+
+test('a setup from before machines were picked: a repository nobody ruled on runs wherever it is checked out', () => {
+  config.repos = { 'acme/api': '/code/api', 'bliro/app': '/code/app' }
+  config.cloneOn = { 'bliro/app': ['win'] } // only bliro/app was ruled on
+  add('win', ['acme/api', 'bliro/app'])
+  assert.deepEqual(route('acme/api').order, ['main', 'win']) // checked out on both, nobody said otherwise
+  assert.deepEqual(route('bliro/app').order, ['win'])
+  machines.clear()
+})
+
+test('reviews go only to a machine that says it takes them: one on an older version gets Ship runs only', () => {
+  config.repos = { 'bliro/app': '/code/app' }
+  config.cloneOn = { 'bliro/app': ['win'] }
+  add('win', ['bliro/app']) // says nothing about reviews: an older version
+  assert.equal(place(undefined, idle, new Map(), 'claude', 'bliro/app', true), undefined)
+  assert.equal(place(undefined, idle, new Map(), 'claude', 'bliro/app'), 'win') // a Ship run still goes
+  machines.set('win', { name: 'win', base: 'http://win:4748', seen: 0, status: { name: 'win', slots: 2, running: 0, freeMb: 8000, repos: ['bliro/app'], takes: ['review'] } })
+  assert.equal(place(undefined, idle, new Map(), 'claude', 'bliro/app', true), 'win')
   machines.clear()
 })

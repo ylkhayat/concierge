@@ -90,6 +90,8 @@ fi
 for f in "$HOME/.config/${CONCIERGE_DIRNAME:-concierge}/secrets.json" "$HOME/.config/review-deck/secrets.json"; do
   if [ -z "${GH_TOKEN:-}" ] && [ -r "$f" ]; then GH_TOKEN=$(jq -r '.shared.GITHUB_TOKEN.value // empty' "$f" 2>/dev/null || true); fi
 done
+# an install from before sign-ins moved into the app still has it in .env: that one, until it signs in from the app
+[ -n "${GH_TOKEN:-}" ] || GH_TOKEN="${GITHUB_TOKEN:-}"
 if [ -n "${GH_TOKEN:-}" ]; then export GH_TOKEN; else unset GH_TOKEN; fi
 # git: who commits, and push over https with the GitHub token (ssh remotes are rewritten)
 [ -n "${GIT_AUTHOR_NAME:-}" ] && as git config --global user.name "$GIT_AUTHOR_NAME"

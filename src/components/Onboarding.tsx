@@ -129,7 +129,11 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     setPicks((p) => ({ ...p, [repo]: { ...p[repo], ...(r.path ? { path: r.path, status: 'ok' } : { status: r.error }) } }))
   }
   const chosen = useMemo(() => Object.entries(picks).filter(([, p]) => p.on), [picks])
-  const reposReady = chosen.length > 0 && chosen.every(([, p]) => p.status === 'ok')
+  // the repositories it will watch: what you picked on their step, or (resumed past it, so nothing picked in this visit)
+  // the ones saved when you left it
+  const picksMade = !!suggested
+  const repoList = picksMade ? Object.fromEntries(chosen.map(([r, p]) => [r, p.path])) : setup?.config.repos ?? {}
+  const reposReady = picksMade ? chosen.length > 0 && chosen.every(([, p]) => p.status === 'ok') : Object.keys(repoList).length > 0
 
   // one found by search (or pasted as a link): on top of the list, picked, with its checkout here if it has one
   const addFound = (f: RepoFound) => {
@@ -155,7 +159,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     setSaving(true)
     try {
       await api('/config', {
-        repos: Object.fromEntries(chosen.map(([r, p]) => [r, p.path])),
+        repos: repoList,
         workspaces: spaces,
         review: commands.review,
         revise: commands.revise,
@@ -174,7 +178,12 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   const c = setup?.checks
   const agentReady = !!agents?.accounts.some((a) => !blocked(a))
   // where you are, kept on the server: a reload, another browser or a rebuild opens onboarding here again
-  useEffect(() => { if (setup && !onClose) void api('/setup/step', { step: id }).catch(() => {}) }, [id, !!setup]) // eslint-disable-line react-hooks/exhaustive-deps
+  // the furthest step you reached: going back to an earlier one keeps everything up to it done and a click away, and a
+  // reload (another browser, a rebuild) opens there again. Kept on the server
+  const [reached, setReached] = useState(0)
+  useEffect(() => setReached((r) => Math.max(r, step)), [step])
+  const furthest = steps[Math.min(reached, steps.length - 1)].id
+  useEffect(() => { if (setup && !onClose) void api('/setup/step', { step: furthest }).catch(() => {}) }, [furthest, !!setup]) // eslint-disable-line react-hooks/exhaustive-deps
   // a sign-in that finishes while its step is open moves on by itself (the agents' step waits: you may add more)
   const signedIn = id === 'github' ? !!c?.github.ok : id === 'tailscale' ? !!ts?.signedIn : undefined
   const wasIn = useRef(signedIn)
@@ -187,9 +196,10 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
     skills: !!commands.review.trim() && !!commands.revise.trim(),
     exec: !!setup?.config.exec.command,
   }[id]
-  // Exec maps tickets to watched repos, so the repos are saved on the way out of their step
+  // the repos are saved on the way out of their step: Exec maps tickets to them, and onboarding resumed later (a
+  // reload, another browser) finishes with them
   const next = async () => {
-    if (id === 'repos' && spaces.includes('exec')) {
+    if (id === 'repos') {
       try { setSetup(await api('/config', { repos: Object.fromEntries(chosen.map(([r, p]) => [r, p.path])) })) }
       catch (e) { return toast((e as Error).message, 'error') }
     }
@@ -213,10 +223,10 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
           </div>
           <ol className="flex gap-1 md:flex-col">
             {steps.map((s, i) => {
-              const done = i < step, on = i === step
+              const done = i < reached && i !== step, on = i === step
               return (
                 <li key={s.id} className="flex-1 md:flex-none">
-                  <button onClick={() => (i <= step || onClose) && setStep(i)} disabled={i > step && !onClose}
+                  <button onClick={() => (i <= reached || onClose) && setStep(i)} disabled={i > reached && !onClose}
                           className={`group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${on ? 'sel' : 'hover:bg-hover disabled:hover:bg-transparent'}`}>
                     <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors ${done ? 'bg-accent text-on-accent' : on ? 'bg-accent/15 text-accent-text' : 'bg-fill text-fg-3'}`}>
                       {done ? <Check className="size-4" strokeWidth={3} /> : <s.icon className="size-4" />}
@@ -376,7 +386,10 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
             {id === 'exec' && !canNext && <span className="text-small text-fg-3">Save an exec command to continue</span>}
             {step < steps.length - 1
               ? <button onClick={next} disabled={!canNext} className={primaryBtn}>Continue<ArrowRight className="size-4" /></button>
-              : <button onClick={finish} disabled={saving || !reposReady} className={primaryBtn}>{saving ? <LoaderCircle className="size-4 animate-spin" /> : <Check className="size-4" />}{onClose ? 'Save' : spaces.includes('review') ? 'Start reviewing' : 'Start shipping'}</button>}
+              : <>
+                  {!reposReady && !saving && <button onClick={() => setStep(steps.findIndex((x) => x.id === 'repos'))} className="text-small text-fg-3 underline decoration-line-strong underline-offset-2 hover:text-fg-1">Pick a repository to watch first</button>}
+                  <button onClick={finish} disabled={saving || !reposReady} className={primaryBtn}>{onClose ? <><Check className="size-4" />Save</> : <>Let’s go{saving ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}</>}</button>
+                </>}
           </footer>
         </section>
       </div>

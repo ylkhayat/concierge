@@ -594,11 +594,11 @@ export function pump() {
   if (short && !machines.size) return
   // reviews and explanations share the parallel cap, oldest first; the codebase map only takes what is left
   // place: work that may run on any machine with its checkout (the matrix: machines.ts route); the rest runs here
-  const waiting: { prio: number; at: string; go: (on?: string) => void; exec?: ExecRun; place?: { repo: string; provider: ProviderId; prefer?: string } }[] = [
+  const waiting: { prio: number; at: string; go: (on?: string) => void; exec?: ExecRun; place?: { repo: string; provider: ProviderId; prefer?: string; review?: boolean } }[] = [
     ...Object.values(state.prs).flatMap((p) => [
       // a planned review waits while the one below it in its stack is still queued or running
       ...(p.job?.state === 'queued' && !children.has(p.id) && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review', p.repo) && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: (on?: string) => start(p, on),
-        place: { repo: p.repo, provider: p.job.provider ?? providerFor(p.mine ? 'revise' : 'review', p.repo), prefer: p.job.machine } }] : []),
+        place: { repo: p.repo, provider: p.job.provider ?? providerFor(p.mine ? 'revise' : 'review', p.repo), prefer: p.job.machine, review: true } }] : []),
       // an explanation waits while one below it in the stack is still being written: it reads theirs
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
         && available(providerFor('review', p.repo)) && hereHas(p.repo) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
@@ -608,11 +608,11 @@ export function pump() {
   ].sort((a, b) => a.prio - b.prio || a.at.localeCompare(b.at))
   const slots = drain ? 0 : Math.min(state.settings.maxJobs, slotsHere(state.settings.maxJobs))
   for (const w of waiting) {
-    const p = w.exec ? { repo: w.exec.repo, provider: w.exec.provider ?? providerFor('exec', w.exec.repo), prefer: w.exec.machine } : w.place
+    const p: { repo: string; provider: ProviderId; prefer?: string; review?: boolean } | undefined = w.exec ? { repo: w.exec.repo, provider: w.exec.provider ?? providerFor('exec', w.exec.repo), prefer: w.exec.machine } : w.place
     if (!p) { if (drain || short || here >= state.settings.maxJobs) continue; here++; w.go(); continue }
     // the machine its repository's route picks (the main server when it has the checkout), with room and the account
     // signed in as itself; the machine it ran on before first, where its worktree and session are
-    const to = place(p.prefer, { running: here, slots, freeMb: short ? 0 : freemem() / 1048576, lacks: p.repo in cloneState() }, out, p.provider, p.repo)
+    const to = place(p.prefer, { running: here, slots, freeMb: short ? 0 : freemem() / 1048576, lacks: p.repo in cloneState() }, out, p.provider, p.repo, p.review)
     if (to === undefined) continue
     if (!to || to === fleet.machine) { here++; w.go() } else { out.set(to, (out.get(to) ?? 0) + 1); w.go(to) }
   }

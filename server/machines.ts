@@ -95,14 +95,18 @@ if (fleet.machine) { void refresh(); setInterval(() => void refresh(), 15_000).u
 
 /** Is `repo` allowed on `machine`: itself, or its whole organization. */
 export const allowedOn = (repo: string, machine: string) => [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(machine))
+/** Whether anyone said where `repo` may be (an entry for it or its organization, even an empty one). A setup from before
+ *  these choices said nothing: its repositories stay allowed wherever they are checked out, until you pick. */
+const ruled = (repo: string) => [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn && k in config.cloneOn)
 /** The machine this server runs on, as the matrix names it (one machine: none). */
 const main = () => fleet.machine
 export type Route = { repo: string; order: string[]; allowed: string[]; home?: string; why?: string }
 /** Where `repo`'s work goes, best first: the machines that have its checkout now, in the matrix's order. */
 export function route(repo: string): Route {
   const all = [...new Set([main(), ...fleetMachines(), ...machines.keys()])].filter((m): m is string => !!m)
-  const allowed = all.filter((m) => allowedOn(repo, m))
-  const ready = allowed.filter((m) => m === main() ? !(repo in cloneState()) : !!machines.get(m)?.status?.repos?.includes(repo))
+  const has = (m: string) => (m === main() ? !(repo in cloneState()) && !!config.repos[repo] : !!machines.get(m)?.status?.repos?.includes(repo))
+  const allowed = all.filter((m) => (ruled(repo) ? allowedOn(repo, m) : has(m)))
+  const ready = allowed.filter(has)
   const rank = (m: string) => (m === main() ? 0 : m === state.settings.workMachine ? 1 : 2)
   const order = ready.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
   const offline = allowed.filter((m) => m !== main() && !machines.get(m)?.status)
@@ -145,7 +149,7 @@ export function whyNowhere(repo: string, account: string): string | undefined {
  * this machine runs and may run; `out` how many this control plane already sent to each machine. Undefined: nowhere
  * can take it now. '' is this machine with one machine.
  */
-export function place(prefer: string | undefined, here: { running: number; slots: number; freeMb: number; lacks?: boolean }, out: Map<string, number>, provider?: string, repo?: string): string | undefined {
+export function place(prefer: string | undefined, here: { running: number; slots: number; freeMb: number; lacks?: boolean }, out: Map<string, number>, provider?: string, repo?: string, review?: boolean): string | undefined {
   const room = new Map<string, number>()
   // a machine without the repository's checkout (not allowed there, or still cloning) gets none of its runs
   if (!here.lacks && (here.freeMb >= LOW_MB || here.running === 0) && (!provider || loginOk(undefined, provider))) room.set(fleet.machine ?? '', capped(fleet.machine, here.slots) - here.running)
@@ -154,6 +158,9 @@ export function place(prefer: string | undefined, here: { running: number; slots
     if (provider && m.status.can && !m.status.can.includes(provider)) continue // that account isn't signed in (or its Ollama isn't running) there
     if (provider && !loginOk(m.name, provider)) continue // signed in there as someone else
     if (repo && m.status.repos && !m.status.repos.includes(repo)) continue
+    // a review or revision only to a machine that says it takes them (fences someone else's PR, reports its crit): one
+    // on an older version gets Ship runs only, as before, until it updates
+    if (review && !m.status.takes?.includes('review')) continue
     room.set(m.name, capped(m.name, m.status.slots) - Math.max(m.status.running, out.get(m.name) ?? 0))
   }
   for (const [k, v] of room) if (v <= 0) room.delete(k)
@@ -218,7 +225,7 @@ export function serve(cap: () => number, own: () => Promise<{ cpu: number; mb: n
       const freeMb = Math.round(freemem() / 1048576)
       return { name: fleet.machine!, role: process.env.DECK_ROLE, slots: fleet.elsewhere() && freeMb >= LOW_MB && !draining() ? slotsHere(cap()) : 0, running: served?.hosted.size ?? 0, freeMb,
         cores: availableParallelism(), mb: Math.round(totalmem() / 1048576), cpu: usage.cpu, usedMb: usage.mb, can: can(), repos: Object.keys(config.repos).filter((r) => !(r in cloneState())), // checked out here (what isn't is in cloneState)
-        who: Object.fromEntries(accounts().flatMap((a) => { const w = identityOf(a.id); return w ? [[a.id, w]] : [] })), crit: liveCrit() }
+        who: Object.fromEntries(accounts().flatMap((a) => { const w = identityOf(a.id); return w ? [[a.id, w]] : [] })), crit: liveCrit(), takes: ['review'] }
     },
     busy: busyUnder,
     logs: () => recentLines().map(scrub),
