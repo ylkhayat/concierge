@@ -15,7 +15,9 @@ const patch = <T extends { id: string }>(list: T[], d: { set: T[]; del: string[]
   return d.order.map((id) => byId.get(id)).filter((x): x is T => !!x)
 }
 
-const es = new EventSource('/api/events')
+// its name says the scope the tabs asked for (lib.ts liveEvents): concierge-live-self / -fleet, or none for the default
+const scope = /-(self|fleet)$/.exec((self as unknown as { name: string }).name)?.[1]
+const es = new EventSource(`/api/events${scope ? `?scope=${scope}` : ''}`)
 es.onopen = () => { open = true; send({ type: 'open' }) }
 es.onerror = () => { open = false; send({ type: 'error' }) }
 for (const name of ['prs', 'prs-patch', 'exec', 'exec-patch', 'health', 'alerts', 'activity', 'stale']) {

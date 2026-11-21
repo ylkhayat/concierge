@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { chosen, useScope } from './scope.ts'
 import type { Me } from '../server/github.ts'
 import type { ExecView, Health, PrView, TicketView } from '../server/index.ts'
 import type { Activity } from '../server/runner.ts'
@@ -9,7 +10,10 @@ import { reachable, reachableIn, serverHost, type Reach } from './hosts.ts'
 export type { Activity, ExecView, Health, Me, PrView, TicketView }
 
 // the role this page reads as (role.ts): what a request starts runs that role's commands
-const roleHeader = (): Record<string, string> => { try { const r = localStorage.getItem('role'); return r ? { 'x-concierge-role': r } : {} } catch { return {} } }
+const roleHeader = (): Record<string, string> => {
+  const s = chosen() // this machine or the fleet, when picked in this tab (scope.ts); else the server's default
+  try { const r = localStorage.getItem('role'); return { ...(r && { 'x-concierge-role': r }), ...(s && { 'x-concierge-scope': s }) } } catch { return s ? { 'x-concierge-scope': s } : {} }
+}
 export const api = (path: string, body?: unknown) =>
   fetch(`/api${path}`, body === undefined ? { headers: roleHeader() } : {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...roleHeader() }, body: JSON.stringify(body),
@@ -38,11 +42,12 @@ export function setParam(k: string, v?: string | number | null) {
  * The live event stream, shared by every tab (liveWorker.ts, a SharedWorker): it looks like an EventSource (onopen,
  * onerror, addEventListener, close), so the code below doesn't care. A browser without SharedWorker streams on its own.
  */
-function liveEvents(): Pick<EventSource, 'addEventListener' | 'close'> & { onopen: (() => void) | null; onerror: (() => void) | null } {
-  if (typeof SharedWorker === 'undefined') return new EventSource('/api/events') as never
+function liveEvents(scope?: string): Pick<EventSource, 'addEventListener' | 'close'> & { onopen: (() => void) | null; onerror: (() => void) | null } {
+  const url = `/api/events${scope ? `?scope=${scope}` : ''}` // tabs share one stream per scope: the worker's name says which
+  if (typeof SharedWorker === 'undefined') return new EventSource(url) as never
   const t = Object.assign(new EventTarget(), { onopen: null as (() => void) | null, onerror: null as (() => void) | null, close: () => {} })
   let w: SharedWorker
-  try { w = new SharedWorker(new URL('./liveWorker.ts', import.meta.url), { type: 'module', name: 'concierge-live' }) } catch { return new EventSource('/api/events') as never }
+  try { w = new SharedWorker(new URL('./liveWorker.ts', import.meta.url), { type: 'module', name: `concierge-live${scope ? `-${scope}` : ''}` }) } catch { return new EventSource(url) as never }
   w.port.onmessage = (m: MessageEvent<{ type: string; data?: string }>) => {
     const { type, data } = m.data
     if (type === 'open') t.onopen?.()
@@ -57,6 +62,7 @@ function liveEvents(): Pick<EventSource, 'addEventListener' | 'close'> & { onope
 /** Live dashboard state over one SSE connection (EventSource reconnects on its own). */
 export function useDeck(selected: string | undefined) {
   const [me, setMe] = useState<Me>()
+  const scopeNow = useScope().chosen
   const [prs, setPrs] = useState<PrView[]>()
   const [health, setHealth] = useState<Health>()
   const [connected, setConnected] = useState(false)
@@ -68,7 +74,8 @@ export function useDeck(selected: string | undefined) {
   useEffect(() => { api('/me').then((m: Me) => { reach = m.reach; setMe(m) }).catch(() => {}) }, [])
 
   useEffect(() => {
-    const es = liveEvents()
+    const es = liveEvents(scopeNow)
+    staleNow(['/runs']) // what was read in the other scope
     es.onopen = () => setConnected(true)
     es.onerror = () => setConnected(false)
     es.addEventListener('prs', (e) => setPrs(JSON.parse(e.data))) // the whole list, when this page connects
@@ -121,7 +128,7 @@ export function useDeck(selected: string | undefined) {
     // back after a drop (a restart, a slow server): what it missed comes in again, the open feed included
     es.addEventListener('open', () => { const id = selectedRef.current; if (id) api(feedUrl(id)).then((f: Activity[]) => { cacheFeed(id, f); if (selectedRef.current === id) setFeed(f) }).catch(() => {}) })
     return () => { es.close(); if (flush) clearTimeout(flush) }
-  }, [])
+  }, [scopeNow]) // switching this machine / fleet reconnects with the other lists
 
   // the SSE listener above outlives renders, so it reads the selection through a ref
   selectedRef.current = selected

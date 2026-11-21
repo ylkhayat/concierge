@@ -39,6 +39,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { freemem, homedir, tmpdir } from 'node:os'
 import { fleet } from './fleet.ts'
 import { fleetMachines } from './perMachine.ts'
+import { selfPatch } from './scope.ts'
 import { behind, latestHeads, overdue, readLatest, runningHere, type Running } from './versions.ts'
 import { capped, machines, serve as serveMachine, slotsHere, token as machineToken, rotateToken, ask, matrix, onCameBack, hosted, statsHere, type Stats } from './machines.ts'
 import { updateStatus } from './updateStatus.ts'
@@ -552,6 +553,21 @@ app.use('*', async (c, next) => {
   await tagged(c, next)
   if (c.res.status === 200 || c.res.status === 304) c.header('Cache-Control', 'no-cache') // kept, but asked again every time
 })
+// --- scope: this machine or the whole fleet --------------------------------------------------------------------------
+// Every machine follows the same state, so it is one API; the scope only filters what the lists return. Asked for with
+// ?scope=self|fleet or the page's x-concierge-scope header; unsaid, it follows how the page was opened: this machine's
+// localhost is that machine (self), the tailnet link is the fleet. One machine: always the fleet (it is this one)
+type ViewScope = 'self' | 'fleet'
+const scopeOf = (c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }): ViewScope => {
+  const said = c.req.query('scope') ?? c.req.header('x-concierge-scope')
+  if (fleetMachines().length < 2) return 'fleet'
+  if (said === 'self' || said === 'fleet') return said
+  return c.req.header('x-forwarded-for') ? 'fleet' : 'self'
+}
+/** The repositories this machine doesn't have (not allowed here, or unticked and kept for now): what self leaves out. */
+const awayHere = () => new Set(Object.entries(cloneState()).filter(([, v]) => v === 'not-here' || v.startsWith('kept:')).map(([r]) => r))
+const repoOfPr = (id: string) => state.prs[id]?.repo ?? id.split('#')[0]
+
 // the role the page is in comes with each request: what it starts runs that role's commands (roles.ts)
 app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
 // a machine that may not save (another one holds the lease, or this one just woke) does no click itself: a reply or a
@@ -1115,7 +1131,15 @@ app.post('/skills/suggest', async (c) => {
 })
 app.get('/runs', async (c) => {
   const days = Math.min(90, Number(c.req.query('days')) || 7)
-  return c.json({ runs: (await runs(days)).slice(0, 200), totals: await totals(days) })
+  let list = await runs(days)
+  if (scopeOf(c) === 'self') { // this machine's runs: where it ran (the run's state says), else its repository is here
+    const away = awayHere()
+    const where = (r: (typeof list)[number]): { machine?: string; repo?: string } =>
+      r.entity === 'exec' ? { machine: state.execs[r.run]?.machine, repo: state.execs[r.run]?.repo }
+      : r.entity === 'base' ? { repo: r.id } : { machine: state.prs[r.id]?.job?.machine, repo: repoOfPr(r.id) }
+    list = list.filter((r) => { const w = where(r); return w.machine ? w.machine === fleet.machine : !w.repo || !away.has(w.repo) })
+  }
+  return c.json({ runs: list.slice(0, 200), totals: await totals(days) })
 })
 app.get('/update', async (c) => {
   // asked and not yet handled by this machine (bin/update notes the ask each machine handled; the folder syncs)
@@ -1367,7 +1391,7 @@ async function pollTickets() {
 }
 
 
-app.get('/exec', (c) => c.json(execView()))
+app.get('/exec', (c) => { const v = execView(), away = scopeOf(c) === 'self' ? awayHere() : undefined; return c.json(away ? { ...v, tickets: v.tickets.filter((t) => !t.repo || !away.has(t.repo)) } : v) })
 // steer a running exec run without stopping it: it reads your words between steps, or right after it ends
 app.post('/exec/:run/steer', async (c) => {
   const { text } = await c.req.json<{ text?: string }>()
@@ -2244,7 +2268,7 @@ app.post('/accounts/:id/login', async (c) => {
   try { return c.json(a.kind === 'openai' ? await startOpenaiLogin(a.id) : { url: await startClaudeLogin(a.home) }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })
 
-app.get('/prs', (c) => c.json(views()))
+app.get('/prs', (c) => { const away = scopeOf(c) === 'self' ? awayHere() : undefined; return c.json(away ? views().filter((p) => !away.has(p.repo)) : views()) })
 app.get('/prs/:id/activity', async (c) => c.json(await loadActivity(decodeURIComponent(c.req.param('id')))))
 app.post('/poll', async (c) => { await doPoll(true); return c.json(healthView()) })
 // a review request Auto-review starts on its own: in the Review workspace, with a checkout, and not started yet
@@ -2948,12 +2972,19 @@ app.get('/prs/:id/body', (c) => {
 })
 
 app.get('/events', (c) => streamSSE(c, async (stream) => {
-  const patch = (event: 'prs-patch', data: string) => void stream.writeSSE({ event, data })
-  const sendPrs = async () => { await stream.writeSSE({ event: 'prs', data: JSON.stringify(prsHub.join(patch)) }) }
+  // self: this machine's lists only (scopeOf), filtered per page from the one list every page shares
+  const self = scopeOf(c) === 'self', away = () => (self ? awayHere() : new Set<string>())
+  const hiddenPrs = new Set<string>(), hiddenTickets = new Set<string>()
+  const patch = (event: 'prs-patch', data: string) => void stream.writeSSE({ event, data: self ? selfPatch(data, away(), hiddenPrs) : data })
+  const sendPrs = async () => {
+    const a = away(), list = prsHub.join(patch)
+    for (const p of list) if (a.has(p.repo)) hiddenPrs.add(p.id)
+    await stream.writeSSE({ event: 'prs', data: JSON.stringify(list.filter((p) => !hiddenPrs.has(p.id))) })
+  }
   const sendHealth = () => stream.writeSSE({ event: 'health', data: JSON.stringify(healthView()) })
   const onActivity = (id: string, a: Activity) => stream.writeSSE({ event: 'activity', data: JSON.stringify({ id, a }) })
   // a burst of changes (a run's every line says 'exec') is one send, at most one a second, built once for every page
-  const execPatch = (data: string) => void stream.writeSSE({ event: 'exec-patch', data })
+  const execPatch = (data: string) => void stream.writeSSE({ event: 'exec-patch', data: self ? selfPatch(data, away(), hiddenTickets) : data })
   const sendAlerts = () => stream.writeSSE({ event: 'alerts', data: JSON.stringify(alerts()) })
   // what changed, by API path: gathered for a moment so a burst of saves is one message
   let pending = new Set<string>(), flush: ReturnType<typeof setTimeout> | undefined
@@ -2964,7 +2995,9 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   bus.on('activity', onActivity)
   await sendPrs() // the whole list once; from here on prsHub sends this page patches
   await sendHealth()
-  await stream.writeSSE({ event: 'exec', data: JSON.stringify(execHub.join(execPatch)) }) // the whole board once; then patches
+  const board = execHub.join(execPatch), a = away()
+  for (const t of board.tickets) if (t.repo && a.has(t.repo)) hiddenTickets.add(t.id)
+  await stream.writeSSE({ event: 'exec', data: JSON.stringify(self ? { ...board, tickets: board.tickets.filter((t) => !hiddenTickets.has(t.id)) } : board) }) // the whole board once; then patches
   await sendAlerts()
   const tick = setInterval(() => { stream.writeSSE({ event: 'ping', data: '' }) }, 4000)
   await new Promise<void>((resolve) => stream.onAbort(resolve))
