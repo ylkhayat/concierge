@@ -4,12 +4,15 @@ import { api } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
 import { ago } from '../time.ts'
 
-type Nearby = { joined: boolean; machine?: string; machines: { name: string; host: string; online: boolean; lastSeen?: string; ours: boolean }[] }
+type Joining = { state: 'waiting' | 'asking' | 'approval' | 'setting-up' | 'joined' | 'stopped'; at: string; main?: string; name?: string; code?: string; role?: string; why?: string }
+type Nearby = { joined: boolean; machine?: string; joining?: Joining; machines: { name: string; host: string; online: boolean; lastSeen?: string; ours: boolean }[] }
 
 /**
  * The other Concierge machines your tailnet has, read from Tailscale (online or not), before this machine is with them.
- * It joins them as the standby or a worker, never the main one; bin/join finishes that once one of them is online, and
- * waits for it as long as it takes. Nothing while there are none, or once this machine is one of them.
+ * It joins them as the standby or a worker, never the main one, by itself: the fleet's standby (which may drive Docker,
+ * the app never does) runs the join once one of them is online, however long that takes, and says how it goes
+ * (`joining`). Without a standby here (an older setup), bin/join does the same. Nothing while there are none, or once
+ * this machine is one of them.
  */
 export function NearbyMachines() {
   const q = useApi<Nearby>('/fleet/nearby') // read again when Tailscale says the tailnet changed (the server's 'stale' push)
@@ -37,16 +40,37 @@ export function NearbyMachines() {
         ))}
       </div>
       <div className="space-y-2 border-t border-line bg-fill/40 p-4">
-        <p className="text-small text-fg-2">
-          {online.length ? <>{names(online)} {online.length === 1 ? 'is' : 'are'} online. Join from this computer’s terminal, in Concierge’s checkout:</>
-            : <>None is online now. Start the join from this computer’s terminal, in Concierge’s checkout: it waits until Tailscale says one is online (hours later is fine), then finishes by itself.</>}
-        </p>
-        <button onClick={() => void navigator.clipboard?.writeText('bin/join').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
-                className="group flex items-center gap-1.5 rounded-lg bg-surface-1 px-2.5 py-1.5 font-mono text-meta text-fg-2 ring-1 ring-line hover:ring-line-strong" title="Copy">
-          bin/join{copied ? <Check className="size-3 text-ok" /> : <Copy className="size-3 opacity-50 group-hover:opacity-100" />}
-        </button>
-        <p className="text-meta text-fg-3">It sets this computer up as one of them, which Concierge can’t do from inside Docker. Until then this machine works on its own, as now.</p>
+        {v.joining ? <JoinProgress j={v.joining} online={online.length > 0} /> : <>
+          <p className="text-small text-fg-2">
+            {online.length ? <>{names(online)} {online.length === 1 ? 'is' : 'are'} online. Join from this computer’s terminal, in Concierge’s checkout:</>
+              : <>None is online now. Start the join from this computer’s terminal, in Concierge’s checkout: it waits until Tailscale says one is online (hours later is fine), then finishes by itself.</>}
+          </p>
+          <button onClick={() => void navigator.clipboard?.writeText('bin/join').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
+                  className="group flex items-center gap-1.5 rounded-lg bg-surface-1 px-2.5 py-1.5 font-mono text-meta text-fg-2 ring-1 ring-line hover:ring-line-strong" title="Copy">
+            bin/join{copied ? <Check className="size-3 text-ok" /> : <Copy className="size-3 opacity-50 group-hover:opacity-100" />}
+          </button>
+          <p className="text-meta text-fg-3">It sets this computer up as one of them, which Concierge can’t do from inside Docker. Until then this machine works on its own, as now.</p>
+        </>}
       </div>
+    </div>
+  )
+}
+
+/** How the standby's join goes: nothing for you to run, at most an approval on the main server. */
+function JoinProgress({ j, online }: { j: Joining; online: boolean }) {
+  const busy = j.state === 'asking' || j.state === 'setting-up' || (j.state === 'waiting' && online)
+  const text = {
+    waiting: online ? 'One of them is online: joining now.' : 'This machine joins them by itself as soon as one is online: Tailscale says when, hours later is fine. Nothing to run; until then it works on its own, as now.',
+    asking: `Asking ${j.main} to let this machine join as ${j.name}…`,
+    approval: `Waiting for you on ${j.main}: approve ${j.name} in its Settings → Machines if it shows the code ${j.code}. It joins as soon as you do.`,
+    'setting-up': `Approved: setting this machine up as the ${j.role} beside ${j.main}. Concierge restarts here in a few minutes, with ${j.main}’s settings.`,
+    joined: `Joined as the ${j.role} beside ${j.main}: Concierge restarts here with its settings.`,
+    stopped: `The join stopped: ${j.why}. It tries again by itself when your machines online change.`,
+  }[j.state]
+  return (
+    <div className="flex items-start gap-2 text-small">
+      {busy ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-fg-3" /> : j.state === 'stopped' || j.state === 'approval' ? <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-wait" /> : <Network className="mt-0.5 size-3.5 shrink-0 text-fg-3" />}
+      <span className="min-w-0 text-fg-2">{text}{j.code && j.state === 'approval' && <span className="ml-1.5 rounded bg-surface-1 px-1.5 py-0.5 font-mono text-meta text-fg-1 ring-1 ring-line">{j.code}</span>}</span>
     </div>
   )
 }

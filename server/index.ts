@@ -5,6 +5,7 @@ import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { profile } from './profile.ts'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { watch as fsWatch } from 'node:fs'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -781,12 +782,17 @@ watchTailnet((now, before) => {
   if (came.length) console.log(`tailnet: ${came.map((m) => m.name).join(' and ')} came online`)
 })
 // the other Concierge machines on the tailnet (online or not), and whether this one is with them yet: a machine that
-// isn't joins them (bin/join, which waits for one to be online), never as the main one
+// isn't joins them by itself once one is online (the fleet's standby runs bin/join --wait, and says how it goes in
+// join.json), never as the main one
+const JOIN_NOTE = join(STATE_DIR, 'join.json')
 app.get('/fleet/nearby', async (c) => {
   const near = await nearbyMachines()
   const mine = new Set([fleet.machine, ...machines.keys()].filter(Boolean))
-  return c.json({ joined: !!fleet.machine, machine: fleet.machine, machines: near.map((m) => ({ ...m, ours: mine.has(m.name) })) })
+  const joining = await readFile(JOIN_NOTE, 'utf8').then((t) => JSON.parse(t) as Record<string, unknown>, () => undefined)
+  return c.json({ joined: !!fleet.machine, machine: fleet.machine, joining, machines: near.map((m) => ({ ...m, ours: mine.has(m.name) })) })
 })
+// the standby writing join.json: the page hears it then (a file event, not a timer)
+try { fsWatch(STATE_DIR, (_e, f) => { if (f === 'join.json') stale('/fleet/nearby') }).unref() } catch { /* no events here: it shows on the next tailnet change */ }
 // the run history, from the event log: the latest runs (each as it ended) and per-day totals (Settings → Usage)
 // standup: since the start of the last working day by default (?since=ISO for another start)
 const standupFacts = async (since: Date) =>

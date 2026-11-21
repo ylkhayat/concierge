@@ -5,6 +5,8 @@
   bin/join --name laptop   this machine's name among them (default: its hostname)
   bin/join --yes           don't ask before joining
   bin/join --check         check everything a join needs, change nothing, and say how to fix what is missing
+  bin/join --wait          until it has joined: wait for Tailscale to be signed in and for another machine to be
+                           online, however long (what the fleet's standby runs by itself on a machine with no role yet)
 
 It asks the machine running Concierge's main server to let this one join. Signed in to Tailscale as the same person,
 it does at once; someone else waits for your approval there (Settings → Machines), with a code this screen shows.
@@ -23,6 +25,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -54,9 +57,7 @@ def changed():
     (tailscale debug watch-ipn), this machine's Tailscale or the link container's. Nothing is polled meanwhile."""
     global _watch
     if _watch is None or _watch.poll() is not None:
-        cli = tailscale_cli()
-        cmd = [cli, 'debug', 'watch-ipn'] if cli else ['docker', 'exec', 'concierge-link', 'tailscale', f'--socket={LINK_SOCKET}', 'debug', 'watch-ipn']
-        _watch = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        _watch = subprocess.Popen([*ts_cmd(), 'debug', 'watch-ipn'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     if not _watch.stdout.readline():  # the stream ended (the link restarted): a moment, then a new one
         _watch = None
         time.sleep(5)
@@ -67,17 +68,43 @@ def changed():
             pass
 
 
+NOTE = None  # run by the standby: where it says how the join goes, for the dashboard (server/index.ts /fleet/nearby)
+
+
+def note(state, **kw):
+    """Say how the join goes in the app's state folder (as it was before the join), when the standby runs it."""
+    if not NOTE:
+        return
+    try:
+        with open(NOTE + '.tmp', 'w') as f:
+            json.dump({'state': state, 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), **kw}, f)
+        os.replace(NOTE + '.tmp', NOTE)
+    except OSError:
+        pass
+
+
+WAIT = False  # --wait: what would end the join (Tailscale not signed in yet) is waited out instead
+
+
 def tailscale(everyone=False):
     """The tailnet as this machine's Tailscale sees it (its own, else the link container's): (this device, the other
-    devices online, or every one with `everyone`)."""
-    cli = tailscale_cli()
-    if cli:
-        r = subprocess.run([cli, 'status', '--json'], capture_output=True, text=True, timeout=20)
-    elif via_link():
-        r = subprocess.run(['docker', 'exec', 'concierge-link', 'tailscale', f'--socket={LINK_SOCKET}', 'status', '--json'], capture_output=True, text=True, timeout=20)
-    else:
+    devices online, or every one with `everyone`). With --wait, until Tailscale is signed in, however long."""
+    while True:
+        try:
+            return _tailscale(everyone)
+        except SystemExit as e:
+            if not WAIT or not ts_cmd():
+                raise
+            say(f'{e.code}; waiting for Tailscale to say it changed')
+            changed()
+
+
+def _tailscale(everyone=False):
+    cmd = ts_cmd()
+    if not cmd:
         sys.exit('join: no Tailscale here: start Concierge first (bin/up: its link brings Tailscale, and the setup signs it in), '
                  'or install Tailscale (https://tailscale.com/download)')
+    r = subprocess.run([*cmd, 'status', '--json'], capture_output=True, text=True, timeout=20)
     if r.returncode:
         sys.exit(f'join: Tailscale is not signed in here ({r.stderr.strip() or r.stdout.strip()[:200]}): sign in, then run this again')
     st = json.loads(r.stdout)
@@ -93,6 +120,23 @@ TAILSCALE_PATHS = ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', r'C:\
 def tailscale_cli():
     """Tailscale's command: on PATH, else where its app installs it (a Mac, Windows)."""
     return shutil.which('tailscale') or next((p for p in TAILSCALE_PATHS if os.path.exists(p)), None)
+
+
+def ts_cmd():
+    """The tailscale command to ask: this machine's own, else the one in Concierge's link container, else None."""
+    cli = tailscale_cli()
+    if cli:
+        return [cli]
+    return ['docker', 'exec', 'concierge-link', 'tailscale', f'--socket={LINK_SOCKET}'] if via_link() else None
+
+
+def my_name(me, given=None):
+    """This machine's name among them: yours, else this computer's. Not the Tailscale name when that is the fleet's
+    link (concierge-<something>)."""
+    host = me.get('HostName') or ''
+    # in the standby's container the hostname is Docker's: HOST_NAME is this computer's (bin/up writes it to .env)
+    host = os.environ.get('HOST_NAME') or env_get('HOST_NAME') or (socket.gethostname() if not host or host.startswith('concierge-') else host)
+    return (given or re.sub(r'[^a-z0-9-]', '-', host.lower().split('.')[0])).strip('-')[:31]
 
 
 def reach(ip, port=PORT, timeout=3):
@@ -160,12 +204,13 @@ def check():
     free = shutil.disk_usage(HOME).free / 1e9
     add(free >= 10, f'{free:.0f} GB free', 'free up space: the first build needs about 10 GB')
     add(os.path.exists(os.path.join(ROOT, '.env.example')), 'this Concierge checkout', 'run bin/join from a clone of the repository')
-    cli = tailscale_cli()
-    add(bool(cli), 'Tailscale installed', 'install it: https://tailscale.com/download')
-    if cli:
-        st = subprocess.run([cli, 'status', '--json'], capture_output=True, text=True, timeout=20)
+    cmd = ts_cmd()
+    add(bool(cmd), "Tailscale (this machine's, or Concierge's link)" if cmd else 'Tailscale',
+        'start Concierge (bin/up: its link brings Tailscale, and the setup signs it in), or install it: https://tailscale.com/download')
+    if cmd:
+        st = subprocess.run([*cmd, 'status', '--json'], capture_output=True, text=True, timeout=20)
         state = json.loads(st.stdout).get('BackendState') if st.returncode == 0 and st.stdout.strip().startswith('{') else None
-        add(state == 'Running', f"Tailscale signed in ({state or 'not running'})", f'sign in: {cli} up (or the Tailscale app)')
+        add(state == 'Running', f"Tailscale signed in ({state or 'not running'})", 'sign in: the setup in the dashboard, or the Tailscale app')
         if state == 'Running':
             data = json.loads(st.stdout)
             me = data.get('Self') or {}
@@ -184,7 +229,7 @@ def check():
             if found:
                 hellos = [hello(ip(p)) for p in found]
                 main_name = next((h.get('main') for h in hellos if h.get('main')), None)
-                name = re.sub(r'[^a-z0-9-]', '-', (me.get('HostName') or socket.gethostname()).lower().split('.')[0]).strip('-')[:31]
+                name = my_name(me)
                 add(bool(main_name), f"the main server is {main_name or 'unknown'}", 'is the main server up? Its dashboard shows it in Settings → Machines')
                 add(name not in [h.get('name') for h in hellos], f'"{name}" is free as this machine\'s name', 'pick another: bin/join --name <name>')
     bad = [l for l in lines if not l[0]]
@@ -292,7 +337,13 @@ def main():
     a.add_argument('--name', help="this machine's name among them (default: its hostname)")
     a.add_argument('--yes', action='store_true', help="don't ask before joining")
     a.add_argument('--check', action='store_true', help='check everything a join needs, change nothing')
+    a.add_argument('--wait', action='store_true', help='wait as long as it takes, for Tailscale and for another machine')
     o = a.parse_args()
+    global WAIT, NOTE
+    WAIT = o.wait
+    if os.environ.get('CONCIERGE_STANDBY'):
+        d = os.path.join(HOME, '.local/state', env_get('CONCIERGE_DIRNAME') or 'concierge')
+        NOTE = os.path.join(d, 'join.json') if os.path.isdir(d) else None
     if o.check:
         sys.exit(check())
     if not shutil.which('docker'):
@@ -306,11 +357,12 @@ def main():
     while not found:
         _, everyone = tailscale(everyone=True)
         ours = [p for p in everyone if 'tag:concierge' in (p.get('Tags') or []) and p.get('HostName') != me.get('HostName')]
-        if not ours and not waited:
+        if not ours and not waited and not o.wait:
             answers = {p['HostName']: reach(next((a for a in p['TailscaleIPs'] if '.' in a), p['TailscaleIPs'][0])) for p in peers if 'tag:concierge' in (p.get('Tags') or [])}
             for _, what, fix in explain_tailnet(peers, answers):
                 say(f'{what}' + (f'\n      fix: {fix}' if fix else ''))
             sys.exit('join: no Concierge on your tailnet to join: bin/join --check checks everything else too')
+        note('waiting', machines=[{'name': p['HostName'].removeprefix('concierge-'), 'online': bool(p.get('Online'))} for p in ours])
         if waited % 20 == 0:  # said again now and then, so a glance at the terminal tells where it stands
             seen = ', '.join(f"{p['HostName'].removeprefix('concierge-')} ({'online, not answering yet' if p.get('Online') else 'offline, last seen ' + (p.get('LastSeen') or '?')[:16].replace('T', ' ')})" for p in ours)
             say(f'your other machines: {seen}. Waiting for one to be online (Ctrl-C to stop; run it again any time)')
@@ -323,10 +375,8 @@ def main():
     others = ', '.join(h['name'] for h in found if h is not main_server)
     say(f"found Concierge: {main_server['name']} runs the main server" + (f' ({others} too)' if others else ''))
 
-    # its name: yours, else this computer's. Not the Tailscale name when that is the fleet's link (concierge-<something>)
-    host = me.get('HostName') or ''
-    host = socket.gethostname() if not host or host.startswith('concierge-') else host
-    name = (o.name or re.sub(r'[^a-z0-9-]', '-', host.lower().split('.')[0])).strip('-')[:31]
+    name = my_name(me, o.name)
+    note('asking', main=main_server['name'], name=name)
     if any(h['name'] == name for h in found):
         sys.exit(f'join: {name} is already one of them: pass --name <another name>')
     if not o.yes and input(f"join {main_server['name']}'s Concierge as {name}? [Y/n] ").strip().lower() not in ('', 'y', 'yes'):
@@ -334,27 +384,38 @@ def main():
 
     base = f"http://{main_server['ip']}:{PORT}"
     r = post(f'{base}/join', {'name': name})
-    if r.get('state') == 'waiting':
-        say(f"waiting for approval on {main_server['name']}: open the dashboard, Settings → Machines, and approve {name} "
-            f"if it shows the code {r['code']}")
-        # as long as it takes: approve it whenever you're back at a screen with Concierge open
-        while r.get('state') == 'waiting':
-            time.sleep(3)
-            try:
-                r = get(f"{base}/join/{r['id']}", timeout=10) | {'id': r['id']}
-            except Exception:
-                pass
+    said = None
+    # as long as it takes: approve it whenever you're back at a screen with Concierge open. One open request at a time,
+    # answered when you decide (?wait); an ask the main server forgot (after 30 minutes, or a restart) is made again
+    while r.get('state') == 'waiting':
+        if r['code'] != said:
+            say(f"waiting for approval on {main_server['name']}: open the dashboard, Settings → Machines, and approve {name} "
+                f"if it shows the code {r['code']}")
+            said = r['code']
+            note('approval', main=main_server['name'], name=name, code=r['code'])
+        t = time.monotonic()
+        try:
+            r = get(f"{base}/join/{r['id']}?wait=50", timeout=70) | {'id': r['id']}
+        except urllib.error.HTTPError:
+            r = post(f'{base}/join', {'name': name})
+        except Exception:
+            pass  # not answering for now (asleep, a restart): ask again in a moment
+        if time.monotonic() - t < 2:
+            time.sleep(3)  # a main server from before ?wait answers at once
     if r.get('state') != 'approved' or not r.get('setup'):
         sys.exit('join: not approved' if r.get('state') == 'denied' else 'join: the main server gave no setup: run it again')
     s = r['setup']
     say(f"approved: setting {name} up as the {s['role']} beside {s['main']}")
+    note('setting-up', main=s['main'], name=name, role=s['role'])
 
     # .env: what this machine needs to run it. No keys: they come over with the settings (secrets.json)
+    # the clones stay where .env says, or, with none said, in Concierge's own folder (what compose does then too)
     code = env_get('CODE_DIR')
-    if not code or '/you/' in code:  # unset, or .env.example's placeholder
-        code = os.path.join(HOME, 'code')
-    os.makedirs(code, exist_ok=True)
-    env_set({'CODE_DIR': code, 'CONCIERGE_DIRNAME': s['dirName']})
+    if code and '/you/' in code:  # .env.example's placeholder
+        env_set({'CODE_DIR': ''})
+        code = ''
+    os.makedirs(code or os.path.join(HOME, '.local/state', s['dirName'], 'codebases'), exist_ok=True)
+    env_set({'CONCIERGE_DIRNAME': s['dirName']})
     # the machine key, where the app and bin/standby read it
     state = os.path.join(HOME, '.local/state', s['dirName'])
     os.makedirs(os.path.join(state, 'hosts'), exist_ok=True)
@@ -364,15 +425,26 @@ def main():
         sys.exit('join: the fleet extension is missing (fleet/): ask for access to it, clone it into fleet/, and run this again')
     # the rest is the fleet's own setup: .env's roles and paths, the boot service; the standby, or a worker beside one
     cmd = [os.path.join(ROOT, 'fleet', 'bin', 'sync-setup'), 'standby', '--name', name, '--peer', s['main'], '--peer-ip', main_server['ip'],
-           '--key', s['key'], *(['--deck-home', s['deckHome']] if s.get('deckHome') else []), *(['--deck-code', s['deckCode']] if s.get('deckCode') else [])]
+           '--key', s['key'], *(['--deck-home', s['deckHome']] if s.get('deckHome') else []), *(['--deck-code', s['deckCode']] if s.get('deckCode') else []),
+           # run by the standby itself: it carries on as the new role by itself, sync-setup mustn't restart it from inside
+           *(['--no-service'] if os.environ.get('CONCIERGE_STANDBY') else [])]
     subprocess.run(cmd, cwd=ROOT, check=True)
     if s['role'] == 'worker':
         env_set({'DECK_ROLE': 'worker'}, '.env.fleet')  # bin/standby restarts with it
     say('building Concierge here (a few minutes the first time)')
     subprocess.run([os.path.join(ROOT, 'bin', 'update'), '--force'], cwd=ROOT)
+    note('joined', main=s['main'], name=name, role=s['role'])
     say(f"done: {name} is the {s['role']}. Its state, settings and sessions come over from {s['main']} within a minute.\n"
         f"      Sign in this machine's accounts (Claude, OpenAI, Azure): the dashboard, Settings → Accounts, {name}.")
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            note('stopped', why=str(e.code).removeprefix('join: '))
+        raise
+    except Exception as e:  # the standby retries when the tailnet changes; the dashboard says why meanwhile
+        note('stopped', why=f'{type(e).__name__}: {e}')
+        raise

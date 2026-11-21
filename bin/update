@@ -18,6 +18,11 @@ envv() { envs | grep "^$1=" | tail -1 | cut -d= -f2- || true; }
 [[ -f .env.fleet ]] && export COMPOSE_ENV_FILES=.env,.env.fleet
 # your skills' links into a folder of yours: mounted too, so they work in the container (SKILL_LINKS)
 bin/skill-links --write || true
+# run by you (not the standby, in its container): the checkout's path and this computer's name, for the standby's join
+if [[ ! -f /.dockerenv && -f .env ]]; then
+  [[ -n $(envv DECK_APP) ]] || printf 'DECK_APP=%s\n' "$PWD" >> .env
+  [[ -n $(envv HOST_NAME) ]] || printf 'HOST_NAME=%s\n' "$(hostname -s)" >> .env
+fi
 # what Compose mounts and Docker would otherwise make as root (Linux): the empty stand-in for SKILL_LINKS, and with
 # CODE_DIR empty, Concierge's own folder for clones
 d="$HOME/.local/state/$(envv CONCIERGE_DIRNAME)"; [[ $d == */ ]] && d="${d}concierge"

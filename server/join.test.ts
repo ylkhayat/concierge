@@ -34,9 +34,12 @@ test('a machine joins: asks, waits for approval with a code, then gets its setup
     assert.equal(a.state, 'waiting'); assert.match(a.code, /^\d{4}$/); assert.equal(a.setup, undefined)
     assert.equal((await get(`${base}/join/${a.id}`)).body.setup, undefined)
     assert.deepEqual(join_.waiting().map((j) => [j.name, j.code]), [['laptop', a.code]])
-    // approved: the asker gets its setup (the key, its role, the main server)
-    join_.decide(a.id, true)
-    const s = (await get(`${base}/join/${a.id}`)).body
+    // approved: the asker gets its setup (the key, its role, the main server). Waiting on it (?wait) is answered the
+    // moment you decide, not when the wait is up
+    const t0 = Date.now()
+    setTimeout(() => join_.decide(a.id, true), 100)
+    const s = (await get(`${base}/join/${a.id}?wait=30`)).body
+    assert.ok(Date.now() - t0 < 5000)
     assert.equal(s.state, 'approved')
     assert.equal(s.setup.key, 'z'.repeat(64)); assert.equal(s.setup.role, 'standby'); assert.equal(s.setup.main, 'win'); assert.equal(s.setup.name, 'laptop')
     assert.equal(join_.waiting().length, 0)
@@ -63,16 +66,23 @@ test('whois: your own login is yours; another person or a tagged node is not', a
     '100.9.9.9': { UserProfile: { LoginName: 'someone@y.com' }, Node: { Name: 'theirs' } },
     '100.5.5.5': { UserProfile: { LoginName: 'me@x.com' }, Node: { Name: 'concierge-mac', Tags: ['tag:concierge'] } },
   }
+  let status: Record<string, unknown> = { BackendState: 'Running', Self: { UserID: 7 }, User: { 7: { LoginName: 'me@x.com' } } }
   const ts = createServer((req, res) => {
     const u = new URL(req.url!, 'http://x')
-    const body = u.pathname === '/localapi/v0/status' ? { Self: { UserID: 7 }, User: { 7: { LoginName: 'me@x.com' } } } : who[u.searchParams.get('addr')!.split(':')[0]]
+    const body = u.pathname === '/localapi/v0/status' ? status : who[u.searchParams.get('addr')!.split(':')[0]]
     res.writeHead(body ? 200 : 404, { 'content-type': 'application/json' }); res.end(JSON.stringify(body ?? {}))
   })
   await new Promise<void>((r) => ts.listen(sock, r))
   process.env.TAILSCALE_SOCKET = sock
   try {
-    assert.deepEqual(await join_.whoIs('100.1.2.3'), { login: 'me@x.com', mine: true })
-    assert.deepEqual(await join_.whoIs('100.9.9.9'), { login: 'someone@y.com', mine: false })
-    assert.deepEqual(await join_.whoIs('100.5.5.5'), { login: 'me@x.com', mine: false })
+    assert.deepEqual(await join_.whoIs('100.1.2.3'), { login: 'me@x.com', mine: true, link: false })
+    assert.deepEqual(await join_.whoIs('100.9.9.9'), { login: 'someone@y.com', mine: false, link: false })
+    assert.deepEqual(await join_.whoIs('100.5.5.5'), { login: 'me@x.com', mine: false, link: true })
+    // a Concierge link (what a new machine's standby joins from by itself) on a tailnet with only you on it: only you
+    // could have tagged it, so it joins at once; with someone else on the tailnet, it waits for you
+    assert.equal((await join_.ask({ name: 'newmac' }, '100.5.5.5') as { state: string }).state, 'approved')
+    status = { ...status, Peer: { k: { UserID: 8 } }, User: { 7: { LoginName: 'me@x.com' }, 8: { LoginName: 'someone@y.com' } } }
+    assert.equal((await join_.ask({ name: 'newpc' }, '100.5.5.5') as { state: string }).state, 'waiting')
+    assert.equal((await join_.ask({ name: 'theirpc' }, '100.9.9.9') as { state: string }).state, 'waiting')
   } finally { ts.close(); delete process.env.TAILSCALE_SOCKET }
 })

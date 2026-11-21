@@ -3,6 +3,9 @@
 // join (POST /join). The main server asks its own Tailscale who is calling (whois: Tailscale vouches for it):
 //
 //   your own login   approved at once: it is you on another machine
+//   a Concierge link approved at once when the tailnet has one person: a device tagged tag:concierge was signed in by
+//                    someone the tailnet lets own that tag, and with nobody else on it that is you (the join a new
+//                    machine's standby starts by itself, fleet/bin/standby)
 //   anyone else      waits for your approval (Settings → Machines, and an alert), with a code both screens show
 //
 // Approved, it gets what it needs to set itself up: the machine key, the main server's address and container paths,
@@ -17,6 +20,7 @@ import { alert, seeAlerts } from './alerts.ts'
 import { fleet } from './fleet.ts'
 import { token } from './machines.ts'
 import { STATE_DIR } from './paths.ts'
+import { tailnetOwner } from './tailscale.ts'
 
 /** Ask this machine's Tailscale (the link's tailscaled, through the socket it shares), or undefined when there is none. */
 export function localApi<T>(path: string): Promise<T | undefined> {
@@ -34,14 +38,14 @@ type Status = { Self?: { UserID?: number }; User?: Record<string, { LoginName?: 
 type WhoIs = { UserProfile?: { LoginName?: string }; Node?: { Name?: string; Tags?: string[] } }
 
 /** Who is calling from `ip`, by Tailscale, and whether it is the login this machine's Tailscale belongs to. */
-export async function whoIs(ip: string): Promise<{ login?: string; mine: boolean }> {
+export async function whoIs(ip: string): Promise<{ login?: string; mine: boolean; link?: boolean }> {
   const addr = ip.replace(/^::ffff:/, '')
   if (!/^100\.|^fd7a:/i.test(addr)) return { mine: false } // through a proxy (127.0.0.1): Tailscale can't say who
   const [w, s] = await Promise.all([localApi<WhoIs>(`whois?addr=${encodeURIComponent(`${addr}:1`)}`), localApi<Status>('status')])
   const login = w?.UserProfile?.LoginName
   const self = s?.Self?.UserID != null ? s.User?.[String(s.Self.UserID)]?.LoginName : undefined
   // a tagged node (a link container) belongs to its tag, not a person: it never counts as yours
-  return { login, mine: !!login && !!self && login === self && !w?.Node?.Tags?.length }
+  return { login, mine: !!login && !!self && login === self && !w?.Node?.Tags?.length, link: !!w?.Node?.Tags?.includes('tag:concierge') }
 }
 
 /** What GET /hello answers, without the machine key: that this is Concierge, and which machine runs the main server. */
@@ -88,9 +92,11 @@ export async function ask(body: { name?: string }, ip: string) {
   // one open ask per address: asking again replaces it
   for (const [k, j] of joins) if (j.ip === ip && j.state === 'waiting') joins.delete(k)
   const who = await whoIs(ip)
-  const j: Join = { id: randomUUID(), name, ip, login: who.login, code: String(randomInt(1000, 10000)), at: Date.now(), state: who.mine ? 'approved' : 'waiting' }
+  const owner = who.link && !who.mine ? await tailnetOwner() : undefined // only you on the tailnet: only you could tag it
+  const j: Join = { id: randomUUID(), name, ip, login: who.login, code: String(randomInt(1000, 10000)), at: Date.now(), state: who.mine || owner ? 'approved' : 'waiting' }
   joins.set(j.id, j)
   if (who.mine) console.log(`join: ${name} (${who.login}) joins: the same Tailscale login`)
+  else if (owner) console.log(`join: ${name} joins: a Concierge link on ${owner}'s tailnet, which nobody else is on`)
   else {
     console.log(`join: ${name} (${who.login ?? ip}) asks to join; waiting for approval`)
     alert({ kind: 'system', id: `join-${j.id}`, label: 'A machine asks to join', title: `${name} asks to join` },
@@ -99,10 +105,21 @@ export async function ask(body: { name?: string }, ip: string) {
   return { id: j.id, code: j.code, state: j.state, ...(j.state === 'approved' && { setup: await setup(j) }) }
 }
 
-/** The asking machine waits on this (GET /join/<id>): its setup once approved. */
-export async function status(id: string, ip: string) {
+const decided = new Map<string, (() => void)[]>()
+/**
+ * The asking machine waits on this (GET /join/<id>): its setup once approved. With `wait` (seconds, up to 55) it is
+ * answered when you decide, or then: one open request meanwhile, not one every few seconds.
+ */
+export async function status(id: string, ip: string, wait = 0) {
   const j = joins.get(id)
   if (!j || j.ip !== ip || Date.now() - j.at > 30 * 60_000) throw new Error('no such ask (asked over 30 minutes ago?)')
+  if (j.state === 'waiting' && wait > 0) {
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(done, Math.min(wait, 55) * 1000)
+      function done() { clearTimeout(t); decided.set(id, (decided.get(id) ?? []).filter((f) => f !== done)); resolve() }
+      decided.set(id, [...(decided.get(id) ?? []), done])
+    })
+  }
   return { state: j.state, code: j.code, ...(j.state === 'approved' && { setup: await setup(j) }) }
 }
 
@@ -112,6 +129,7 @@ export function decide(id: string, approve: boolean) {
   const j = joins.get(id)
   if (!j || j.state !== 'waiting') throw new Error('no such ask')
   j.state = approve ? 'approved' : 'denied'
+  for (const f of decided.get(id) ?? []) f()
   seeAlerts([`system:join-${id}`])
   console.log(`join: ${j.name} ${approve ? 'approved' : 'denied'}`)
   return j

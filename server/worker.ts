@@ -54,7 +54,7 @@ const body = (req: IncomingMessage) => new Promise<any>((ok, no) => {
 /** This machine's side: start agents others ask for. `start` is spawnAgent; `status` says how much room is left. */
 export function serveWorker(o: { port: number; host: string; token: () => string | string[]; start: (s: Spawn) => AgentProcess; status: () => WorkerStatus; busy: (pid?: number) => Promise<boolean>; logs?: () => string[]; extra?: Record<string, (input: any) => Promise<unknown>>
   // what a machine without the key may ask (join.ts): who this is, and to join; still the tailnet only
-  open?: { hello: () => unknown; ask: (body: any, ip: string) => Promise<unknown>; status: (id: string, ip: string) => Promise<unknown> } }): { server: Server; hosted: Map<string, { label: string; child: AgentProcess }> } {
+  open?: { hello: () => unknown; ask: (body: any, ip: string) => Promise<unknown>; status: (id: string, ip: string, wait?: number) => Promise<unknown> } }): { server: Server; hosted: Map<string, { label: string; child: AgentProcess }> } {
   const hosted = new Map<string, { label: string; child: AgentProcess }>()
   const server = createServer(async (req, res) => {
     const send = (code: number, v: unknown) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(v)) }
@@ -66,7 +66,7 @@ export function serveWorker(o: { port: number; host: string; token: () => string
     if (o.open && what === 'join') {
       try {
         if (req.method === 'POST' && !id) return send(200, await o.open.ask(await body(req), req.socket.remoteAddress ?? ''))
-        if (req.method === 'GET' && id) return send(200, await o.open.status(id, req.socket.remoteAddress ?? ''))
+        if (req.method === 'GET' && id) return send(200, await o.open.status(id, req.socket.remoteAddress ?? '', Number(url.searchParams.get('wait')) || 0))
       } catch (e) { return send(400, { error: (e as Error).message }) }
     }
     if (![o.token()].flat().some((t) => same(given, `Bearer ${t}`))) return send(403, { error: 'not allowed' })

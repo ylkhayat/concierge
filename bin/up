@@ -35,6 +35,9 @@ if [[ -z $code ]]; then
 else mkdir -p "$code"; fi
 [[ $(get HOST_UID) == "$(id -u)" ]] || put HOST_UID "$(id -u)"
 [[ $(get HOST_GID) == "$(id -g)" ]] || put HOST_GID "$(id -g)"
+# the fleet's standby, which joins your other machines by itself, runs from this checkout under this computer's name
+[[ -n $(get DECK_APP) ]] || put DECK_APP "$PWD"
+[[ -n $(get HOST_NAME) ]] || put HOST_NAME "$(hostname -s)"
 # the fleet (several machines; a private extension cloned into fleet/): Compose layers it in by itself
 # (docker-compose.override.yml links to it), with its Tailscale link, which the onboarding signs in
 if [[ -f fleet/compose.fleet.yml ]]; then
