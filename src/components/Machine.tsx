@@ -38,7 +38,7 @@ export function Machine({ me, className = '' }: { me?: Me; className?: string })
             ? 'It follows the machine running Concierge: what you do here is not kept until that one answers.'
             : 'It runs Concierge: it saves what you do and hands runs to the machines.'}</span>
         </span>
-        {me?.reach && <span className="block text-meta text-fg-4">Reached through {me.reach.from}</span>}
+        {me?.reach && !v?.here && <span className="block text-meta text-fg-4">Through your tailnet link (concierge.…), which goes to {serving}</span>}
       </span>
     </span>
   )
