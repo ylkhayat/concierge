@@ -1,4 +1,5 @@
 // First-run onboarding: check the tools, find local checkouts, suggest repos, install the skills from the skill source.
+import { fleet } from './fleet.ts'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { access, cp, readdir, readFile, rm, stat } from 'node:fs/promises'
@@ -126,17 +127,21 @@ export async function cloneRepo(repo: string, at?: string): Promise<{ path: stri
 // --- every watched repository on this machine -------------------------------------------
 // config.json is shared, checkouts are not: a machine missing one clones it into its working directory. One at a time,
 // in the background; what is cloning or failed shows on the repository's card.
-const clones = new Map<string, string>() // repo → 'cloning', or why it failed
+const clones = new Map<string, string>() // repo → 'cloning', 'not-here' (not allowed on this machine), or why it failed
+/** May this machine clone `repo`? With one machine always; with several, only where it is allowed (config.cloneOn). */
+// a key is a repository, or a whole organization as "owner/*" (its repositories now and later)
+export const mayClone = (repo: string) => !fleet.machine || [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(fleet.machine!))
 export const cloneState = () => Object.fromEntries(clones)
 let cloningNow = false
 export async function ensureClones() {
   // said at once, so the page that just saved it shows "cloning" rather than a git error from the missing folder
-  for (const [repo, path] of Object.entries(config.repos)) if (!clones.has(repo) && !existsSync(path)) clones.set(repo, 'cloning')
+  for (const [repo, path] of Object.entries(config.repos)) if (!existsSync(path)) clones.set(repo, mayClone(repo) ? (clones.get(repo) === 'not-here' ? 'cloning' : clones.get(repo) ?? 'cloning') : 'not-here')
   if (cloningNow) return
   cloningNow = true
   try {
     for (const [repo, path] of Object.entries(config.repos)) {
       if (await stat(path).then(() => true, () => false)) { clones.delete(repo); continue }
+      if (!mayClone(repo)) { clones.set(repo, 'not-here'); continue }
       clones.set(repo, 'cloning')
       console.log(`repos: cloning ${repo} into ${path}`)
       await cloneRepo(repo, path).then(() => { clones.delete(repo); console.log(`repos: cloned ${repo}`) }, (e: Error) => { clones.set(repo, e.message); console.error(`repos: ${e.message}`) })

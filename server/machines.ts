@@ -8,6 +8,8 @@ import { statfs } from 'node:fs/promises'
 import { join } from 'node:path'
 import { busyUnder } from './background.ts'
 import { fleet } from './fleet.ts'
+import { config } from './config.ts'
+import { cloneState } from './setup.ts'
 import { STATE_DIR } from './paths.ts'
 import { recentLines } from './logRing.ts'
 import { scrub } from './scrub.ts'
@@ -86,12 +88,14 @@ if (fleet.machine) { void refresh(); setInterval(() => void refresh(), 15_000).u
  * with the most room left, this one included. `here` is how many this machine runs and may run; `out` how many this
  * control plane already sent to each machine. Undefined: nowhere has room.
  */
-export function place(prefer: string | undefined, here: { running: number; slots: number; freeMb: number }, out: Map<string, number>, provider?: string): string | undefined {
+export function place(prefer: string | undefined, here: { running: number; slots: number; freeMb: number; lacks?: boolean }, out: Map<string, number>, provider?: string, repo?: string): string | undefined {
   const room = new Map<string, number>()
-  if (here.freeMb >= LOW_MB || here.running === 0) room.set(fleet.machine ?? '', capped(fleet.machine, here.slots) - here.running)
+  // a machine without the repository's checkout (not allowed there, or still cloning) gets none of its runs
+  if (!here.lacks && (here.freeMb >= LOW_MB || here.running === 0)) room.set(fleet.machine ?? '', capped(fleet.machine, here.slots) - here.running)
   for (const m of machines.values()) {
     if (!m.status || m.status.freeMb < LOW_MB) continue
     if (provider && m.status.can && !m.status.can.includes(provider)) continue // that account isn't signed in (or its Ollama isn't running) there
+    if (repo && m.status.repos && !m.status.repos.includes(repo)) continue
     room.set(m.name, capped(m.name, m.status.slots) - Math.max(m.status.running, out.get(m.name) ?? 0))
   }
   for (const [k, v] of room) if (v <= 0) room.delete(k)
@@ -152,7 +156,7 @@ export function serve(cap: () => number, own: () => Promise<{ cpu: number; mb: n
     status: () => {
       const freeMb = Math.round(freemem() / 1048576)
       return { name: fleet.machine!, role: process.env.DECK_ROLE, slots: fleet.elsewhere() && freeMb >= LOW_MB && !draining() ? slotsHere(cap()) : 0, running: served?.hosted.size ?? 0, freeMb,
-        cores: availableParallelism(), mb: Math.round(totalmem() / 1048576), cpu: usage.cpu, usedMb: usage.mb, can: can() }
+        cores: availableParallelism(), mb: Math.round(totalmem() / 1048576), cpu: usage.cpu, usedMb: usage.mb, can: can(), repos: Object.keys(config.repos).filter((r) => !(r in cloneState())) } // checked out here (what isn't is in cloneState)
     },
     busy: busyUnder,
     logs: () => recentLines().map(scrub),

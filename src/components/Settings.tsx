@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { Tabs } from './Tabs.tsx'
 import { label, sha, VERSION } from '../version.ts'
-import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
 import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
@@ -395,15 +395,27 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
 
   return (
     <>
-      <Group title="Watched repositories" hint={`Reviews and your PRs come from these. Each machine keeps them in its own working directory (its CODE_DIR) and clones one it lacks. This machine: ${setup?.workDir ? home(setup.workDir) : '…'}`}>
+      <Group title="Watched repositories" hint={`Reviews and your PRs come from these. Each machine keeps them in its own working directory (its CODE_DIR), and clones only the ones you allow on it. This machine: ${setup?.workDir ? home(setup.workDir) : '…'}`}>
         {Object.keys(repos).length === 0 && <div className="px-4 py-6 text-center text-body text-fg-3">No repositories yet. Add one below.</div>}
-        {Object.entries(repos).map(([repo, path]) => (
+        {Object.entries(repos).map(([repo, path], i, all) => { const owner = repo.split('/')[0], org = setup?.cloneOn?.[`${owner}/*`] ?? []; return (
+          <Fragment key={repo}>
+          {/* several machines: an organization's row first, allowing all its repositories (now and later) on a machine */}
+          {(setup?.machines?.length ?? 0) > 1 && all.findIndex(([r]) => r.split('/')[0] === owner) === i && (
+            <div className="flex flex-wrap items-center gap-2 bg-fill/40 px-4 py-2">
+              <span className="font-mono text-small font-semibold text-fg-1">{owner}</span><span className="text-meta text-fg-3">every repository of it, now and later</span>
+              <MachineChips label={`Machines that may clone ${owner}'s repositories`} machines={setup!.machines} machine={setup?.machine} on={(m) => org.includes(m)}
+                            onToggle={(m, on) => api('/repos/clone-on', { repo: `${owner}/*`, machine: m, on }).then(() => { toast(on ? `${owner}'s repositories may be cloned on ${m}` : `${owner} is no longer allowed on ${m} as a whole`); return reload() }, (e: Error) => toast(e.message, 'error'))} />
+            </div>
+          )}
           <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
+                    machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org}
+                    onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${m}` : `${repo} stays off ${m}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
                     accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
-        ))}
+          </Fragment>
+        ) })}
       </Group>
 
-      <Group title="Add a repository" hint="Paste its GitHub link: every machine clones it into its own working directory. Or pick a suggestion from your recent PR activity.">
+      <Group title="Add a repository" hint="Paste its GitHub link: this machine clones it; another machine only once you allow it on its card. Or pick a suggestion from your recent PR activity.">
         {offers.length > 0 && (
           <div className="flex flex-wrap gap-2 px-4 py-3.5">
             {offers.slice(0, 6).map((s) => (
@@ -428,8 +440,25 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   )
 }
 
-function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone }: {
-  clone?: string // not on this machine yet: 'cloning', or why the clone failed
+/** Which machines may clone it: one chip each, on or off; a locked one says why it can't change here. */
+function MachineChips({ label, machines, machine, on, locked, onToggle }: { label: string; machines: string[]; machine?: string; on: (m: string) => boolean; locked?: (m: string) => string | undefined; onToggle: (m: string, on: boolean) => void }) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-1">
+      <span className="mr-0.5 text-meta text-fg-4">Cloned on</span>
+      {machines.map((m) => { const yes = on(m), why = locked?.(m); return (
+        <button key={m} role="switch" aria-checked={yes} disabled={!!why} onClick={() => onToggle(m, !yes)}
+                title={why ?? (yes ? `Allowed on ${m}: click to stop cloning it there (a checkout already there stays until you delete it)` : `Not on ${m}: click to allow it and clone it there`)}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta transition-colors disabled:cursor-default ${yes ? 'bg-accent-soft font-medium text-accent-text ring-1 ring-accent/30' : 'bg-fill text-fg-3 hover:text-fg-1'}`}>
+          {yes ? <Check className="size-3" /> : <Plus className="size-3" />}{m}{m === machine && <span className="font-normal text-fg-4">· this one</span>}
+        </button>
+      ) })}
+    </div>
+  )
+}
+
+function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], onAllow }: {
+  clone?: string // not on this machine yet: 'cloning', 'not-here' (not allowed on it), or why the clone failed
+  machines?: string[]; machine?: string; allowed?: string[]; byOrg?: string[]; onAllow?: (machine: string, on: boolean) => void // several machines: where it may be cloned
   repo: string; path: string; meta?: BaseInfo['meta']; task?: NonNullable<Health['base']>[string]; toast: Toast; onRemove: () => void
   accounts: { id: string; label: string }[]; pin?: string; onPin: (account?: string) => void
 }) {
@@ -450,7 +479,13 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-body font-semibold">{repo}</div>
           <div className="truncate font-mono text-meta text-fg-3" title={path}>{home(path)}</div>
-          {clone && <div className={`mt-0.5 flex items-center gap-1.5 text-meta ${clone === 'cloning' ? 'text-run-text' : 'text-fail-text'}`}>{clone === 'cloning' ? <><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine…</> : `Not on this machine: ${clone}`}</div>}
+          {clone && <div className={`mt-0.5 flex items-center gap-1.5 text-meta ${clone === 'cloning' ? 'text-run-text' : clone === 'not-here' ? 'text-fg-3' : 'text-fail-text'}`}>{clone === 'cloning' ? <><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine…</> : clone === 'not-here' ? 'Not cloned on this machine: allow it below to clone it here' : `Not on this machine: ${clone}`}</div>}
+          {/* several machines: which may hold it (a company may keep a repository off some); a new one holds none until allowed */}
+          {machines.length > 1 && onAllow && (
+            <div className="mt-1.5"><MachineChips label={`Machines that may clone ${repo}`} machines={machines} machine={machine}
+                 on={(m) => allowed.includes(m) || byOrg.includes(m) || (m === machine && !clone)} locked={(m) => byOrg.includes(m) ? `Allowed for all of ${repo.split('/')[0]} on ${m}` : m === machine && !clone && !allowed.includes(m) ? `Already checked out on ${m}: delete the folder there to take it off` : undefined}
+                 onToggle={onAllow} /></div>
+          )}
         </div>
         <button onClick={() => arm('remove', onRemove)} title={armed ? 'Click again to stop watching (its codebase map is kept)' : 'Stop watching'} aria-label={`Stop watching ${repo}`}
                 className={`relative isolate flex items-center gap-1 overflow-hidden rounded-lg p-1.5 text-small font-medium transition-all hover:bg-fail/10 hover:text-fail-text focus:opacity-100 group-hover:opacity-100 ${armed ? 'text-fail-text opacity-100' : 'text-fg-4 opacity-0'}`}>
@@ -467,8 +502,8 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
         </div>
       )}
 
-      {/* the repo's codebase map */}
-      <div className="ml-11 flex items-center gap-3 rounded-xl bg-fill/60 px-3 py-2.5 ring-1 ring-line ">
+      {/* the repo's codebase map (made from this machine's checkout: none while it isn't here) */}
+      {clone !== 'not-here' && <div className="ml-11 flex items-center gap-3 rounded-xl bg-fill/60 px-3 py-2.5 ring-1 ring-line ">
         <MapIcon className={`size-4 shrink-0 ${busy ? 'text-accent' : p && p.toMap === 0 ? 'text-ok' : 'text-fg-3'}`} />
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="truncate text-small text-fg-2 ">
@@ -488,7 +523,7 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
         ) : p && p.toMap > 0 ? (
           <button onClick={() => act('start')} className={primary}><MapIcon className="size-3.5" />{p.mapped ? (p.complete ? 'Update' : 'Finish') : 'Map'} · ~${p.estimateUsd.toFixed(2)}</button>
         ) : p ? <span className="flex shrink-0 items-center gap-1 text-small text-ok-text"><CircleCheck className="size-4" />Up to date</span> : null}
-      </div>
+      </div>}
     </div>
   )
 }

@@ -17,7 +17,7 @@ import { PassThrough, Writable } from 'node:stream'
 import type { AgentProcess } from './providers.ts'
 
 export type Spawn = { provider: string; args: string[]; cwd: string; stdin?: boolean }
-export type WorkerStatus = { name: string; role?: string; slots: number; running: number; freeMb: number; cores?: number; mb?: number; cpu?: number; usedMb?: number; can?: string[] } // cpu, usedMb: what its agents use; can: the accounts it can run
+export type WorkerStatus = { name: string; role?: string; slots: number; running: number; freeMb: number; cores?: number; mb?: number; cpu?: number; usedMb?: number; can?: string[]; repos?: string[] } // cpu, usedMb: what its agents use; can: the accounts it can run
 
 /** The token both machines share: made by the first that needs it, in a folder the sync carries to the other. */
 export function tokenIn(dir: string): string {

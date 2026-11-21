@@ -21,6 +21,7 @@ import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
 import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
 import { bankArgs } from './bank.ts'
+import { cloneState } from './setup.ts'
 import { directionNote } from './stackDirection.ts'
 import { brief, capOf, GATHER_S, keepSession, modelOf, routeReply } from './replyRoute.ts'
 import { accountOf, accounts, available, chosenFor, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
@@ -607,7 +608,7 @@ export function pump() {
       here++; w.go(); continue
     }
     // an exec run goes where there is room: the machine it ran on before first, else the one with the most room
-    const to = place(w.exec.machine, { running: here, slots: drain ? 0 : Math.min(state.settings.maxJobs, slotsHere(state.settings.maxJobs)), freeMb: short ? 0 : freemem() / 1048576 }, out, w.exec.provider ?? providerFor('exec', w.exec.repo))
+    const to = place(w.exec.machine, { running: here, slots: drain ? 0 : Math.min(state.settings.maxJobs, slotsHere(state.settings.maxJobs)), freeMb: short ? 0 : freemem() / 1048576, lacks: w.exec.repo in cloneState() }, out, w.exec.provider ?? providerFor('exec', w.exec.repo), w.exec.repo)
     if (to === undefined) continue
     if (!to || to === fleet.machine) { here++; startExec(w.exec) } else { out.set(to, (out.get(to) ?? 0) + 1); startExec(w.exec, to) }
   }

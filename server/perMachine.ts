@@ -19,6 +19,8 @@ export const mine = (p: string) => (fleet.machine ? variant(p, fleet.machine) : 
 
 // the machines there are: from their heartbeats (hosts/<name>.json), re-read every minute
 let known: string[] = [], readAt = 0
+/** The fleet's machines by name (none with one machine). */
+export const fleetMachines = () => machines()
 function machines(): string[] {
   if (!fleet.machine) return []
   if (Date.now() - readAt > 60_000) {

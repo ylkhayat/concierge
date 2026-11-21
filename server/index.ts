@@ -38,6 +38,7 @@ import { runs, totals } from './lifecycle.ts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { freemem, homedir, tmpdir } from 'node:os'
 import { fleet } from './fleet.ts'
+import { fleetMachines } from './perMachine.ts'
 import { behind, latestHeads, overdue, readLatest, runningHere, type Running } from './versions.ts'
 import { capped, machines, serve as serveMachine, slotsHere, token as machineToken, rotateToken, ask, onCameBack, hosted, statsHere, type Stats } from './machines.ts'
 import { updateStatus } from './updateStatus.ts'
@@ -1799,7 +1800,7 @@ app.post('/base', async (c) => {
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async (light = false) => ({
   configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []), skillSource: config.skillSource?.trim() || DEFAULT_SOURCE,
-  workDir: WORK_DIR, clones: cloneState(),
+  workDir: WORK_DIR, clones: cloneState(), machine: fleet.machine, machines: fleetMachines(), cloneOn: config.cloneOn ?? {},
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // every skill the settings run (and the ones they name), found or missing here: a new machine shows what to sync
@@ -1811,8 +1812,25 @@ export type SetupView = Awaited<ReturnType<typeof setupView>>
 app.get('/setup', async (c) => c.json(await setupView(c.req.query('light') === '1')))
 app.get('/setup/repos', async (c) => c.json(await suggestions()))
 app.get('/setup/my-skills', async (c) => c.json(await mySkills()))
+/** Which machines may clone a repository (several machines: a company may keep one off some). Allowing it here clones it. */
+app.post('/repos/clone-on', async (c) => {
+  const { repo, machine, on } = await c.req.json() as { repo?: string; machine?: string; on?: boolean }
+  // a repository, or a whole organization ("owner/*": its repositories now and later)
+  const org = repo?.endsWith('/*') ? repo.slice(0, -2) : undefined
+  if (!repo || !(org ? Object.keys(config.repos).some((r) => r.startsWith(`${org}/`)) : repo in config.repos)) return c.json({ error: 'Not a watched repository or organization' }, 400)
+  if (!machine || !fleetMachines().includes(machine)) return c.json({ error: 'No such machine' }, 400)
+  allowClone(repo, machine, !!on)
+  void ensureClones()
+  return c.json(await setupView())
+})
+const allowClone = (repo: string, machine: string, on: boolean) => {
+  const now = new Set(config.cloneOn?.[repo] ?? []); if (on) now.add(machine); else now.delete(machine)
+  saveConfig({ cloneOn: { ...config.cloneOn, [repo]: [...now] } })
+}
 app.post('/setup/clone', async (c) => {
   const { repo } = await c.req.json() as { repo: string }
+  // cloning it here by hand allows it here
+  if (fleet.machine && repo in config.repos) allowClone(String(repo), fleet.machine, true)
   try { return c.json(await cloneRepo(String(repo))) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })
 app.post('/setup/validate', async (c) => {
@@ -1879,7 +1897,7 @@ app.post('/config', async (c) => {
   }
   if (errors.length) return c.json({ error: errors.join('. ') }, 400)
 
-  const prev = userConfig().agent
+  const prev = userConfig().agent, prevRepos = Object.keys(config.repos)
   saveConfig({
     // kept as a folder name when it sits in the working directory: then each machine finds it in its own
     ...(b.repos && { repos: Object.fromEntries(Object.entries(b.repos).map(([r, p]) => { const rel = relative(WORK_DIR, repoPath(p)); return [r, /^[\w-][\w.-]*$/.test(rel) ? rel : p] })) }),
@@ -1903,6 +1921,8 @@ app.post('/config', async (c) => {
   doPoll() // pick up the newly watched repos right away
   if (b.exec) pollTickets()
   bus.emit('change')
+  // a repository added from this machine's page may be cloned here (other machines wait until you allow them)
+  if (b.repos && fleet.machine) for (const r of Object.keys(b.repos)) if (!(prevRepos as string[]).includes(r)) allowClone(r, fleet.machine, true)
   if (b.repos) void ensureClones() // a repository new to this machine is cloned in the background
   return c.json(await setupView())
 })

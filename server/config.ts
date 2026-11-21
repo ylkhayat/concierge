@@ -13,6 +13,9 @@ export type SkillRule = { skill: string; why: string; match?: string; unless?: s
 
 export type Config = {
   repos: Record<string, string> // "owner/repo" → its checkout: a folder name in this machine's working directory (WORK_DIR), or an absolute path
+  // with several machines: the ones each repository (or organization, "owner/*") may be cloned onto (a company may keep a repository off some). A
+  // new machine clones none until you allow it; a checkout already there stays (delete the folder to take it off)
+  cloneOn?: Record<string, string[]>
   port: number
   pollSeconds: number
   maxJobs: number

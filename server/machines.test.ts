@@ -44,3 +44,12 @@ test('a run only goes where its account works: the Mac without Ollama gets no Ll
   assert.equal(place('mac', full, new Map(), 'llama'), undefined) // not even back where it ran before
   machines.clear()
 })
+
+test('a run goes only where its repository is checked out', () => {
+  const here = { running: 0, slots: 2, freeMb: 9000 }
+  machines.set('windows', { name: 'windows', base: '', seen: Date.now(), status: { name: 'windows', slots: 4, running: 0, freeMb: 9000, repos: ['a/one'] } })
+  assert.equal(place(undefined, here, new Map(), undefined, 'a/one'), 'windows')
+  assert.equal(place(undefined, here, new Map(), undefined, 'a/two'), '') // not on windows: here
+  assert.equal(place(undefined, { ...here, lacks: true }, new Map(), undefined, 'a/two'), undefined) // on neither: nowhere
+  machines.delete('windows')
+})
