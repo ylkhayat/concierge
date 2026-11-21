@@ -5,7 +5,7 @@ import {
   type Edge, type EdgeProps, type Node, type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import ElkBundled from 'elkjs/lib/elk.bundled.js'
+import { elk } from '../elk.ts'
 import {
   AppWindow, ArrowUpRight, Boxes, Briefcase, ChevronRight, Compass, Cloud, Cpu, FileCode, Folder, GitCommitVertical, Globe,
   LoaderCircle, Maximize2, Minimize2, Eye, EyeOff, Package, RefreshCw, Route, Server, ShieldAlert, Sparkles, TriangleAlert, UserRound,
@@ -221,9 +221,6 @@ function techTree(d: Data, open: Set<string>, allFiles: boolean): { roots: TNode
 
 // --- layout ---------------------------------------------------------------------------------
 
-// elkjs ships CommonJS typed as ESM: under nodenext the default import types as the module, at runtime it is the class
-const ELK = ElkBundled as unknown as typeof ElkBundled.default
-const elk = new ELK()
 const SPACING = {
   'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.edgeRouting': 'ORTHOGONAL',
   'elk.spacing.nodeNode': '44', 'elk.layered.spacing.nodeNodeBetweenLayers': '96',

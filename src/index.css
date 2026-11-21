@@ -129,3 +129,7 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 :where(button, a, [tabindex]:not(input, textarea), select):focus-visible { outline: 2px solid color-mix(in oklch, var(--accent) 65%, transparent); outline-offset: 2px; }
 /* floating things are frosted glass: what is behind them blurs and keeps its colour */
 [popover], dialog { backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); }
+/* rows and the feed's runs off screen are neither laid out nor painted until they scroll near (the browser's own
+   virtualization); each remembers its last height, so the scrollbar doesn't jump */
+[data-flip], .cv { content-visibility: auto; contain-intrinsic-size: auto 72px; }
+.cv { contain-intrinsic-size: auto 160px; }

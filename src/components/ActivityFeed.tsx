@@ -360,7 +360,7 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
   for (const a of rest) { if (matters(a) && (a.kind !== 'error' || a === ch.outcome)) body.push(a); else if (Array.isArray(body.at(-1))) (body.at(-1) as Activity[]).push(a); else body.push([a]) }
   const label = h.text === 'Your reply' ? (trigger ? 'You asked' : 'Your reply') : h.text
   return (
-    <li className="list-none">
+    <li className={`list-none ${live ? '' : 'cv'}`}>
       <button onClick={onToggle} aria-expanded={open} title={stamp(h.at)}
               className="group/turn mb-2 flex w-full items-center gap-2 text-left text-micro text-fg-4 transition-colors hover:text-fg-2">
         <span className="h-px w-3 shrink-0 bg-line" />

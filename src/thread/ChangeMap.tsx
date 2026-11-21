@@ -5,7 +5,7 @@
 // Both read the PR's explanation (Explain); without one they offer to write it.
 import { Background, BackgroundVariant, Handle, MarkerType, Position, ReactFlow, ReactFlowProvider, type Edge, type Node, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import ElkBundled from 'elkjs/lib/elk.bundled.js'
+import { elk } from '../elk.ts'
 import { ArrowDown, ArrowRight, Check, CircleDashed, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { Diagram } from '../../server/discussions.ts'
@@ -14,8 +14,6 @@ import { api, enc } from '../lib.ts'
 import { useApi } from '../query.ts'
 
 type Explained = { overlay?: Overlay; stale?: boolean; task?: { state: string } }
-const ELK = ElkBundled as unknown as typeof ElkBundled.default
-const elk = new ELK()
 
 /** The PR's explanation, or a way to have it written. */
 function useExplained(prId: string) {
@@ -104,7 +102,7 @@ function MapCanvas({ o }: { o: Overlay }) {
     return () => { live = false }
   }, [areas, links])
   const nodes: Node<AreaData>[] = areas.map((a) => ({ id: a.id, type: 'area', position: pos?.get(a.id) ?? { x: 0, y: 0 }, data: { area: a, on: a.id === on }, draggable: false }))
-  const edges: Edge[] = links.map((l) => ({ id: `${l.from}>${l.to}`, source: l.from, target: l.to, type: 'smoothstep', style: { stroke: 'var(--line-strong)', strokeWidth: Math.min(3, 1 + l.count / 4) }, markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--line-strong)' } }))
+  const edges: Edge[] = links.map((l) => ({ id: `${l.from}>${l.to}`, source: l.from, target: l.to, type: 'default', style: { stroke: 'var(--line-strong)', strokeWidth: Math.min(3, 1 + l.count / 4) }, markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--line-strong)' } }))
   const sel = areas.find((a) => a.id === on)
   return (
     <div className="flex min-h-0 flex-1 gap-3">

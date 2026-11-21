@@ -671,6 +671,12 @@ function sharedChanged(changed: SharedKey[]) {
 }
 setInterval(() => sharedChanged(applyShared()), 30_000).unref()
 // a machine's recent log (scrubbed), this one's or another's through its worker
+// the page's slow moments (src/slowUi.ts), into this machine's log, where its logs page shows them
+app.post('/debug/ui', async (c) => {
+  const { lines } = await c.req.json<{ lines?: unknown }>().catch(() => ({ lines: [] }))
+  for (const l of (Array.isArray(lines) ? lines : []).slice(0, 20)) if (typeof l === 'string') console.warn(`slow ui: ${l.slice(0, 200)}`)
+  return c.json({ ok: true })
+})
 // where this server's thread spends its time, for a few seconds (profile.ts): ?seconds=10
 app.get('/debug/profile', async (c) => { try { return c.json(await profile(Number(c.req.query('seconds') ?? 10))) } catch (e) { return c.json({ error: (e as Error).message }, 409) } })
 app.get('/machines/:name/logs', async (c) => {
@@ -1198,15 +1204,35 @@ function slimTicket(t: TicketView): TicketView {
   const done = t.bucket === 'closed'
   return { ...t, ...(r && { run: r as typeof t.run }), ...(done && { description: cap(t.description, 400), ...(t.lastComment && { lastComment: { ...t.lastComment, body: cap(t.lastComment.body, 300) } }) }) }
 }
-// the board as JSON, built at most once a second however many pages ask (ponytail: one cache, the pages share it)
-let execCache: { at: number; data: string } | undefined
-function execJson() {
-  if (execCache && Date.now() - execCache.at < 900) return execCache.data
-  const t = performance.now()
-  execCache = { at: Date.now(), data: JSON.stringify(execView()) }
-  slow('execView (live update)', t)
-  return execCache.data
-}
+// The board, like the PR list (prsHub): worked out once for every open page, which gets the whole board when it
+// connects and then only the tickets that changed, the ones that went, the order, and the rest when it changed.
+// A burst of changes (each line of a run says 'exec') is one rebuild, at most one a second.
+const execHub = (() => {
+  let byId = new Map<string, string>(), order = '', meta = '', full: ExecView | undefined
+  const pages = new Set<(data: string) => void>()
+  let soon: ReturnType<typeof setTimeout> | undefined
+  const refresh = () => {
+    soon = undefined
+    const t = performance.now()
+    const v = execView(), { tickets, ...rest } = v
+    const next = new Map(tickets.map((x) => [x.id, JSON.stringify(x)]))
+    const set = tickets.filter((x) => byId.get(x.id) !== next.get(x.id))
+    const del = [...byId.keys()].filter((id) => !next.has(id))
+    const nextOrder = tickets.map((x) => x.id).join('\n'), nextMeta = JSON.stringify(rest)
+    slow('execView (live update)', t)
+    full = v
+    if (!set.length && !del.length && nextOrder === order && nextMeta === meta) return
+    const patch = JSON.stringify({ set, del, order: tickets.map((x) => x.id), ...(nextMeta !== meta && { meta: rest }) })
+    byId = next; order = nextOrder; meta = nextMeta
+    for (const send of pages) send(patch)
+  }
+  bus.on('exec', () => { soon ??= setTimeout(refresh, 1000) })
+  setInterval(() => { if (pages.size) refresh() }, 5000).unref()
+  return {
+    join(send: (data: string) => void) { if (!pages.size || !full) refresh(); pages.add(send); return full! },
+    leave(send: (data: string) => void) { pages.delete(send) },
+  }
+})()
 const execView = () => ({
   actions: config.exec.actions.map(({ id, label, hint, icon, confirm, env, prompt }) => ({ id, label, hint, icon, confirm, env, missing: missingFor(prompt) })),
   missing: missingFor(slot('exec')), // skills the exec command needs that this machine lacks
@@ -2747,21 +2773,19 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   const sendPrs = async () => { await stream.writeSSE({ event: 'prs', data: JSON.stringify(prsHub.join(patch)) }) }
   const sendHealth = () => stream.writeSSE({ event: 'health', data: JSON.stringify(healthView()) })
   const onActivity = (id: string, a: Activity) => stream.writeSSE({ event: 'activity', data: JSON.stringify({ id, a }) })
-  let lastExec = '', execSoon: ReturnType<typeof setTimeout> | undefined
   // a burst of changes (a run's every line says 'exec') is one send, at most one a second, built once for every page
-  const sendExec = () => { execSoon ??= setTimeout(async () => { execSoon = undefined; const data = execJson(); if (data !== lastExec) { lastExec = data; await stream.writeSSE({ event: 'exec', data }) } }, lastExec ? 1000 : 0) }
+  const execPatch = (data: string) => void stream.writeSSE({ event: 'exec-patch', data })
   const sendAlerts = () => stream.writeSSE({ event: 'alerts', data: JSON.stringify(alerts()) })
   // what changed, by API path: gathered for a moment so a burst of saves is one message
   let pending = new Set<string>(), flush: ReturnType<typeof setTimeout> | undefined
   const onStale = (paths: string[]) => { for (const x of paths) pending.add(x); flush ??= setTimeout(() => { flush = undefined; const out = [...pending]; pending = new Set(); void stream.writeSSE({ event: 'stale', data: JSON.stringify(out) }) }, 250) }
   live.on('stale', onStale)
   bus.on('alerts', sendAlerts)
-  bus.on('exec', sendExec)
   bus.on('health', sendHealth)
   bus.on('activity', onActivity)
   await sendPrs() // the whole list once; from here on prsHub sends this page patches
   await sendHealth()
-  sendExec()
+  await stream.writeSSE({ event: 'exec', data: JSON.stringify(execHub.join(execPatch)) }) // the whole board once; then patches
   await sendAlerts()
   const tick = setInterval(() => { stream.writeSSE({ event: 'ping', data: '' }) }, 4000)
   await new Promise<void>((resolve) => stream.onAbort(resolve))
@@ -2769,7 +2793,7 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   prsHub.leave(patch)
   bus.off('alerts', sendAlerts)
   live.off('stale', onStale); if (flush) clearTimeout(flush)
-  bus.off('exec', sendExec); if (execSoon) clearTimeout(execSoon)
+  execHub.leave(execPatch)
   bus.off('health', sendHealth)
   bus.off('activity', onActivity)
 }))

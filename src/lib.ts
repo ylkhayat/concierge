@@ -67,6 +67,18 @@ export function useDeck(selected: string | undefined) {
     es.addEventListener('stale', (e) => staleNow(JSON.parse(e.data)))
     es.addEventListener('health', (e) => { setHealth(JSON.parse(e.data)); staleNow(['/load', '/providers', '/usage/accounts', '/machines', '/infra', '/update']) })
     es.addEventListener('exec', (e) => { setExec(JSON.parse(e.data)); staleNow(['/stacks/drive', '/load', '/runs']) })
+    // then only what changed: the tickets that did, the ones that went, their order, and the rest of the board if it moved
+    es.addEventListener('exec-patch', (e) => {
+      staleNow(['/stacks/drive', '/load', '/runs'])
+      const { set, del, order, meta } = JSON.parse(e.data) as { set: TicketView[]; del: string[]; order: string[]; meta?: Omit<ExecView, 'tickets'> }
+      setExec((prev) => {
+        if (!prev) return prev
+        const byId = new Map(prev.tickets.map((t) => [t.id, t]))
+        for (const id of del) byId.delete(id)
+        for (const t of set) byId.set(t.id, t)
+        return { ...prev, ...meta, tickets: order.map((id) => byId.get(id)).filter((t): t is TicketView => !!t) }
+      })
+    })
     es.addEventListener('alerts', (e) => setAlerts(JSON.parse(e.data)))
     // a run's lines arrive many a second: gathered, and applied a few times a second, so the page renders once for a
     // burst instead of once a line. Only feeds already read are kept (one never opened is read whole when it opens)
