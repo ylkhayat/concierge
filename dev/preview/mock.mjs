@@ -29,7 +29,15 @@ const plan = {
   messages: [
     { who: 'you', text: 'Break this down.', at: new Date(now - 60e3).toISOString() },
     { who: 'agent', text: "One goal, three epics: the action itself, billing, and keeping people informed. Billing carries the risk: proration on resume is where I'd look first.\n\nAssumed: a pause has no time limit.", at: new Date(now - 30e3).toISOString() },
+    { who: 'you', text: 'Where does it hurt most? Check the data.', at: new Date(now - 20e3).toISOString() },
+    { who: 'agent', text: 'Resume is where people stall: I moved proration first and added a spike.', at: new Date(now - 10e3).toISOString(), turn: 'tA' },
   ],
+  // a drafted turn: changes the planner made, with what they rest on (MOCK_NODRAFT=1 for none)
+  ...(!process.env.MOCK_NODRAFT && { scenario: { at: new Date().toISOString(), ops: [
+    { op: 'move', id: 't5', rank: -1, turn: 'tA', because: [{ source: 'amplitude', text: 'Resume clicks drop 38% after the proration screen' }] },
+    { op: 'add', id: 't8', kind: 'ticket', title: 'Spike: provider zero-seat cycle', parent: 'e2', estimate: 2, turn: 'tA', because: [{ source: 'linear:BIL-212', text: 'Open question on zero-seat invoices' }] },
+    { op: 'move', id: 't6', cut: true, turn: 'tA' },
+  ] } }),
 }
 // a project the size of a real one: five epics with long titles, about 30 tickets, some done, one going on
 const epics = ['IT can see and trust that managed settings are applied', 'IT can deploy, configure and remove Acme with any standard management tool', 'Defaults vs. Enforced policy model', 'Customer Success can publish enterprise guidance from our findings', 'Admins can audit every policy change']

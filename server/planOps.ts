@@ -27,7 +27,7 @@ export type PlanNode = {
 // map where it would go, for the product manager to explore with a click
 export type Gap = { id: string; area: string; title: string; why: string; under?: string }
 export type Link = { from: string; to: string } // `from` has to be done before `to` (Linear: from blocks to)
-export type Said = { who: 'you' | 'agent'; text: string; at: string }
+export type Said = { who: 'you' | 'agent'; text: string; at: string; turn?: string } // turn: the draft changes this reply made
 export type Plan = {
   undo?: number; redo?: number // steps to undo and redo, as the page gets it (plans.ts withHistory); never kept
   id: string; title: string; brief: string; method: 'agile' | 'waterfall'; skill?: string; team?: string
@@ -50,7 +50,9 @@ export type Plan = {
   // moves being tried: applied to a copy for the what-if view, and to the plan (and Linear) only on Apply
   scenario?: { ops: Op[]; at: string; why?: string }
 }
-export type Op =
+// what a change rests on: a lookup (a metric, a ticket, an incident) or what you said, in a few words
+export type Because = { source: string; text: string; url?: string }
+export type Op = ({ turn?: string; because?: Because[] }) & (
   | { op: 'add'; id: string; kind: Kind; title: string; parent?: string; description?: string; priority?: 1 | 2 | 3 | 4; estimate?: number; refine?: string } & Best
   | { op: 'update'; id: string; title?: string; parent?: string; description?: string; priority?: 1 | 2 | 3 | 4; estimate?: number; kind?: Kind; refine?: string } & Best
   | { op: 'remove'; id: string }
@@ -63,7 +65,15 @@ export type Op =
   // back). Unlike update it also moves what is already in Linear (Apply writes it there)
   // a scenario the planner proposes: moves for the product manager to try (never applied by it)
   | { op: 'propose'; ops: Op[]; why?: string }
-  | { op: 'move'; id: string; rank?: number; estimate?: number; parent?: string; priority?: 1 | 2 | 3 | 4; assignee?: string | null; assigneeId?: string | null; cut?: boolean }
+  | { op: 'move'; id: string; rank?: number; estimate?: number; parent?: string; priority?: 1 | 2 | 3 | 4; assignee?: string | null; assigneeId?: string | null; cut?: boolean })
+
+/** The changes to the map itself: what the planner drafts and a scenario holds (the rest are its reply: asks, next steps…). */
+export const BOARD = new Set<Op['op']>(['add', 'update', 'remove', 'link', 'unlink', 'move'])
+/** Evidence as kept: at most three, short, and a link only when it is a web one. */
+export const becauseOf = (b: unknown): Because[] | undefined => {
+  const out = (Array.isArray(b) ? b : []).filter((x) => x?.source && x?.text).slice(0, 3).map((x) => ({ source: String(x.source).slice(0, 40), text: String(x.text).slice(0, 200), ...(/^https?:\/\//.test(String(x.url ?? '')) && { url: String(x.url).slice(0, 500) }) }))
+  return out.length ? out : undefined
+}
 
 export const LATER = 'later' // the epic cut work goes under
 type Best = { rice?: PlanNode['rice']; moscow?: PlanNode['moscow']; horizon?: PlanNode['horizon']; covers?: string[]; risk?: PlanNode['risk'] }

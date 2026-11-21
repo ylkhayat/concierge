@@ -8,7 +8,7 @@
 // the scenario being tried. With a scenario, `base` is the plan before it: what moved leaves a dashed outline where it
 // was, with a line to where it is. The critical path (what sets the end date) is underlined.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { LATER, type Gap, type Op, type Plan } from '../../server/planOps.ts'
+import { LATER, type Because, type Gap, type Op, type Plan } from '../../server/planOps.ts'
 import { areaOf, initials } from '../planLook.tsx'
 import { planStream, ranksOf, sizeFor, type Slot } from '../planStream.ts'
 
@@ -24,7 +24,7 @@ export type Move = Extract<Op, { op: 'move' }>
 export type ColorBy = 'epic' | 'owner' | 'moscow'
 export const MOSCOW_HUE = { must: 25, should: 70, could: 230, wont: 280 } as const
 const nameHue = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7)
-export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, onSelect, onExplore, compact, open, onToggle, legend, onMove }: { p: Plan; base?: Plan; people: number; pace: number; selected?: string; onSelect: (id?: string) => void; onExplore?: (g: Gap) => void
+export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, onSelect, onExplore, compact, open, onToggle, legend, onMove, draft = [] }: { p: Plan; base?: Plan; draft?: Op[]; people: number; pace: number; selected?: string; onSelect: (id?: string) => void; onExplore?: (g: Gap) => void
   compact?: boolean; open?: Set<string>; onToggle?: (id: string) => void; legend?: boolean; onMove?: (m: Move) => void; colorBy?: ColorBy }) {
   const box = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(0)
@@ -38,7 +38,10 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   const critical = new Set(s.critical)
   // a pebble's colour: its stream's, or who works it, or its MoSCoW (unset: grey)
   const pebbleHue = (sl: Slot, h: number): number | null => { if (colorBy === 'owner') return nameHue(sl.who ?? sl.lane ?? '?'); if (colorBy === 'moscow') { const m = p.nodes.find((n) => n.id === sl.id)?.moscow; return m ? MOSCOW_HUE[m] : null } return h }
-  const moved = new Set(base ? p.nodes.filter((n) => { const o = base.nodes.find((x) => x.id === n.id); return !o || o.rank !== n.rank || o.estimate !== n.estimate || o.parent !== n.parent || o.priority !== n.priority || o.assignee !== n.assignee }).map((n) => n.id) : [])
+  const moved = new Set(base ? p.nodes.filter((n) => { const o = base.nodes.find((x) => x.id === n.id); return !o || o.rank !== n.rank || o.estimate !== n.estimate || o.title !== n.title || o.parent !== n.parent || o.priority !== n.priority || o.assignee !== n.assignee }).map((n) => n.id) : [])
+  // what the draft's changes rest on, per item (the planner's lookups); its latest change wins
+  const evidence = new Map<string, Because[]>()
+  for (const o of draft) if (o.because?.length && 'id' in o) evidence.set(o.id, o.because)
   const appetite = p.appetite ? (Date.parse(p.appetite.from) + p.appetite.weeks * WEEK - Date.now()) / WEEK : undefined
   const due = p.project?.targetDate ? (Date.parse(p.project.targetDate) - Date.now()) / WEEK : undefined
   const [hover, setHover] = useState<{ slot: Slot; x: number; y: number }>()
@@ -243,6 +246,10 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                       className={sl.started ? 'animate-pulse' : undefined}
                       onMouseEnter={() => setHover({ slot: sl, x: left + width / 2, y: cy - ph / 2 })} onMouseLeave={() => setHover(undefined)}
                       onPointerDown={(e) => press(e, sl)} opacity={drag?.moved && drag.id === sl.id ? 0.35 : 1} />
+                {/* changed by the draft: ringed, and a dot when it rests on evidence */}
+                {moved.has(sl.id) && !sizing && <rect rx={ph / 2 + 3} height={ph + 6} fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeOpacity={0.85} pointerEvents="none"
+                      style={{ x: left - 3, y: cy - ph / 2 - 3, width: width + 6, transition: glide, animation: 'pebble-in 360ms var(--ease-spring) both' } as React.CSSProperties} />}
+                {evidence.has(sl.id) && <circle r={4} fill="var(--accent)" stroke="var(--surface-1)" strokeWidth={1.5} pointerEvents="none" style={{ transform: `translate(${left + 2}px, ${cy - ph / 2 - 1}px)`, transition: 'transform 500ms var(--ease-snappy)' }} />}
                 {/* on the critical path: what sets the end date */}
                 {critical.has(sl.id) && !sl.done && <rect height={2} rx={1} fill="var(--accent)" pointerEvents="none" style={{ x: left + 2, y: cy + ph / 2 + 2, width: Math.max(2, width - 4), transition: sizing ? 'none' : glide } as React.CSSProperties} />}
                 {/* its size, when the pebble has room: ~ when guessed */}
@@ -344,6 +351,10 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
           {hover.slot.who && <p className="mt-0.5 text-meta text-fg-2">Picked up by {hover.slot.who}</p>}
           <p className="mt-0.5 text-meta text-fg-3">{hover.slot.sized ? '' : '~'}{hover.slot.points} pt · {hover.slot.done ? 'done' : hover.slot.started ? 'going on now' : `${fmt(hover.slot.start)} → ${fmt(hover.slot.end)}`}
             {p.links.some((l) => l.to === hover.slot.id) && ` · waits for ${p.links.filter((l) => l.to === hover.slot.id).map((l) => title(l.from)).join(', ').slice(0, 60)}`}</p>
+          {moved.has(hover.slot.id) && <p className="mt-1 text-meta font-medium text-accent-text">{base?.nodes.some((n) => n.id === hover.slot.id) ? 'Changed in the draft' : 'New in the draft'}</p>}
+          {evidence.get(hover.slot.id)?.map((b, i) => (
+            <p key={i} className="mt-1 flex gap-1.5 text-meta leading-snug text-fg-2"><span className="shrink-0 rounded bg-accent-soft px-1 font-mono text-micro text-accent-text">{b.source}</span><span>{b.text}</span></p>
+          ))}
         </div>
       )}
     </div>

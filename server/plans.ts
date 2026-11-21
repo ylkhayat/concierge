@@ -16,7 +16,8 @@ import { stale } from './live.ts'
 // kept, and every open page showing it reads it again (live.ts)
 const save = () => { persist(); stale('/plans') }
 
-import { apply, applyAll, type Op, type Plan, type PlanNode } from './planOps.ts'
+import { apply, applyAll, becauseOf, BOARD, type Op, type Plan, type PlanNode } from './planOps.ts'
+import { bankArgs } from './bank.ts'
 import { impact } from '../src/planDiff.ts'
 import { config } from './config.ts'
 import { coverage, obligations } from './readiness.ts'
@@ -60,11 +61,22 @@ export function undoRedo(id: string, back: boolean) {
   return p
 }
 
+/**
+ * One change the planner drafts: kept in the scenario (tried, not applied), with its turn and its evidence, when it
+ * makes sense on the map as drafted so far (a change that does nothing, like removing what Linear owns, is dropped).
+ */
+function draft(p: Plan, o: Op, turn: string) {
+  const ops = p.scenario?.ops ?? []
+  if (!apply(applyAll(p, ops), o, 'agent')) return
+  const because = becauseOf(o.because)
+  p.scenario = { ...p.scenario, ops: [...ops, { ...o, turn, because }].slice(-500), at: new Date().toISOString() }
+}
+
 /** The moves being tried: replaced as a whole (the page sends every move so far); none clears it. */
 export function setScenario(id: string, ops: Op[]) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
   step(p)
-  p.scenario = ops.length ? { ops: ops.filter((o) => o.op === 'move').slice(0, 500), at: new Date().toISOString() } : undefined
+  p.scenario = ops.length ? { ops: ops.filter((o) => BOARD.has(o.op)).slice(0, 500), at: new Date().toISOString() } : undefined
   save(); return p
 }
 
@@ -97,7 +109,7 @@ export async function applyScenario(id: string) {
       results.push({ identifier: w.identifier, ok: true })
     } catch (e) { results.push({ identifier: w.identifier, ok: false, error: (e as Error).message.slice(0, 200) }) }
   }
-  for (const o of p.scenario.ops) apply(p, o, 'you')
+  for (const o of p.scenario.ops) apply(p, o, o.turn ? 'agent' : 'you')
   // a cut issue now sits in Backlog there too
   for (const w of writes) if (w.patch.backlog && results.find((x) => x.identifier === w.identifier)?.ok) { const n = p.nodes.find((x) => x.id === w.id); if (n) n.state = { name: 'Backlog', type: 'backlog' } }
   p.scenario = undefined; p.at = new Date().toISOString(); forget(id); save()
@@ -145,7 +157,8 @@ const PROTOCOL = [
   'A ticket you can\'t write well yet (a decision is open, it needs investigation, the size is unknown) gets "refine": what it still needs, in a few words; clear it with "refine":"" once it is settled.',
   'ids are short and stable (g, e1, m2, t7). priority: 1 urgent, 2 high, 3 medium, 4 low. A ticket\'s description is markdown.',
   'The map as it stands comes with every message: the product manager may have changed it by hand. Keep their changes; touch only what the message asks for, and never re-add what is there.',
-  'The product manager may be trying a scenario of moves (it comes with the map as "scenario"): answer about it when asked, and never apply it yourself.',
+  'Your changes to the map (add, update, remove, link, unlink, move) are a draft: the product manager sees each one highlighted as you make it, and applies the draft or not. The map you get shows the draft so far, with "draft" listing the ids it changes; build on it, and never apply it yourself.',
+  'When a change rests on something you looked up or were told (a metric, a ticket, an incident, a doc, the brief), add evidence to its op: "because":[{"source":"amplitude","text":"Pause clicks 4x since October","url":"https://…"}] (source: the tool or linear:ENG-12, brief, you; text under 15 words). Look things up with your read-only tools when a decision depends on real data; the evidence goes on the change, not in the prose.',
   'Items already in Linear have their identifier as id (e.g. ENG-12) and a state: never remove or rewrite them; add new work under them or beside them instead.',
 ].join('\n')
 /** Your message to the planner; it answers in the background, the map changing as it writes (the page polls). */
@@ -160,7 +173,10 @@ export async function talk(id: string, text: string) {
   // the method is the planning skill picked for this plan, else the one in Settings → Skills (method.ts)
   const skill = await skillBody(p.skill || slot('plan')).catch((e: Error) => { Object.assign(p, { busy: false, error: e.message }); save(); throw e })
   // a big project's map: each item short (its description cut), and Linear's own marked by its state
-  const map = JSON.stringify({ nodes: p.nodes.map(({ created: _, by: __, description, state, assigneeId: ___, ...n }) => ({ ...n, ...(description && { description: description.slice(0, 200) }), ...(state && { state: state.name }) })), links: p.links, ...(p.scenario && { scenario: p.scenario.ops }) })
+  // the map as drafted so far, and which items the draft changes
+  const seen = p.scenario?.ops.length ? applyAll(p, p.scenario.ops) : p
+  const drafted = [...new Set((p.scenario?.ops ?? []).map((o) => ('id' in o ? o.id : 'to' in o ? o.to : '')).filter(Boolean))]
+  const map = JSON.stringify({ nodes: seen.nodes.map(({ created: _, by: __, description, state, assigneeId: ___, ...n }) => ({ ...n, ...(description && { description: description.slice(0, 200) }), ...(state && { state: state.name }) })), links: seen.links, ...(drafted.length && { draft: drafted }) })
   const proj = p.project && `This plan contributes to the existing Linear project "${p.project.name}"${p.project.targetDate ? `, due ${p.project.targetDate}` : ''}. Its goal node (g) is the project.\nIts vision:\n${p.project.vision.slice(0, 6000) || '(none written)'}\n`
     + (p.project.lead ? 'The product manager leads this project: if the vision should change, propose the whole new text with one op line {"op":"vision","text":"…"}; it is applied only when they accept it.' : 'The product manager does not lead this project: never change its vision or goal; only add tickets (and epics or phases for them) to it.')
   const pace = p.pace ?? 5, people = p.people ?? Math.max(1, p.project?.members ?? 1)
@@ -171,10 +187,13 @@ What this plan must cover for it (id: title, and the ticket covering it):\n${cov
 Mark the ticket that covers one with "covers":["id"]. Uncovered ones belong in your gaps op (area compliance, security, rollout or research), most important first; add tickets for them when asked. Set "risk" on tickets that carry a real risk.` : ''
   const prompt = `${ready ? `${ready}\n\n---\n\n` : ''}${proj ? `${proj}\n---\n\n` : ''}${appetite ? `${appetite}\n\n---\n\n` : ''}${first ? `The brief, "${p.title}":\n${p.brief || '(none yet: ask for one)'}\n\n---\n\n` : ''}The map now: ${map}\n\n---\n\n${text}`
   const sessionId = p.sessionId ?? randomUUID()
-  const child = spawnAgent(providerFor('review'), [
+  const provider = providerFor('review')
+  const lookups = config.agent.allowedTools.filter((t) => t.startsWith('mcp__'))
+  const child = spawnAgent(provider, [
     '-p', prompt, '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--append-system-prompt', `${PROTOCOL}\n\nMethod: ${p.method}${p.method === 'waterfall' ? ' (phases as milestones, in order)' : ' (epics of thin slices)'}. How to break it down, from the planning skill:\n${skill}`,
-    '--tools', '', '--strict-mcp-config', '--disable-slash-commands', '--setting-sources', '',
+    // no tools of its own; the connectors in the bank (Linear, Sentry, Amplitude…) to look things up, read-only ones only
+    '--tools', '', ...(lookups.length ? [...bankArgs(provider), '--allowedTools', ...lookups] : ['--strict-mcp-config']), '--disable-slash-commands', '--setting-sources', '',
     '--model', 'planner', '--max-budget-usd', '3', // the planner's model (Settings → Models)
     ...(first ? ['--session-id', sessionId] : ['--resume', sessionId]),
   ], { cwd: tmpdir() })
@@ -182,7 +201,9 @@ Mark the ticket that covers one with "covers":["id"]. Uncovered ones belong in y
   let pending = '', reply = '', streamed = false, raw = '', err = '', cost = 0, final = ''
   let saveSoon: NodeJS.Timeout | undefined
   const flush = () => { saveSoon ??= setTimeout(() => { saveSoon = undefined; save() }, 250) }
-  const line = (l: string) => { const o = opOf(l); if (o) apply(p, o, 'agent'); else reply += `${l}\n`; p.live = reply.replace(/\n{3,}/g, '\n\n').trim(); flush() }
+  const turn = randomUUID().slice(0, 8)
+  let drew = false
+  const line = (l: string) => { const o = opOf(l); if (o && BOARD.has(o.op)) { draft(p, o, turn); drew = true } else if (o) apply(p, o, 'agent'); else reply += `${l}\n`; p.live = reply.replace(/\n{3,}/g, '\n\n').trim(); flush() }
   const text$ = (t: string) => { pending += t; let i; while ((i = pending.indexOf('\n')) >= 0) { line(pending.slice(0, i)); pending = pending.slice(i + 1) } p.live = (reply + (opOf(pending) || pending.trimStart().startsWith('@op') ? '' : pending)).trim() }
   child.stdout.on('data', (c: Buffer) => {
     raw += c
@@ -207,7 +228,7 @@ Mark the ticket that covers one with "covers":["id"]. Uncovered ones belong in y
     if (!streamed && final) for (const l of final.split('\n')) line(l)
     else if (pending) line(pending)
     const said = reply.replace(/\n{3,}/g, '\n\n').trim()
-    if (said) p.messages.push({ who: 'agent', text: said, at: new Date().toISOString() })
+    if (said || drew) p.messages.push({ who: 'agent', text: said, at: new Date().toISOString(), ...(drew && { turn }) })
     Object.assign(p, { busy: false, live: undefined, costUsd: p.costUsd + cost, at: new Date().toISOString(), ...(said && { sessionId }), ...(fail && !said && { error: fail.slice(0, 300) }) })
     save()
   }

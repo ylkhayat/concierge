@@ -165,7 +165,7 @@ function StageBar({ stages, onStep }: { stages: Stage[]; onStep: (s: Stage) => v
 }
 
 // --- the chat: the planning partner, its questions as cards and what to do next one click away ------------------------
-function Chat({ p, toast, stage, settings }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode }) {
+function Chat({ p, toast, stage, settings, onSelect }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode; onSelect?: (id: string) => void }) {
   const [text, setText] = useState('')
   const [picks, setPicks] = useState<Record<number, number>>({})
   const scroll = useRef<HTMLDivElement>(null)
@@ -199,7 +199,7 @@ function Chat({ p, toast, stage, settings }: { p: Plan; toast: Toast; stage?: St
           </details>
           {p.messages.map((m, i) => m.who === 'you'
             ? <div key={i} className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-body text-fg-1">{m.text}</div>
-            : <Md key={i} text={m.text} className="!text-body" />)}
+            : <div key={i} className="space-y-1.5">{m.text && <Md text={m.text} className="!text-body" />}{m.turn && <TurnChanges p={p} turn={m.turn} onSelect={onSelect} />}</div>)}
           {p.busy && (
             <div className="space-y-1">
               {p.live && <Md text={p.live} className="!text-body" />}
@@ -412,6 +412,27 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
   )
 }
 
+/** A reply's changes to the map, while they are in the draft: one chip each, which opens it on the map. */
+function TurnChanges({ p, turn, onSelect }: { p: Plan; turn: string; onSelect?: (id: string) => void }) {
+  const ops = (p.scenario?.ops ?? []).filter((o) => o.turn === turn)
+  if (!ops.length) return null
+  const whatIf = applyAll(p, p.scenario?.ops ?? [])
+  const name = (id: string) => whatIf.nodes.find((n) => n.id === id)?.title ?? p.nodes.find((n) => n.id === id)?.title ?? id
+  const verb = (o: Op) => o.op === 'add' ? '+' : o.op === 'remove' ? '−' : o.op === 'move' ? (o.cut ? '✂' : '↔') : o.op === 'link' ? '→' : '✎'
+  const ids = new Map<string, Op>(); for (const o of ops) { const id = 'id' in o ? o.id : 'to' in o ? o.to : ''; if (id) ids.set(id, o) }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {[...ids].slice(0, 12).map(([id, o]) => (
+        <button key={id} onClick={() => onSelect?.(id)} title={o.because?.map((b) => `${b.source}: ${b.text}`).join('\n') || undefined}
+                className="inline-flex max-w-[220px] items-center gap-1 rounded-full bg-accent-soft/70 px-2 py-0.5 text-meta text-fg-1 ring-1 ring-accent/20 transition-colors hover:bg-accent-soft">
+          <span className="font-mono text-accent-text">{verb(o)}</span><span className="truncate">{name(id)}</span>{o.because?.length ? <span className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
+        </button>
+      ))}
+      {ids.size > 12 && <span className="px-1 text-meta text-fg-3">+{ids.size - 12} more</span>}
+    </div>
+  )
+}
+
 /** Undo and redo on the board: every edit, scenario move and planner turn is a step; ⌘Z and ⇧⌘Z (or ⌘Y) outside a text box. */
 function History({ p, onBack }: { p: Plan; onBack: (undo: boolean) => unknown }) {
   const now = useRef({ p, onBack }); now.current = { p, onBack }
@@ -456,7 +477,7 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatI
   return (
     <div className="border-b border-line bg-accent-soft/50 px-4 py-2 text-small animate-[detail-in_200ms_var(--ease-out)]">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-accent-text" title={p.scenario?.why}><Sparkles className="size-3.5" />Trying {ops.length} move{ops.length === 1 ? '' : 's'}</span>
+        <span className="inline-flex items-center gap-1.5 font-semibold text-accent-text" title={p.scenario?.why}><Sparkles className="size-3.5" />{ops.some((o) => o.turn) ? 'Draft' : 'Trying'}: {ops.length} change{ops.length === 1 ? '' : 's'}</span>
         <span className={days < 0 ? 'font-medium text-ok-text' : days > 0 ? 'font-medium text-wait-text' : 'text-fg-2'}>{when} (~{new Date(Date.now() + i.endAfter * 7 * DAY).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })})</span>
         {i.fitsAfter !== undefined && <span className={i.fitsAfter ? 'text-ok-text' : 'text-fail-text'}>{i.fitsAfter ? (i.fitsBefore ? 'fits the appetite' : 'now fits the appetite') : 'over the appetite'}</span>}
         {i.cut.length > 0 && <span className="text-fg-2">{i.cut.length} cut ({i.cut.reduce((a, x) => a + x.points, 0)} pt)</span>}
@@ -465,7 +486,7 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatI
         <button onClick={() => setOpen(!open)} aria-expanded={open} className="text-meta font-medium text-accent-text hover:underline">{open ? 'Hide details' : 'Details'}</button>
         <span className="ml-auto inline-flex items-center gap-1.5">
           <button onClick={() => void onSet([])} className="rounded-lg px-2 py-1 text-meta font-medium text-fg-2 hover:bg-hover hover:text-fail-text">Discard</button>
-          <button disabled={busy} onClick={() => (i.writes.length ? arm('apply', apply) : apply())} className="btn-primary btn-sm relative inline-flex items-center gap-1.5 overflow-hidden">
+          <button disabled={busy || p.busy} title={p.busy ? 'It is still drafting' : undefined} onClick={() => (i.writes.length ? arm('apply', apply) : apply())} className="btn-primary btn-sm relative inline-flex items-center gap-1.5 overflow-hidden">
             {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
             {armed === 'apply' ? <><ArmLabel>{`Confirm: write ${i.writes.length} to Linear`}</ArmLabel><ArmBar on="color" /></> : 'Apply'}
           </button>
@@ -580,7 +601,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(340px,32%)_minmax(0,1fr)]">
         <section aria-label="Chat" className="flex min-h-0 flex-col border-line lg:border-r">
           {p.vision && <VisionCard p={p} set={set} toast={toast} />}
-          <Chat p={p} toast={toast} stage={stage} settings={settings} />
+          <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} />
         </section>
         <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-col overflow-hidden bg-surface-2/40 lg:flex">
           {p.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)} />}
@@ -595,7 +616,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
                 <p className="text-body font-semibold text-fg-1">{p.busy ? 'Drawing the plan…' : 'The plan draws itself here'}</p>
                 <p className="max-w-sm text-small text-fg-3">Each epic a stream flowing into the goal, its tickets along it when they would be worked on, and the time it is worth marked.</p>
               </div>
-            ) : <PlanStream p={withObligations(whatIf, setup.data?.config.compliance)} base={tried.length ? p : undefined} onMove={p.busy || p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
+            ) : <PlanStream p={withObligations(whatIf, setup.data?.config.compliance)} base={tried.length ? p : undefined} draft={tried} onMove={p.busy || p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
         </section>

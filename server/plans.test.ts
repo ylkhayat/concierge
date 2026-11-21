@@ -87,12 +87,13 @@ test('a scenario is kept until applied; Apply makes its moves in the plan and cl
   const { newPlan, edit, setScenario, applyScenario, planOf } = await import('./plans.ts')
   const p = newPlan('S', 'brief')
   edit(p.id, [{ op: 'add', id: 'g', kind: 'goal', title: 'G' }, { op: 'add', id: 'e', kind: 'epic', title: 'E', parent: 'g' }, { op: 'add', id: 'a', kind: 'ticket', title: 'A', parent: 'e', estimate: 3 }])
-  setScenario(p.id, [{ op: 'move', id: 'a', cut: true }, { op: 'update', id: 'a', title: 'not a move' } as never])
-  assert.equal(planOf(p.id).scenario?.ops.length, 1) // only moves are kept
+  setScenario(p.id, [{ op: 'move', id: 'a', cut: true }, { op: 'update', id: 'a', title: 'A2' }, { op: 'next', items: ['x'] } as never])
+  assert.equal(planOf(p.id).scenario?.ops.length, 2) // changes to the map are kept, reply ops are not
   assert.equal(planOf(p.id).nodes.find((n) => n.id === 'a')!.parent, 'e') // not applied yet
   const r = await applyScenario(p.id)
   assert.deepEqual(r.results, [])
   assert.equal(planOf(p.id).nodes.find((n) => n.id === 'a')!.parent, 'later')
+  assert.equal(planOf(p.id).nodes.find((n) => n.id === 'a')!.title, 'A2')
   assert.equal(planOf(p.id).scenario, undefined)
 })
 
@@ -123,4 +124,11 @@ test('a move resizes: the estimate changes in the plan and is a Linear write for
   assert.equal(w.nodes[0].estimate, 8); assert.equal(p.nodes[0].estimate, 3)
   assert.deepEqual(impact(p, w, 1, 5).writes[0].patch, { estimate: 8 })
   assert.equal(sizeFor(3, 30, 60), 5); assert.equal(sizeFor(3, 30, 5), 1)
+})
+
+test('evidence is kept short, three at most, and a link only when it is a web one', async () => {
+  const { becauseOf } = await import('./planOps.ts')
+  assert.equal(becauseOf(undefined), undefined)
+  const b = becauseOf([{ source: 'amplitude', text: 'x', url: 'javascript:alert(1)' }, { source: 's', text: 't', url: 'https://a.b' }, { text: 'no source' }, {}, { source: 'a', text: 'b' }, { source: 'c', text: 'd' }])!
+  assert.equal(b.length, 3); assert.equal(b[0].url, undefined); assert.equal(b[1].url, 'https://a.b')
 })
