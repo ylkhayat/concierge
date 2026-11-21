@@ -16,6 +16,7 @@ import { appendFile, lstat, mkdir, open, readdir, readFile, rename, stat, utimes
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { CLAUDE_HOME, sessionDir } from './agentHome.ts'
+import { reloadConfig } from './config.ts'
 import { fleet } from './fleet.ts'
 import { token } from './machines.ts'
 import { CONFIG_DIR, STATE_DIR } from './paths.ts'
@@ -188,6 +189,7 @@ async function pullFiles() {
           from += buf.length
         }
         if (!append) await rename(tmp, abs)
+        if (k === 'config:config.json') void reloadConfig() // the main server's settings apply at once, not at the next 5-minute check
         // their time on our copy: the other side then sees the same file, and never pulls it back
         await utimes(abs, new Date(), new Date(mtimeMs)).catch(() => {})
         const st = await stat(abs).catch(() => undefined)
