@@ -484,7 +484,7 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
   <div class="aurora"></div>
   <canvas class="particles" aria-hidden="true"></canvas>
   <div class="wrap">
-    <span class="eyebrow"><b>Concierge</b><span class="shiny">Agents do the work, you make the calls</span></span>
+    <span class="eyebrow"><b>Concierge</b><span class="shiny">An agent orchestrator. You take the wheel.</span></span>
     <h1>The legwork, done by agents. <em>Every decision, yours.</em></h1>
     <p class="lede">One place for your working day: your code, your tickets and your agents together. Agents on your own machine do the work around a change (reviews, feedback on your PRs, tickets, plans) and stop wherever a decision is yours. Nothing reaches your repositories or tickets until you click.</p>
     <div class="cta">
@@ -540,11 +540,11 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
     <div class="reveal">
       <p class="kicker">Why it exists</p>
       <h2>Agents can do the work. Deciding stays with you.</h2>
-      <p class="sub">Most of what surrounds a change, reading it, answering feedback, rebasing a stack, turning a ticket into a PR, an agent can now do. What it shouldn't do is decide for you. Concierge gives that work to agents and brings back only what needs you: a finding to post, an answer to give, a push to approve.</p>
+      <p class="sub">Most of what surrounds a change, reading it, answering feedback, rebasing a stack, turning a ticket into a PR, an agent can now do. What it shouldn't do is decide for you. Concierge is the orchestration layer for that work: a local control plane that decides which agent runs, when and on what, with you in the loop. It brings back only what needs you: a finding to post, an answer to give, a push to approve.</p>
     </div>
     <p class="group reveal">It brings the tools you already use into one place, and replaces none of them</p>
     <div class="steps plain">
-      <div class="step reveal"><h3>Not a review tool</h3><p>Line-by-line review stays in <a href="https://crit.md" target="_blank" rel="noreferrer">crit</a>. Concierge starts a crit session for each review, lets the agent write its findings there, and shows you what is waiting.</p></div>
+      <div class="step reveal"><h3>Not a review tool</h3><p><a href="https://crit.md" target="_blank" rel="noreferrer">crit</a> is a review surface, where you and an agent comment on a diff line by line. Concierge is the layer above it: it can drive crit, or keep the findings on the PR page if you don't use it.</p></div>
       <div class="step reveal"><h3>Not an agent</h3><p>Claude Code, Codex, Copilot or a local Llama does the work, on your own plans and keys. Concierge decides what to run, where, and when to stop and ask.</p></div>
       <div class="step reveal"><h3>Not a tracker</h3><p>Your code host and your ticket tracker stay the source of truth: GitHub for code, and tickets from Linear or GitHub Issues. Concierge reads them, and writes there only what you approve.</p></div>
     </div>
