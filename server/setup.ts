@@ -34,13 +34,21 @@ async function runChecks(): Promise<Record<'github' | 'claude' | 'crit', Check>>
   const [me, claude, crit] = await Promise.all([
     getMe().catch(() => undefined), version('claude'), version('crit'),
   ])
+  critHere = !!crit
   return {
     // no fix command: the page takes a token itself (in Docker there is no gh to sign in with)
     github: me ? { ok: true, detail: `Signed in as ${me.login}` } : { ok: false, detail: 'Not connected yet' },
     claude: claude ? { ok: true, detail: claude } : { ok: false, detail: 'Claude Code is not installed', fix: 'npm install -g @anthropic-ai/claude-code' },
-    crit: crit ? { ok: true, detail: crit } : { ok: false, detail: 'crit is not installed', fix: 'brew install crit' },
+    // crit is optional: without it (or when you chose so) reviews stay in Concierge, so it is only missing when wanted
+    crit: crit ? { ok: true, detail: crit } : config.reviewIn === 'crit' ? { ok: false, detail: 'crit is not installed', fix: 'brew install crit' } : { ok: true, detail: 'not used: reviews stay in Concierge' },
   }
 }
+// whether crit is on this machine, from the last check (unknown before the first: taken as there)
+let critHere: boolean | undefined
+void version('crit').then((v) => { critHere = !!v })
+/** Where reviews are read and answered here: crit, or Concierge itself. Your choice, else crit when it is installed. */
+export const critInstalled = () => critHere !== false
+export const reviewIn = (): 'crit' | 'concierge' => config.reviewIn ?? (critHere === false ? 'concierge' : 'crit')
 
 // --- local checkouts -----------------------------------------------------------------------
 

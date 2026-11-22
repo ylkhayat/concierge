@@ -74,6 +74,8 @@ export function Overview({ pr, prs, onSelect, onOpen, toast }: {
         <button onClick={() => onOpen('description')} className={`${more} mt-2 ${b ? '' : 'block'}`}>The author’s description<ArrowRight className="size-3.5" /></button>
       </Panel>
 
+      {!pr.mine && pr.job?.critKey?.startsWith('cc-') && <Findings pr={pr} toast={toast} />}
+
       {stack && (
         <Panel title="The stack" aside={<button onClick={() => onSelect(`stack:${pr.id}`)} className={more}>{stack.length} PRs · open the stack<ArrowRight className="size-3.5" /></button>}>
           <ul className="-mx-1.5">
@@ -94,6 +96,33 @@ export function Overview({ pr, prs, onSelect, onOpen, toast }: {
         </Panel>
       )}
     </div>
+  )
+}
+
+type Finding = { id: string; path?: string; line?: number; end?: number; body: string; dropped: boolean }
+/** A review read in Concierge (no crit): each finding the agent wrote, kept or dropped before you post. Dropped ones
+ *  aren't posted; the counts and the Next panel follow at once. */
+function Findings({ pr, toast }: { pr: PrView; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+  const q = useApi<{ own: boolean; findings: Finding[] }>(`/prs/${enc(pr.id)}/findings`)
+  const list = q.data?.findings ?? []
+  const set = (f: Finding, dropped: boolean) => api(`/prs/${enc(pr.id)}/findings/${enc(f.id)}`, { dropped }).then(() => q.refetch(), (e: Error) => toast(e.message, 'error'))
+  const kept = list.filter((f) => !f.dropped).length
+  return (
+    <Panel title="Findings" aside={list.length ? <span className="text-meta tabular-nums text-fg-3">{kept} of {list.length} to post</span> : undefined}>
+      {!list.length ? <p className="text-small text-fg-3">{pr.job?.state === 'running' ? 'The review is writing them now…' : 'The review found nothing to flag.'}</p> : (
+        <ul className="-my-1 divide-y divide-line">
+          {list.map((f) => (
+            <li key={f.id} className={`py-2 ${f.dropped ? 'opacity-50' : ''}`}>
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate font-mono text-meta text-fg-3" title={f.path}>{f.path ? `${f.path}${f.line ? `:${f.line}${f.end && f.end !== f.line ? `–${f.end}` : ''}` : ''}` : 'The whole PR'}</span>
+                <button onClick={() => void set(f, !f.dropped)} className="shrink-0 rounded-full px-2 text-meta font-medium text-fg-3 ring-1 ring-line transition-colors hover:text-fg-1">{f.dropped ? 'Keep' : 'Drop'}</button>
+              </div>
+              <div className={`mt-1 text-small leading-relaxed text-fg-2 ${f.dropped ? 'line-through' : ''}`}><Md text={f.body} /></div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   )
 }
 

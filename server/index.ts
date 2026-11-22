@@ -4,7 +4,7 @@ import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.t
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { profile } from './profile.ts'
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { watch as fsWatch } from 'node:fs'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
@@ -20,7 +20,7 @@ import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
 import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
-import { critFor, critOfPr, deliberateNote, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
+import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
 import { defaultBranch, tokenChanged, getMe, gh, ghBudget, outside, poll, prHealth, refreshOne, setOnStacks } from './github.ts'
 import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
@@ -74,7 +74,7 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from '
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
-import { brokenSkillLinks, notHere, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
+import { brokenSkillLinks, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
@@ -91,7 +91,7 @@ import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
 
 export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
-export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string }
+export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
 /** An error in a few words, with what is under Node's bare "fetch failed" (ENOTFOUND: no DNS, a timeout, a reset). */
 const whyFailed = (e: unknown) => {
   const c = (e as { cause?: { code?: string; message?: string } }).cause
@@ -143,6 +143,7 @@ setInterval(() => {
 }, 10_000).unref()
 
 function views(): PrView[] {
+  const critOff = reviewIn() === 'concierge' // reviews read in Concierge: no crit to show or open
   const maps = new Map<string, string | undefined>()
   const mappedAt = (repo: string) => { if (!maps.has(repo)) maps.set(repo, loadBase(repo)?.mappedAt); return maps.get(repo) }
   const tickets = ticketViews() // once per update: every PR's linked ticket reads from it
@@ -169,7 +170,7 @@ function views(): PrView[] {
       if (stackAnswered && pr.job) pr.job = { ...pr.job, next: undefined }
       // and its flow and status read it so too: the agent no longer "asks you" what the stack's answer covered
       const q = stackAnswered && p.job ? { ...p, job: { ...p.job, next: undefined } } : p // answered with the stack: nothing asked any more
-      return { ...pr, ...(stackRun && { stackRun }), ...(stackAnswered && { stackAnswered }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(q, crit, !!repoPath, op), flow: flowOf(flowInOf(q, crit, !!repoPath, op)),
+      return { ...pr, ...(critOff && { critOff }), ...(stackRun && { stackRun }), ...(stackAnswered && { stackAnswered }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(q, crit, !!repoPath, op), flow: flowOf(flowInOf(q, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
 }
@@ -1880,7 +1881,7 @@ const setupView = async (light = false) => ({
   configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []),
   // your skills that are links this machine can't follow (Docker: the folder they point into isn't mounted; bin/up mounts it)
   brokenLinks: light ? [] : await brokenSkillLinks(), skillSources: skillSources(),
-  workDir: WORK_DIR, clones: cloneState(), away: Object.keys(config.repos).filter(notHere), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
+  reviewIn: reviewIn(), critInstalled: critInstalled(), workDir: WORK_DIR, clones: cloneState(), away: Object.keys(config.repos).filter(notHere), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
   // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
   config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
@@ -1973,7 +1974,7 @@ app.post('/access', async (c) => {
   return c.json({ logins: allowedLogins(), you })
 })
 app.post('/config', async (c) => {
-  const b = await c.req.json() as { repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string; skillSources?: string[] }
+  const b = await c.req.json() as { reviewIn?: 'crit' | 'concierge'; repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string; skillSources?: string[] }
   const errors: string[] = []
   if (b.repos) {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
@@ -2008,6 +2009,7 @@ app.post('/config', async (c) => {
     for (const [f, list] of Object.entries(known)) { const v = (k as Record<string, unknown>)[f]; if (v !== undefined && (!Array.isArray(v) || v.some((x) => !list.some(([id]) => id === x)))) errors.push(`Unknown ${f}`) }
     if (k.team !== undefined && (!Array.isArray(k.team) || k.team.length > 50 || k.team.some((m) => typeof m?.name !== 'string' || !m.name.trim() || m.name.length > 60 || !ROLES.some(([id]) => id === m.role) || (m.pace !== undefined && !(Number(m.pace) > 0 && Number(m.pace) <= 50)) || (m.teams !== undefined && (!Array.isArray(m.teams) || m.teams.some((t) => !/^[A-Z][A-Z0-9]*$/.test(t))))))) errors.push('Each person needs a name and a role')
   }
+  if (b.reviewIn !== undefined && b.reviewIn !== 'crit' && b.reviewIn !== 'concierge') errors.push('Reviews happen in crit or in Concierge')
   if (errors.length) return c.json({ error: errors.join('. ') }, 400)
 
   const prev = userConfig().agent, prevRepos = Object.keys(config.repos)
@@ -2015,6 +2017,7 @@ app.post('/config', async (c) => {
     // kept as a folder name when it sits in the working directory: then each machine finds it in its own
     ...(b.repos && { repos: Object.fromEntries(Object.entries(b.repos).map(([r, p]) => { const rel = relative(WORK_DIR, repoPath(p)); return [r, /^[\w-][\w.-]*$/.test(rel) ? rel : p] })) }),
     ...(b.repoAccounts && { repoAccounts: b.repoAccounts }),
+    ...(b.reviewIn && { reviewIn: b.reviewIn }),
     ...(b.terminal && { terminal: b.terminal as 'Terminal' | 'iTerm' }),
     ...(b.workspaces && { workspaces: [...new Set(b.workspaces)] }),
     ...(typeof b.linearDesktop === 'boolean' && { linearDesktop: b.linearDesktop }),
@@ -2342,6 +2345,37 @@ app.post('/prs/:id/submit', async (c) => {
 })
 
 // everything answered: ask the reviewers to look again (GitHub notifies them)
+// a review read in Concierge (no crit): its findings, from the file the agent wrote where crit keeps reviews (crit.ts
+// ownReviewFile), and keeping or dropping one. A dropped finding is marked resolved, so posting leaves it out
+type OwnComment = { id: string; start_line?: string; end_line?: string; body?: string; resolved?: boolean; scope?: string }
+const ownReview = async (p: Pr) => {
+  const key = p.job?.critKey
+  if (!key?.startsWith('cc-')) return undefined
+  const file = ownReviewFile(key)
+  const json = JSON.parse(await readFile(file, 'utf8').catch(() => '{}')) as { files?: Record<string, { comments?: OwnComment[] }>; review_comments?: OwnComment[] }
+  return { file, json }
+}
+app.get('/prs/:id/findings', async (c) => {
+  const p = pr(c.req.param('id'))
+  const r = p && await ownReview(p)
+  if (!r) return c.json({ own: false, findings: [] })
+  const one = (x: OwnComment, path?: string) => ({ id: x.id, path, line: x.start_line ? Number(x.start_line) : undefined, end: x.end_line ? Number(x.end_line) : undefined, body: x.body ?? '', dropped: !!x.resolved })
+  return c.json({ own: true, findings: [...(r.json.review_comments ?? []).map((x) => one(x)), ...Object.entries(r.json.files ?? {}).flatMap(([path, f]) => (f.comments ?? []).map((x) => one(x, path)))] })
+})
+app.post('/prs/:id/findings/:cid', async (c) => {
+  const p = pr(c.req.param('id')), cid = c.req.param('cid')
+  const { dropped } = await c.req.json<{ dropped?: boolean }>().catch(() => ({ dropped: undefined }))
+  const r = p && await ownReview(p)
+  if (!r || typeof dropped !== 'boolean') return c.json({ error: 'no such finding' }, 404)
+  const all = [...(r.json.review_comments ?? []), ...Object.values(r.json.files ?? {}).flatMap((f) => f.comments ?? [])]
+  const x = all.find((y) => y.id === cid)
+  if (!x) return c.json({ error: 'no such finding' }, 404)
+  x.resolved = dropped
+  await writeFile(r.file + '.tmp', JSON.stringify(r.json, null, 2)); await rename(r.file + '.tmp', r.file)
+  await refreshCrit(); bus.emit('change')
+  return c.json({ ok: true })
+})
+
 // the review's NORM findings (code that differs from a written convention) and the repo's deliberate exceptions
 app.get('/prs/:id/norms', (c) => {
   const p = pr(c.req.param('id'))

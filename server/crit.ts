@@ -134,3 +134,18 @@ export function critOfPr(p: Pr) {
 
 /** The NORM findings of a crit session, from the last snapshot. */
 export const normsOf = (sessionKey?: string): Norm[] => (sessionKey && snap.norms.get(sessionKey)) || []
+
+// --- reviews read in Concierge, without crit (setup.ts reviewIn) ---------------------------------------------------
+// The agent writes its findings where crit keeps a review (review.json, the same shape), under a key of the PR's own:
+// everything that reads crit's reviews (the counts, the norms, the PR page's findings, the other machines' copy) then
+// works the same, with no daemon and nothing to install.
+export const ownReviewKey = (p: Pick<Pr, 'repo' | 'number'>) => `cc-${p.repo.replace(/[^\w.-]/g, '-')}-${p.number}`
+export const ownReviewFile = (key: string) => join(CRIT_DIR, 'reviews', key, 'review.json')
+export const noCrit = (p: Pick<Pr, 'repo' | 'number'>, key: string) => `
+
+There is no crit here: the person reads and answers this review in Concierge. Do not launch crit, wait for Finish Review, or run crit.sh. Write your findings where Concierge reads them instead, the file ${ownReviewFile(key)} (create its folder), as JSON in crit's review shape:
+{"files": {"<path in the repo>": {"comments": [{"id": "c_<6 hex>", "start_line": "<n>", "end_line": "<n>", "body": "<the finding, badges and all, exactly as you would author it in crit>", "author": "${AI_AUTHOR}", "scope": "line", "resolved": false, "replies": []}]}}, "review_comments": [<the same shape, scope "review", for findings about the whole PR>]}
+Write the whole file in one go; on a later round read it first and keep what the person added (replies, "resolved": true). Then end your turn with a short summary of what you found. When you are asked to post, post the findings in that file that are not resolved, as your skill would post crit's, and leave out the resolved ones.`
+export const NO_CRIT_REVISE = `
+
+There is no crit here: the person works in Concierge. Follow your skill's path for no crit (keep the work-list in your notes, skip crit's steps), and never launch crit.`

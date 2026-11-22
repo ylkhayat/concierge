@@ -2,6 +2,7 @@ import {
   ArrowLeft, ArrowRight, ChevronRight, BookOpen, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
   CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
+import { ReviewIn } from './ReviewIn.tsx'
 import { useMachineName } from '../machineNames.ts'
 import { Tabs } from './Tabs.tsx'
 import { label, sha, VERSION } from '../version.ts'
@@ -205,6 +206,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
             {tab === 'workflows' && <>
               <WorkflowCards setup={setup} health={health} save={save} saveConfig={saveConfig} go={go} />
               <Workflows health={health} setup={setup} save={save} saveConfig={saveConfig} />
+              {uses('review') && setup && <ReviewIn setup={setup} onSaved={setSetup} />}
               {uses('review') && <Skills setup={setup} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />}
               {uses('exec') && <Exec setup={setup} saveConfig={saveConfig} />}
             </>}
@@ -258,7 +260,7 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
       )}
       <Group title="Reviews" hint="How review requests are picked up.">
         <Row icon={Zap} title="Auto-review" hint="Start the review skill as soon as someone requests your review."
-             more="Off: a review request waits in the list until you press Run review. On: the review skill starts by itself, within the parallel limit and the daily budget, and the findings wait in crit for you. Nothing is posted to GitHub until you choose.">
+             more="Off: a review request waits in the list until you press Run review. On: the review skill starts by itself, within the parallel limit and the daily budget, and the findings wait for you (on the PR page, or in crit if you review there). Nothing is posted to GitHub until you choose.">
           <Toggle label="Auto-review" on={!!health?.autoStart} onChange={(on) => save('/auto-start', { on }, on ? 'Auto-review on' : 'Auto-review off').catch(() => {})} />
         </Row>
         <Row icon={Layers} title="Parallel runs" hint="Agent runs at once; the rest wait in a queue."

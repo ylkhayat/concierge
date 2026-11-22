@@ -21,7 +21,8 @@ import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
 import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
 import { bankArgs } from './bank.ts'
-import { cloneState } from './setup.ts'
+import { cloneState, reviewIn } from './setup.ts'
+import { noCrit, NO_CRIT_REVISE, ownReviewKey } from './crit.ts'
 import { directionNote } from './stackDirection.ts'
 import { brief, capOf, GATHER_S, keepSession, modelOf, routeReply } from './replyRoute.ts'
 import { accountOf, accounts, available, chosenFor, codexWindowsOf, kindOf, limitedUntil, limitUntil, llamaPulling, markLimited, openaiAuth, providerFor, identityOf, spawnAgent, tokensOf, watchClaudePlan, type ProviderId, type Work } from './providers.ts'
@@ -982,6 +983,9 @@ function start(pr: Pr, on?: string) {
   const startedAt = new Date().toISOString(), wasPaused = !!job.pausedAt
   ev('running', job.continuing ? 'continued' : 'started', { startedAt, endedAt: undefined, error: undefined, costUsd: undefined, refused: undefined, denials: [], pausedAt: undefined })
   let asked = isFollowUp(job.kind) ? job.prompt! : fill(slot(job.kind as 'review' | 'revise', job.as ?? 'developer'), { number: pr.number, repo: pr.repo })
+  // reviews read in Concierge (no crit, or you chose so): the findings go where crit keeps a review, so the page shows them
+  if (reviewIn() === 'concierge' && !pr.mine) { job.critKey ??= ownReviewKey(pr); asked += noCrit(pr, job.critKey) }
+  else if (reviewIn() === 'concierge' && job.kind === 'revise') asked += NO_CRIT_REVISE
   if (wasPaused) note(pr.id, { at: startedAt, kind: 'event', text: "The plan's window has room again: it continues where it left off." })
   else if (job.continuing) note(pr.id, { at: startedAt, kind: 'event', text: `It continues where it left off${job.continued ? ` (restart ${job.continued} of ${MAX_CONTINUES})` : ''}.` })
   else if (job.shown) note(pr.id, { at: startedAt, kind: 'event', text: 'Started.' })

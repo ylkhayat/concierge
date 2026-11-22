@@ -45,7 +45,7 @@ test('a PR you review', () => {
   assert.equal(t({ job: job('review'), crit: { live: true, finishes: 0, known: true } }), 'ready-to-post:post')
   const why = (f: Partial<FlowIn>) => flowOf({ ...base, mine: false, job: job('review'), ...f }).why
   // the findings and the three ways to post them; which one is yours (or the review skill's next steps), never Concierge's
-  assert.match(why({ crit: { live: true, finishes: 0, known: true, findings: 2, open: 3, blocking: 1 } }), /left 2 findings, 1 blocking \(3 unresolved in crit\)\. Post them as comments, approve, or approve without them\./)
+  assert.match(why({ crit: { live: true, finishes: 0, known: true, findings: 2, open: 3, blocking: 1 } }), /left 2 findings, 1 blocking \(3 unresolved\)\. Post them as comments, approve, or approve without them\./)
   assert.match(why({ crit: { live: true, finishes: 0, known: true, findings: 0 } }), /found nothing to flag\./)
   assert.equal('suggest' in flowOf({ ...base, mine: false, job: job('review'), crit: { live: true, finishes: 0, known: true, findings: 3, open: 3, blocking: 1 } }), false)
   assert.deepEqual(flowOf({ ...base, mine: false, job: job('review'), crit: { live: true, finishes: 0, known: true } }).also, ['crit'])

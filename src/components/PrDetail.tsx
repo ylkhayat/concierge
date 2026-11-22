@@ -158,7 +158,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
         </button>
       )}
       {/* crit, once it is part of this PR's flow: "not started" on an untouched PR says nothing */}
-      {(crit?.port || crit?.live || job) && (
+      {!pr.critOff && (crit?.port || crit?.live || job) && (
       <Chip icon={critDown ? CircleAlert : Radio} pulse={crit?.live} tone={crit?.live ? 'emerald' : critDown ? 'amber' : 'zinc'}
             label={crit?.live ? <>crit :{crit.port}{crit.unresolved ? ` · ${crit.unresolved} unresolved` : ''}</> : critDown ? 'crit' : crit?.port ? 'crit stopped' : 'crit not started'}>
         <div className="grid grid-cols-2 gap-2">
@@ -336,8 +336,8 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
   const stackNav = pr.stack && !compact ? <StackNav keys items={stackItems(pr, prs)} current={pr.id} onOpen={(x) => (x.url && !prs.some((p) => p.id === x.id) ? window.open(x.url, '_blank', 'noreferrer') : onSelect(x.id))} /> : undefined
   const headerActions = <>
                 <PinButton pinKey={`pr:${pr.id}`} on={pr.pinned} className={`${mini} px-1.5`} toast={toast} />
-                <a href={url} target="_blank" rel="noreferrer" aria-disabled={!url} title={url ? 'Open crit (o)' : 'crit is not running for this PR'}
-                   className={`${mini} ${url ? '' : 'pointer-events-none opacity-40'}`}><MessagesSquare className="size-3.5" /><span className="hidden sm:inline">crit</span></a>
+                {!pr.critOff && <a href={url} target="_blank" rel="noreferrer" aria-disabled={!url} title={url ? 'Open crit (o)' : 'crit is not running for this PR'}
+                   className={`${mini} ${url ? '' : 'pointer-events-none opacity-40'}`}><MessagesSquare className="size-3.5" /><span className="hidden sm:inline">crit</span></a>}
                 <button className={mini} disabled={!resumeCmd} onClick={() => act('resume-terminal', 'Opened the session in Terminal')}
                         title={resumeCmd ? 'Open the agent session in Terminal (r)' : 'No agent session yet'}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Resume</span></button>
                 <a href={pr.url} target="_blank" rel="noreferrer" className={mini} title="Open on GitHub (g)"><GitPullRequest className="size-3.5" /><span className="hidden sm:inline">GitHub</span></a>

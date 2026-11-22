@@ -129,7 +129,7 @@ function mine(f: FlowIn): Flow {
   const waits = `${n(f.awaiting, 'comment')} ${f.awaiting === 1 ? 'waits' : 'wait'} on you`
   if (!prepared) {
     const approved = f.reviewDecision === 'APPROVED'
-    return { state: 'feedback', step: 0, why: `${approved ? 'Approved, but' : f.reviewDecision === 'CHANGES_REQUESTED' ? 'Changes were requested:' : 'New feedback:'} ${waits}. A revise brings ${f.awaiting === 1 ? 'it' : 'them'} into crit.`, next: approved ? 'finalize' : 'run', also: ['read'] }
+    return { state: 'feedback', step: 0, why: `${approved ? 'Approved, but' : f.reviewDecision === 'CHANGES_REQUESTED' ? 'Changes were requested:' : 'New feedback:'} ${waits}. A revise works through ${f.awaiting === 1 ? 'it' : 'them'}.`, next: approved ? 'finalize' : 'run', also: ['read'] }
   }
   // the round has them: fixed by a fix round (or Finish Review in crit), and not pushed since?
   // a reply you cancelled (or one that failed) fixed nothing: only one that finished counts
@@ -153,7 +153,7 @@ function theirs(f: FlowIn): Flow {
   // the review is ready: what to do with its findings is the decision, so it is the next move whether or not crit is
   // open; which verdict is yours (or the review skill's next steps propose one)
   const k = f.crit?.findings ?? 0, open = f.crit?.open ?? 0, b = f.crit?.blocking ?? 0
-  const found = k ? `The AI review left ${n(k, 'finding')}${b ? `, ${b} blocking` : ', none blocking'}${open > b ? ` (${open} unresolved in crit)` : ''}.` : 'The AI review found nothing to flag.'
+  const found = k ? `The AI review left ${n(k, 'finding')}${b ? `, ${b} blocking` : ', none blocking'}${open > b ? ` (${open} unresolved)` : ''}.` : 'The AI review found nothing to flag.'
   const why = `${finished ? 'You finished the review in crit. ' : ''}${found} Post them as comments, approve, or approve without them.`
   return { state: 'ready-to-post', step: critUp && !finished ? 3 : 2, why, next: 'post', also: k ? [] : critUp ? ['crit'] : f.crit?.known ? ['restart-crit'] : [] } // with findings, crit is one of the choices
 }

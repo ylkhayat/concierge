@@ -2,6 +2,7 @@ import {
   ArrowLeft, ArrowRight, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, FolderGit2, GitPullRequestArrow, Layers, LayoutGrid, LoaderCircle, Monitor,
   Lock, Moon, Network, Rocket, Search, Settings2, Sparkles, SquareTerminal, Sun, Wallet, Wand, X, Zap, type LucideIcon,
 } from 'lucide-react'
+import { ReviewIn } from './ReviewIn.tsx'
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import type { TailscaleView } from '../../server/tailscale.ts'
@@ -268,7 +269,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               <Step title="What will you use it for?" lead="Each workspace is its own place in the app, with its own setup. Pick one or both; Settings can change it later.">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Choice on={spaces.includes('review')} onClick={() => toggleSpace('review')} icon={GitPullRequestArrow} title="Review"
-                          body="Review the PRs you are asked to, and revise your own from their threads. Prepared by an agent, finished by you in crit." />
+                          body="Review the PRs you are asked to, and revise your own from their threads. Prepared by an agent, finished by you." />
                   <div data-accent="exec" className="contents">
                     <Choice on={spaces.includes('exec')} onClick={() => toggleSpace('exec')} icon={Rocket} title="Ship"
                             body={`Ship your Linear tickets: an agent runs your exec command and opens the PRs.${setup.linearKey ? ' Linear is connected.' : ''}`} />
@@ -328,7 +329,8 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               </div>
             ) : id === 'skills' ? (
               <Step title="Choose the skills that do the work" lead="A review request runs a review skill; your own PRs run a revise skill. Use your own, or add repositories of skills: Concierge keeps them in its own folder for its agents and never touches your ~/.claude.">
-                {c && !c.crit.ok && <ToolRow name="crit" c={c.crit} note="The review and revise skills open their findings in it" />}
+                <ReviewIn setup={setup} onSaved={setSetup} />
+                {c && !c.crit.ok && <ToolRow name="crit" c={c.crit} note="You chose to review in crit" />}
                 {setup.brokenLinks.length > 0 && (
                   <div className="rounded-2xl bg-wait/6 px-3.5 py-3 text-small ring-1 ring-wait/20">
                     <p className="flex items-center gap-2 font-medium text-wait-text"><CircleAlert className="size-4 shrink-0" />Some of your skills are links Concierge can&apos;t follow here</p>
@@ -340,7 +342,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                   {guess.review && guess.revise && first.current && commands.review === guess.review.command && <p className="flex items-center gap-1.5 text-small text-ok-text"><CircleCheck className="size-4" />Picked the review and revise skills found here: change them below.</p>}
                   <WorkflowCard work="review" title="Review someone else’s PR" icon={GitPullRequestArrow} trigger="When your review is requested" value={commands.review} suggested={guess.review?.command} onSave={(v) => setCommands((x) => ({ ...x, review: v }))} />
                   <WorkflowCard work="revise" title="Revise your own PR" icon={Wand} trigger="When new feedback lands on your PR" value={commands.revise} suggested={guess.revise?.command} onSave={(v) => setCommands((x) => ({ ...x, revise: v }))} />
-                  <p className="text-small text-fg-3">Your skill should print <code className="rounded bg-fill px-1">crit is at http://localhost:&lt;port&gt;</code> and end its turn once ready. The README lists the full contract.</p>
+                  {setup.reviewIn === 'crit' && <p className="text-small text-fg-3">Your skill should print <code className="rounded bg-fill px-1">crit is at http://localhost:&lt;port&gt;</code> and end its turn once ready. The README lists the full contract.</p>}
                 </div>
               </Step>
             ) : (
