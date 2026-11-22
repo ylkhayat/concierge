@@ -1,4 +1,5 @@
-import { ArrowUpRight, MessageSquare } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, MessageSquare } from 'lucide-react'
+import { useState } from 'react'
 import type { TicketView } from '../lib.ts'
 import { chainsOf, titleParts } from '../stack.ts'
 
@@ -16,14 +17,17 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
   const groups = [
     ...stacks.map((c) => ({ rail: true, items: c, label: `Stack · ${c.length} PRs`, gone: false })),
     ...(alone.length ? [{ rail: false, items: alone, label: stacks.length ? 'Not stacked' : '', gone: false }] : []),
-    // closed and merged: kept findable, dimmed, below everything that is still open
-    ...(closed.length ? [{ rail: false, items: closed, label: `Closed · ${closed.length}`, gone: true }] : []),
   ]
+  // closed and merged: one line ("5 merged earlier") under everything still open, opened when you want them
+  const [past, setPast] = useState(false)
+  const merged = closed.filter((p) => p.merged).length
+  const earlier = [merged && `${merged} merged`, closed.length - merged && `${closed.length - merged} closed`].filter(Boolean).join(', ')
+  if (closed.length && past) groups.push({ rail: false, items: closed, label: '', gone: true })
   return (
     <div className="space-y-2.5">
       {groups.map((g) => (
         <div key={g.items[0].url} className={`overflow-hidden rounded-xl ring-1 ${g.gone ? 'bg-fill/60 ring-zinc-200/60 dark:ring-zinc-800/60' : 'bg-surface-1 ring-line '}`}>
-          {groups.length > 1 && g.label && (
+          {groups.length > 1 && g.label && !g.gone && (
             <p className="border-b border-line px-3 py-1.5 labelr text-fg-3 ">{g.label}</p>
           )}
           <ol className={g.rail ? '' : 'divide-y divide-line'}>
@@ -32,7 +36,7 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
               return (
                 <li key={p.url}>
                   <a href={p.url} target="_blank" rel="noreferrer" title={`${p.title ?? ''} · ${ciLabel(p)}`}
-                     className={`group/pr relative flex items-center gap-3 px-3 transition-colors hover:bg-hover ${dense ? 'py-2' : 'py-2.5'}`}>
+                     className={`group/pr relative flex items-center gap-3 px-3 transition-colors hover:bg-hover ${dense || g.gone ? 'py-1.5' : 'py-2.5'}`}>
                     {/* the rail: a line through the chain, a dot per PR coloured by its CI */}
                     <span className="relative flex w-3 shrink-0 justify-center self-stretch">
                       {g.rail && i > 0 && <span className="absolute top-0 h-1/2 w-px bg-fill-strong" />}
@@ -46,7 +50,7 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
                         {p.merged ? <span className="rounded-md bg-accent/10 px-1.5 py-px text-micro font-medium text-accent-text">merged</span>
                           : p.state === 'CLOSED' && <span className="rounded-md bg-fill/70 px-1.5 py-px text-micro font-medium text-fg-2">closed</span>}
                       </span>
-                      <span className={`mt-0.5 block text-small leading-snug ${g.gone ? 'text-fg-4 line-through decoration-fg-4' : 'text-fg-2 '} ${dense ? 'truncate' : 'line-clamp-2'}`}>{t.text || p.repo}</span>
+                      <span className={`mt-0.5 block text-small leading-snug ${g.gone ? (p.merged ? 'text-fg-3' : 'text-fg-4 line-through decoration-fg-4') : 'text-fg-2 '} ${dense || g.gone ? 'truncate' : 'line-clamp-2'}`}>{t.text || p.repo}</span>
                     </span>
                     {!!p.openThreads && (
                       <span className="flex shrink-0 items-center gap-1 rounded-full bg-wait/10 px-1.5 py-0.5 text-meta font-medium tabular-nums text-wait-text" title={`${p.openThreads} open thread${p.openThreads === 1 ? '' : 's'}`}>
@@ -61,6 +65,12 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
           </ol>
         </div>
       ))}
+      {closed.length > 0 && (
+        <button type="button" onClick={() => setPast(!past)} aria-expanded={past}
+                className="flex items-center gap-1.5 px-1 text-meta font-medium text-fg-3 transition-colors hover:text-fg-1">
+          <ChevronRight className={`size-3.5 transition-transform ${past ? 'rotate-90' : ''}`} />{earlier} earlier
+        </button>
+      )}
     </div>
   )
 }
