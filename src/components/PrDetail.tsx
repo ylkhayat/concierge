@@ -216,8 +216,9 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
       )}
       {/* an explanation being written is visible wherever you are, not only in the Explain tab */}
       {(pr.explain?.state === 'running' || pr.explain?.state === 'queued') && (
-        <Chip icon={Sparkles} pulse tone="zinc" label={pr.explain.state === 'queued' ? 'Explain · queued' : `Explaining · ${/^Running\b|[/~]\w/.test(pr.explain.step ?? '') ? 'reading the code' : (pr.explain.step ?? 'working').toLowerCase()}`}>
-          <p className="text-small text-fg-2 ">{pr.explain.state === 'queued' ? 'Waiting its turn (a PR below it in the stack goes first, or the parallel limit is reached).' : 'The explanation is being written; the Explain tab shows the previous one meanwhile.'}</p>
+        <Chip icon={Sparkles} pulse={!pr.explain.step?.startsWith('Waiting:')} tone="zinc" label={pr.explain.state === 'queued' ? (pr.explain.step?.startsWith('Waiting:') ? 'Explain · waiting for a machine' : 'Explain · queued') : `Explaining · ${/^Running\b|[/~]\w/.test(pr.explain.step ?? '') ? 'reading the code' : (pr.explain.step ?? 'working').toLowerCase()}`}>
+          {/* queued where it can't be written (no machine with the checkout runs Concierge): the server says why */}
+          <p className="text-small text-fg-2 ">{pr.explain.state === 'queued' ? (pr.explain.step?.startsWith('Waiting:') ? pr.explain.step.slice(9) : 'Waiting its turn (a PR below it in the stack goes first, or the parallel limit is reached).') : 'The explanation is being written; the Explain tab shows the previous one meanwhile.'}</p>
           <button onClick={() => setTab('explain')} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10">Open Explain</button>
         </Chip>
       )}

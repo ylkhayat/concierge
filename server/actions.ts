@@ -1,6 +1,6 @@
 // Everyday tools around a PR, grouped by what they act on, each runnable on one PR, its whole stack,
 // or every PR it fits at once. Every one reports into the PR's activity feed, step by step.
-import { missingError, missingFor } from './setup.ts'
+import { checkedOut, missingError, missingFor } from './setup.ts'
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
@@ -72,14 +72,14 @@ const DEFS: Def[] = [
     id: 'link-stack', group: 'Stack', label: 'Link into stack', scopes: ['this'],
     hint: 'It is built on another PR, but GitHub does not list it in that stack, so reviewers see it on its own. Links the whole chain into one stack (gh stack link).',
     confirm: 'Link this chain of PRs into one stack on GitHub? Nothing in the code changes.',
-    applies: (p) => !!p.unlinked && !!p.stack && !!config.repos[p.repo] && !busy(p),
+    applies: (p) => !!p.unlinked && !!p.stack && checkedOut(p.repo) && !busy(p),
     go: (targets) => Promise.all(targets.map((p) => linkChain(p, p.stack!.map(tracked).filter((x): x is Pr => !!x && !x.closed), 'Link into stack'))),
   },
   {
     id: 'smart-rebase', group: 'Pull request', label: 'Smart rebase', scopes: ['this', 'stack', 'all'],
     hint: 'Rebase onto the latest base, cascading up the stack. Conflicts go to the agent to resolve. Force-pushes with lease; your local checkouts are left alone.',
     confirm: 'Smart rebase {n}: rebase onto the latest base and force-push (with lease). Continue?',
-    applies: (p) => !!p.mine && !!config.repos[p.repo] && !busy(p),
+    applies: (p) => !!p.mine && checkedOut(p.repo) && !busy(p),
     go: (targets, scope, mirror) => {
       // a stack rebases as one cascade; "all" makes one cascade per stack you own plus each lone PR
       const chains = new Map<string, Pr[]>()
@@ -130,7 +130,7 @@ const DEFS: Def[] = [
   {
     id: 'review-stack', group: 'Stack', label: 'Review the stack', scopes: ['stack'],
     hint: 'Open your stack command in the terminal: it works each PR bottom to top, reviewing others’ and revising yours.',
-    applies: (p) => !!config.agent.stack && !!p.stack && !!config.repos[p.repo],
+    applies: (p) => !!config.agent.stack && !!p.stack && checkedOut(p.repo),
     go: ([p], _, mirror) => track(p, 'review-stack', 'Review the stack', async (log) => {
       const n = await step(log, 'gh', ['api', `repos/${p.repo}/pulls/${p.number}`, '--jq', '.stack.number // empty'])
       if (!/^\d+$/.test(n)) throw new Error('GitHub has no stack for this PR')
@@ -143,7 +143,7 @@ const DEFS: Def[] = [
   {
     id: 'crit-restart', group: 'crit', label: 'Restart crit', scopes: ['this', 'stack', 'all'],
     hint: 'Bring a stopped crit back on the same port with the same session. Comments are kept.',
-    applies: critDown,
+    applies: (p) => critDown(p) && checkedOut(p.repo),
     go: (targets, _, mirror) => Promise.all(targets.map((p) => track(p, 'crit-restart', 'Restart crit', (log) => restartCrit(p, log).then((port) => `back on :${port}`), mirror))),
   },
   {
@@ -203,7 +203,7 @@ export async function runAction(p: Pr, id: string, scope: Scope, mirror: string[
   // the automatic alignment after a push (alignStacks) isn't a listed action: trying it again runs it now, same heads or not
   if (id === 'align-stack') {
     const stack = myStack(p)
-    if (!stack || !config.repos[p.repo]) throw new Error('Not a stack of yours with a local checkout: nothing to align')
+    if (!stack || !checkedOut(p.repo)) throw new Error(`Not a stack of yours with ${p.repo} checked out on this machine: nothing to align here`)
     alignTried.delete(`${p.repo}:${stack[0].number}`)
     const chain = stack.map(tracked).filter((x): x is Pr => !!x && !x.closed)
     if (!chain.some((x) => x.behindBase)) { ops.delete(p.id); save(); bus.emit('change'); return { label: 'Align the stack', count: 0 } } // already aligned
@@ -526,7 +526,7 @@ const alignTried = new Map<string, string>()
 export function alignStacks(prs: Pr[]) {
   const done = new Set<string>()
   for (const p of prs) {
-    const stack = p.behindBase && config.repos[p.repo] ? myStack(p) : undefined
+    const stack = p.behindBase && checkedOut(p.repo) ? myStack(p) : undefined
     const key = stack && `${p.repo}:${stack[0].number}`
     if (!stack || !key || done.has(key)) continue
     done.add(key)
@@ -581,7 +581,7 @@ export function linkStacks(prs: Pr[]): Pr[] {
     const need = stackLink(chain, !!myStack(p))
     if (need === 'ok') for (const x of chain) x.unlinked = false // linked since, here or elsewhere
     if (need === 'ask') { for (const x of chain) if (!x.ghStack && !x.unlinked) { x.unlinked = true; asked.push(x) } }
-    if (need !== 'link' || chain.some(busy)) continue
+    if (need !== 'link' || chain.some(busy) || !checkedOut(p.repo)) continue // linking runs in the checkout
     const heads = chain.map((x) => x.number).join()
     if (linkTried.get(key) === heads) continue
     linkTried.set(key, heads)
@@ -597,7 +597,7 @@ export function linkStacks(prs: Pr[]): Pr[] {
 export async function followRemote(prs: Pr[]) {
   for (const repo of new Set(prs.map((p) => p.repo))) {
     const dir = config.repos[repo], mine = prs.filter((p) => p.repo === repo && p.mine && !p.closed)
-    if (!dir || !mine.length) continue
+    if (!checkedOut(repo) || !mine.length) continue
     const git = (args: string[], cwd = dir) => sh('git', args, cwd)
     if (!(await git(['fetch', '-q', 'origin', ...new Set(mine.map((p) => p.head))]).then(() => true, () => false))) continue
     const behind: { branch: string; from: string; to: string }[] = []
@@ -616,7 +616,7 @@ export async function followRemote(prs: Pr[]) {
  * pushed for you. One fetch per repo; the bottom PR (on the default branch) is never marked.
  */
 export async function markBehind(prs: Pr[]) {
-  const stacked = prs.filter((p) => p.mine && !p.closed && p.stack && p.stack[0].number !== p.number && config.repos[p.repo])
+  const stacked = prs.filter((p) => p.mine && !p.closed && p.stack && p.stack[0].number !== p.number && checkedOut(p.repo))
   for (const repo of new Set(stacked.map((p) => p.repo))) {
     const dir = config.repos[repo], mine = stacked.filter((p) => p.repo === repo)
     const ok = await sh('git', ['fetch', '-q', 'origin', ...new Set(mine.flatMap((p) => [p.base, p.head]))], dir).then(() => true, () => false)

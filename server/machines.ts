@@ -115,6 +115,9 @@ export function route(repo: string): Route {
     : `${repo} is still being cloned on ${allowed.join(' and ')}`
   return { repo, order, allowed, home: order[0], why }
 }
+/** Why no machine can work on `repo` now (none it is allowed on is online with its checkout); undefined when one can,
+ *  or with one machine. Only the control plane knows the others: elsewhere, nothing is said. */
+export const heldWhy = (repo: string) => (fleet.machine && !fleet.elsewhere() ? route(repo).why : undefined)
 /** Every watched repository's route: what Settings shows, and what changes are logged by. */
 export const matrix = () => Object.keys(config.repos).map(route)
 

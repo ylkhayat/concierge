@@ -24,7 +24,8 @@ import { ROLES, useRole } from './role.ts'
 import { setAway, useAway } from './away.ts'
 import { setMachineNames } from './machineNames.ts'
 import { scopeDefault } from './scope.ts'
-import { AwayRepo, NotHere } from './components/NotHere.tsx'
+import { AwayRepo, HeldBanner, NotHere } from './components/NotHere.tsx'
+import { useHeld } from './held.ts'
 import { RoleSwitch } from './components/RoleSwitch.tsx'
 import { RepoList } from './components/RepoList.tsx'
 import { ExecHome } from './components/ExecHome.tsx'
@@ -124,6 +125,7 @@ export function App() {
 
   const detailRef = useRef<HTMLElement>(null)
   const away = useAway() // this machine's view: repositories not on it, whose PRs and tickets aren't listed or opened here
+  const held = useHeld() // repositories no machine can work on now, and why
   const prs = away.size && allPrs ? allPrs.filter((p) => !away.has(p.repo) || p.id === selected) : allPrs
   const select = (id?: string) => {
     if (id === selected) return
@@ -291,9 +293,17 @@ export function App() {
   // which application the open item is in: switching to another one closes it, so the new one's list (empty or not) is what shows
   const repoOfSelected = () => selected?.startsWith('codebase:') ? selected.slice(9)
     : (prs ?? []).find((p) => p.id === selected?.replace(/^stack:/, ''))?.repo ?? tickets.find((t) => t.id === selected)?.repo
+  // what HeldBanner says: in the workspaces that show an application's work, the open item's application, else the
+  // focused one, else every one held (a repository away from this machine has its own page instead)
+  const heldInView = (): [string, string][] => {
+    if (!['review', 'exec', 'focus', 'read'].includes(mode)) return []
+    const r = repoOfSelected() ?? focus
+    const list = r ? (held[r] ? [r] : []) : Object.keys(held)
+    return list.filter((x) => !away.has(x) && (!focusRepos.length || focusRepos.includes(x))).map((x) => [x, held[x]])
+  }
   const focusCounts = focusRepos.map((r) => mode === 'exec'
-    ? { repo: r, tickets: tickets.filter((t) => t.repo === r).length, waiting: tickets.filter((t) => t.repo === r && ['needs-you', 'tend'].includes(groupOf(t).id)).length, away: away.has(r) }
-    : { repo: r, tickets: (prs ?? []).filter((p) => p.repo === r).length, waiting: (prs ?? []).filter((p) => p.repo === r && waiting(p)).length, away: away.has(r) })
+    ? { repo: r, tickets: tickets.filter((t) => t.repo === r).length, waiting: tickets.filter((t) => t.repo === r && ['needs-you', 'tend'].includes(groupOf(t).id)).length, away: away.has(r), held: held[r] }
+    : { repo: r, tickets: (prs ?? []).filter((p) => p.repo === r).length, waiting: (prs ?? []).filter((p) => p.repo === r && waiting(p)).length, away: away.has(r), held: held[r] })
   // the rail's pill sits behind the active workspace (its icon and its name), and glides to the next one on a switch;
   // measured again whenever the rail's contents move (the focus picker loading, a badge, a resize)
   const railRef = useRef<HTMLElement>(null), pillRef = useRef<HTMLSpanElement>(null)
@@ -482,6 +492,8 @@ export function App() {
             <RefreshCw className="size-4 shrink-0" />{newer ? `${label(newer)} is live` : 'A newer version is live'}: this tab still runs {label(VERSION)}.<span className="ml-auto font-semibold">Reload</span>
           </button>
         )}
+        {/* no machine can work on what is in view: the open item's application, else the focused one, else every one held */}
+        <HeldBanner held={heldInView()} />
         {health?.overBudget && (
           <div className="relative z-20 flex items-center gap-2.5 border-b border-wait/20 bg-wait/10 px-4 py-2 text-body text-wait-text">
             <Wallet className="size-4 shrink-0" />

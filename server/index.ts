@@ -41,7 +41,7 @@ import { fleet } from './fleet.ts'
 import { fleetMachines } from './perMachine.ts'
 import { selfPatch } from './scope.ts'
 import { behind, latestHeads, overdue, readLatest, runningHere, type Running } from './versions.ts'
-import { capped, machines, serve as serveMachine, slotsHere, token as machineToken, rotateToken, ask, matrix, onCameBack, hosted, statsHere, type Stats } from './machines.ts'
+import { capped, machines, serve as serveMachine, slotsHere, token as machineToken, rotateToken, ask, matrix, heldWhy, onCameBack, hosted, statsHere, type Stats } from './machines.ts'
 import { updateStatus } from './updateStatus.ts'
 import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey } from './sharedEnv.ts'
 import { call } from './worker.ts'
@@ -74,7 +74,7 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from '
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
-import { brokenSkillLinks, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
+import { brokenSkillLinks, checkedOut, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
@@ -580,7 +580,7 @@ app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
 const HERE_ONLY = /^\/api\/(update$|claude-auth\/|azure\/login$|github\/login$|connections\/login|accounts\/[^/]+\/(login|adopt-login)$|setup\/(clone|validate|skills)$|worktrees\/clean$|debug\/|(prs|exec)\/[^/]+\/resume-terminal$)/
 // what only the main server knows whole (every machine, how full each is, the joins, where they differ): a follower
 // shows the main server's, so Settings → Machines lists the whole fleet on any machine's localhost
-const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment)$/
+const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment|repos\/held)$/
 app.use('*', async (c, next) => {
   if (fleet.mayWrite() || (c.req.method === 'GET' ? !FLEET_VIEW.test(c.req.path) : HERE_ONLY.test(c.req.path))) return next()
   const main = (await replicaPeers()).find((p) => p.active)
@@ -2128,6 +2128,9 @@ app.post('/accounts/:id/adopt-login', async (c) => {
 
 // --- the placement matrix: where each repository's work runs (machines.ts route), logged when it moves
 app.get('/placement', (c) => c.json(matrix().map((r) => ({ ...r, main: fleet.machine }))))
+// the repositories no machine can work on now (none it is allowed on is online with its checkout), and why: the page
+// says so wherever they show (their pull requests and tickets stay to read; their runs wait). Several machines only
+app.get('/repos/held', (c) => c.json(fleet.machine ? Object.fromEntries(matrix().filter((r) => !r.order.length && r.why).map((r) => [r.repo, r.why])) : {}))
 let placedAs = ''
 setInterval(() => {
   if (!fleet.machine || fleet.elsewhere()) return
@@ -2135,7 +2138,7 @@ setInterval(() => {
   if (now === placedAs) return
   if (placedAs) console.log(`placement: ${m.map((r) => `${r.repo} → ${r.order.join(', ') || `nowhere (${r.why})`}`).join('; ')}`)
   placedAs = now
-  bus.emit('change'); pump()
+  bus.emit('change'); pump(); stale('/repos/held')
 }, 15_000).unref()
 const providersView = async () => ({
   use: config.providers?.use ?? {}, fallback: config.providers?.fallback ?? [], budgets: config.providers?.budgets ?? {}, stopAt: Math.round(stopAt() * 100),
@@ -2634,6 +2637,7 @@ app.get('/prs/:id/diff', async (c) => {
   const path = c.req.query('path') ?? ''
   const o = p && loadOverlay(p)
   const repo = p && config.repos[p.repo]
+  if (p && !checkedOut(p.repo)) return c.json({ error: `${p.repo} isn't checked out on this machine: ${heldWhy(p.repo) ?? 'its diff is read where it is'}` }, 409)
   if (!o || !repo || !o.facts.changes.some((x) => x.path === path)) return c.json({ error: 'not a file this PR changes' }, 404)
   const diff = await git(repo, 'diff', '--no-color', '-U3', o.baseSha, o.headSha, '--', path).catch((e: Error) => `could not read the diff: ${e.message}`)
   return c.json({ diff: diff.length > 60_000 ? diff.slice(0, 60_000) + '\n… (cut: open it on GitHub for the rest)' : diff })

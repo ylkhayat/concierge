@@ -10,7 +10,7 @@ import { test } from 'node:test'
 process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), 'rd-placement-'))
 process.env.CONCIERGE_FLEET = new URL('./testdata/fleet-test.mjs', import.meta.url).pathname
 process.env.DECK_NAME = 'main'; process.env.HOLDER = 'main'
-const { machines, place, route, loginOk, whyNowhere } = await import('./machines.ts')
+const { machines, place, route, loginOk, whyNowhere, heldWhy } = await import('./machines.ts')
 const { config, state } = await import('./store.ts')
 const { setIdentity } = await import('./providers.ts')
 
@@ -79,5 +79,16 @@ test('reviews go only to a machine that says it takes them: one on an older vers
   assert.equal(place(undefined, idle, new Map(), 'claude', 'bliro/app'), 'win') // a Ship run still goes
   machines.set('win', { name: 'win', base: 'http://win:4748', seen: 0, status: { name: 'win', slots: 2, running: 0, freeMb: 8000, repos: ['bliro/app'], takes: ['review'] } })
   assert.equal(place(undefined, idle, new Map(), 'claude', 'bliro/app', true), 'win')
+  machines.clear()
+})
+
+test('a repository no machine can work on now is held, and says why; once one it is allowed on is back, it is not', () => {
+  config.repos = { 'bliro/app': '/code/app', 'acme/api': '/code/api' }
+  config.cloneOn = { 'bliro/*': ['win'], 'acme/api': ['main', 'win'] }
+  machines.set('win', { name: 'win', base: 'http://win:4748', seen: 0 }) // offline: no status
+  assert.match(heldWhy('bliro/app')!, /only allowed on win, which isn't online/)
+  assert.equal(heldWhy('acme/api'), undefined) // the main server may have it, and has it
+  add('win', ['bliro/app'])
+  assert.equal(heldWhy('bliro/app'), undefined)
   machines.clear()
 })

@@ -1,8 +1,8 @@
-import { Check, ChevronDown, FolderGit2, FolderLock, Search } from 'lucide-react'
+import { Check, ChevronDown, CloudOff, FolderGit2, FolderLock, Search } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { appColor } from '../appColor.ts'
 
-export type RepoCount = { repo: string; tickets: number; waiting: number; away?: boolean } // away: not on this machine (its own page)
+export type RepoCount = { repo: string; tickets: number; waiting: number; away?: boolean; held?: string } // away: not on this machine (its own page); held: why no machine can work on it now
 
 /**
  * The focus: which application (repository) you are working on, shared by every workspace, for any number of them: one button, and a popover listing every repo (busiest
@@ -28,13 +28,14 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
   const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => { try { if (!pop.current?.contains(document.activeElement)) pop.current?.hidePopover() } catch { /* shut */ } }, 280) }
   const stay = () => clearTimeout(timer.current)
   useEffect(() => () => clearTimeout(timer.current), [])
-  const row = (label: string, n: number, waiting: number, on: boolean, r?: string, away?: boolean) => (
-    <button key={r ?? 'all'} onClick={() => pick(r)} aria-current={on} title={away ? `${r}: not on this machine` : undefined}
+  const row = (label: string, n: number, waiting: number, on: boolean, r?: string, away?: boolean, held?: string) => (
+    <button key={r ?? 'all'} onClick={() => pick(r)} aria-current={on} title={away ? `${r}: not on this machine` : held ? `${r}: no machine can work on it now (${held})` : undefined}
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-body transition-colors ${on ? 'bg-accent/10' : 'hov '} ${away ? 'text-fg-4' : ''}`}>
       <span className="flex size-4 shrink-0 items-center justify-center">{on && <Check className="size-4 text-accent-text" />}</span>
       {r && <span className={`size-2 shrink-0 rounded-full ${appColor(r).bar}`} aria-hidden />}
       <span className={`min-w-0 flex-1 truncate ${r ? 'font-mono' : 'font-medium'}`} title={r}>{label}</span>
       {away && <FolderLock className="size-3.5 shrink-0 text-fg-4" aria-label="not on this machine" />}
+      {!away && held && <CloudOff className="size-3.5 shrink-0 text-wait-text" aria-label="no machine can work on it now" />}
       {waiting > 0 && <span className="rounded-full bg-wait/15 px-1.5 text-micro font-semibold tabular-nums text-wait-text" title="waiting on you">{waiting}</span>}
       <span className="text-meta tabular-nums text-fg-3">{n}</span>
     </button>
@@ -63,7 +64,7 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
           </label>
         )}
         {!q && row('All applications', total, repos.reduce((n, r) => n + r.waiting, 0), !value)}
-        {shown.map((r) => row(r.repo, r.tickets, r.waiting, r.repo === value, r.repo, r.away))}
+        {shown.map((r) => row(r.repo, r.tickets, r.waiting, r.repo === value, r.repo, r.away, r.held))}
         {!shown.length && <p className="px-2.5 py-2 text-small text-fg-3">No repository matches.</p>}
       </div>
     </>
