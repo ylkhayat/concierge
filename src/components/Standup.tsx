@@ -4,7 +4,7 @@ import { asHtml, asText, forTeams, linkWritten, standupDay, workdayBefore, type 
 import type { Written } from '../../server/store.ts'
 import { ago } from '../time.ts'
 import { api, param, setParam, type TicketView } from '../lib.ts'
-import { IdBadge } from './ExecList.tsx'
+import { IdBadge, PRIORITY } from './ExecList.tsx'
 import { StandupFlow, type Lane } from './StandupFlow.tsx'
 import { Pick } from '../ui/Pick.tsx'
 
@@ -92,7 +92,7 @@ export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (
         {!s ? <div className="flex justify-center py-20"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div> : (
           <div className="mt-5 grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-x-8">
             <div className="flex min-h-0 flex-col gap-3">
-              <StandupFlow lanes={lanesOf(done, blockers, plan)} counts={{ did: done.length + (notes.did?.length ?? 0), blockers: blockers.length + (notes.blockers?.length ?? 0), next: plan.length + (notes.next?.length ?? 0) }} onOpen={onOpenTicket} />
+              <StandupFlow lanes={lanesOf(done, blockers, plan, byId)} counts={{ did: done.length + (notes.did?.length ?? 0), blockers: blockers.length + (notes.blockers?.length ?? 0), next: plan.length + (notes.next?.length ?? 0) }} onOpen={onOpenTicket} />
               <div className="grid shrink-0 gap-3 md:grid-cols-3">
                 <Own title="Did" own={notes.did} onOwn={(l) => setNotes('did', l)} placeholder="Something you did (a call, a spike)" />
                 <Own title="Blocked by" own={notes.blockers} onOwn={(l) => setNotes('blockers', l)} placeholder="A blocker (design, an answer, access)" />
@@ -123,12 +123,26 @@ const LEADS = ['Merged', 'Got approval', 'Approved', 'Opened', 'Worked in the re
 const leadRank = (lead: string) => ((i) => (i < 0 ? LEADS.length - 1 : i))(LEADS.findIndex((l) => lead.startsWith(l)))
 
 /** The pipeline's lanes: one per project (most to say first), side quests last; each ticket under the stages it is in. */
-function lanesOf(did: Did[], blockers: Blocker[], next: Next[]): Lane[] {
+/** What a ticket's hover card says: its project, where it stands, its priority, and its pull request. */
+function factsOf(t?: TicketView, project?: string): [string, string][] {
+  if (!t) return [['Project', project ?? 'Side quest'], ['State', 'Not on your open tickets any more']]
+  const pr = t.pr
+  const ci = pr?.ci === 'failure' ? 'CI red' : pr?.ci === 'success' ? 'CI green' : pr?.ci === 'pending' ? 'CI running' : ''
+  return ([
+    ['Project', t.project ?? 'Side quest'],
+    ['State', t.handedTo ? `${t.state}, with ${t.handedTo}` : t.state],
+    ['Priority', t.priority ? PRIORITY[t.priority]?.label ?? '' : ''],
+    ['Pull request', pr ? [`#${pr.number}`, pr.merged ? 'merged' : '', ci, pr.openThreads ? `${pr.openThreads} open thread${pr.openThreads === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ') : ''],
+    ['Labels', t.labels.join(', ')],
+  ] as [string, string][]).filter(([, v]) => v)
+}
+
+function lanesOf(did: Did[], blockers: Blocker[], next: Next[], byId: Map<string, TicketView>): Lane[] {
   const lanes = new Map<string, Lane>()
   const lane = (p?: string) => { const k = p ?? ''; if (!lanes.has(k)) lanes.set(k, { name: p, rows: { did: [], blockers: [], next: [] } }); return lanes.get(k)! }
-  for (const d of did) lane(d.project).rows.did.push({ id: d.id, title: d.title, lead: progressOf(d), review: !!d.review })
-  for (const b of blockers) lane(b.project).rows.blockers.push({ id: b.id, title: b.title, lead: b.why })
-  for (const n of next) lane(n.project).rows.next.push({ id: n.id, title: n.title, lead: planOf(n), review: n.kind === 'review' })
+  for (const d of did) lane(d.project).rows.did.push({ id: d.id, title: d.title, lead: progressOf(d), review: !!d.review, facts: factsOf(byId.get(d.id), d.project) })
+  for (const b of blockers) lane(b.project).rows.blockers.push({ id: b.id, title: b.title, lead: b.why, facts: factsOf(byId.get(b.id), b.project) })
+  for (const n of next) lane(n.project).rows.next.push({ id: n.id, title: n.title, lead: planOf(n), review: n.kind === 'review', facts: factsOf(byId.get(n.id), n.project) })
   const size = (l: Lane) => l.rows.did.length + l.rows.blockers.length + l.rows.next.length
   return [...lanes.values()].sort((a, b) => Number(!a.name) - Number(!b.name) || size(b) - size(a))
 }

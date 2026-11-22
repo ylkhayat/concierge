@@ -3,10 +3,11 @@
 // with its tickets as rows. A project's boxes are wired across the stages, so its day reads as one line.
 import { Background, BackgroundVariant, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { Fragment, useEffect, useId, useRef, type CSSProperties } from 'react'
 
 export type Stage = 'did' | 'blockers' | 'next'
-export type Row = { id: string; title: string; lead: string; review?: boolean } // review: someone else's PR, not my own work
+// review: someone else's PR, not my own work. facts: what the hover card says besides the title (state, PR, priority…)
+export type Row = { id: string; title: string; lead: string; review?: boolean; facts?: [string, string][] }
 export type Lane = { name?: string; rows: Record<Stage, Row[]> }
 type Box = { lane: Lane; stage: Stage; hue?: number; onOpen: (id: string) => void }
 type Label = { stage: (typeof STAGES)[number]; n: number; count: number }
@@ -16,8 +17,8 @@ const STAGES: { id: Stage; label: string; tone: string }[] = [
   { id: 'blockers', label: 'Blockers', tone: 'text-wait-text' },
   { id: 'next', label: "What I'll do", tone: 'text-accent-text' },
 ]
-const W = 300, GAP_X = 70, GAP_Y = 22, ROWS = 6
-const heightOf = (n: number) => 44 + Math.min(ROWS, n) * 44 + (n > ROWS ? 20 : 0)
+const W = 340, GAP_X = 64, GAP_Y = 22, ROWS = 6
+const heightOf = (n: number) => 46 + Math.min(ROWS, n) * 58 + (n > ROWS ? 22 : 0)
 /** A steady hue per project, from its name: the same colour every day, without a table to keep. */
 export const hueOf = (name: string) => [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 const laneColour = (hue?: number) => (hue === undefined ? 'var(--fg-3)' : `oklch(0.7 0.17 ${hue})`)
@@ -29,28 +30,48 @@ function BoxNode({ data }: NodeProps<Node<Box>>) {
   const { lane, stage, hue, onOpen } = data
   const rows = lane.rows[stage]
   return (
-    <div style={{ width: W, '--lane': laneColour(hue) } as CSSProperties}
-         className="rounded-card border-l-[3px] border-[var(--lane)] bg-[color-mix(in_oklch,var(--lane)_12%,var(--surface-1))] p-2 text-left ring-1 ring-[color-mix(in_oklch,var(--lane)_35%,transparent)]">
+    <div style={{ width: W }} className="card text-left">
       <In /><Out />
-      <p className="flex items-center gap-1.5 px-2 pb-1 pt-0.5">
-        <span className="size-2 shrink-0 rounded-full bg-[var(--lane)]" />
-        <span className="min-w-0 flex-1 truncate text-meta font-semibold text-fg-1" title={lane.name}>{lane.name ?? 'Side quests'}</span>
-        <span className="text-micro tabular-nums text-fg-3">{rows.length}</span>
+      <p className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: laneColour(hue) }} />
+        <span className="min-w-0 flex-1 truncate text-small font-semibold text-fg-1" title={lane.name}>{lane.name ?? 'Side quests'}</span>
+        <span className="text-meta tabular-nums text-fg-3">{rows.length}</span>
       </p>
-      <div className="space-y-px">
-        {rows.slice(0, ROWS).map((r) => (
-          <button key={r.id} type="button" onClick={() => onOpen(r.id)} title={`${r.id} · ${r.title}`}
-                  className="nodrag flex w-full min-w-0 flex-col rounded-ctl px-2 py-1 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--lane)_14%,transparent)]">
-            <span className="flex min-w-0 items-center gap-1.5 truncate text-meta font-medium text-fg-1">
-              <span className={`h-3 w-1 shrink-0 rounded-full ${r.review ? 'bg-run' : 'bg-accent'}`} aria-label={r.review ? 'Review of someone else\'s PR' : 'My work'} />
-              <span className="font-mono text-micro text-fg-3">{r.id}</span>{r.lead}
-            </span>
-            <span className="truncate text-micro text-fg-3">{r.title}</span>
-          </button>
-        ))}
-        {rows.length > ROWS && <p className="px-2 pt-0.5 text-micro text-fg-4">+{rows.length - ROWS} more</p>}
+      <div className="p-1.5">
+        {rows.slice(0, ROWS).map((r) => <RowItem key={r.id} r={r} onOpen={onOpen} />)}
+        {rows.length > ROWS && <p className="px-2 pb-1 pt-0.5 text-meta text-fg-4">+{rows.length - ROWS} more</p>}
       </div>
     </div>
+  )
+}
+
+/** A ticket in a box: its name first (two lines at most), what happened under it; hover for the whole of it. */
+function RowItem({ r, onOpen }: { r: Row; onOpen: (id: string) => void }) {
+  const name = '--r' + useId().replace(/[^a-zA-Z0-9]/g, '')
+  const card = useRef<HTMLDivElement>(null)
+  const show = (on: boolean) => { try { if (on) card.current?.showPopover(); else card.current?.hidePopover() } catch { /* already so */ } }
+  return (
+    <>
+      <button type="button" onClick={() => onOpen(r.id)} onMouseEnter={() => show(true)} onMouseLeave={() => show(false)} onFocus={() => show(true)} onBlur={() => show(false)}
+              style={{ anchorName: name } as CSSProperties} className="nodrag flex w-full min-w-0 items-start gap-2 rounded-ctl px-2 py-1.5 text-left transition-colors hover:bg-hover">
+        <span className={`mt-1 h-3.5 w-1 shrink-0 rounded-full ${r.review ? 'bg-run' : 'bg-accent'}`} aria-label={r.review ? "Review of someone else's PR" : 'My work'} />
+        <span className="min-w-0 flex-1">
+          <span className="line-clamp-2 text-small font-medium leading-snug text-fg-1">{r.title || r.id}</span>
+          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-meta text-fg-3"><span className="shrink-0 font-mono">{r.id}</span><span className="truncate">{r.lead}</span></span>
+        </span>
+      </button>
+      <div ref={card} popover="manual" role="tooltip" style={{ positionAnchor: name, positionArea: 'right span-bottom', positionTryFallbacks: 'flip-inline, flip-block', inset: 'auto' } as CSSProperties}
+           className="pointer-events-none m-0 ml-2 w-[320px] rounded-card border-0 bg-surface-1 p-3 text-left shadow-[var(--e2)] ring-1 ring-line-strong">
+        <p className="font-mono text-meta font-semibold text-fg-3">{r.id}</p>
+        <p className="mt-0.5 text-small font-semibold leading-snug text-fg-1">{r.title}</p>
+        <p className="mt-1.5 text-small text-fg-2">{r.lead}</p>
+        {r.facts?.length ? (
+          <dl className="mt-2 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 border-t border-line pt-2 text-meta">
+            {r.facts.map(([k, v]) => <Fragment key={k}><dt className="text-fg-3">{k}</dt><dd className="min-w-0 text-fg-1">{v}</dd></Fragment>)}
+          </dl>
+        ) : null}
+      </div>
+    </>
   )
 }
 /** A stage's name over its column: on the canvas, so it stays over its boxes as you zoom and pan. */
@@ -91,6 +112,7 @@ export function StandupFlow({ lanes, counts, onOpen }: { lanes: Lane[]; counts: 
       <div className="relative min-h-0 flex-1">
         {nodes.length > STAGES.length ? (
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={(i) => { rf.current = i; fit() }} minZoom={0.3} maxZoom={1.6}
+                     onNodeClick={() => {}} /* a node with no handler gets no pointer events: its rows must click and hover */
                      nodesConnectable={false} elementsSelectable={false} panOnScroll proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--line)" />
           </ReactFlow>
