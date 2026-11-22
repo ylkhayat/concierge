@@ -359,7 +359,7 @@ export function App() {
       {/* then the focus (which application); the workspaces below are what you do in it */}
       {focusRepos.length > 1 && (
         <span className="hidden md:contents">
-          <Head>Application</Head>
+          <Head>Workspaces</Head>
           <RepoPicker wide={wide} value={focus} repos={focusCounts} total={mode === 'exec' ? tickets.length : prs?.length ?? 0} unit={mode === 'exec' ? 'ticket' : 'PR'}
                       onChange={(r) => { setFocus(r); if (codebaseRepo && r) select(`codebase:${r}`); else if (r && selected && repoOfSelected() !== r) select(undefined) }} />
           <span className={`my-2 hidden h-px bg-line md:block ${W('w-10', 'mx-2')}`} />
