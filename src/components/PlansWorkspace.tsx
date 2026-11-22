@@ -321,13 +321,19 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
     ['value', 'Sequence by value', 'Propose a scenario (one propose op, moves only, apply nothing): order the work by value to users and risk reduced per point (RICE), so every week delivers something usable. Say in two sentences how you ordered it.'],
   ]
   const chip = 'inline-flex items-center gap-1.5 rounded-full bg-fill px-2.5 py-1 text-meta font-medium text-fg-2 transition-colors hover:bg-accent-soft hover:text-accent-text disabled:opacity-40'
-  const shown = hover && plays.find((x) => x.id === hover)
+  const shown = hover ? plays.find((x) => x.id === hover) : undefined
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-small">
       <span className="label text-fg-4">Plays</span>
-      {plays.map((x) => <button key={x.id} title={x.hint} onMouseEnter={() => setHover(x.id)} onMouseLeave={() => setHover(undefined)} onFocus={() => setHover(x.id)} onBlur={() => setHover(undefined)} onClick={() => onTry(x.ops)} className={chip}><Zap className="size-3" />{x.label}</button>)}
+      {/* what a play would do floats under it: in the row it pushed Colour to the next line, and the board under the bar
+          jumped with every hover */}
+      {plays.map((x) => (
+        <span key={x.id} className="relative inline-flex">
+          <button title={x.hint} onMouseEnter={() => setHover(x.id)} onMouseLeave={() => setHover(undefined)} onFocus={() => setHover(x.id)} onBlur={() => setHover(undefined)} onClick={() => onTry(x.ops)} className={chip}><Zap className="size-3" />{x.label}</button>
+          {shown?.id === x.id && <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 whitespace-nowrap rounded-lg bg-surface-1 px-2.5 py-1.5 text-meta text-fg-2 shadow-[var(--e3)] ring-1 ring-line animate-[detail-in_160ms_var(--ease-out)]">{preview(shown.ops)}</span>}
+        </span>
+      ))}
       {ASK.map(([id, label, text]) => <button key={id} disabled={busy} title="The planner proposes it as a scenario to try" onClick={() => onAsk(text)} className={chip}><Sparkles className="size-3" />{label}</button>)}
-      {shown && <span className="text-meta text-fg-3 animate-[detail-in_160ms_var(--ease-out)]">{preview(shown.ops)}</span>}
       <span className="inline-flex items-center gap-1.5">
         <span className="label text-fg-4">Colour</span>
         <Tabs size="sm" label="Colour the tickets by" value={colorBy} onChange={onColorBy} options={[{ id: 'epic', label: 'Epic' }, { id: 'owner', label: 'Owner' }, { id: 'moscow', label: 'MoSCoW' }]} />
@@ -342,7 +348,7 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
  * the time hold the work. Each tile says where it stands; a click lists what it holds: what is covered and by which
  * ticket, and for what isn't, a ticket to add or the planner to ask. Then the risks, highest first.
  */
-function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAdd, onSelect }: { whatIf: Plan; company?: Compliance; teamKey?: string; people: number; pace: number; points: number; onAsk: (t: string) => void; onAdd: (ob: Obligation) => void; onSelect: (id: string) => void }) {
+function Readiness({ whatIf, company, checksOff, org, teamKey, people, pace, points, onAsk, onAdd, onSelect }: { whatIf: Plan; company?: Compliance; checksOff?: boolean; org?: string; teamKey?: string; people: number; pace: number; points: number; onAsk: (t: string) => void; onAdd: (ob: Obligation) => void; onSelect: (id: string) => void }) {
   const [open, setOpen] = useState<string>()
   const obs = obligations(company, whatIf), cov = coverage(whatIf, obs)
   const res = resources(whatIf, company, people, pace, points, obs, teamKey)
@@ -353,6 +359,8 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
   const over = res.capacity !== undefined && res.demand > res.capacity
   const high = risks.filter((n) => n.risk!.likelihood * n.risk!.impact >= 6).length
   const pills = [
+    // checks off for its organization: said, not just gone (one place turns them back on)
+    ...(checksOff ? [{ id: 'off', name: 'Compliance', status: 'off', color: 'var(--fg-4)', hint: `Off for ${org ?? 'this organization'}: Settings → Compliance turns it on` }] : []),
     ...areas.map((a) => { const done = a.items.filter((x) => x.by).length, all = done === a.items.length
       return { id: a.id, name: a.label, status: `${done}/${a.items.length}`, color: all ? 'var(--st-ok)' : lane(a.hue), hint: all ? 'Every obligation has its ticket' : `Missing: ${a.items.filter((x) => !x.by).map((x) => x.ob.title).join(', ')}` } }),
     { id: 'resources', name: 'Resources', status: res.capacity !== undefined ? `${res.demand}/${res.capacity} pt` : `${res.demand} pt`, color: over ? 'var(--st-fail)' : res.missing.length ? 'var(--st-wait)' : lane(70), hint: res.missing.length ? `No ${res.missing.join(', ')} on the team` : over ? `${res.demand - res.capacity!} pt more than the appetite holds` : 'The team holds the work' },
@@ -373,7 +381,9 @@ function Readiness({ whatIf, company, teamKey, people, pace, points, onAsk, onAd
       </div>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-2 max-h-72 w-[min(560px,80vw)] overflow-y-auto rounded-card bg-surface-1 p-3 shadow-e3 ring-1 ring-line animate-[detail-in_180ms_var(--ease-out)]">
-          {open === 'resources' ? (
+          {open === 'off' ? (
+            <p className="text-small text-fg-2">Compliance checks are off for <b className="text-fg-1">{org ?? 'this organization'}</b>: nothing in this plan is checked for privacy law, certifications or required reviews. <button onClick={() => { if (org) { const u = new URL(location.href); u.searchParams.set('org', org); history.replaceState(history.state, '', u) } dispatchEvent(new CustomEvent('concierge:settings', { detail: 'compliance' })) }} className="font-medium text-accent-text hover:underline">Turn them on</button></p>
+          ) : open === 'resources' ? (
             <div className="space-y-1.5 text-small text-fg-2">
               <p>In scope: <b className="text-fg-1">{res.demand} pt</b>. The team finishes about <b className="text-fg-1">{res.weekly} pt a week</b>{res.capacity !== undefined && <>, <b className="text-fg-1">{res.capacity} pt</b> inside the appetite</>}.</p>
               {res.people.length ? <p className="text-meta text-fg-3">{whatIf.members?.length ? 'The project’s people' : teamKey ? `The ${teamKey} team` : 'Everyone in the profile'}: {res.people.map(({ m, share }) => `${m.name} (${m.role}, ${m.pace ?? pace}/wk${share < 1 ? `, ${Math.round(share * 100)}% here: also on ${(m.teams ?? []).filter((t) => t !== teamKey).join(', ')}` : ''})`).join(' · ')}</p>
@@ -523,6 +533,8 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatI
 /** The plan with the obligations it doesn't cover yet among its unexplored angles (the planner's own first). */
 const OB_AREA = { compliance: 'compliance', security: 'security', operations: 'rollout', quality: 'accessibility' } as const
 function withObligations(p: Plan, company?: Compliance): Plan {
+  // compliance off for its organization: neither its obligations nor the planner's compliance and security angles
+  if (company?.off) return p.gaps?.length ? { ...p, gaps: p.gaps.filter((g) => g.area !== 'compliance' && g.area !== 'security') } : p
   const open = coverage(p, obligations(company, p)).filter((x) => !x.by).map(({ ob }) => ({ id: `ob:${ob.id}`, area: OB_AREA[ob.area], title: ob.title, why: ob.why }))
   const mine = p.gaps ?? []
   return open.length ? { ...p, gaps: [...mine, ...open.filter((o) => !mine.some((g) => g.title.toLowerCase().includes(o.title.toLowerCase().split(' ')[0])))].slice(0, 10) } : p
@@ -560,6 +572,10 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
     addEventListener('pointermove', move); addEventListener('pointerup', up)
   }
   const setup = useApi<SetupView>('/setup', { staleTime: 60_000 })
+  // its organization and the compliance profile its plans are checked against (its own, the shared one, or off)
+  const checks = useApi<{ org?: string; profile: Compliance }>(`/plans/${id}/checks`, { staleTime: 60_000 })
+  const orgsQ = useApi<Org[]>('/orgs', { staleTime: 10 * 60_000 })
+  const profile = checks.data?.profile
   // the draft as the board shows it: the planner's changes one at a time as they come in (yours at once), so each is seen
   const [paced, replayFrom] = usePaced(p?.scenario?.ops)
   // a link can open it at a level (?detail=overview or tickets)
@@ -587,7 +603,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const move = (m: Move) => void addTried([m])
   const shown = paced.length < tried.length ? applyAll(p, paced) : whatIf
   const fresh = paced.length < tried.length || paced.length === tried.length ? paced.at(-1) : undefined
-  const set: SetPlan = (v) => api(path, v).then((r: Plan) => { remember(path, r); refresh('/plans') }, (e: Error) => toast(e.message, 'error'))
+  const set: SetPlan = (v) => api(path, v).then((r: Plan) => { remember(path, r); refresh('/plans'); if ('org' in v) refresh(`${path}/checks`) }, (e: Error) => toast(e.message, 'error'))
   const say = (text: string) => api(`${path}/say`, { text }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   const items = p.nodes.filter((n) => n.kind !== 'goal'), made = p.nodes.filter((n) => n.created).length
   const back = (undo: boolean) => api(`${path}/${undo ? 'undo' : 'redo'}`, {}).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
@@ -612,11 +628,12 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const settings = (
     <div className="border-b border-line px-4 py-2 text-meta text-fg-3">
       <button onClick={() => setCfg(cfg ? undefined : 'open')} className="flex w-full items-center gap-1.5 text-left hover:text-fg-1">
-        <span className="min-w-0 flex-1 truncate"><span className="capitalize">{p.method}</span> · {p.skill || 'Your planning skill'} · {p.project ? p.project.name : teamName ?? 'no Linear team yet'}</span>
+        <span className="min-w-0 flex-1 truncate">{checks.data?.org && <>{checks.data.org}{profile?.off ? ' (compliance off)' : ''} · </>}<span className="capitalize">{p.method}</span> · {p.skill || 'Your planning skill'} · {p.project ? p.project.name : teamName ?? 'no Linear team yet'}</span>
         <span className="text-accent-text">{cfg ? 'Done' : 'Change'}</span>
       </button>
       {cfg && (
         <div className="space-y-2.5 pb-1 pt-2.5">
+          {(orgsQ.data?.length ?? 0) > 1 && <Chips label="Organization" value={checks.data?.org ?? ''} options={(orgsQ.data ?? []).map((o): [string, string] => [o.owner, o.personal ? `${o.owner} (you)` : o.owner])} onChange={(o) => void set({ org: o })} />}
           <Chips label="Method" value={p.method} options={[['agile', 'Agile: epics of thin slices'], ['waterfall', 'Waterfall: phases in order']]} onChange={(m) => void set({ method: m })} />
           <div><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Planning skill</p>
             <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'The one in Settings', hint: 'Settings → Workflows → What each feature runs' }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
@@ -645,7 +662,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
       <div ref={split} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-2/40 lg:flex">
           {whatIf.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)}
-                                     status={<Readiness whatIf={whatIf} company={setup.data?.config.compliance} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
+                                     status={<Readiness whatIf={whatIf} company={profile} checksOff={!!profile?.off} org={checks.data?.org} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
                                                 onAdd={(ob) => void ops([{ op: 'add', id: `r-${ob.id}`, kind: 'ticket', title: ob.title, description: ob.why, parent: p.nodes.find((n) => n.kind === 'goal')?.id, covers: [ob.id], moscow: 'must' }])} />}
                                      tools={<Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />} />}
           {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} />}
@@ -657,7 +674,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
                 <p className="text-body font-semibold text-fg-1">{p.busy || tried.length ? 'Drawing the plan…' : 'The plan draws itself here'}</p>
                 <p className="max-w-sm text-small text-fg-3">Each epic a stream flowing into the goal, its tickets along it when they would be worked on, and the time it is worth marked.</p>
               </div>
-            ) : <PlanStream p={withObligations(shown, setup.data?.config.compliance)} base={tried.length ? p : undefined} draft={paced} fresh={fresh?.turn && 'id' in fresh ? `${fresh.id}:${paced.length}` : undefined} onMove={p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
+            ) : <PlanStream p={withObligations(shown, profile)} base={tried.length ? p : undefined} draft={paced} fresh={fresh?.turn && 'id' in fresh ? `${fresh.id}:${paced.length}` : undefined} onMove={p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
         </section>
@@ -795,7 +812,8 @@ function NewPlan({ onMade, toast }: { onMade: (id: string) => void; toast: Toast
       .then((p: Plan) => api(`/plans/${p.id}/say`, { text: first }).then(() => { refresh('/plans'); onMade(p.id) }))
       .catch((e: Error) => toast(e.message, 'error')).finally(() => setBusy(undefined))
   }
-  const pitch = () => start('new', { title, brief, method, appetite }, undefined, 'Break this down.')
+  // for the application in focus, its organization (its compliance profile); none in focus: decided by the server (yours)
+  const pitch = () => start('new', { title, brief, method, appetite, org: new URLSearchParams(location.search).get('focus')?.split('/')[0] || undefined }, undefined, 'Break this down.')
   const field = 'w-full rounded-xl bg-surface-1 px-3 py-2 text-body text-fg-1 outline-none ring-1 ring-line transition-shadow placeholder:text-fg-4 focus:ring-2 focus:ring-accent/40'
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
@@ -822,10 +840,10 @@ function NewPlan({ onMade, toast }: { onMade: (id: string) => void; toast: Toast
           </div>
         </div>
       </div>
-      <ProjectList busy={busy} onPlan={(x, ask, source) => source === 'github'
+      <ProjectList busy={busy} onPlan={(x, ask, source, org) => source === 'github'
         // a GitHub Project: the plan reads it as context (planning into it, tickets and all, is Linear's for now)
-        ? start(x.id, { title: x.name, brief: [x.description, ask].filter(Boolean).join('\n\n'), method, appetite }, undefined, `This plan is for the GitHub Project "${x.name}" (${x.url}).${ask.trim() ? `\n${ask}` : ' Break it down.'}`)
-        : start(x.id, { title: x.name, brief: ask, method, appetite }, x.id, ask.trim() ? `Plan this into the project:\n${ask}` : 'Read the project against its vision: what is missing to reach it? Propose the tickets.')} />
+        ? start(x.id, { title: x.name, brief: [x.description, ask].filter(Boolean).join('\n\n'), method, appetite, org }, undefined, `This plan is for the GitHub Project "${x.name}" (${x.url}).${ask.trim() ? `\n${ask}` : ' Break it down.'}`)
+        : start(x.id, { title: x.name, brief: ask, method, appetite, org }, x.id, ask.trim() ? `Plan this into the project:\n${ask}` : 'Read the project against its vision: what is missing to reach it? Propose the tickets.')} />
     </div>
   )
 }
@@ -835,7 +853,7 @@ function NewPlan({ onMade, toast }: { onMade: (id: string) => void; toast: Toast
  * Pick the organization first (yours, or one whose repositories you watch): your personal work never lists a company's
  * Linear projects. Pick a project to plan into it.
  */
-function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProject, ask: string, source: 'linear' | 'github') => void }) {
+function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProject, ask: string, source: 'linear' | 'github', org?: string) => void }) {
   const orgsQ = useApi<Org[]>('/orgs', { staleTime: 10 * 60_000 })
   const [org, setOrg] = useState<string>()
   const o = orgsQ.data?.find((x) => x.owner === org) ?? orgsQ.data?.[0]
@@ -881,7 +899,7 @@ function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProjec
                 <div className="mx-2 mb-2 mt-1 space-y-2 animate-[detail-in_160ms_var(--ease-snappy)]">
                   <textarea value={ask} onChange={(e) => setAsk(e.target.value)} rows={3} placeholder="What to add (optional): leave empty and it finds what is missing to reach the vision"
                             className="w-full resize-none rounded-lg bg-surface-1 px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/40" />
-                  <button onClick={() => onPlan(x, ask, q.data?.source ?? 'linear')} disabled={!!busy} className="inline-flex w-full items-center justify-center gap-1.5 btn-primary disabled:opacity-50">
+                  <button onClick={() => onPlan(x, ask, q.data?.source ?? 'linear', o?.owner)} disabled={!!busy} className="inline-flex w-full items-center justify-center gap-1.5 btn-primary disabled:opacity-50">
                     {busy === x.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}{q.data?.source === 'github' ? 'Plan for it' : `Plan into ${x.mine ? 'your project' : 'it: tickets only'}`}
                   </button>
                 </div>

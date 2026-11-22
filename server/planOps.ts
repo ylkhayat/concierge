@@ -31,6 +31,7 @@ export type Said = { who: 'you' | 'agent'; text: string; at: string; turn?: stri
 export type Plan = {
   undo?: number; redo?: number // steps to undo and redo, as the page gets it (plans.ts withHistory); never kept
   id: string; title: string; brief: string; method: 'agile' | 'waterfall'; skill?: string; team?: string
+  org?: string // the organization it is for (orgs.ts planOrg: its compliance profile, its trackers)
   nodes: PlanNode[]; links: Link[]; messages: Said[]
   busy?: boolean; live?: string // the reply as it streams
   creating?: boolean; error?: string; sessionId?: string; costUsd: number; at: string

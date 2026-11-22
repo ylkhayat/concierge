@@ -79,7 +79,7 @@ import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, 
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
-import { githubProjects, orgs, setTracker } from './orgs.ts'
+import { complianceFor, githubProjects, orgs, planOrg, setCompliance, setTracker } from './orgs.ts'
 import { nearbyMachines, tailnetOwner, tailscaleView, tsStatus, watchTailnet, type TsPeer } from './tailscale.ts'
 import { gitIdentity } from './gitIdentity.ts'
 import { bankView, writeBank } from './bank.ts'
@@ -1924,7 +1924,7 @@ const setupView = async (light = false) => ({
   reviewIn: reviewIn(), critInstalled: critInstalled(), workDir: WORK_DIR, clones: cloneState(), away: Object.keys(config.repos).filter(notHere), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
   // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
-  config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
+  config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, orgs: config.orgs ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // the fleet extension is loaded (fleet/compose.fleet.yml sets it): onboarding then signs Tailscale in after GitHub
   fleet: !!process.env.CONCIERGE_FLEET,
@@ -2014,7 +2014,7 @@ app.post('/access', async (c) => {
   return c.json({ logins: allowedLogins(), you })
 })
 app.post('/config', async (c) => {
-  const b = await c.req.json() as { reviewIn?: 'crit' | 'concierge'; repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; skills?: Record<string, string>; skillSource?: string; skillSources?: string[] }
+  const b = await c.req.json() as { reviewIn?: 'crit' | 'concierge'; repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; orgCompliance?: { owner: string; compliance: Compliance | null }; skills?: Record<string, string>; skillSource?: string; skillSources?: string[] }
   const errors: string[] = []
   if (b.repos) {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
@@ -2044,11 +2044,17 @@ app.post('/config', async (c) => {
   if (b.skills !== undefined && (typeof b.skills !== 'object' || Object.entries(b.skills).some(([k, v]) => !(k in FEATURES) || typeof v !== 'string' || !/^[\w:./-]{0,120}$/.test(v)))) errors.push('Each feature takes a skill name')
   if (b.skillSource !== undefined && (typeof b.skillSource !== 'string' || (b.skillSource.trim() && !/^(https:\/\/|git@)[\w.@:/~-]+$/.test(b.skillSource.trim())))) errors.push('The skill source is a git repository URL (https:// or git@)')
   if (b.skillSources !== undefined && (!Array.isArray(b.skillSources) || b.skillSources.length > 20 || b.skillSources.some((u) => typeof u !== 'string' || !/^(https:\/\/|git@)[\w.@:/~-]+$/.test(u.trim())))) errors.push('Each skill source is a git repository link (https:// or git@)')
-  if (b.compliance !== undefined) {
-    const k = b.compliance, known: Record<string, [string, string][]> = { regions: REGIONS, certifications: CERTIFICATIONS, data: DATA, reviews: REVIEWS }
+  const checkCompliance = (k: Compliance) => {
+    if (k.off !== undefined && typeof k.off !== 'boolean') errors.push('Compliance is on or off')
+    const known: Record<string, [string, string][]> = { regions: REGIONS, certifications: CERTIFICATIONS, data: DATA, reviews: REVIEWS }
     for (const [f, list] of Object.entries(known)) { const v = (k as Record<string, unknown>)[f]; if (v !== undefined && (!Array.isArray(v) || v.some((x) => !list.some(([id]) => id === x)))) errors.push(`Unknown ${f}`) }
     if (k.team !== undefined && (!Array.isArray(k.team) || k.team.length > 50 || k.team.some((m) => typeof m?.name !== 'string' || !m.name.trim() || m.name.length > 60 || !ROLES.some(([id]) => id === m.role) || (m.pace !== undefined && !(Number(m.pace) > 0 && Number(m.pace) <= 50)) || (m.teams !== undefined && (!Array.isArray(m.teams) || m.teams.some((t) => !/^[A-Z][A-Z0-9]*$/.test(t))))))) errors.push('Each person needs a name and a role')
   }
+  if (b.compliance !== undefined) checkCompliance(b.compliance)
+  // an organization's own profile (Settings → Compliance, per organization); null: back to the shared one
+  const oc = b.orgCompliance
+  if (oc !== undefined && (typeof oc?.owner !== 'string' || !/^[\w.-]{1,100}$/.test(oc.owner) || (oc.compliance !== null && typeof oc.compliance !== 'object'))) errors.push('Which organization, and its profile')
+  else if (oc?.compliance) checkCompliance(oc.compliance)
   if (b.reviewIn !== undefined && b.reviewIn !== 'crit' && b.reviewIn !== 'concierge') errors.push('Reviews happen in crit or in Concierge')
   if (errors.length) return c.json({ error: errors.join('. ') }, 400)
 
@@ -2082,6 +2088,7 @@ app.post('/config', async (c) => {
   // a repository added from this machine's page may be cloned here (other machines wait until you allow them)
   if (b.repos && fleet.machine) for (const r of Object.keys(b.repos)) if (!(prevRepos as string[]).includes(r)) allowClone(r, fleet.machine, true)
   if (b.repos) void ensureClones() // a repository new to this machine is cloned in the background
+  if (b.orgCompliance) setCompliance(b.orgCompliance.owner, b.orgCompliance.compliance && withoutName(b.orgCompliance.compliance))
   if (b.repos || b.skillSources !== undefined || b.skillSource !== undefined) alignLater() // every machine follows (clones, skill sources)
   return c.json(await setupView())
 })
@@ -2525,7 +2532,14 @@ app.post('/roles/skill', async (c) => {
   try { setOwner(String(name), owner); return c.json({ ok: true, owner: ownerOf(name) }) } catch (e) { return c.json({ error: (e as Error).message }, 403) }
 })
 app.get('/plans', (c) => c.json({ plans: allPlans().map(({ id, title, method, nodes, busy, creating, at }) => ({ id, title, method, count: nodes.length, made: nodes.filter((n) => n.created).length, busy, creating, at })) }))
-app.post('/plans', async (c) => { const b = await c.req.json<{ title?: string; brief?: string; method?: 'agile' | 'waterfall'; appetite?: number }>(); return c.json(newPlan(b.title ?? '', b.brief ?? '', b.method, b.appetite)) })
+app.post('/plans', async (c) => { const b = await c.req.json<{ title?: string; brief?: string; method?: 'agile' | 'waterfall'; appetite?: number; org?: string }>(); return c.json(newPlan(b.title ?? '', b.brief ?? '', b.method, b.appetite, b.org)) })
+// which organization a plan is for, and the compliance profile it is checked against (its own, the shared one, or off)
+app.get('/plans/:id/checks', async (c) => {
+  const p = planOf(c.req.param('id'))
+  if (!p) return c.json({ error: 'No such plan' }, 404)
+  const org = await planOrg(p)
+  return c.json({ org, profile: (await complianceFor(org)) ?? {} })
+})
 app.get('/plans/teams', async (c) => { try { return c.json({ teams: await linearTeams() }) } catch (e) { return planErr(c, e) } })
 // an organization's projects, from where it manages its work: Linear's, or its GitHub Projects (orgs.ts). No organization
 // given: Linear's, as before

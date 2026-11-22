@@ -11,6 +11,7 @@ import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type
 import type { SetupView } from '../../server/index.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
 import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
+type Org = import('../../server/orgs.ts').Org
 import type { InfraView } from '../../server/infra.ts'
 import { api, PALETTES, paletteNow, setPalette, setTexture, TEXTURES, textureNow, type Health, type Theme } from '../lib.ts'
 import { refresh, remember, useApi, useLive } from '../query.ts'
@@ -33,7 +34,7 @@ const NAV: { group: string; pages: Page[] }[] = [
     { id: 'workflows', label: 'Workflows', hint: 'Triggers, skills and commands for reviews, your PRs and tickets', icon: Wand },
     { id: 'accounts', label: 'Accounts', hint: 'Claude, OpenAI or Llama, and which one takes what', icon: Bot },
     { id: 'spend', label: 'Spend', hint: 'Budgets, limits and what the runs cost', icon: Coins },
-    { id: 'compliance', label: 'Compliance', hint: 'What every plan is checked against: where your users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
+    { id: 'compliance', label: 'Compliance', hint: 'What each organization’s plans are checked against (or not): where its users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
   ] },
   { group: 'Sources', pages: [
     { id: 'repos', label: 'Repositories', hint: 'What to watch, where it lives, its codebase map', icon: FolderGit2 },
@@ -1264,11 +1265,24 @@ function FillCompliance({ c, saveConfig }: { c: Compliance; saveConfig: SaveConf
   )
 }
 
-function ComplianceSettings({ setup, saveConfig }: { setup?: SetupView; saveConfig: SaveConfig }) {
+/**
+ * Compliance, per organization: each one's plans are checked against its own profile (where its users are, what it is
+ * certified for, the data it handles, the reviews it requires, the people who build it), or not at all. An
+ * organization without its own uses the shared one of before; your personal one starts off.
+ */
+function ComplianceSettings({ setup, saveConfig: saveShared }: { setup?: SetupView; saveConfig: SaveConfig }) {
   const [name, setName] = useState(''), [role, setRole] = useState('engineer')
   const teamsQ = useApi<{ teams: { key: string; name: string }[] }>(setup?.linearKey ? '/plans/teams' : undefined, { staleTime: 10 * 60_000 })
+  const orgsQ = useApi<Org[]>('/orgs', { staleTime: 10 * 60_000 })
+  // opened for one organization (a plan's "Turn them on": ?org=…), else the first company one
+  const [owner, setOwner] = useState<string | undefined>(() => new URLSearchParams(location.search).get('org') ?? undefined)
   if (!setup) return <Skeleton rows={4} />
-  const c: Compliance = setup.config.compliance ?? {}
+  const orgs = orgsQ.data ?? []
+  const o = orgs.find((x) => x.owner === owner) ?? orgs.find((x) => !x.personal) ?? orgs[0]
+  const own = o ? (setup.config.orgs as Record<string, { compliance?: Compliance }> | undefined)?.[o.owner]?.compliance : undefined
+  const c: Compliance = o ? (own ?? (o.personal ? { off: true } : setup.config.compliance ?? {})) : setup.config.compliance ?? {}
+  // what changes here is the picked organization's own profile (the shared one stays for those without one)
+  const saveConfig: SaveConfig = (body, msg) => { const b = body as { compliance?: Compliance }; return o && b.compliance ? saveShared({ orgCompliance: { owner: o.owner, compliance: b.compliance } }, msg) : saveShared(body, msg) }
   const toggle = (k: 'regions' | 'certifications' | 'data' | 'reviews', id: string, label: string) => {
     const on = (c[k] ?? []).includes(id)
     saveConfig({ compliance: { ...c, [k]: on ? (c[k] ?? []).filter((x) => x !== id) : [...(c[k] ?? []), id] } }, `${label}: ${on ? 'off' : 'on'}`)
@@ -1284,11 +1298,25 @@ function ComplianceSettings({ setup, saveConfig }: { setup?: SetupView; saveConf
   const teamKeys = teamsQ.data?.teams.map((t) => t.key) ?? [...new Set(team.flatMap((m) => m.teams ?? []))]
   return (
     <>
+      {o && (
+        <Group title="Organization" hint="Each organization's plans are checked against its own profile, or not at all.">
+          {orgs.length > 1 && <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">{orgs.map((x) => <Chip key={x.owner} on={x.owner === o.owner} onClick={() => setOwner(x.owner)}>{x.owner}{x.personal ? ' (you)' : ''}</Chip>)}</div>}
+          <div className="flex items-center gap-3 px-3.5 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-small font-medium text-fg-1">Compliance checks for {o.owner}</p>
+              <p className="text-meta text-fg-3">{c.off ? 'Off: its plans are not checked for privacy law, certifications or required reviews.' : own ? 'On, with its own profile below.' : 'On, with the shared profile below (changing it gives this organization its own).'}</p>
+            </div>
+            <Toggle on={!c.off} label={`Compliance checks for ${o.owner}`} onChange={(v) => void saveConfig({ compliance: { ...c, off: v ? undefined : true } }, `Compliance for ${o.owner}: ${v ? 'on' : 'off'}`)} />
+          </div>
+        </Group>
+      )}
+      {!c.off && <>
       <FillCompliance c={c} saveConfig={saveConfig} />
       {group('regions', 'Where your users are', 'Each brings its privacy law: a plan that handles their data owes what it requires.', REGIONS)}
       {group('certifications', 'Certifications', 'What you are certified for, or working toward: each adds controls every plan must keep.', CERTIFICATIONS)}
       {group('data', 'Data you handle', 'What your product processes. A plan that touches it is checked for consent, retention and safeguards.', DATA)}
       {group('reviews', 'Reviews you require', 'Sign-offs a change needs before it ships. Counted as covered roles on the team.', REVIEWS)}
+      </>}
       <Group title="Capacity" hint="Who builds it, and in which role: plans compare their scope with what these people finish inside the appetite.">
         {team.map((m) => (
           <div key={m.name} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5">

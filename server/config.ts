@@ -51,7 +51,9 @@ export type Config = {
   compliance?: import('./readiness.ts').Compliance // where its users are, its certifications, data, required reviews, and the people who build it: what every plan is checked against
   skills?: Partial<Record<import('./method.ts').Feature, string>> // which skill each feature uses (method.ts); unset: its default
   skillSource?: string // the git repo a new setup's skills come from (Settings → Skills); unset: github.com/ylkhayat/skills
-  orgs?: Record<string, { tracker: 'linear' | 'github' }> // where each organization manages its work (orgs.ts)
+  // where each organization manages its work (orgs.ts), and what its plans are checked against (its own compliance
+  // profile, readiness.ts profileFor; none: the shared one, or off for your personal one)
+  orgs?: Record<string, { tracker?: 'linear' | 'github'; compliance?: import('./readiness.ts').Compliance }>
   skillSources?: string[] // git repositories of skills you added (onboarding, Settings → Skills): their skills reach the agents (setup.ts)
   // Exec mode: ship your Linear tickets with a command such as /my-exec
   exec: {

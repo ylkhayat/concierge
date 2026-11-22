@@ -6,6 +6,7 @@
 import type { Plan, PlanNode } from './planOps.ts'
 
 export type Compliance = {
+  off?: boolean // no compliance checks for this organization (your personal work starts so): no obligations at all
   regions?: string[]; certifications?: string[]; data?: string[]; reviews?: string[]
   // pace: points a week (unset: the plan's); teams: the Linear teams they work in (a person can be on several);
   // linearId: who they are in Linear (to match a project's members)
@@ -28,8 +29,17 @@ export type Obligation = { id: string; area: Area; title: string; why: string; m
 /** The plan's words: its brief, vision and every item's title and description. */
 const wordsOf = (p: Plan) => [p.brief, p.project?.vision ?? '', ...p.nodes.map((n) => `${n.title} ${n.description ?? ''}`)].join('\n').toLowerCase()
 
-/** What this plan must cover, for this profile. */
+/**
+ * The profile an organization's plans are checked against: its own once set (Settings → Compliance, per organization),
+ * else the shared one of before; your personal organization starts with the checks off.
+ */
+export function profileFor(own: Compliance | undefined, shared: Compliance | undefined, personal: boolean): Compliance | undefined {
+  return own ?? (personal ? { off: true } : shared)
+}
+
+/** What this plan must cover, for this profile. Checks off: nothing. */
 export function obligations(profile: Compliance | undefined, p: Plan): Obligation[] {
+  if (profile?.off) return []
   const c = profile ?? {}, w = wordsOf(p)
   const has = (k: keyof Compliance, v: string) => ((c[k] as string[] | undefined) ?? []).includes(v)
   const says = (re: RegExp) => re.test(w)

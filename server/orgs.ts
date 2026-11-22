@@ -4,6 +4,7 @@
 // it is offered); until then guessed: Linear when a Linear team already works in one of its repositories.
 import { config, saveConfig } from './config.ts'
 import { getMe, gh, graphql } from './github.ts'
+import { profileFor, type Compliance } from './readiness.ts'
 
 export type Tracker = 'linear' | 'github'
 export type Org = { owner: string; personal: boolean; tracker: Tracker; guessed: boolean; repos: string[] }
@@ -37,7 +38,30 @@ export async function orgs(): Promise<Org[]> {
 }
 
 export function setTracker(owner: string, tracker: Tracker) {
-  saveConfig({ orgs: { ...(config.orgs ?? {}), [owner]: { tracker } } })
+  saveConfig({ orgs: { ...(config.orgs ?? {}), [owner]: { ...config.orgs?.[owner], tracker } } })
+}
+
+/** An organization's own compliance profile (null: back to the shared one, or off for your personal one). */
+export function setCompliance(owner: string, compliance: Compliance | null) {
+  const { compliance: _, ...rest } = config.orgs?.[owner] ?? {}
+  saveConfig({ orgs: { ...(config.orgs ?? {}), [owner]: { ...rest, ...(compliance && { compliance }) } } })
+}
+
+/**
+ * Which organization a plan is for: the one it was made in; else, planned into a Linear project, the organization
+ * that manages its work in Linear; else (a plan of your own, no company project) you.
+ */
+export async function planOrg(p: { org?: string; project?: unknown }): Promise<string | undefined> {
+  if (p.org) return p.org
+  const all = await orgs().catch(() => [] as Org[])
+  if (p.project) return all.find((o) => !o.personal && o.tracker === 'linear')?.owner
+  return all.find((o) => o.personal)?.owner
+}
+
+/** What a plan of `owner` is checked against (readiness.ts profileFor). */
+export async function complianceFor(owner: string | undefined): Promise<Compliance | undefined> {
+  const me = (await getMe().catch(() => undefined))?.login
+  return profileFor(owner ? config.orgs?.[owner]?.compliance : undefined, config.compliance, !!owner && !!me && owner.toLowerCase() === me.toLowerCase())
 }
 
 export type GithubProject = { id: string; name: string; url: string; description?: string; number: number }

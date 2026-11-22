@@ -21,19 +21,21 @@ import { bankArgs } from './bank.ts'
 import { impact } from '../src/planDiff.ts'
 import { config } from './config.ts'
 import { coverage, obligations } from './readiness.ts'
+import { complianceFor, planOrg } from './orgs.ts'
 export * from './planOps.ts'
 
 const all = () => (state.plans ??= {})
 export const plans = () => Object.values(all()).sort((a, b) => b.at.localeCompare(a.at))
 export const planOf = (id: string) => all()[id]
 
-export function newPlan(title: string, brief: string, method: Plan['method'] = 'agile', appetite?: number): Plan {
-  const p: Plan = { id: randomUUID().slice(0, 8), title: title || 'New plan', brief, method, nodes: [], links: [], messages: [], costUsd: 0, at: new Date().toISOString(), ...(appetite && appetite > 0 && { appetite: { weeks: Math.min(52, appetite), from: new Date().toISOString() } }) }
+export function newPlan(title: string, brief: string, method: Plan['method'] = 'agile', appetite?: number, org?: string): Plan {
+  const p: Plan = { id: randomUUID().slice(0, 8), title: title || 'New plan', brief, method, nodes: [], links: [], messages: [], costUsd: 0, at: new Date().toISOString(), ...(appetite && appetite > 0 && { appetite: { weeks: Math.min(52, appetite), from: new Date().toISOString() } }), ...(org && /^[\w.-]{1,100}$/.test(org) && { org }) }
   all()[p.id] = p; save()
   return p
 }
-export function setPlan(id: string, v: Partial<Pick<Plan, 'title' | 'brief' | 'method' | 'skill' | 'team' | 'people' | 'pace' | 'vision'>> & { appetite?: number | null }) {
+export function setPlan(id: string, v: Partial<Pick<Plan, 'title' | 'brief' | 'method' | 'skill' | 'team' | 'people' | 'pace' | 'vision' | 'org'>> & { appetite?: number | null }) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
+  if (v.org !== undefined && !/^[\w.-]{1,100}$/.test(v.org)) throw new Error('Not an organization')
   // an appetite in weeks, counted from when it is set; none (0 or null) takes it away
   if (v.appetite !== undefined) { const w = Number(v.appetite); p.appetite = w > 0 ? { weeks: Math.min(52, w), from: p.appetite?.weeks === w ? p.appetite.from : new Date().toISOString() } : undefined; delete v.appetite }
   Object.assign(p, v, { at: new Date().toISOString() }); save()
@@ -194,7 +196,8 @@ export async function talk(id: string, text: string) {
     + (p.project.lead ? 'The product manager leads this project: if the vision should change, propose the whole new text with one op line {"op":"vision","text":"…"}; it is applied only when they accept it.' : 'The product manager does not lead this project: never change its vision or goal; only add tickets (and epics or phases for them) to it.')
   const pace = p.pace ?? 5, people = p.people ?? Math.max(1, p.project?.members ?? 1)
   const appetite = p.appetite && `The appetite (Shape Up): ${p.appetite.weeks} week${p.appetite.weeks === 1 ? '' : 's'} with ${people} ${people === 1 ? 'person' : 'people'}, about ${p.appetite.weeks * people * pace} points (one person finishes about ${pace} a week). Fit the scope into it: estimate every ticket in points, keep what matters most inside it, and put what does not fit under one epic titled "Later: beyond the appetite" with priority 4, so the cut is visible. Say in a sentence what you cut.`
-  const company = config.compliance, obs = obligations(company, p), cov = coverage(p, obs)
+  // its organization's profile (orgs.ts): checks off, no obligations and nothing about them in the prompt
+  const company = await complianceFor(await planOrg(p)), obs = obligations(company, p), cov = coverage(p, obs)
   const ready = obs.length ? `Compliance and capacity: ${[company?.regions?.length && `users in ${company.regions.join(', ')}`, company?.certifications?.length && `certified ${company.certifications.join(', ')}`, company?.data?.length && `handles ${company.data.join(', ')}`, company?.reviews?.length && `requires ${company.reviews.join(', ')} reviews`, company?.team?.length && `team ${company.team.map((m) => `${m.name} (${m.role})`).join(', ')}`].filter(Boolean).join('; ') || 'no profile set'}.
 What this plan must cover for it (id: title, and the ticket covering it):\n${cov.map((x) => `- ${x.ob.id}: ${x.ob.title} (${x.ob.area})${x.by ? ` · covered by ${x.by.id}` : ' · NOT COVERED'}`).join('\n')}
 Mark the ticket that covers one with "covers":["id"]. Uncovered ones belong in your gaps op (area compliance, security, rollout or research), most important first; add tickets for them when asked. Set "risk" on tickets that carry a real risk.` : ''

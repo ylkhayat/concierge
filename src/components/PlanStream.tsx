@@ -2,7 +2,8 @@
 // as thick as the work in it, and its tickets are pebbles along it at the time they would be worked on (planStream.ts):
 // done ones solid, the one going on glowing, what lies past the appetite faded. The streams draw themselves in, and
 // pebbles glide when the plan changes. Hover a pebble: what it is, when, and what it waits for; click: open it.
-// A pebble shows its points (~ when guessed), who picked it up, and is hatched while it still needs refining. Below the
+// A pebble shows its name (two lines at most, the rest on hover) and its points (~ when guessed), who picked it up, and
+// is hatched while it still needs refining; one too short for words shows its points alone. Below the
 // streams, the angles the plan hasn't explored yet flow faintly toward the goal: click one to have the planner take it on.
 // Moves (onMove): drag a pebble earlier or later, onto another stream, or down into Later to cut it; each is a move of
 // the scenario being tried. With a scenario, `base` is the plan before it: what moved leaves a dashed outline where it
@@ -65,6 +66,9 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   let k = 1
   const thick = (pts: number) => Math.max(6, (compact ? 10 : 12 + 26 * Math.sqrt(pts / maxPts)) * k)
   let ROW = 26 // a ticket's line in an open stream
+  // a pebble tall enough for its name: two lines when the room is short, three when there is room (streams level;
+  // compact draws lines, not pebbles)
+  const PEB = () => Math.round(Math.max(26, Math.min(46, 34 * k)))
   // each stream keeps its place and its colour while things move: in the plan's own order (the loose tickets last)
   const headAt = (id: string) => { const i = p.nodes.findIndex((n) => n.id === id); return i < 0 ? 1e9 : i }
   const streams = [...s.streams].sort((a, b) => headAt(a.id) - headAt(b.id))
@@ -79,8 +83,8 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
       // tickets worked at the same time (two people on one epic) stack in sub-rows of the stream, never over each other
       const sub = new Map<string, number>(), ends: number[] = []
       for (const sl of [...st.slots].sort((a, b) => a.start - b.start)) { let j = ends.findIndex((e) => e <= sl.start + 1e-6); if (j < 0) { j = ends.length; ends.push(0) } ends[j] = sl.end; sub.set(sl.id, j) }
-      const lanes = Math.max(1, ends.length), lanePh = Math.min(Math.max(6, thick(st.points) - 8), 22)
-      const t = compact || lanes === 1 ? thick(st.points) : Math.max(thick(st.points), lanes * (lanePh + 4) + 6)
+      const lanes = Math.max(1, ends.length), lanePh = compact ? Math.min(Math.max(6, thick(st.points) - 8), 22) : PEB()
+      const t = compact ? thick(st.points) : lanes === 1 ? Math.max(thick(st.points), PEB() + 8) : Math.max(thick(st.points), lanes * (lanePh + 4) + 6)
       const yOf = (id: string) => (lanes === 1 ? 0 : ((sub.get(id) ?? 0) - (lanes - 1) / 2) * (lanePh + 4))
       const cy = y + 16 + t / 2; const isOpen = !!open?.has(st.id); const listY = cy + t / 2 + 10; y = cy + t / 2 + gap + (isOpen ? st.slots.length * ROW + 4 : 0); return { st, t, cy, isOpen, listY, lanes, lanePh, yOf } })
     return { rows, end: y + 10 }
@@ -169,7 +173,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
           <defs>
             {rows.map((r, i) => (
               <pattern key={i} id={`hatch-${i}`} width={5} height={5} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <rect width={5} height={5} fill={col(hueOf(r.st.id), 0.12)} /><line x1={0} y1={0} x2={0} y2={5} stroke={col(hueOf(r.st.id), 0.8)} strokeWidth={2} />
+                <rect width={5} height={5} fill={col(hueOf(r.st.id), 0.22)} /><line x1={0} y1={0} x2={0} y2={5} stroke={col(hueOf(r.st.id), 0.45)} strokeWidth={1.5} />
               </pattern>
             ))}
             <radialGradient id="goal-glow"><stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" /><stop offset="100%" stopColor="var(--accent)" stopOpacity="0" /></radialGradient>
@@ -248,11 +252,15 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
           {/* the pebbles, in one layer: a ticket moved to another stream glides there; its right edge resizes it */}
           {!compact && rows.flatMap(({ st, t, cy: rowCy, lanes, lanePh, yOf }, i) => {
             const h = hueOf(st.id)
+            // where the next ticket in the same lane starts: a name runs on past its pebble into the free stream up to it
+            // (or to the goal), so it reads whole without a hover; the timeline stays as it is
+            const nextAt = (sl: Slot) => { const lane = yOf(sl.id), n = st.slots.filter((o) => o.id !== sl.id && yOf(o.id) === lane && o.start > sl.start + 1e-6).sort((a, b) => a.start - b.start)[0]; return n ? x(n.start) : gx - 84 }
             return st.slots.map((sl, j) => {
               // a pebble never wider than its time: a short ticket is a smaller round one, never over its neighbour
               const later = appetite !== undefined && sl.start >= appetite
               const full = Math.max(5, x(sl.end) - x(sl.start) - 3), sizing = resize?.id === sl.id
-              const slotW = sizing ? resize.w : full, ph = Math.min(lanes > 1 ? lanePh : Math.max(8, t - 8), full), cy = rowCy + yOf(sl.id)
+              // as tall as its name needs; only a sliver of a ticket (no room for words) is a small round one
+              const slotW = sizing ? resize.w : full, tall = lanes > 1 ? lanePh : Math.max(8, t - 8), ph = full < 28 ? Math.min(tall, full) : tall, cy = rowCy + yOf(sl.id)
               const left = x(sl.start) + 1.5, width = slotW, pts = sizing ? sizeFor(sl.points, full, resize.w) : sl.points
               const lit = hover?.slot.id === sl.id || selected === sl.id
               const glide = 'x 500ms var(--ease-snappy), y 500ms var(--ease-snappy), width 500ms var(--ease-snappy)'
@@ -275,8 +283,17 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                 {evidence.has(sl.id) && <circle r={4} fill="var(--accent)" stroke="var(--surface-1)" strokeWidth={1.5} pointerEvents="none" style={{ transform: `translate(${left + 2}px, ${cy - ph / 2 - 1}px)`, transition: 'transform 500ms var(--ease-snappy)' }} />}
                 {/* on the critical path: what sets the end date */}
                 {critical.has(sl.id) && !sl.done && <rect height={2} rx={1} fill="var(--accent)" pointerEvents="none" style={{ x: left + 2, y: cy + ph / 2 + 2, width: Math.max(2, width - 4), transition: sizing ? 'none' : glide } as React.CSSProperties} />}
-                {/* its size, when the pebble has room: ~ when guessed */}
-                {(slotW >= 22 && ph >= 12 || sizing) && <text y={3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} pointerEvents="none" className={sl.done ? 'fill-[var(--on-accent)]' : 'fill-fg-1'}
+                {/* its name and size inside it, when there is room for words: two lines at most, its points after */}
+                {!sizing && slotW >= 44 && ph >= 22 && (
+                  <foreignObject pointerEvents="none" style={{ x: left + 6, y: cy - ph / 2, width: Math.max(width - 12, Math.min(260, nextAt(sl) - left - 12)), height: ph, transition: glide } as React.CSSProperties}>
+                    <div className="flex h-full items-center gap-1.5 overflow-hidden">
+                      <span className={`shrink-0 text-[9.5px] font-semibold tabular-nums ${sl.done ? 'text-[var(--on-accent)]' : 'text-fg-2'}`}>{sl.sized ? '' : '~'}{pts}</span>
+                      <span className={`${ph >= 40 ? 'line-clamp-3' : 'line-clamp-2'} min-w-0 flex-1 break-words text-[10.5px] font-medium leading-[12px] ${sl.done ? 'text-[var(--on-accent)] line-through' : 'text-fg-1'}`}>{title(sl.id)}</span>
+                    </div>
+                  </foreignObject>
+                )}
+                {/* its size alone, on a pebble too short for its name (and while it is being resized) */}
+                {((slotW >= 22 && slotW < 44 && ph >= 12) || sizing) && <text y={3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} pointerEvents="none" className={sl.done ? 'fill-[var(--on-accent)]' : 'fill-fg-1'}
                       style={{ transform: `translate(${left + width / 2}px, ${cy}px)`, transition: sizing ? 'none' : 'transform 500ms var(--ease-snappy)' }}>{sl.sized || sizing ? '' : '~'}{pts}</text>}
                 {/* who picked it up */}
                 {sl.who && (
