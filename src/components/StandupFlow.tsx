@@ -20,8 +20,14 @@ const STAGES: { id: Stage; label: string; tone: string }[] = [
 const W = 340, GAP_X = 64, GAP_Y = 22, ROWS = 6
 const heightOf = (n: number) => 46 + Math.min(ROWS, n) * 58 + (n > ROWS ? 22 : 0)
 /** A steady hue per project, from its name: the same colour every day, without a table to keep. */
-export const hueOf = (name: string) => [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
-const laneColour = (hue?: number) => (hue === undefined ? 'var(--fg-3)' : `oklch(0.7 0.17 ${hue})`)
+// Lanes take one of a few hues far apart on the wheel, kept away from the two row marks (violet: my work, amber:
+// reviews), so no two projects and no project and a mark read alike. A project keeps its hue every day (from its name).
+// (hue and lightness both differ: every pair, marks included, is at least 18 apart in OKLab ×100, past the floor of 15)
+const LANES: [number, number][] = [[180, 0.6], [20, 0.6], [230, 0.8], [350, 0.8], [100, 0.6], [150, 0.8]] // [hue, lightness]
+export const hueOf = (name: string) => [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 9973, 7) % LANES.length // an index into LANES
+const laneColour = (lane?: number) => (lane === undefined ? 'var(--fg-3)' : `oklch(${LANES[lane][1]} 0.15 ${LANES[lane][0]})`)
+// the row marks: my own work, and reviews of someone else's PR, in colours no theme accent or lane takes
+const MINE = 'oklch(0.66 0.22 295)', REVIEW = 'oklch(0.8 0.16 75)'
 
 const In = () => <Handle type="target" position={Position.Left} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
 const Out = () => <Handle type="source" position={Position.Right} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
@@ -54,7 +60,7 @@ function RowItem({ r, onOpen }: { r: Row; onOpen: (id: string) => void }) {
     <>
       <button type="button" onClick={() => onOpen(r.id)} onMouseEnter={() => show(true)} onMouseLeave={() => show(false)} onFocus={() => show(true)} onBlur={() => show(false)}
               style={{ anchorName: name } as CSSProperties} className="nodrag flex w-full min-w-0 items-start gap-2 rounded-ctl px-2 py-1.5 text-left transition-colors hover:bg-hover">
-        <span className={`mt-1 h-3.5 w-1 shrink-0 rounded-full ${r.review ? 'bg-run' : 'bg-accent'}`} aria-label={r.review ? "Review of someone else's PR" : 'My work'} />
+        <span style={{ backgroundColor: r.review ? REVIEW : MINE }} className="mt-1 h-3.5 w-1 shrink-0 rounded-full" aria-label={r.review ? "Review of someone else's PR" : 'My work'} />
         <span className="min-w-0 flex-1">
           <span className="line-clamp-2 text-small font-medium leading-snug text-fg-1">{r.title || r.id}</span>
           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-meta text-fg-3"><span className="shrink-0 font-mono">{r.id}</span><span className="truncate">{r.lead}</span></span>
@@ -120,8 +126,8 @@ export function StandupFlow({ lanes, counts, onOpen }: { lanes: Lane[]; counts: 
         {/* what the row marks mean */}
         {nodes.length > STAGES.length ? (
           <p className="pointer-events-none absolute right-3 top-2.5 flex items-center gap-3 text-micro text-fg-3">
-            <span className="flex items-center gap-1.5"><span className="h-3 w-1 rounded-full bg-accent" />My work</span>
-            <span className="flex items-center gap-1.5"><span className="h-3 w-1 rounded-full bg-run" />Reviews</span>
+            <span className="flex items-center gap-1.5"><span className="h-3 w-1 rounded-full" style={{ backgroundColor: MINE }} />My work</span>
+            <span className="flex items-center gap-1.5"><span className="h-3 w-1 rounded-full" style={{ backgroundColor: REVIEW }} />Reviews</span>
           </p>
         ) : <p className="p-6 text-small text-fg-3">Nothing on your tickets for this standup.</p>}
       </div>
