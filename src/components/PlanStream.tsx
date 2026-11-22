@@ -116,6 +116,8 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   const gx = w - RIGHT + 64, gy = rows.length ? (rows[0].cy + rows[rows.length - 1].cy) / 2 : H / 2
   const nodeOf = new Map(p.nodes.map((n) => [n.id, n]))
   const title = (id: string) => nodeOf.get(id)?.title ?? id
+  // its name on the board: the planner's short one (1 to 4 words), else the title; the whole title is on hover
+  const name = (id: string) => nodeOf.get(id)?.short ?? title(id)
   const cut = (t: string, px: number) => { const n = Math.max(4, Math.floor(px / 6.4)); return t.length > n ? `${t.slice(0, n - 1)}…` : t }
   const slotAt = new Map(rows.flatMap((r) => r.st.slots.map((sl, j) => [sl.id, { sl, cy: r.isOpen ? r.listY + j * ROW + ROW / 2 : r.cy + r.yOf(sl.id) }] as const)))
   const weeks = Array.from({ length: Math.max(0, Math.floor(t1) - Math.ceil(t0) + 1) }, (_, i) => Math.ceil(t0) + i)
@@ -228,11 +230,11 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                 {listing ? (
                   <foreignObject x={30} y={cy - 10} width={Math.max(0, GUTTER - 14)} height={20}>
                     <button onClick={() => (st.node ? onSelect(st.node.id) : onToggle?.(st.id))} title={`${st.title}\n${st.slots.length} ticket${st.slots.length === 1 ? '' : 's'} · ${st.points} pt · ~${fmt(st.end)}`}
-                            className="block w-full truncate text-left text-[12px] font-semibold leading-5 text-fg-1 hover:underline">{st.title}</button>
+                            className="block w-full truncate text-left text-[12px] font-semibold leading-5 text-fg-1 hover:underline">{st.node?.short ?? st.title}</button>
                   </foreignObject>
                 ) : (
                 <text x={x0 + 18} y={cy - t / 2 - 8} fontSize={12} fontWeight={600} className="fill-fg-1" style={{ cursor: 'pointer' }} onClick={() => (st.node ? onSelect(st.node.id) : onToggle?.(st.id))}>
-                  {st.title.length > 60 ? `${st.title.slice(0, 58)}…` : st.title}
+                  {(() => { const t = st.node?.short ?? st.title; return t.length > 60 ? `${t.slice(0, 58)}…` : t })()}
                   <tspan dx={8} fontSize={10.5} fontWeight={400} className="fill-fg-3">{st.slots.length} ticket{st.slots.length === 1 ? '' : 's'} · {st.points} pt{st.slots.some((sl) => sl.done) ? ` · ${Math.round(100 * st.slots.filter((sl) => sl.done).reduce((a, sl) => a + sl.points, 0) / Math.max(1, st.points))}% done` : ''} · ~{fmt(st.end)}</tspan>
                   {st.slots.some((sl) => sl.refine) && <tspan dx={6} fontSize={10.5} fontWeight={500} className="fill-wait">· {st.slots.filter((sl) => sl.refine).length} to refine</tspan>}
                 </text>
@@ -256,7 +258,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                       <foreignObject x={40} y={ry - ROW / 2} width={Math.max(0, GUTTER - 24)} height={ROW} pointerEvents="none">
                         <div className={`flex h-full items-center gap-1.5 text-[11.5px] ${sl.done ? 'text-fg-3 line-through' : 'text-fg-1'}`}>
                           {id && <span className="shrink-0 font-mono text-[10.5px] text-fg-3">{id}</span>}
-                          <span className="min-w-0 truncate font-medium">{title(sl.id)}</span>
+                          <span className="min-w-0 truncate font-medium" title={title(sl.id)}>{name(sl.id)}</span>
                         </div>
                       </foreignObject>
                       <rect x={bx} y={ry - 7} width={bw} height={14} rx={7} fill={sl.refine && !later && colorBy === 'epic' ? `url(#hatch-${i})` : pebbleHue(sl, h) === null ? 'var(--fg-4)' : col(pebbleHue(sl, h)!)} fillOpacity={sl.done ? 0.95 : later ? 0.2 : 0.7}
@@ -309,7 +311,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                   <foreignObject pointerEvents="none" style={{ x: left + 6, y: cy - ph / 2, width: Math.max(0, width - 12), height: ph, transition: glide } as React.CSSProperties}>
                     <div className="flex h-full items-center gap-1.5 overflow-hidden">
                       <span className={`shrink-0 text-[9.5px] font-semibold tabular-nums ${sl.done ? 'text-[var(--on-accent)]' : 'text-fg-2'}`}>{sl.sized ? '' : '~'}{pts}</span>
-                      <span className={`${ph >= 40 ? 'line-clamp-3' : 'line-clamp-2'} min-w-0 flex-1 break-words text-[10.5px] font-medium leading-[12px] ${sl.done ? 'text-[var(--on-accent)] line-through' : 'text-fg-1'}`}>{title(sl.id)}</span>
+                      <span className={`${ph >= 40 ? 'line-clamp-3' : 'line-clamp-2'} min-w-0 flex-1 break-words text-[10.5px] font-medium leading-[12px] ${sl.done ? 'text-[var(--on-accent)] line-through' : 'text-fg-1'}`}>{name(sl.id)}</span>
                     </div>
                   </foreignObject>
                 )}
@@ -360,7 +362,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
           <circle cx={gx} cy={gy} r={20} fill="var(--accent)" />
           <circle cx={gx} cy={gy} r={7} fill="none" stroke="var(--on-accent)" strokeWidth={2} />
           <foreignObject x={gx - 70} y={gy + 26} width={140} height={60}>
-            <p className="text-center text-micro font-semibold leading-tight text-fg-1">{goal?.title ?? 'The goal'}</p>
+            <p className="text-center text-micro font-semibold leading-tight text-fg-1" title={goal?.title}>{goal?.short ?? goal?.title ?? 'The goal'}</p>
             <p className="text-center text-micro text-fg-3">lands ~{fmt(s.end)}</p>
           </foreignObject>
         </svg>

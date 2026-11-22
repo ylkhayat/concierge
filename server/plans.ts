@@ -154,6 +154,7 @@ const PROTOCOL = [
   'Change the map only with op lines. Each op line is alone on its line, exactly: @op {json}',
   '  add:    {"op":"add","id":"e1","kind":"goal|milestone|epic|ticket","title":"…","parent":"g","priority":1-4,"estimate":points,"description":"…"}',
   '  update: {"op":"update","id":"t3", any of the fields above}',
+  '  names on add or update: "short":"Course setup" for every goal, epic and ticket: 1 to 4 words, a name a person would say, what the board shows (its column is narrow); the title stays the whole outcome. Items on the map without one get it from you (an update with just "short") the next time you reply.',
   '  plan fields on add or update (tickets): "moscow":"must|should|could|wont", "rice":{"reach":users a quarter,"impact":0.25-3,"confidence":0-1}, "horizon":"now|next|later". Set them for every ticket you add or estimate; on items in Linear update only sets these.',
   '  readiness on add or update: "covers":["dpia"] (the obligations a ticket covers, by id), "risk":{"likelihood":1-3,"impact":1-3,"note":"…"} (a risk it carries or mitigates).',
   '  propose: {"op":"propose","why":"…","ops":[{"op":"move",…},…]} (a scenario for the product manager to try: moves only, nothing applied; use it when asked to propose, cut, sequence or re-plan)',

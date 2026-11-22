@@ -3,6 +3,7 @@
 export type Kind = 'goal' | 'milestone' | 'epic' | 'ticket'
 export type PlanNode = {
   id: string; kind: Kind; title: string; description?: string
+  short?: string // its name on the board, 1 to 4 words (the title stays the whole outcome: in Linear, on hover)
   parent?: string // the node it sits under
   priority?: 1 | 2 | 3 | 4 // Linear's: urgent, high, medium, low
   estimate?: number // points
@@ -77,10 +78,11 @@ export const becauseOf = (b: unknown): Because[] | undefined => {
 }
 
 export const LATER = 'later' // the epic cut work goes under
-type Best = { rice?: PlanNode['rice']; moscow?: PlanNode['moscow']; horizon?: PlanNode['horizon']; covers?: string[]; risk?: PlanNode['risk'] }
+type Best = { short?: string; rice?: PlanNode['rice']; moscow?: PlanNode['moscow']; horizon?: PlanNode['horizon']; covers?: string[]; risk?: PlanNode['risk'] }
 /** RICE: reach × impact × confidence over effort (the estimate; 1 when unsized). Higher is worth more. */
 export const riceOf = (n: PlanNode) => (n.rice ? (n.rice.reach * n.rice.impact * n.rice.confidence) / Math.max(1, n.estimate ?? 1) : undefined)
 const best = (o: Best): Best => ({
+  ...(typeof o.short === 'string' && o.short.trim() && { short: o.short.trim().replace(/\s+/g, ' ').slice(0, 40) }),
   ...(o.rice && [o.rice.reach, o.rice.impact, o.rice.confidence].every((v) => Number.isFinite(Number(v))) && { rice: { reach: Number(o.rice.reach), impact: Number(o.rice.impact), confidence: Math.min(1, Math.max(0, Number(o.rice.confidence))) } }),
   ...(o.moscow && ['must', 'should', 'could', 'wont'].includes(o.moscow) && { moscow: o.moscow }),
   ...(o.horizon && ['now', 'next', 'later'].includes(o.horizon) && { horizon: o.horizon }),
@@ -125,7 +127,7 @@ export function apply(p: Plan, o: Op, by: 'agent' | 'you'): boolean {
       const n = p.nodes.find((x) => x.id === o.id); if (!n) return false
       // in Linear: its words change there (and sync back); only the planning fields, which live here, change here
       if (n.created) { const b = best(o); if (!Object.keys(b).length) return false; Object.assign(n, b); return true }
-      const { op: _, id: __, parent, rice: _r, moscow: _m, horizon: _h, covers: _c, risk: _k, ...rest } = o
+      const { op: _, id: __, parent, short: _s, rice: _r, moscow: _m, horizon: _h, covers: _c, risk: _k, ...rest } = o
       Object.assign(n, Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)), best(o), { by })
       if (n.refine === '') delete n.refine
       if (parent !== undefined) { if (!parent) delete n.parent; else if (has(parent) && parent !== n.id && !under(parent, n.id)) n.parent = parent }
