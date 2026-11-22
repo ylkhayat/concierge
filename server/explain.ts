@@ -4,7 +4,7 @@
 //   explain/<repo>-<n>/<head>   the PR overlay; a new push only re-explains files changed since the last head
 import { method } from './method.ts'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
-import { mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { mine, readMerged } from './perMachine.ts'
 import { join } from 'node:path'
@@ -343,14 +343,27 @@ export async function checkoutAt(wt: string, sha: string) {
   }
 }
 
+/**
+ * Our own read-only worktree `wt` of `repo`, at `sha`. One whose repository forgot it (its record pruned, the repo
+ * re-cloned or moved: "not a git repository") is made again: it is ours, at a fixed commit, so nothing in it is lost.
+ */
+export async function worktreeAt(repo: string, wt: string, sha: string) {
+  if (existsSync(wt) && !(await git(wt, 'rev-parse', '--git-dir').then(() => true, () => false))) {
+    await rm(wt, { recursive: true, force: true })
+    await git(repo, 'worktree', 'prune').catch(() => {})
+  }
+  if (existsSync(wt)) return checkoutAt(wt, sha)
+  mkdirSync(join(wt, '..'), { recursive: true })
+  await git(repo, 'worktree', 'add', '--quiet', '--detach', wt, sha)
+}
+
 /** Worktree at the PR head for the agent to read: your review skill's (config.agent.worktree) if it sits on the head, else ours. */
 async function worktree(pr: Pr, repo: string, head: string) {
   const at = async (wt: string) => existsSync(wt) && (await git(wt, 'rev-parse', 'HEAD').catch(() => '')).trim() === head
   const review = config.agent.worktree && fill(config.agent.worktree, { repoPath: repo, number: pr.number, repo: pr.repo })
   if (review && await at(review)) return review
   const own = join(STATE_DIR, 'worktrees', `${slug(pr.repo)}-${pr.number}`)
-  if (existsSync(own)) await checkoutAt(own, head)
-  else { mkdirSync(join(own, '..'), { recursive: true }); await git(repo, 'worktree', 'add', '--quiet', '--detach', own, head) }
+  await worktreeAt(repo, own, head)
   return own
 }
 
@@ -533,8 +546,7 @@ export async function mapBase(repoName: string, repoPath: string, branch: string
   }
   const { tree, idx, asks } = plan
   const wt = join(STATE_DIR, 'worktrees', `${slug(repoName)}-base`)
-  if (existsSync(wt)) await checkoutAt(wt, plan.sha)
-  else { mkdirSync(join(wt, '..'), { recursive: true }); await git(repoPath, 'worktree', 'add', '--quiet', '--detach', wt, plan.sha) }
+  await worktreeAt(repoPath, wt, plan.sha)
 
   let cost = 0, done = 0
   for (let i = 0; i < asks.length; i += BASE.batch) {

@@ -149,3 +149,19 @@ test('a system map that lumps a monorepo into one system is not good enough', as
   assert.equal(goodSkeleton(sys([['apps/ai-core'], ['apps/backend'], ['apps/web-app']]), sig), false) // 3 of 7 units owned
   assert.equal(goodSkeleton(sys([['src']]), ',src,docs'), true) // a small repo: one system is fine
 })
+
+test("a worktree its repository forgot (not a git repository) is made again, at the commit asked for", async () => {
+  const { execFileSync } = await import('node:child_process')
+  const { mkdtempSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { worktreeAt } = await import('./explain.ts')
+  const repo = mkdtempSync(join(tmpdir(), 'wt-repo-')), g = (dir: string, ...a: string[]) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim()
+  g(repo, 'init', '-q'); g(repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'one')
+  const sha = g(repo, 'rev-parse', 'HEAD'), wt = join(mkdtempSync(join(tmpdir(), 'wt-')), 'base')
+  await worktreeAt(repo, wt, sha)
+  rmSync(join(repo, '.git', 'worktrees'), { recursive: true, force: true }) // the repository forgets it, the folder stays
+  assert.throws(() => g(wt, 'rev-parse', 'HEAD'), /not a git repository/)
+  await worktreeAt(repo, wt, sha)
+  assert.equal(g(wt, 'rev-parse', 'HEAD'), sha)
+})
