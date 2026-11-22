@@ -486,12 +486,16 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatI
     }, (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false))
   }
   const days = i.days, d = Math.abs(days)
-  const when = days === 0 ? 'lands the same day' : `lands ${d} day${d === 1 ? '' : 's'} ${days < 0 ? 'earlier' : 'later'}`
+  // a first draft: there is no plan yet to be earlier or later than, only when it would land
+  const first = !p.nodes.some((n) => n.kind !== 'goal')
+  const landing = new Date(Date.now() + i.endAfter * 7 * DAY).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  const when = first ? 'lands' : days === 0 ? 'lands the same day' : `lands ${d} day${d === 1 ? '' : 's'} ${days < 0 ? 'earlier' : 'later'}`
   return (
     <div className="border-b border-line bg-accent-soft/50 px-4 py-2 text-small animate-[detail-in_200ms_var(--ease-out)]">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="inline-flex items-center gap-1.5 font-semibold text-accent-text" title={p.scenario?.why}><Sparkles className="size-3.5" />{ops.some((o) => o.turn) ? 'Draft' : 'Trying'}: {ops.length} change{ops.length === 1 ? '' : 's'}</span>
-        <span className={days < 0 ? 'font-medium text-ok-text' : days > 0 ? 'font-medium text-wait-text' : 'text-fg-2'}>{when} (~{new Date(Date.now() + i.endAfter * 7 * DAY).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })})</span>
+        <span className={first ? 'text-fg-2' : days < 0 ? 'font-medium text-ok-text' : days > 0 ? 'font-medium text-wait-text' : 'text-fg-2'}>{first ? `lands ~${landing}` : `${when} (~${landing})`}</span>
+        {first && <span className="basis-full text-fg-2 sm:basis-auto">A first draft, drawn on the board: nothing is in the plan until you Apply. Ask below for changes first if you like; Linear only gets it when you Create in Linear.</span>}
         {i.fitsAfter !== undefined && <span className={i.fitsAfter ? 'text-ok-text' : 'text-fail-text'}>{i.fitsAfter ? (i.fitsBefore ? 'fits the appetite' : 'now fits the appetite') : 'over the appetite'}</span>}
         {i.cut.length > 0 && <span className="text-fg-2">{i.cut.length} cut ({i.cut.reduce((a, x) => a + x.points, 0)} pt)</span>}
         {i.later.length > 0 && <span className="text-wait-text">{i.later.length} finish later</span>}
@@ -524,6 +528,11 @@ function withObligations(p: Plan, company?: Compliance): Plan {
   return open.length ? { ...p, gaps: [...mine, ...open.filter((o) => !mine.some((g) => g.title.toLowerCase().includes(o.title.toLowerCase().split(' ')[0])))].slice(0, 10) } : p
 }
 
+// the conversation's height under the board, as you dragged it (this browser only); none: its default share
+const DOCK_KEY = 'concierge:plan-dock'
+const savedDock = () => { try { const v = Number(localStorage.getItem(DOCK_KEY)); return v > 0 ? v : undefined } catch { return undefined } }
+const keepDock = (v?: number) => { try { if (v) localStorage.setItem(DOCK_KEY, String(Math.round(v))); else localStorage.removeItem(DOCK_KEY) } catch { /* not kept */ } }
+
 function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const path = `/plans/${id}`
   const q = useApi<Plan>(path, { refetchInterval: (x) => (x.state.data?.busy || x.state.data?.creating ? 400 : false) })
@@ -538,6 +547,18 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   // name (tickets); any single stream opens and closes on its own
   const [compact, setCompact] = useState(false), [open, setOpen] = useState<Set<string>>(new Set()), [legend, setLegend] = useState(false)
   const [colorBy, setColorBy] = useState<ColorBy>('epic')
+  // the board and the conversation share the height: drag the line between them (double-click: back to the default)
+  const [dock, setDock] = useState<number | undefined>(savedDock)
+  const split = useRef<HTMLDivElement>(null)
+  const dragDock = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const box = split.current?.getBoundingClientRect()
+    if (!box) return
+    let last = dock
+    const move = (m: PointerEvent) => { last = Math.round(Math.min(Math.max(box.bottom - m.clientY, 180), box.height - 160)); setDock(last) }
+    const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); keepDock(last) }
+    addEventListener('pointermove', move); addEventListener('pointerup', up)
+  }
   const setup = useApi<SetupView>('/setup', { staleTime: 60_000 })
   // the draft as the board shows it: the planner's changes one at a time as they come in (yours at once), so each is seen
   const [paced, replayFrom] = usePaced(p?.scenario?.ops)
@@ -621,25 +642,32 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
             </button>}
       </header>
       {/* the board on top, the conversation docked under it (on a phone: the conversation alone) */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div ref={split} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-2/40 lg:flex">
-          {p.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)}
+          {whatIf.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)}
                                      status={<Readiness whatIf={whatIf} company={setup.data?.config.compliance} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
                                                 onAdd={(ob) => void ops([{ op: 'add', id: `r-${ob.id}`, kind: 'ticket', title: ob.title, description: ob.why, parent: p.nodes.find((n) => n.kind === 'goal')?.id, covers: [ob.id], moscow: 'must' }])} />}
                                      tools={<Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />} />}
           {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} />}
           <div className="relative min-h-0 flex-1">
-            {!p.nodes.length ? (
+            {/* the plan, or the draft on top of it: a first draft (nothing applied yet) is drawn too, not only once applied */}
+            {!shown.nodes.length ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
                 <Sparkles className="size-7 text-accent-text" />
-                <p className="text-body font-semibold text-fg-1">{p.busy ? 'Drawing the plan…' : 'The plan draws itself here'}</p>
+                <p className="text-body font-semibold text-fg-1">{p.busy || tried.length ? 'Drawing the plan…' : 'The plan draws itself here'}</p>
                 <p className="max-w-sm text-small text-fg-3">Each epic a stream flowing into the goal, its tickets along it when they would be worked on, and the time it is worth marked.</p>
               </div>
             ) : <PlanStream p={withObligations(shown, setup.data?.config.compliance)} base={tried.length ? p : undefined} draft={paced} fresh={fresh?.turn && 'id' in fresh ? `${fresh.id}:${paced.length}` : undefined} onMove={p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
         </section>
-        <section aria-label="Chat" className="flex min-h-0 flex-1 flex-col border-line bg-surface-1/60 lg:h-[clamp(200px,30%,400px)] lg:flex-none lg:border-t">
+        <div role="separator" aria-orientation="horizontal" aria-label="Resize the board and the conversation" title="Drag to resize · double-click to reset"
+             onPointerDown={dragDock} onDoubleClick={() => { setDock(undefined); keepDock() }}
+             className="group relative hidden h-px shrink-0 cursor-row-resize bg-line lg:block">
+          <span className="absolute inset-x-0 -bottom-1.5 -top-1.5 group-hover:bg-accent/20" />
+        </div>
+        <section aria-label="Chat" style={dock ? ({ '--dock': `${dock}px` } as React.CSSProperties) : undefined}
+                 className={`flex min-h-0 flex-1 flex-col bg-surface-1/60 lg:flex-none ${dock ? 'lg:h-[var(--dock)]' : 'lg:h-[clamp(300px,42%,560px)]'}`}>
           {p.vision && <VisionCard p={p} set={set} toast={toast} />}
           <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} onReplay={replayFrom} />
         </section>
