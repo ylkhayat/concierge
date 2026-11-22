@@ -126,9 +126,9 @@ const leadRank = (lead: string) => ((i) => (i < 0 ? LEADS.length - 1 : i))(LEADS
 function lanesOf(did: Did[], blockers: Blocker[], next: Next[]): Lane[] {
   const lanes = new Map<string, Lane>()
   const lane = (p?: string) => { const k = p ?? ''; if (!lanes.has(k)) lanes.set(k, { name: p, rows: { did: [], blockers: [], next: [] } }); return lanes.get(k)! }
-  for (const d of did) lane(d.project).rows.did.push({ id: d.id, title: d.title, lead: progressOf(d) })
+  for (const d of did) lane(d.project).rows.did.push({ id: d.id, title: d.title, lead: progressOf(d), review: !!d.review })
   for (const b of blockers) lane(b.project).rows.blockers.push({ id: b.id, title: b.title, lead: b.why })
-  for (const n of next) lane(n.project).rows.next.push({ id: n.id, title: n.title, lead: planOf(n) })
+  for (const n of next) lane(n.project).rows.next.push({ id: n.id, title: n.title, lead: planOf(n), review: n.kind === 'review' })
   const size = (l: Lane) => l.rows.did.length + l.rows.blockers.length + l.rows.next.length
   return [...lanes.values()].sort((a, b) => Number(!a.name) - Number(!b.name) || size(b) - size(a))
 }

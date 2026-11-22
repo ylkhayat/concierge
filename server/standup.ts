@@ -7,7 +7,7 @@ import type { Bucket, Ticket } from './linear.ts'
 import type { ExecRun, Pr } from './store.ts'
 
 /** A ticket I worked on, said as one line: `lead` (what happened) then the ticket and its title. */
-export type Did = { id: string; title: string; url?: string; lead: string; project?: string }
+export type Did = { id: string; title: string; url?: string; lead: string; project?: string; review?: true } // review: only reviewing someone else's PR
 /** Something to do next, on a ticket. `count`: open review comments, for `threads`. */
 export type Next = { kind: NextKind; id: string; title: string; url?: string; count?: number; project?: string }
 /** Something holding a ticket up, said as the reason: an answer owed, CI red, a review not given yet. */
@@ -117,7 +117,7 @@ export function standup(o: { since: Date; runs: RunEvent[]; prs: Record<string, 
       : only('closed') ? 'Closed the pull request for'
       : only('outcome') ? OUTCOME[t.outcome!]
       : 'Progress on'
-    return { id, title: titleOf(id), url: urlOf(id), lead, ...(ticket(id)?.project && { project: ticket(id)!.project }) }
+    return { id, title: titleOf(id), url: urlOf(id), lead, ...(only('reviewed') && { review: true as const }), ...(ticket(id)?.project && { project: ticket(id)!.project }) }
   })
 
   // --- what I'll do: each ticket once, under the most pressing thing it needs

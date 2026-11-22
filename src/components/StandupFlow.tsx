@@ -6,7 +6,7 @@ import '@xyflow/react/dist/style.css'
 import { useEffect, useRef, type CSSProperties } from 'react'
 
 export type Stage = 'did' | 'blockers' | 'next'
-export type Row = { id: string; title: string; lead: string }
+export type Row = { id: string; title: string; lead: string; review?: boolean } // review: someone else's PR, not my own work
 export type Lane = { name?: string; rows: Record<Stage, Row[]> }
 type Box = { lane: Lane; stage: Stage; hue?: number; onOpen: (id: string) => void }
 type Label = { stage: (typeof STAGES)[number]; n: number; count: number }
@@ -41,7 +41,10 @@ function BoxNode({ data }: NodeProps<Node<Box>>) {
         {rows.slice(0, ROWS).map((r) => (
           <button key={r.id} type="button" onClick={() => onOpen(r.id)} title={`${r.id} · ${r.title}`}
                   className="nodrag flex w-full min-w-0 flex-col rounded-ctl px-2 py-1 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--lane)_14%,transparent)]">
-            <span className="truncate text-meta font-medium text-fg-1"><span className="mr-1.5 font-mono text-micro text-fg-3">{r.id}</span>{r.lead}</span>
+            <span className="flex min-w-0 items-center gap-1.5 truncate text-meta font-medium text-fg-1">
+              <span className={`h-3 w-1 shrink-0 rounded-full ${r.review ? 'bg-run' : 'bg-accent'}`} aria-label={r.review ? 'Review of someone else\'s PR' : 'My work'} />
+              <span className="font-mono text-micro text-fg-3">{r.id}</span>{r.lead}
+            </span>
             <span className="truncate text-micro text-fg-3">{r.title}</span>
           </button>
         ))}
@@ -91,6 +94,13 @@ export function StandupFlow({ lanes, counts, onOpen }: { lanes: Lane[]; counts: 
                      nodesConnectable={false} elementsSelectable={false} panOnScroll proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--line)" />
           </ReactFlow>
+        ) : null}
+        {/* what the row marks mean */}
+        {nodes.length > STAGES.length ? (
+          <p className="pointer-events-none absolute right-3 top-2.5 flex items-center gap-3 text-micro text-fg-3">
+            <span className="flex items-center gap-1.5"><span className="h-3 w-1 rounded-full bg-accent" />My work</span>
+            <span className="flex items-center gap-1.5"><span className="h-3 w-1 rounded-full bg-run" />Reviews</span>
+          </p>
         ) : <p className="p-6 text-small text-fg-3">Nothing on your tickets for this standup.</p>}
       </div>
     </div>
