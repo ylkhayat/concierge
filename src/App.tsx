@@ -20,7 +20,7 @@ import { Onboarding } from './components/Onboarding.tsx'
 import { ExecList, groupOf, orderedTickets } from './components/ExecList.tsx'
 import { PrThread } from './thread/PrThread.tsx'
 import { TicketThread } from './thread/TicketThread.tsx'
-import { ROLES, useRole } from './role.ts'
+import { ROLES, currentRole, setRole, useRole, type Role } from './role.ts'
 import { setAway, useAway } from './away.ts'
 import { setMachineNames } from './machineNames.ts'
 import { scopeDefault } from './scope.ts'
@@ -57,6 +57,25 @@ const modeOf = (): Mode => {
     // opened with nothing in the link: Review (on a phone, Focus: what needs you, one card at a time)
     : p === '/' && !location.hash && phone() ? 'focus' : 'review'
 }
+/**
+ * The view to open on, agreeing with the role (the rail shows that role's views): a bare address opens the role's own,
+ * where you last were in it; a link to a view of another role (a PR link, /ship, while you read as PM) opens it and
+ * takes that role, so the rail and the view never disagree (the rail said PM while Review showed). Read and Focus
+ * open from any role.
+ */
+const firstMode = (): Mode => {
+  const m = modeOf(), r = currentRole(), rail = ROLES[r].rail
+  if (rail.includes(m) || m === 'read' || m === 'focus') return m
+  if (location.pathname === '/' && !location.hash) {
+    let last: string | null = null; try { last = localStorage.getItem(`mode:${r}`) } catch { /* none kept */ }
+    const own = (last && rail.includes(last) ? last : rail[0]) as Mode
+    history.replaceState(history.state, '', PATH[own] + location.search)
+    return own
+  }
+  const other = (Object.keys(ROLES) as Role[]).find((x) => !ROLES[x].pending && ROLES[x].rail.includes(m))
+  if (other) setRole(other)
+  return m
+}
 // links from before Ship was named (/exec) still open it, and the address bar says /ship
 if (location.pathname.startsWith('/exec')) history.replaceState(history.state, '', `/ship${location.pathname.slice(5)}${location.search}${location.hash}`)
 // the Desk is gone: its old links open Review
@@ -67,7 +86,7 @@ const RULES: Rules = { waiting, ticketGroup: (t) => groupOf(t).id }
 
 export function App() {
   // each window keeps its own mode: /exec is Exec, everything else Review
-  const [mode, setModeState] = useState<Mode>(modeOf)
+  const [mode, setModeState] = useState<Mode>(firstMode)
   const [selected, setSelected] = useState(readHash)
   const [picked, setPicked] = useState<string[]>([])
   const [pickedPrs, setPickedPrs] = useState<string[]>([]) // Review's picks, for a planned batch of reviews

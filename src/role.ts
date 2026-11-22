@@ -17,6 +17,8 @@ const ORDER = (Object.keys(ROLES) as Role[]).filter((r) => !ROLES[r].pending)
 export const ready = (rs: Role[]) => rs.filter((r) => !ROLES[r].pending)
 const KEY = 'role', EVENT = 'concierge:role'
 
+/** The role this browser reads as now (before any component asks). */
+export const currentRole = (): Role => stored()
 const stored = (): Role => {
   try { const r = localStorage.getItem(KEY) as Role; return ORDER.includes(r) ? r : 'developer' } catch { return 'developer' }
 }
