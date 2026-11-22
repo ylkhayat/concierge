@@ -472,6 +472,8 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
     <div class="links">
       <a class="hide-sm" href="#why">Why</a>
       <a class="hide-sm" href="#features">What it does</a>
+      <a class="hide-sm" href="#trust">Intent</a>
+      <a class="hide-sm" href="#fleet">Fleet</a>
       <a class="hide-sm" href="#install">Install</a>
       <a class="btn btn-quiet" href="https://github.com/ylkhayat/concierge">GitHub</a>
     </div>
@@ -604,6 +606,70 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
         <h3>Plans</h3>
         <p>Write a brief, and an agent breaks it down with you into epics and user stories, drawn live as one roadmap to the goal. Play with it: try moves and plays, see the date move, then apply to Linear.</p>
       </div>
+    </div>
+  </section>
+
+  <section id="trust" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Before you trust it</p>
+      <h2>Know what it does, and why.</h2>
+      <p class="sub">One chat for everything. Send your words, and it reads where they belong: an instruction to the agent, a question about what it should do (Intent), or about what it does (Understanding). Each answer comes back in its colour, and their suggestions sit over the box: pick any number, add your words, one Send.</p>
+    </div>
+    <div class="pillars">
+      <div class="pillar reveal" style="--h:70">
+        <h3>Intent</h3>
+        <p>Settled with an agent, until it is a decision you agree on.</p>
+        <div class="viz" aria-hidden="true">
+          <div class="rec">
+            <div class="rec-head"><b>Decision record</b><i class="adr"><em>proposed</em><em>accepted</em></i></div>
+            <span></span><span class="w"></span><span></span><span class="s"></span>
+          </div>
+        </div>
+      </div>
+      <div class="pillar reveal" style="--h:230">
+        <h3>Understanding</h3>
+        <p>Every angle of the change, asked until it is clear.</p>
+        <div class="viz" aria-hidden="true">
+          <div class="orbit">
+            <span class="core"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg></span>
+            <span class="ring"><b style="--a:0deg">Users</b><b style="--a:90deg">Code</b><b style="--a:180deg">Conventions</b><b style="--a:270deg">Tour</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="fleet" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Fleet</p>
+      <h2>Any number of machines.</h2>
+      <p class="sub">Run it on as many machines as you have, all online at once: every one of them runs agents, and one is the main server your link opens. The standby follows the main server's state as it changes, over your tailnet: a run's update is a few kilobytes, never a file sync re-walking your disk. When the main server sleeps or goes offline, the standby takes over within minutes with every run, setting and review intact, and hands back once the first has caught up. A new machine joins with one command once it is on your tailnet: signed in as you, it is in at once. It is a private extension: ask the author for access.</p>
+    </div>
+    <div class="fleet reveal" id="fleetDemo" data-s="0" aria-hidden="true">
+      <div class="lease"><span class="pin"></span>Tailscale sees it online · runs on <b class="who">Desktop</b></div>
+      <div class="fleet-row">
+        <div class="mach" data-m="a">
+          <div class="mach-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Desktop</span><em class="st"></em></div>
+          <div class="mini"><i></i><div><b></b><b></b><b class="w"></b></div><div><b></b><b class="w"></b><b></b></div></div>
+          <div class="mach-foot"><span class="ver">v528 · up to date</span></div>
+        </div>
+        <div class="wire">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="wire-label">Changes, not files<small>a few KB per update</small></span>
+        </div>
+        <div class="mach" data-m="b">
+          <div class="mach-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10"/><path d="M2 20h20l-2-4H4z"/></svg><span>Laptop</span><em class="st"></em></div>
+          <div class="mini"><i></i><div><b></b><b></b><b class="w"></b></div><div><b></b><b class="w"></b><b></b></div></div>
+          <div class="mach-foot"><span class="ver">v528 · up to date</span></div>
+        </div>
+      </div>
+      <div class="workers"><span class="workers-label">Workers</span>
+        <span class="worker"><i></i>Old laptop<small>2 agents</small></span>
+        <span class="worker"><i></i>Mac mini<small>1 agent</small></span>
+        <span class="worker more">+ any number</span>
+      </div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>concierge.your-tailnet <span class="arrow">→</span> <b class="to">Desktop</b></div>
+      <p class="fleet-cap"></p>
     </div>
   </section>
 
