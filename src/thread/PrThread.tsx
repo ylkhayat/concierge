@@ -187,7 +187,7 @@ export function PrThread(props: PrThreadProps) {
         held={held}
         subject={pr.id}
         follow={`${pr.id}:${count}:${pr.status}:${next}`}
-        header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions && <Off why={held}>{headerActions}</Off>}
+        header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions && <Off why={held} layout="flex items-center gap-0.5">{headerActions}</Off>}
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
         next={viaStackLine ?? (nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined)}
         composer={!asking && <Composer>{steer}</Composer>}

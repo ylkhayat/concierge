@@ -84,7 +84,7 @@ export function TicketThread(props: TicketThreadProps) {
       held={held}
       subject={t.id}
       follow={`${t.id}:${count}:${t.busy}:${next}`}
-      header={<ThreadHeader crumb={parentLinks} title={t.title} status={statusField} meta={chips} links={<>{stackNav}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>} actions={headerActions && <Off why={held}>{headerActions}</Off>} />}
+      header={<ThreadHeader crumb={parentLinks} title={t.title} status={statusField} meta={chips} links={<>{stackNav}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>} actions={headerActions && <Off why={held} layout="flex items-center gap-0.5">{headerActions}</Off>} />}
       next={runAsks && next === 'dock' ? (
         // it handed back with questions: answering them is the next step, and the plan is under Understanding
         <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent asks you" actions={steer} />

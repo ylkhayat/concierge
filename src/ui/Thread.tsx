@@ -29,10 +29,12 @@ const SPLIT: Record<string, number> = { main: 0.58, 'main:fill': 0.42, 'main:rai
 const MIN = 360 // px, for either column
 const savedSplits = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem('thread-split') ?? '{}') } catch { return {} } }
 
-/** Actions that can't run now (`why`: no machine can work on this application): dimmed, and every control in them off. */
-export function Off({ why, children }: { why?: string; children: ReactNode }) {
+/** Actions that can't run now (`why`: no machine can work on this application): dimmed, and every control in them off.
+ *  `layout`: how it lays out what it holds, as the place it sits in expects (a fieldset is a box of its own: in the
+ *  bottom row's flex column it has to shrink and let the next step scroll inside, or it spills over the panel above). */
+export function Off({ why, layout = 'block', children }: { why?: string; layout?: string; children: ReactNode }) {
   if (!why) return <>{children}</>
-  return <fieldset disabled title={`Off: ${why}`} className="m-0 min-w-0 border-0 p-0 opacity-45 [&_*]:cursor-not-allowed">{children}</fieldset>
+  return <fieldset disabled title={`Off: ${why}`} className={`m-0 min-w-0 border-0 p-0 opacity-45 [&_*]:cursor-not-allowed ${layout}`}>{children}</fieldset>
 }
 
 export function ThreadLayout<Id extends string>({ header, children, next, composer, follow, tabs, tab, onTab, pane, onAsk, subject, vitals, held }: {
@@ -90,7 +92,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
   const nextShown = next || undefined
   // held: the box says why instead, and the next step is shown but off
   const box = held ? <p className="flex items-start gap-2 rounded-xl bg-fill px-3 py-2.5 text-small text-fg-3"><CloudOff className="mt-0.5 size-3.5 shrink-0 text-wait-text" /><span>Actions are off here: no machine can work on this application now ({held}). Everything stays to read; they come back when a machine it is allowed on is online.</span></p> : composer
-  const step = held && nextShown ? <Off why={held}>{nextShown}</Off> : nextShown
+  const step = held && nextShown ? <Off why={held} layout="flex min-h-0 flex-col justify-end">{nextShown}</Off> : nextShown
   const left = box || step, under = box ? step : undefined
   const reset = () => { const { [key]: _, ...rest } = savedSplits(); setSplits(rest); try { localStorage.setItem('thread-split', JSON.stringify(rest)) } catch { /* private window */ } }
 
