@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { flushSync } from 'react-dom'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
-import { VpnChip } from './components/VpnChip.tsx'
 import { Standup } from './components/Standup.tsx'
 import { SkillsWorkspace } from './components/SkillsWorkspace.tsx'
 import { PlansWorkspace } from './components/PlansWorkspace.tsx'
@@ -537,7 +536,6 @@ export function App() {
         <footer className="relative z-30 flex h-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap border-t border-line bg-bg-rail px-2 text-meta text-fg-3 ">
           <Machine me={me} /><ScopeSwitch />
           {syncState}{refreshBtn}
-          <VpnChip machine={me?.machine} onOpen={() => setSettingsOpen('connections')} />
           <span className="flex-1" />
           {health && <SpendChip health={health} onOpen={() => setSettingsOpen('usage')} />}
           {/* the machine's load needs the width: below 1280 it is one click away in the rail's gauge */}

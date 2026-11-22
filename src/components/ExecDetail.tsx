@@ -21,7 +21,6 @@ import { ciLabel, ciTone, PrStack } from './PrStack.tsx'
 import { StackNav, type NavItem } from './StackNav.tsx'
 import { stamp } from '../time.ts'
 import { ConnectCard } from './ConnectCard.tsx'
-import { VpnCard } from './VpnCard.tsx'
 import { StatusField, type StatusTone } from './DetailHeader.tsx'
 import type { Linked } from '../../server/index.ts'
 
@@ -80,7 +79,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   const dot = (p: (typeof prs)[number]) => <span className={`size-1.5 shrink-0 rounded-full ${p.ci === 'failure' ? 'bg-fail' : p.ci === 'success' ? 'bg-ok' : 'bg-fill-strong'}`} title={p.ci ? `CI ${p.ci}` : 'CI unknown'} />
   const resumeCmd = run && `claude --resume ${run.sessionId}`
   // a ticket parked on a question is skipped by a plain exec run: "run again" repeats the last action you ran on it
-  // (Investigate in prod…), so new access (a login, a VPN) gets used
+  // (Investigate in prod…), so new access (a login) gets used
   const lastAction = (t.agentWaiting || run?.outcomes[t.id]?.outcome === 'refined')
     ? actions.find((a) => a.label === [...feed].reverse().find((x) => x.kind === 'you' && actions.some((b) => b.label === x.text))?.text) : undefined
   const runIt = () => (lastAction ? api('/exec/action', { id: t.id, action: lastAction.id }) : api('/exec', { ids: [t.id] }))
@@ -191,7 +190,6 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   // the Next panel's content (the next step, the run's plan, its question), the box to steer it, and the ticket itself
   const panelBody = <>
         {!t.busy && <ConnectCard compact onRun={t.repo ? runIt : undefined} toast={toast} />}
-        {!t.busy && <VpnCard env={t.env.env !== 'unknown' ? t.env.env : actions.find((a) => a.label === run?.label)?.env ?? t.env.env} lastResult={[...feed].reverse().find((x) => x.kind === 'result' || x.kind === 'error')?.text} onRun={t.repo ? runIt : undefined} />}
         {!t.busy && asking && <ActionCard inline t={t} actions={actions} toast={toast} />}
         {!(!t.busy && next === 'dock' && asking) && <PanelSection title={t.busy ? 'The agent is working' : 'Do next'} icon={t.busy ? LoaderCircle : ArrowRight} tone={t.busy ? 'text-run' : 'text-accent'}>
           <div className="space-y-2">

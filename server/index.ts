@@ -54,7 +54,6 @@ import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
 import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepClaudeAuth, startClaudeLogin, stopUsingLogin } from './claudeLogin.ts'
 import { readSecrets, rereadSecrets, saveSecrets, scrub } from './scrub.ts'
-import { vpns } from './vpn.ts'
 import { applyConnectors, addCustom, customName, ownServers, removeCustom, connect, connectSentry, connections, recheck, finishLogin, loginState, reconnect, removeFix, startLogin, accountConnections } from './connections.ts'
 import { spentText } from './usage.ts'
 import { belongsTo, cleanWorktrees, sweepDue, worktrees } from './worktrees.ts'
@@ -1611,8 +1610,6 @@ app.post('/exec/tickets/:id/actions', async (c) => {
 // what is running (agents, crit servers) and what it costs; and one call to stop a kind of it, or all
 app.get('/load', async (c) => c.json(await load()))
 // worktrees: what each is and whether it can go; one call removes those that can (never with uncommitted or unpushed work)
-// VPNs: which are up, and whether a ticket's last run sounds like it needed one
-app.get('/vpn', async (c) => c.json(await vpns(c.req.query('fresh') === '1')))
 // the agents' Claude Code: your claude.ai login (its connectors come along) or the model-only token
 app.get('/claude-auth', async (c) => c.json({ ...(await claudeAuth()), lapsed: state.claudeLoginLapsed, login: claudeLoginState() }))
 app.post('/claude-auth/login', async (c) => { try { return c.json({ url: await startClaudeLogin() }) } catch (e) { return c.json({ error: (e as Error).message }, 400) } })

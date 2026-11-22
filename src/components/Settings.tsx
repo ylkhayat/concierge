@@ -38,7 +38,7 @@ const NAV: { group: string; pages: Page[] }[] = [
   ] },
   { group: 'Sources', pages: [
     { id: 'repos', label: 'Workspaces', hint: 'The organizations Concierge works with and the repositories it watches in each, where they live, their codebase maps', icon: FolderGit2 },
-    { id: 'connections', label: 'Connections', hint: 'Databases, services and VPNs the agents can reach', icon: PlugZap },
+    { id: 'connections', label: 'Connections', hint: 'Databases and services the agents can reach', icon: PlugZap },
     { id: 'machines', label: 'Machines', hint: 'Where Concierge runs, your tailnet, sync and updates', icon: Network },
   ] },
   { group: 'You', pages: [
@@ -58,7 +58,7 @@ const INDEX: [string, SettingsTab][] = [
   ['Repository by ticket prefix', 'workflows'], ['Allowed tools for Ship', 'workflows'], ['Auto-release', 'workflows'], ['LINEAR_API_KEY', 'workflows'],
   ['Accounts and sign-in', 'accounts'], ['Fallback order', 'accounts'], ['Who runs what', 'accounts'], ['Llama models', 'accounts'],
   ['Daily budget', 'spend'], ['Budget per explanation', 'spend'], ['Runs and their cost', 'spend'],
-  ['Workspaces: organizations and their repositories', 'repos'], ['Watched repositories', 'repos'], ['Codebase map', 'repos'], ['Databases (MongoDB)', 'connections'], ['Sentry', 'connections'], ['VPN', 'connections'],
+  ['Workspaces: organizations and their repositories', 'repos'], ['Watched repositories', 'repos'], ['Codebase map', 'repos'], ['Databases (MongoDB)', 'connections'], ['Sentry', 'connections'],
   ['This machine', 'machines'], ['Tailnet devices (Tailscale)', 'machines'], ['Sync between machines', 'machines'], ['Update now', 'machines'],
   ['Theme', 'appearance'], ['Interface size', 'appearance'], ['Open Linear links in the app', 'appearance'], ['Terminal for Resume', 'appearance'],
   ['Run setup again', 'about'], ['Settings file', 'about'], ['Keyboard shortcuts', 'about'],

@@ -1,7 +1,6 @@
-import { ChevronRight, CircleCheck, Copy, Eye, EyeOff, ExternalLink, LoaderCircle, PlugZap, Shield } from 'lucide-react'
+import { ChevronRight, CircleCheck, Copy, Eye, EyeOff, ExternalLink, LoaderCircle, PlugZap } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Connection } from '../../server/connections.ts'
-import type { VpnState } from '../../server/vpn.ts'
 import { api } from '../lib.ts'
 import { ConnectCard } from './ConnectCard.tsx'
 import { Tabs } from './Tabs.tsx'
@@ -20,9 +19,6 @@ export function Connections({ toast }: { toast: Toast }) {
       </Section>
       <Section title="Azure" hint="Your Azure login, for reading logs and resources in investigations. Agents can only read.">
         <Azure toast={toast} />
-      </Section>
-      <Section title="VPNs" hint="Private databases and logs need the right VPN, checked live.">
-        <Vpns />
       </Section>
     </div>
   )
@@ -363,28 +359,6 @@ function Muting<T extends { name: string }>({ items, toneOf, row }: { items: T[]
         </details>
       )}
     </div>
-  )
-}
-
-function Vpns() {
-  const [list, setList] = useState<VpnState[]>()
-  useEffect(() => { const read = () => api('/vpn').then(setList, () => setList([])); read(); const t = setInterval(read, 5000); return () => clearInterval(t) }, [])
-  if (!list) return null
-  if (!list.length) return <p className="text-small text-fg-3">None listed. Add them under <code className="font-mono">vpns</code> in your settings file.</p>
-  return (
-    <ul className="divide-y divide-line overflow-hidden card">
-      {list.map((v) => {
-        const tone: Tone = v.up ? 'ok' : v.unknown ? 'off' : 'warn'
-        return (
-          <li key={v.name} className="flex min-h-10 items-center gap-3 px-3.5 py-2">
-            <Shield className={`size-4 shrink-0 ${v.up ? 'text-ok' : v.unknown ? 'text-fg-4' : 'text-wait'}`} aria-hidden />
-            <span className="flex min-w-0 flex-1 items-baseline gap-2"><span className="truncate text-small font-medium text-fg-1">{v.name}</span>
-              {!!v.for?.length && <span className="shrink-0 text-micro text-fg-4">{v.for.join(', ')}</span>}</span>
-            <span className={`shrink-0 text-meta ${TEXT[tone]}`}>{v.up ? 'Connected' : v.unknown ? 'Not checked yet' : 'Not connected'}</span>
-          </li>
-        )
-      })}
-    </ul>
   )
 }
 
