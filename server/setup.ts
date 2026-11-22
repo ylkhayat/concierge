@@ -203,9 +203,13 @@ export const notHere = (repo: string) => {
   return !!fleet.machine && [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]) && !mayClone(repo)
 }
 let cloningNow = false
+/** Which repositories are missing here, and why (not allowed, or to be cloned): at once, from the folders and the rules. */
+export function markClones() {
+  for (const [repo, path] of Object.entries(config.repos)) if (!existsSync(path)) clones.set(repo, mayClone(repo) ? (clones.get(repo) === 'not-here' ? 'cloning' : clones.get(repo) ?? 'cloning') : 'not-here')
+}
 export async function ensureClones() {
   // said at once, so the page that just saved it shows "cloning" rather than a git error from the missing folder
-  for (const [repo, path] of Object.entries(config.repos)) if (!existsSync(path)) clones.set(repo, mayClone(repo) ? (clones.get(repo) === 'not-here' ? 'cloning' : clones.get(repo) ?? 'cloning') : 'not-here')
+  markClones()
   if (cloningNow) return
   cloningNow = true
   try {

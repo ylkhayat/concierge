@@ -1,5 +1,7 @@
-// The organizations your work belongs to (the owners of your watched repositories, and you), and where each one
-// manages its work: Linear, or GitHub Projects. Planning offers an organization's projects from there, and Ship maps
+// Your workspaces: the organizations Concierge works with (Settings → Workspaces), each with the repositories you
+// watch in it. Everything acts on these (compliance, plans, Ship's teams), never on every organization your GitHub
+// account happens to belong to (those are only offered when you add a workspace). And where each one manages its
+// work: Linear, or GitHub Projects. Planning offers an organization's projects from there, and Ship maps
 // Linear teams only to repositories of the organizations that use Linear. Set per organization (Settings, or where
 // it is offered); until then guessed: Linear when a Linear team already works in one of its repositories.
 import { config, saveConfig } from './config.ts'
@@ -22,11 +24,14 @@ async function lookAround() {
   return known
 }
 
+/** The workspaces: owners of watched repositories, and the organizations added as one (none of its repositories yet). */
+export const workspaceOwners = () => [...new Set([...Object.keys(config.repos).map((r) => r.split('/')[0]), ...Object.entries(config.orgs ?? {}).filter(([, o]) => o.workspace).map(([k]) => k)])]
+
 export async function orgs(): Promise<Org[]> {
   const me = (await getMe().catch(() => undefined))?.login
   const repos = Object.keys(config.repos)
   const around = await lookAround()
-  const owners = [...new Set([...repos.map((r) => r.split('/')[0]), ...around.orgs, ...(me ? [me] : [])])]
+  const owners = workspaceOwners()
   const onLinear = new Set(Object.values(config.exec?.repoByPrefix ?? {}).map((r) => r.split('/')[0].toLowerCase()))
   // the Linear workspace's name or URL key read in the organization's name (Bliro in bliroio): it uses Linear
   const named = (owner: string) => { const o = owner.toLowerCase().replace(/[^a-z0-9]/g, ''); return !!around.linear?.some((l) => l.length >= 3 && (o.startsWith(l) || l.startsWith(o))) }
@@ -35,6 +40,37 @@ export async function orgs(): Promise<Org[]> {
     const personal = !!me && owner.toLowerCase() === me.toLowerCase()
     return { owner, personal, tracker: set ?? (!personal && (onLinear.has(owner.toLowerCase()) || named(owner)) ? 'linear' : 'github'), guessed: !set, repos: repos.filter((r) => r.split('/')[0] === owner) }
   }).sort((a, b) => Number(a.personal) - Number(b.personal) || Number(b.tracker === 'linear') - Number(a.tracker === 'linear') || a.owner.localeCompare(b.owner))
+}
+
+/** What to offer when adding a workspace: you and the GitHub organizations you belong to, not yet workspaces. */
+export async function workspaceOffers(): Promise<{ owner: string; personal: boolean }[]> {
+  const me = (await getMe().catch(() => undefined))?.login
+  const have = new Set(workspaceOwners().map((o) => o.toLowerCase()))
+  return [...(me ? [{ owner: me, personal: true }] : []), ...(await lookAround()).orgs.map((owner) => ({ owner, personal: false }))].filter((o) => !have.has(o.owner.toLowerCase()))
+}
+
+/** Add an organization as a workspace, or take it away (its repositories stop being watched with it). */
+export function setWorkspace(owner: string, on: boolean) {
+  const { workspace: _, ...rest } = config.orgs?.[owner] ?? {}
+  saveConfig({
+    orgs: { ...(config.orgs ?? {}), [owner]: { ...rest, ...(on && { workspace: true }) } },
+    ...(!on && { repos: Object.fromEntries(Object.entries(config.repos).filter(([r]) => r.split('/')[0] !== owner)) }),
+  })
+}
+
+export type OwnerRepo = { repo: string; description?: string; private: boolean; pushedAt?: string }
+/** A workspace's repositories on GitHub (yours: the ones you own), the most recently pushed first; archived left out. */
+export async function ownerRepos(owner: string): Promise<OwnerRepo[]> {
+  const me = (await getMe().catch(() => undefined))?.login
+  const mine = !!me && me.toLowerCase() === owner.toLowerCase()
+  type R = { full_name: string; description: string | null; private: boolean; archived: boolean; pushed_at?: string }
+  const out: R[] = []
+  for (let page = 1; page <= 5; page++) {
+    const got = await gh<R[]>(mine ? `/user/repos?affiliation=owner&sort=pushed&per_page=100&page=${page}` : `/orgs/${encodeURIComponent(owner)}/repos?sort=pushed&per_page=100&page=${page}`)
+    out.push(...got)
+    if (got.length < 100) break
+  }
+  return out.filter((r) => !r.archived).map((r) => ({ repo: r.full_name, description: r.description ?? undefined, private: r.private, pushedAt: r.pushed_at }))
 }
 
 export function setTracker(owner: string, tracker: Tracker) {

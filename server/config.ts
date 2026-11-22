@@ -53,7 +53,8 @@ export type Config = {
   skillSource?: string // the git repo a new setup's skills come from (Settings → Skills); unset: github.com/ylkhayat/skills
   // where each organization manages its work (orgs.ts), and what its plans are checked against (its own compliance
   // profile, readiness.ts profileFor; none: the shared one, or off for your personal one)
-  orgs?: Record<string, { tracker?: 'linear' | 'github'; compliance?: import('./readiness.ts').Compliance }>
+  // workspace: added as a workspace in Settings → Workspaces (one with watched repositories is one anyway)
+  orgs?: Record<string, { tracker?: 'linear' | 'github'; compliance?: import('./readiness.ts').Compliance; workspace?: boolean }>
   skillSources?: string[] // git repositories of skills you added (onboarding, Settings → Skills): their skills reach the agents (setup.ts)
   // Exec mode: ship your Linear tickets with a command such as /my-exec
   exec: {

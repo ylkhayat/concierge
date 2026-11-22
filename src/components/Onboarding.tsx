@@ -27,7 +27,7 @@ const STEPS: { id: string; title: string; hint: string; icon: Icon }[] = [
   { id: 'github', title: 'GitHub', hint: 'Your PRs and repositories', icon: GithubMark },
   { id: 'tailscale', title: 'Tailscale', hint: 'Your machines, one link', icon: Network },
   { id: 'agents', title: 'Agents', hint: 'Who does the work', icon: Bot },
-  { id: 'spaces', title: 'Workspaces', hint: 'Review, Ship, or both', icon: LayoutGrid },
+  { id: 'spaces', title: 'Views', hint: 'Review, Ship, or both', icon: LayoutGrid },
   { id: 'repos', title: 'Repositories', hint: 'Which PRs to watch', icon: FolderGit2 },
   { id: 'skills', title: 'Skills', hint: 'What reviews your PRs', icon: Wand },
   { id: 'exec', title: 'Ship', hint: 'How tickets get shipped', icon: Rocket },
@@ -266,7 +266,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                 <Agents compact toast={toast} onConnections={() => {}} />
               </Step>
             ) : id === 'spaces' ? (
-              <Step title="What will you use it for?" lead="Each workspace is its own place in the app, with its own setup. Pick one or both; Settings can change it later.">
+              <Step title="What will you use it for?" lead="Each view is its own place in the app, with its own setup. Pick one or both; Settings can change it later.">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Choice on={spaces.includes('review')} onClick={() => toggleSpace('review')} icon={GitPullRequestArrow} title="Review"
                           body="Review the PRs you are asked to, and revise your own from their threads. Prepared by an agent, finished by you." />

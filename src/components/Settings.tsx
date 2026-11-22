@@ -34,10 +34,10 @@ const NAV: { group: string; pages: Page[] }[] = [
     { id: 'workflows', label: 'Workflows', hint: 'Triggers, skills and commands for reviews, your PRs and tickets', icon: Wand },
     { id: 'accounts', label: 'Accounts', hint: 'Claude, OpenAI or Llama, and which one takes what', icon: Bot },
     { id: 'spend', label: 'Spend', hint: 'Budgets, limits and what the runs cost', icon: Coins },
-    { id: 'compliance', label: 'Compliance', hint: 'What each organization’s plans are checked against (or not): where its users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
+    { id: 'compliance', label: 'Compliance', hint: 'What each workspace’s plans are checked against (or not): where its users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
   ] },
   { group: 'Sources', pages: [
-    { id: 'repos', label: 'Repositories', hint: 'What to watch, where it lives, its codebase map', icon: FolderGit2 },
+    { id: 'repos', label: 'Workspaces', hint: 'The organizations Concierge works with and the repositories it watches in each, where they live, their codebase maps', icon: FolderGit2 },
     { id: 'connections', label: 'Connections', hint: 'Databases, services and VPNs the agents can reach', icon: PlugZap },
     { id: 'machines', label: 'Machines', hint: 'Where Concierge runs, your tailnet, sync and updates', icon: Network },
   ] },
@@ -52,13 +52,13 @@ const INDEX: [string, SettingsTab][] = [
   ['Compliance: GDPR, SOC 2, HIPAA, PCI, regions, data, reviews', 'compliance'], ['Compliance and security checks for plans', 'compliance'], ['Capacity: the people who build it, roles and pace', 'compliance'],
   ['Roles: developer, product, design', 'roles'], ['Join a role', 'roles'], ['Execute command per role', 'roles'],
   ['Skill source', 'workflows'], ['Which skill each feature uses: explain, brief, standup, plans', 'workflows'],
-  ['Auto-review', 'workflows'], ['Parallel runs', 'workflows'], ['Workspaces: Review and Ship', 'workflows'],
+  ['Auto-review', 'workflows'], ['Parallel runs', 'workflows'], ['Views: Review and Ship', 'workflows'],
   ['Review skill or command', 'workflows'], ['Revise skill or command', 'workflows'], ['Stack command', 'workflows'], ['Starter skills', 'workflows'],
   ['Org skills', 'workflows'], ['Skills this setup runs', 'workflows'], ['Ship command', 'workflows'], ['Linear teams', 'workflows'],
   ['Repository by ticket prefix', 'workflows'], ['Allowed tools for Ship', 'workflows'], ['Auto-release', 'workflows'], ['LINEAR_API_KEY', 'workflows'],
   ['Accounts and sign-in', 'accounts'], ['Fallback order', 'accounts'], ['Who runs what', 'accounts'], ['Llama models', 'accounts'],
   ['Daily budget', 'spend'], ['Budget per explanation', 'spend'], ['Runs and their cost', 'spend'],
-  ['Watched repositories', 'repos'], ['Codebase map', 'repos'], ['Databases (MongoDB)', 'connections'], ['Sentry', 'connections'], ['VPN', 'connections'],
+  ['Workspaces: organizations and their repositories', 'repos'], ['Watched repositories', 'repos'], ['Codebase map', 'repos'], ['Databases (MongoDB)', 'connections'], ['Sentry', 'connections'], ['VPN', 'connections'],
   ['This machine', 'machines'], ['Tailnet devices (Tailscale)', 'machines'], ['Sync between machines', 'machines'], ['Update now', 'machines'],
   ['Theme', 'appearance'], ['Interface size', 'appearance'], ['Open Linear links in the app', 'appearance'], ['Terminal for Resume', 'appearance'],
   ['Run setup again', 'about'], ['Settings file', 'about'], ['Keyboard shortcuts', 'about'],
@@ -244,7 +244,7 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
   return (
     <>
       {setup && (
-        <Group title="Workspaces" hint="Which halves of Concierge you use. Each has its own place in the rail and its own setup.">
+        <Group title="Views" hint="Which halves of Concierge you use. Each has its own place in the rail and its own setup.">
           {(['review', 'exec'] as const).map((w) => {
             const on = setup.config.workspaces.includes(w)
             return (
@@ -335,7 +335,7 @@ function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; 
         <Row icon={Sun} title="Theme">
           <Segmented value={theme} options={THEMES} onChange={onTheme} />
         </Row>
-        <Row icon={Palette} title="Palette" hint="The tint and depth of every surface, in light and in dark. Each workspace keeps its accent." />
+        <Row icon={Palette} title="Palette" hint="The tint and depth of every surface, in light and in dark. Each view keeps its accent." />
         <Palettes dark={theme === 'dark' || (theme === 'system' && document.documentElement.classList.contains('dark'))} />
         <Row icon={Sparkles} title="Texture" hint="A faint grain over everything, fine or coarser. With any palette." />
         <Textures />
@@ -395,56 +395,141 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
     const v = await api('/setup/validate', { repo, path }).catch(() => ({ ok: false, error: 'Could not check' }))
     if (!v.ok) return setAdd((a) => ({ ...a, status: v.error }))
     await saveConfig({ repos: { ...repos, [repo]: path } }, v.clone ? `Watching ${repo}: each machine clones it into its working directory` : `Watching ${repo}`)
+    refresh('/orgs'); refresh('/workspaces/offers') // its organization is a workspace now, if it wasn't
     setAdd({ repo: '', path: '', status: '' })
   }
   const offers = (suggested ?? []).filter((s) => !Object.keys(repos).some((r) => r.toLowerCase() === s.repo.toLowerCase()) && s.paths.length)
+  const orgsQ = useApi<Org[]>('/orgs', { staleTime: 60_000 })
 
+  // the workspaces: the organizations Concierge works with, each with the repositories watched in it
+  const owners = orgsQ.data?.map((o) => o.owner) ?? [...new Set(Object.keys(repos).map((r) => r.split('/')[0]))]
+  const changed = () => { refresh('/orgs'); refresh('/workspaces/offers'); return reload() }
   return (
     <>
-      <Group title="Watched repositories" hint={`Reviews and your PRs come from these. Each machine keeps them in its own working directory (its CODE_DIR), and clones only the ones you allow on it. This machine: ${setup?.workDir ? home(setup.workDir) : '…'}`}>
-        {Object.keys(repos).length === 0 && <div className="px-4 py-6 text-center text-body text-fg-3">No repositories yet. Add one below.</div>}
-        {Object.entries(repos).map(([repo, path], i, all) => { const owner = repo.split('/')[0], org = setup?.cloneOn?.[`${owner}/*`] ?? []; return (
-          <Fragment key={repo}>
-          {/* several machines: an organization's row first, allowing all its repositories (now and later) on a machine */}
-          {(setup?.machines?.length ?? 0) > 1 && all.findIndex(([r]) => r.split('/')[0] === owner) === i && (
-            <div className="flex flex-wrap items-center gap-2 bg-fill/40 px-4 py-2">
-              <span className="font-mono text-small font-semibold text-fg-1">{owner}</span><span className="text-meta text-fg-3">all its repositories, now and later</span>
+      <p className="px-0.5 text-small text-fg-3">Your workspaces are the organizations Concierge works with, and in each the repositories it watches: reviews, your PRs, plans, compliance and Ship act on these, never on every organization your GitHub account belongs to. Each machine keeps the repositories in its own working directory ({setup?.workDir ? home(setup.workDir) : 'its CODE_DIR'} here), and clones only the ones you allow on it.</p>
+      {owners.map((owner) => { const o = orgsQ.data?.find((x) => x.owner === owner), mine = Object.entries(repos).filter(([r]) => r.split('/')[0] === owner), org = setup?.cloneOn?.[`${owner}/*`] ?? []; return (
+        <section key={owner} className="space-y-2">
+          <WorkspaceHead owner={owner} personal={!!o?.personal} count={mine.length} onRemoved={changed} toast={toast}>
+            {(setup?.machines?.length ?? 0) > 1 && (
               <Pick multi label={`Machines that may clone ${owner}'s repositories`} value={org} className="ml-auto"
                     options={setup!.machines.map((m) => ({ value: m, label: m === setup?.machine ? <>{called(m)} <span className="font-normal opacity-60">this one</span></> : called(m) }))}
                     onChange={(_, m, on) => api('/repos/clone-on', { repo: `${owner}/*`, machine: m, on }).then(() => { toast(on ? `${owner}'s repositories may be cloned on ${m}` : `${owner} is no longer allowed on ${m} as a whole`); return reload() }, (e: Error) => toast(e.message, 'error'))} />
+            )}
+          </WorkspaceHead>
+          <div className="divide-y divide-line overflow-hidden card">
+            {mine.length === 0 && <p className="px-4 py-3 text-small text-fg-3">No repositories watched in {owner} yet: add them from its list below.</p>}
+            {mine.map(([repo, path]) => (
+              <Fragment key={repo}>
+          <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
+                        machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org} removed={setup?.removeFrom?.[repo] ?? []} here={Object.entries(setup?.checkedOut ?? {}).filter(([, rs]) => rs.includes(repo)).map(([m]) => m)}
+                        route={setup?.placement?.find((r) => r.repo === repo)}
+                        onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${m}` : `${repo} stays off ${m}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
+                        accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
+              </Fragment>
+            ))}
+            <OwnerRepos owner={owner} watched={Object.keys(repos)} onAdd={(r) => addRepo(r, '')} />
+          </div>
+        </section>
+      ) })}
+
+      <Group title="Add a workspace" hint="An organization Concierge should work with (or you): then pick which of its repositories it watches. Your GitHub account's organizations are offered; any other one by its name.">
+        <AddWorkspace onAdded={changed} toast={toast} />
+        <div className="space-y-2 px-4 py-3.5">
+          <p className="text-meta text-fg-3">Or a single repository by its GitHub link: its organization becomes a workspace with it.{offers.length > 0 && ' From your recent PRs:'}</p>
+          {offers.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {offers.slice(0, 6).map((s) => (
+                <button key={s.repo} onClick={() => addRepo(s.repo, s.paths[0])} title={home(s.paths[0])}
+                        className="group inline-flex items-center gap-1.5 rounded-full bg-fill/60 px-3 py-1 font-mono text-small ring-1 ring-line transition-all hover:bg-white hover:ring-accent">
+                  <Plus className="size-3 text-fg-3 group-hover:text-accent" />{s.repo}
+                  {s.prs > 0 && <span className="font-sans text-micro text-fg-3">{s.prs} PRs</span>}
+                </button>
+              ))}
             </div>
           )}
-          <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
-                    machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org} removed={setup?.removeFrom?.[repo] ?? []} here={Object.entries(setup?.checkedOut ?? {}).filter(([, rs]) => rs.includes(repo)).map(([m]) => m)}
-                    route={setup?.placement?.find((r) => r.repo === repo)}
-                    onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${m}` : `${repo} stays off ${m}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
-                    accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
-          </Fragment>
-        ) })}
-      </Group>
-
-      <Group title="Add a repository" hint="Paste its GitHub link: this machine clones it; another machine only once you allow it on its card. Or pick a suggestion from your recent PR activity.">
-        {offers.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-4 py-3.5">
-            {offers.slice(0, 6).map((s) => (
-              <button key={s.repo} onClick={() => addRepo(s.repo, s.paths[0])} title={home(s.paths[0])}
-                      className="group inline-flex items-center gap-1.5 rounded-full bg-fill/60 px-3 py-1 font-mono text-small ring-1 ring-line transition-all hover:bg-white hover:ring-accent">
-                <Plus className="size-3 text-fg-3 group-hover:text-accent" />{s.repo}
-                {s.prs > 0 && <span className="font-sans text-micro text-fg-3">{s.prs} PRs</span>}
-              </button>
-            ))}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input value={add.repo} onChange={(e) => setAdd({ ...add, repo: e.target.value, status: '' })} placeholder="https://github.com/owner/repo" className={`${input} flex-1 font-mono`}
+                   onKeyDown={(e) => e.key === 'Enter' && addRepo(add.repo, '')} />
+            <button onClick={() => addRepo(add.repo, '')} disabled={!add.repo || add.status === 'checking'} className={primary}>
+              {add.status === 'checking' ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Add
+            </button>
           </div>
-        )}
-        <div className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row">
-          <input value={add.repo} onChange={(e) => setAdd({ ...add, repo: e.target.value, status: '' })} placeholder="https://github.com/owner/repo" className={`${input} flex-1 font-mono`}
-                 onKeyDown={(e) => e.key === 'Enter' && addRepo(add.repo, '')} />
-          <button onClick={() => addRepo(add.repo, '')} disabled={!add.repo || add.status === 'checking'} className={primary}>
-            {add.status === 'checking' ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}Add
-          </button>
+          {add.status && add.status !== 'checking' && <p className="flex items-center gap-1.5 text-small text-fail-text"><CircleAlert className="size-3.5" />{add.status}</p>}
         </div>
-        {add.status && add.status !== 'checking' && <p className="flex items-center gap-1.5 px-4 pb-3 text-small text-fail-text"><CircleAlert className="size-3.5" />{add.status}</p>}
       </Group>
     </>
+  )
+}
+
+/** A workspace's heading: its name, how many repositories it watches, who may clone them, and taking it away. */
+function WorkspaceHead({ owner, personal, count, onRemoved, toast, children }: { owner: string; personal: boolean; count: number; onRemoved: () => unknown; toast: Toast; children?: ReactNode }) {
+  const { armed, arm } = useArm()
+  const remove = () => api('/workspaces', { owner, on: false }).then(() => { toast(count ? `${owner} is no longer a workspace: its ${count} repositor${count === 1 ? 'y is' : 'ies are'} no longer watched` : `${owner} is no longer a workspace`); return onRemoved() }, (e: Error) => toast(e.message, 'error'))
+  return (
+    <header className="flex flex-wrap items-center gap-2 px-0.5">
+      <h3 className="font-mono text-small font-semibold text-fg-1">{owner}</h3>
+      {personal && <span className="rounded-full bg-fill px-1.5 py-px text-micro font-medium text-fg-3">you</span>}
+      <span className="text-meta text-fg-3">{count} repositor{count === 1 ? 'y' : 'ies'} watched</span>
+      <span className="ml-auto flex items-center gap-2">
+        {children}
+        <button onClick={() => arm('remove', remove)} className="relative overflow-hidden rounded-lg px-2 py-1 text-meta font-medium text-fg-3 hover:bg-fail/10 hover:text-fail-text">
+          {armed === 'remove' ? <><ArmLabel>{count ? `Confirm: stop watching ${count}` : 'Confirm'}</ArmLabel><ArmBar on="plain" /></> : 'Remove workspace'}
+        </button>
+      </span>
+    </header>
+  )
+}
+
+/** A workspace's repositories on GitHub, to watch with a click: found by name, the most recently pushed first. */
+function OwnerRepos({ owner, watched, onAdd }: { owner: string; watched: string[]; onAdd: (repo: string) => Promise<unknown> }) {
+  const [open, setOpen] = useState(false), [find, setFind] = useState(''), [adding, setAdding] = useState<string>()
+  const q = useApi<{ repo: string; description?: string; private: boolean }[]>(open ? `/workspaces/${encodeURIComponent(owner)}/repos` : undefined, { staleTime: 5 * 60_000 })
+  const have = new Set(watched.map((r) => r.toLowerCase()))
+  const list = (q.data ?? []).filter((r) => !have.has(r.repo.toLowerCase()) && r.repo.toLowerCase().includes(find.trim().toLowerCase()))
+  if (!open) return <button onClick={() => setOpen(true)} className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-small font-medium text-accent-text hover:bg-hover"><Plus className="size-3.5" />Add from {owner}&rsquo;s repositories</button>
+  return (
+    <div className="space-y-2 px-4 py-3">
+      <div className="flex items-center gap-2">
+        <input value={find} onChange={(e) => setFind(e.target.value)} autoFocus placeholder={`Find a repository in ${owner}`} className={`${input} flex-1`} />
+        <button onClick={() => setOpen(false)} className="rounded-lg px-2 py-1 text-meta font-medium text-fg-3 hover:bg-hover hover:text-fg-1">Done</button>
+      </div>
+      {q.isLoading ? <Skeleton rows={3} /> : q.error ? <p className="text-small text-fail-text">{(q.error as Error).message}</p> : !list.length ? <p className="text-small text-fg-3">{find ? 'None matches.' : 'Every repository here is watched.'}</p> : (
+        <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-lg ring-1 ring-line">
+          {list.slice(0, 100).map((r) => (
+            <li key={r.repo} className="flex items-center gap-2 px-3 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-mono text-small text-fg-1">{r.repo.split('/')[1]}{r.private && <span className="ml-1.5 font-sans text-micro text-fg-4">private</span>}</span>
+                {r.description && <span className="block truncate text-meta text-fg-3">{r.description}</span>}
+              </span>
+              <button disabled={!!adding} onClick={() => { setAdding(r.repo); void onAdd(r.repo).finally(() => setAdding(undefined)) }} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft disabled:opacity-50">
+                {adding === r.repo ? <LoaderCircle className="size-3 animate-spin" /> : <Plus className="size-3" />}Watch
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Adding a workspace: you, or one of your GitHub account's organizations (offered only here), or any other by name. */
+function AddWorkspace({ onAdded, toast }: { onAdded: () => unknown; toast: Toast }) {
+  const q = useApi<{ owner: string; personal: boolean }[]>('/workspaces/offers', { staleTime: 10 * 60_000 })
+  const [name, setName] = useState('')
+  const add = (owner: string) => { owner = owner.trim().replace(/^https?:\/\/(www\.)?github\.com\//, '').split('/')[0]; if (!owner) return
+    return api('/workspaces', { owner, on: true }).then(() => { toast(`${owner} is a workspace: pick its repositories`); setName(''); return onAdded() }, (e: Error) => toast(e.message, 'error')) }
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-4 py-3.5">
+      {(q.data ?? []).map((o) => (
+        <button key={o.owner} onClick={() => void add(o.owner)} className="group inline-flex items-center gap-1.5 rounded-full bg-fill/60 px-3 py-1 font-mono text-small ring-1 ring-line transition-all hover:ring-accent">
+          <Plus className="size-3 text-fg-3 group-hover:text-accent" />{o.owner}{o.personal && <span className="font-sans text-micro text-fg-3">you</span>}
+        </button>
+      ))}
+      <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-line-strong py-0.5 pl-3 pr-1 focus-within:border-accent/60">
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(name) }} placeholder="another organization" aria-label="Add an organization as a workspace" className="w-40 bg-transparent font-mono text-small outline-none placeholder:text-fg-4" />
+        <button onClick={() => void add(name)} disabled={!name.trim()} className="rounded-full p-1 text-fg-3 hover:text-accent-text disabled:opacity-40" aria-label="Add"><Plus className="size-3.5" /></button>
+      </span>
+    </div>
   )
 }
 
@@ -1299,12 +1384,12 @@ function ComplianceSettings({ setup, saveConfig: saveShared }: { setup?: SetupVi
   return (
     <>
       {o && (
-        <Group title="Organization" hint="Each organization's plans are checked against its own profile, or not at all.">
-          {orgs.length > 1 && <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">{orgs.map((x) => <Chip key={x.owner} on={x.owner === o.owner} onClick={() => setOwner(x.owner)}>{x.owner}{x.personal ? ' (you)' : ''}</Chip>)}</div>}
+        <Group title="Workspace" hint="Each workspace's plans are checked against its own profile, or not at all (Settings → Workspaces lists them).">
+          {orgs.length > 1 && <div className="px-3.5 pt-3"><Tabs size="sm" as="tab" label="Workspace" value={o.owner} onChange={setOwner} options={orgs.map((x) => ({ id: x.owner, label: x.personal ? `${x.owner} (you)` : x.owner }))} /></div>}
           <div className="flex items-center gap-3 px-3.5 py-3">
             <div className="min-w-0 flex-1">
               <p className="text-small font-medium text-fg-1">Compliance checks for {o.owner}</p>
-              <p className="text-meta text-fg-3">{c.off ? 'Off: its plans are not checked for privacy law, certifications or required reviews.' : own ? 'On, with its own profile below.' : 'On, with the shared profile below (changing it gives this organization its own).'}</p>
+              <p className="text-meta text-fg-3">{c.off ? 'Off: its plans are not checked for privacy law, certifications or required reviews.' : own ? 'On, with its own profile below.' : 'On, with the shared profile below (changing it gives this workspace its own).'}</p>
             </div>
             <Toggle on={!c.off} label={`Compliance checks for ${o.owner}`} onChange={(v) => void saveConfig({ compliance: { ...c, off: v ? undefined : true } }, `Compliance for ${o.owner}: ${v ? 'on' : 'off'}`)} />
           </div>
@@ -1939,7 +2024,7 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
         </div>
       )}
       <p className="text-small text-fg-2">
-        As <b className="font-semibold text-fg-1">{ROLES[role].label}</b>: the workspaces {ROLES[role].rail.join(', ')}; {mine} skill{mine === 1 ? '' : 's'} of its own and {shared} shared.
+        As <b className="font-semibold text-fg-1">{ROLES[role].label}</b>: the views {ROLES[role].rail.join(', ')}; {mine} skill{mine === 1 ? '' : 's'} of its own and {shared} shared.
         {role !== 'developer' && !Object.keys(own).length && <> It runs the developer’s commands until you give it its own <button onClick={() => go('roles')} className="text-accent-text hover:underline">under Roles</button>.</>}
       </p>
       {flows.filter((f) => f.on && SHOWN[role](f.name, own)).map((f) => (
@@ -2114,11 +2199,11 @@ function RolesSettings() {
   if (!v) return <Skeleton />
   return (
     <>
-      <Group title="Your roles" hint="Join the roles you work as; the switch at the top of the rail moves between them. Each keeps its own workspaces and skills.">
+      <Group title="Your roles" hint="Join the roles you work as; the switch at the top of the rail moves between them. Each keeps its own views and skills.">
         {(Object.keys(ROLES) as Role[]).map((r) => {
           const x = ROLES[r], on = v.joined.includes(r)
           return (
-            <Row key={r} icon={x.icon} title={x.label} hint={x.pending ? `${x.hint}. Not available yet.` : `${x.hint}. Workspaces: ${x.rail.join(', ')}`}>
+            <Row key={r} icon={x.icon} title={x.label} hint={x.pending ? `${x.hint}. Not available yet.` : `${x.hint}. Views: ${x.rail.join(', ')}`}>
               {x.pending ? <span className="rounded-full bg-fill px-2 py-0.5 text-meta font-medium text-fg-3">Coming soon</span>
               : on ? <span className="flex items-center gap-1.5">
                       {v.joined[0] === r && <span className="text-meta text-fg-3">signed up as</span>}

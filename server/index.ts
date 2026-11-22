@@ -74,12 +74,12 @@ import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from '
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
-import { brokenSkillLinks, checkedOut, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
+import { brokenSkillLinks, checkedOut, markClones, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
-import { complianceFor, githubProjects, orgs, planOrg, setCompliance, setTracker } from './orgs.ts'
+import { complianceFor, githubProjects, orgs, ownerRepos, planOrg, setCompliance, setTracker, setWorkspace, workspaceOffers } from './orgs.ts'
 import { nearbyMachines, tailnetOwner, tailscaleView, tsStatus, watchTailnet, type TsPeer } from './tailscale.ts'
 import { gitIdentity } from './gitIdentity.ts'
 import { bankView, writeBank } from './bank.ts'
@@ -2551,6 +2551,20 @@ app.get('/plans/projects', async (c) => {
   } catch (e) { return planErr(c, e) }
 })
 app.get('/orgs', async (c) => c.json(await orgs()))
+// workspaces (Settings → Workspaces): what to offer when adding one, adding or taking one away, and a workspace's
+// repositories on GitHub to pick from
+app.get('/workspaces/offers', async (c) => c.json(await workspaceOffers()))
+app.post('/workspaces', async (c) => {
+  const { owner, on } = await c.req.json<{ owner?: string; on?: boolean }>()
+  if (!owner || !/^[\w.-]{1,100}$/.test(owner)) return c.json({ error: 'Which organization' }, 400)
+  setWorkspace(owner, on !== false)
+  return c.json(await orgs())
+})
+app.get('/workspaces/:owner/repos', async (c) => {
+  const owner = c.req.param('owner')
+  if (!/^[\w.-]{1,100}$/.test(owner)) return c.json({ error: 'Which organization' }, 400)
+  try { return c.json(await ownerRepos(owner)) } catch (e) { return c.json({ error: `GitHub didn't list ${owner}'s repositories: ${(e as Error).message}` }, 502) }
+})
 app.post('/orgs', async (c) => {
   const { owner, tracker } = await c.req.json<{ owner?: string; tracker?: string }>()
   if (!owner || !/^[\w.-]+$/.test(owner) || (tracker !== 'linear' && tracker !== 'github')) return c.json({ error: 'An organization and linear or github' }, 400)
@@ -3437,4 +3451,7 @@ const server = serve({ fetch: root.fetch, hostname: setting('HOST') ?? '127.0.0.
   console.log(`Concierge on http://${setting('HOST') ?? '127.0.0.1'}:${port}`))
 if ((setting('HOST') ?? '127.0.0.1') !== '127.0.0.1' && !setting('PASSWORD')) console.warn('Concierge listens beyond this machine with no CONCIERGE_PASSWORD: only do this on a private network such as a tailnet')
 // every machine keeps a checkout of each watched repository: cloned at start, and again when config.json (synced) adds one
+// what is missing here is known from the start (the clones themselves wait 15s): before, a page opened in those
+// seconds took every repository for checked out on this machine
+markClones()
 setTimeout(() => void ensureClones(), 15_000).unref(); setInterval(() => void reloadConfig().then(ensureClones), 5 * 60_000).unref()

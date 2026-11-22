@@ -333,7 +333,7 @@ export function App() {
   }, [])
   const rail = (
     // on a phone: a tab bar along the bottom, clear of the home bar; from md up the rail on the left
-    <nav ref={railRef} aria-label="Workspaces" style={{ viewTransitionName: 'rail' }}
+    <nav ref={railRef} aria-label="Views" style={{ viewTransitionName: 'rail' }}
          className={`fixed inset-x-0 bottom-0 z-40 flex h-[calc(58px+env(safe-area-inset-bottom))] items-stretch justify-around border-t border-line bg-surface-2/90 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:relative md:h-auto md:shrink-0 md:flex-col md:justify-start md:gap-1 md:border-r md:border-t-0 md:bg-bg-rail md:py-3 md:backdrop-blur-none md:transition-[width] md:duration-300 md:ease-[var(--ease-snappy)] ${W('md:w-[60px] md:items-center md:px-0', 'md:w-[232px] md:items-stretch md:px-2')}`}>
       {/* the role heads the rail: the workspaces below are that role's own */}
       <span className="hidden md:contents"><RoleSwitch wide={wide} onJoin={() => setSettingsOpen('roles')} /><span className={`my-1.5 hidden h-px bg-line md:block ${W('w-10', 'mx-2')}`} /></span>
@@ -346,7 +346,7 @@ export function App() {
           <span className={`my-2 hidden h-px bg-line md:block ${W('w-10', 'mx-2')}`} />
         </span>
       )}
-      <Head>Workspaces</Head>
+      <Head>Views</Head>
       {/* the workspaces; one accent pill slides to the active one (railPill) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
       {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
@@ -383,7 +383,7 @@ export function App() {
         <button onClick={openSettings} title={`Settings · ${mode === 'exec' ? 'Ship' : 'Review'}`} aria-label="Settings" className="group text-fg-3 transition-colors hov hover:text-fg-1">
           <Settings2 className="size-4 transition-transform duration-500 group-hover:rotate-90" />
         </button>
-        <button onClick={() => setWide(!wide)} title={wide ? 'Close the sidebar: icons only' : 'Open the sidebar: modes and workspaces by name'} aria-label={wide ? 'Close the sidebar' : 'Open the sidebar'}
+        <button onClick={() => setWide(!wide)} title={wide ? 'Close the sidebar: icons only' : 'Open the sidebar: roles and views by name'} aria-label={wide ? 'Close the sidebar' : 'Open the sidebar'}
                 className={`text-fg-4 transition-colors hov hover:text-fg-1 ${W('', 'md:ml-auto')}`}>{wide ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}</button>
       </span>
       {/* Settings on a phone's tab bar */}

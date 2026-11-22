@@ -553,8 +553,8 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
   <section id="modes" class="wrap">
     <div class="reveal">
       <p class="kicker">Modes</p>
-      <h2>One workspace, for whoever you are today.</h2>
-      <p class="sub">Work as a developer, a product manager, or both. Each mode has its own workspaces, skills and setup, and switching takes one click.</p>
+      <h2>One place, for whoever you are today.</h2>
+      <p class="sub">Work as a developer, a product manager, or both. Each mode has its own views, skills and setup, and switching takes one click.</p>
     </div>
     <div class="modes reveal" id="modes-demo" style="--h:276">
       <div class="mswitch" role="tablist" aria-label="Modes">
@@ -604,7 +604,7 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
       <div class="feat reveal" style="--h:150">
         <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.5 12h4l5-6M11.5 12l5 6"/></svg></span>
         <h3>Plans</h3>
-        <p>Write a brief, and an agent breaks it down with you into epics and user stories, drawn live as one roadmap to the goal. Play with it: try moves and plays, see the date move, then apply it to your tracker.</p>
+        <p>Write a brief, and an agent breaks it down with you into epics and user stories, drawn live as one roadmap to the goal. Play with it: try moves and plays, see the date move, then apply it to your tracker. Each workspace's plans are checked against its own compliance, or none for your own.</p>
       </div>
     </div>
   </section>
@@ -643,7 +643,7 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
     <div class="reveal">
       <p class="kicker">Fleet</p>
       <h2>Any number of machines.</h2>
-      <p class="sub">Run it on as many machines as you have, all online at once: every one of them runs agents, and one is the main server your link opens. The standby follows the main server's state as it changes, over your tailnet: a run's update is a few kilobytes, never a file sync re-walking your disk. When the main server sleeps or goes offline, the standby takes over within minutes with every run, setting and review intact, and hands back once the first has caught up. A new machine joins with one command once it is on your tailnet: signed in as you, it is in at once. It is a private extension: ask the author for access.</p>
+      <p class="sub">Run it on as many machines as you have, all online at once: every one of them runs agents, and one is the main server your link opens. The standby follows the main server's state as it changes, over your tailnet: a run's update is a few kilobytes, never a file sync re-walking your disk. When the main server sleeps or goes offline, the standby takes over within minutes with every run, setting and review intact, and hands back once the first has caught up; with both away, a worker does. Your workspaces (the organizations you work with, and their repositories) decide where work may run: a repository only on the machines you allow it on, and one with none of them online stays to read, its actions waiting. A new machine joins by itself once it is on your tailnet: signed in as you, it is in at once. It is a private extension: ask the author for access.</p>
     </div>
     <div class="fleet reveal" id="fleetDemo" data-s="0" aria-hidden="true">
       <div class="lease"><span class="pin"></span>Tailscale sees it online · runs on <b class="who">Desktop</b></div>
@@ -710,7 +710,7 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
       <div>
         <p class="kicker">Contributing</p>
         <h2 style="font-size:clamp(24px,3vw,32px)">Contributing.</h2>
-        <p class="sub" style="font-size:15px">To make it work differently, fork it: swap in your own skills, change the prompts, or add a workspace. Its whole look lives in one file, <code>src/design/tokens.css</code>. Issues and pull requests are welcome.</p>
+        <p class="sub" style="font-size:15px">To make it work differently, fork it: swap in your own skills, change the prompts, or add a view. Its whole look lives in one file, <code>src/design/tokens.css</code>. Issues and pull requests are welcome.</p>
       </div>
       <div class="cta">
         <span class="star"><a class="btn btn-primary" href="https://github.com/ylkhayat/concierge/fork">Fork on GitHub</a></span>
