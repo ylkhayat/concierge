@@ -1,10 +1,11 @@
-import { Check, ChevronLeft, ChevronRight, Copy, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Copy, LoaderCircle, Plus, RefreshCw, Sparkles, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
-import { asHtml, asText, forTeams, linkWritten, standupDay, workdayBefore, type Did, type Next, type Standup as StandupT } from '../../server/standup.ts'
+import { asHtml, asText, forTeams, linkWritten, standupDay, workdayBefore, type Blocker, type Did, type Next, type Notes, type Standup as StandupT } from '../../server/standup.ts'
 import type { Written } from '../../server/store.ts'
 import { ago } from '../time.ts'
 import { api, param, setParam, type TicketView } from '../lib.ts'
-import { IdBadge, PRIORITY } from './ExecList.tsx'
+import { IdBadge } from './ExecList.tsx'
+import { StandupFlow, type Lane } from './StandupFlow.tsx'
 import { Pick } from '../ui/Pick.tsx'
 
 // days as YYYY-MM-DD in your own time zone: "did" counts from the start of one of them
@@ -17,7 +18,11 @@ const nextStandup = () => standupDay(new Date(), tz)
 const lastWorkday = () => workdayBefore(nextStandup())
 const dayName = (k: string) => dayOf(k).toLocaleDateString('en-GB', { weekday: 'long' })
 
-/** What I did and what I'll do, in Linear tickets, for the standup: read it out, or copy it (for some teams) as a message. */
+/**
+ * The standup as it is said: what I did, what blocks me, what I'll do. Each part lists what Concierge knows (your
+ * tickets since the last working day) as sentences you can read out, plus your own lines (what only you know). Copy
+ * gives the same three parts as a message; the written version beside it says them in the model's words.
+ */
 export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (id: string) => void; toast: (m: string, tone?: 'ok' | 'error') => void; tickets?: TicketView[] }) {
   // the day "did" counts from: the last working day unless you pick another (in the URL)
   const [from, setFromState] = useState(() => /^\d{4}-\d\d-\d\d$/.test(param('since') ?? '') ? param('since')! : lastWorkday())
@@ -27,13 +32,10 @@ export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (
   const setPicked = (ts: string[]) => { setPickedState(ts); setParam('teams', ts.length ? ts.join(',') : null) }
   const toggle = (t: string) => setPicked(picked.includes(t) ? picked.filter((x) => x !== t) : [...picked, t].sort())
   const day = nextStandup()
-  const [s, setS] = useState<StandupT & { written?: Written & { stale: boolean } }>()
+  const [s, setS] = useState<StandupT & { notes?: Notes; written?: Written & { stale: boolean } }>()
   const [copied, setCopied] = useState(false)
-  // the written version or the facts: written when there is one (kept in the URL)
-  const [view, setViewState] = useState<'written' | 'agenda'>(() => (param('view') === 'written' ? 'written' : 'agenda'))
-  const setView = (v: 'written' | 'agenda') => { setViewState(v); setParam('view', v === 'agenda' ? null : v) }
   const [writing, setWriting] = useState(false)
-  const read = () => api(`/standup?since=${encodeURIComponent(dayOf(from).toISOString())}&day=${day}&teams=${picked.join(',')}`).then(setS, () => {})
+  const read = () => api(`/standup?since=${encodeURIComponent(dayOf(from).toISOString())}&day=${day}&teams=${picked.join(',')}`).then((x: StandupT) => setS({ ...x, blockers: x.blockers ?? [] }), () => {}) // an older server has no blockers yet
   useEffect(() => {
     read()
     const t = setInterval(read, 60_000)
@@ -43,59 +45,64 @@ export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (
   useEffect(() => { api('/settings', { timezone: tz }).catch(() => {}) }, [])
   const write = () => {
     setWriting(true)
-    api('/standup/write', { day, since: dayOf(from).toISOString(), teams: picked }).then(() => { setView('written'); return read() }, (e: Error) => toast(e.message, 'error')).finally(() => setWriting(false))
+    api('/standup/write', { day, since: dayOf(from).toISOString(), teams: picked }).then(() => read(), (e: Error) => toast(e.message, 'error')).finally(() => setWriting(false))
+  }
+  // your own lines, per part: saved with the day as you add or remove one
+  const notes: Notes = s?.notes ?? {}
+  const setNotes = (part: keyof Notes, lines: string[]) => {
+    setS((x) => x && { ...x, notes: { ...x.notes, [part]: lines } })
+    api('/standup/notes', { day, part, lines }).catch((e: Error) => toast(e.message, 'error'))
   }
   // when work happened, for the calendar's dots: counted per day of yours
   const [busy, setBusy] = useState<Record<string, number>>({})
   useEffect(() => { api('/standup/days').then((r: { at: string[] }) => { const n: Record<string, number> = {}; for (const a of r.at) n[key(new Date(a))] = (n[key(new Date(a))] ?? 0) + 1; setBusy(n) }, () => {}) }, [])
-  const teams = s ? [...new Set([...s.did, ...s.next].map((x) => x.id.split('-')[0]))].sort() : []
-  const did = forTeams(s?.did ?? [], picked), next = forTeams(s?.next ?? [], picked)
-  // rich text where it pastes as rich text (ticket ids as links), Markdown links where only plain text lands; the
-  // written version when that is what you look at, else the facts
-  const urls = Object.fromEntries([...(s?.did ?? []), ...(s?.next ?? [])].map((x) => [x.id, x.url]))
-  const shown = view === 'written' && s?.written ? linkWritten(s.written.text, urls) : { md: asText(did, next), html: asHtml(did, next) }
-  const copy = () => s && (typeof ClipboardItem === 'undefined' ? navigator.clipboard.writeText(shown.md)
-    : navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([shown.md], { type: 'text/plain' }), 'text/html': new Blob([shown.html], { type: 'text/html' }) })])).then(() => {
-    setCopied(true); toast(picked.length ? `Standup for ${picked.join(', ')} copied` : 'Standup copied'); setTimeout(() => setCopied(false), 1500)
-  })
-  const since = s && new Date(s.since).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
-  const chip = (on: boolean) => `rounded-md px-2.5 py-1 font-medium transition-colors ${on ? 'sel text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`
-  const titles = new Map([...(s?.did ?? []), ...(s?.next ?? [])].map((x) => [x.id, x.title]))
+  const teams = s ? [...new Set([...s.did, ...s.blockers, ...s.next].map((x) => x.id.split('-')[0]))].sort() : []
+  const did = forTeams(s?.did ?? [], picked), blockers = forTeams(s?.blockers ?? [], picked), next = forTeams(s?.next ?? [], picked)
   const byId = new Map(tickets.map((t) => [t.id, t]))
-  // each side by priority (urgent first, none last), then by what it is: the server already lists the plan by action
   const prio = (id: string) => byId.get(id)?.priority || 9
   const done = [...did].sort((a, b) => prio(a.id) - prio(b.id) || leadRank(a.lead) - leadRank(b.lead))
   const plan = [...next].sort((a, b) => prio(a.id) - prio(b.id))
+  const titles = new Map([...(s?.did ?? []), ...(s?.blockers ?? []), ...(s?.next ?? [])].map((x) => [x.id, x.title]))
+  const urls = Object.fromEntries([...(s?.did ?? []), ...(s?.blockers ?? []), ...(s?.next ?? [])].map((x) => [x.id, x.url]))
+  // rich text where it pastes as rich text (ticket ids as links), Markdown links where only plain text lands
+  const copyOut = (md: string, html: string, what: string) => (typeof ClipboardItem === 'undefined' ? navigator.clipboard.writeText(md)
+    : navigator.clipboard.write([new ClipboardItem({ 'text/plain': new Blob([md], { type: 'text/plain' }), 'text/html': new Blob([html], { type: 'text/html' }) })])).then(() => {
+    setCopied(true); toast(what); setTimeout(() => setCopied(false), 1500)
+  })
+  const copy = () => s && copyOut(asText(done, plan, blockers, notes), asHtml(done, plan, blockers, notes), picked.length ? `Standup for ${picked.join(', ')} copied` : 'Standup copied')
+  const copyWritten = () => s?.written && (({ md, html }) => copyOut(md, html, 'Written standup copied'))(linkWritten(s.written.text, urls))
+  const since = s && new Date(s.since).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
+  const empty = !did.length && !next.length && !blockers.length && !Object.values(notes).some((x) => x?.length)
 
   return (
-    // the page fits the window: a long column folds, and one that still runs long scrolls on its own
+    // the page fits the window: the three parts scroll on their own, the side rail stays
     <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-      <div className="mx-auto flex h-full max-w-[1600px] flex-col px-4 pb-4 pt-6 md:px-8">
-        <header className="flex flex-wrap items-center gap-3">
+      <div className="mx-auto flex h-full max-w-[1280px] flex-col px-4 pb-4 pt-6 md:px-8">
+        <header className="flex flex-wrap items-end gap-3">
           <div className="min-w-0">
             <h1 className="text-display font-semibold tracking-tight">Standup</h1>
-            <p className="text-small text-fg-3">{since ? `${day === key(new Date()) ? "Today's" : `${dayName(day)}'s`} standup: your Linear tickets since ${since}, and what is next` : 'Gathering what you did…'}</p>
+            <p className="text-small text-fg-3">{since ? `${day === key(new Date()) ? 'Today' : dayName(day)} · since ${since}` : 'Gathering what you did…'}</p>
           </div>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <div role="tablist" aria-label="Since" className="flex rounded-xl bg-fill p-0.5 text-small">
-              {([[lastWorkday(), day === today() ? 'Last workday' : `For ${dayName(day)}`], [today(), 'Today']] as const).map(([k, label]) => <button key={label} role="tab" aria-selected={from === k} onClick={() => setFrom(k)} className={chip(from === k)}>{label}</button>)}
-            </div>
-            <div role="tablist" aria-label="View" className="flex rounded-xl bg-fill p-0.5 text-small">
-              {(['agenda', 'written'] as const).map((v) => <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)} className={chip(view === v)}>{v === 'written' ? 'Written' : 'Agenda'}</button>)}
-            </div>
-            <button onClick={copy} disabled={!s} title={picked.length ? `Copy the standup for ${picked.join(', ')}` : 'Copy as a message'}
-                    className="inline-flex items-center gap-1.5 btn-primary transition-all hover:bg-accent disabled:opacity-40">
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}Copy{picked.length > 0 && ` ${picked.join(', ')}`}
-            </button>
-          </div>
+          <button onClick={copy} disabled={!s} title={picked.length ? `Copy the standup for ${picked.join(', ')}` : 'Copy the three parts as a message'}
+                  className="ml-auto inline-flex items-center gap-1.5 btn-primary disabled:opacity-40">
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}Copy{picked.length > 0 && ` ${picked.join(', ')}`}
+          </button>
         </header>
-        {teams.length > 1 && s && <TeamPills teams={teams} picked={picked} onToggle={toggle} onClear={() => setPicked([])} count={(t) => [...s.did, ...s.next].filter((x) => x.id.startsWith(`${t}-`)).length} />}
+        {teams.length > 1 && s && <TeamPills teams={teams} picked={picked} onToggle={toggle} onClear={() => setPicked([])} count={(t) => [...s.did, ...s.blockers, ...s.next].filter((x) => x.id.startsWith(`${t}-`)).length} />}
         {!s ? <div className="flex justify-center py-20"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div> : (
-          <div className="relative mt-5 grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-x-8">
-            {/* the day is a supporting pane: beside what you read, on the right */}
-            <div className="lg:order-last"><Calendar from={from} onPick={setFrom} busy={busy} /></div>
-            {view === 'written' ? <WrittenPanel w={s.written} day={day} writing={writing} onWrite={write} onOpen={onOpenTicket} titles={titles} empty={!did.length && !next.length} />
-              : <Board did={done} next={plan} byId={byId} onOpen={onOpenTicket} />}
+          <div className="mt-5 grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-x-8">
+            <div className="flex min-h-0 flex-col gap-3">
+              <StandupFlow lanes={lanesOf(done, blockers, plan)} counts={{ did: done.length + (notes.did?.length ?? 0), blockers: blockers.length + (notes.blockers?.length ?? 0), next: plan.length + (notes.next?.length ?? 0) }} onOpen={onOpenTicket} />
+              <div className="grid shrink-0 gap-3 md:grid-cols-3">
+                <Own title="Did" own={notes.did} onOwn={(l) => setNotes('did', l)} placeholder="Something you did (a call, a spike)" />
+                <Own title="Blocked by" own={notes.blockers} onOwn={(l) => setNotes('blockers', l)} placeholder="A blocker (design, an answer, access)" />
+                <Own title="Will do" own={notes.next} onOwn={(l) => setNotes('next', l)} placeholder="A plan for today" />
+              </div>
+            </div>
+            <aside className="min-h-0 space-y-4 overflow-y-auto pb-2">
+              <WrittenPanel w={s.written} day={day} writing={writing} onWrite={write} onCopy={copyWritten} onOpen={onOpenTicket} titles={titles} empty={empty} />
+              <Calendar from={from} onPick={setFrom} busy={busy} />
+            </aside>
           </div>
         )}
       </div>
@@ -107,123 +114,46 @@ export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (
 const progressOf = (d: Did) => d.lead.replace(/\s+(on|for|of|to|in)$/i, '')
 // what comes next on it, as a few words
 const planOf = (n: Next) => ({
-  answer: "Answer the agent's question", threads: `Answer ${n.count ?? ''} review thread${n.count === 1 ? '' : 's'}`.replace('  ', ' '), tend: 'Get its PR green',
+  answer: "Answer the agent's question", threads: `Answer ${n.count ?? ''} review thread${n.count === 1 ? '' : 's'}`.replace('  ', ' '), tend: 'Get its PR through review',
   continue: 'Keep going', pickup: 'Pick it back up', start: 'Start it', review: 'Review its PR',
 })[n.kind]
 
-/** Where a ticket stands, in a word or two, and whether something holds it up. */
-function statusOf(t?: TicketView): { label: string; blocked: boolean } | undefined {
-  if (!t) return undefined
-  const pr = t.pr
-  if (t.closed) return { label: t.state, blocked: false }
-  if (t.handedTo) return { label: `With ${t.handedTo.split(' ')[0]}`, blocked: false }
-  if (t.bucket === 'needs-you') return { label: 'Blocked: the agent asked on Linear', blocked: true }
-  if (pr?.ci === 'failure') return { label: `Blocked: CI red on #${pr.number}`, blocked: true }
-  if (pr?.openThreads) return { label: `${pr.openThreads} thread${pr.openThreads === 1 ? '' : 's'} to answer`, blocked: true }
-  if (t.bucket === 'shipped') return { label: 'In review', blocked: false }
-  if (t.bucket === 'stalled') return { label: 'Untouched for a day', blocked: false }
-  if (t.busy) return { label: 'Agent on it', blocked: false }
-  return { label: t.state, blocked: false }
-}
-
-// the order of what moved, most telling first, for cards of the same priority
+// the order of what moved, most telling first, for lines of the same priority
 const LEADS = ['Merged', 'Got approval', 'Approved', 'Opened', 'Worked in the review', 'Closed', 'Reviewed', 'Progress']
 const leadRank = (lead: string) => ((i) => (i < 0 ? LEADS.length - 1 : i))(LEADS.findIndex((l) => lead.startsWith(l)))
 
-// a side quest's kind, from its labels or title: the tag on its row
-const KINDS: [RegExp, string, string][] = [
-  [/^bug$/i, 'Bug', 'bg-fail/10 text-fail-text'], [/^security$/i, 'Security', 'bg-wait/10 text-wait-text'],
-  [/^tech debt$/i, 'Tech debt', 'bg-fg-3/10 text-fg-2'], [/^improvement$/i, 'Improvement', 'bg-run/10 text-run-text'],
-]
-const kindOf = (t?: TicketView, title = '') => /^user feedback/i.test(title) ? ['Feedback', 'bg-wait/10 text-wait-text'] as const
-  : (t && KINDS.find(([re]) => t.labels.some((l) => re.test(l)))?.slice(1) as [string, string] | undefined)
-
-// columns that share the width by how many there are, none narrower than this (then they wrap)
-
-type BoardRow = { id: string; title: string; project?: string; did?: string; next?: string; rank: number }
-
-/**
- * The standup as cards that fit the page: one per product project, in its own colour, and one for the side quests (no
- * project: bugs, tech debt, feedback), each ticket once with what moved and what comes next side by side. Product first:
- * it's what the standup is about.
- */
-function Board({ did, next, byId, onOpen }: { did: Did[]; next: Next[]; byId: Map<string, TicketView>; onOpen: (id: string) => void }) {
-  const rows = new Map<string, BoardRow>()
-  did.forEach((d, i) => rows.set(d.id, { id: d.id, title: d.title, project: d.project, did: progressOf(d), rank: i }))
-  next.forEach((n, i) => { const r = rows.get(n.id); rows.set(n.id, { ...(r ?? { id: n.id, title: n.title, project: n.project, rank: did.length + i }), next: planOf(n) }) })
-  const by = new Map<string, BoardRow[]>()
-  for (const r of rows.values()) by.set(r.project ?? '', [...(by.get(r.project ?? '') ?? []), r])
-  const projects = [...by].filter(([p]) => p).sort((a, b) => b[1].length - a[1].length)
-  const side = by.get('') ?? []
-  if (!rows.size) return <p className="text-small text-fg-3">Nothing on your tickets for this standup.</p>
-  // the overview first: what moved, what is next, and what is blocked, said once (not on every ticket it holds up)
-  const all = [...rows.values()]
-  const blocked = new Map<string, string[]>()
-  for (const r of all) { const st = statusOf(byId.get(r.id)); if (st?.blocked) blocked.set(st.label, [...(blocked.get(st.label) ?? []), r.id]) }
-  const nBlocked = [...blocked.values()].reduce((n, ids) => n + ids.length, 0)
-  return (
-    <div className="min-h-0 overflow-y-auto pb-2">
-      <div className="mx-auto max-w-[920px] space-y-5">
-        <p className="text-small text-fg-2"><b className="font-semibold text-fg-1">{all.filter((r) => r.did).length}</b> moved · <b className="font-semibold text-fg-1">{all.filter((r) => r.next).length}</b> next{nBlocked > 0 && <> · <b className="font-semibold text-wait-text">{nBlocked} blocked</b></>} · {projects.length} project{projects.length === 1 ? '' : 's'}{side.length > 0 && `, ${side.length} side quest${side.length === 1 ? '' : 's'}`}</p>
-        {blocked.size > 0 && (
-          <section className="card px-4 py-3">
-            <h2 className="mb-1.5 flex items-center gap-2 text-small font-semibold text-wait-text"><span className="size-1.5 rounded-full bg-wait" />Blocked</h2>
-            {[...blocked].map(([why, ids]) => (
-              <div key={why} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 py-1 text-small">
-                <span className="text-fg-1">{why.replace(/^Blocked:\s*/i, '').replace(/^./, (c) => c.toUpperCase())}</span>
-                <span className="flex flex-wrap gap-1">{ids.map((id) => <button key={id} onClick={() => onOpen(id)} title={byId.get(id)?.title} className="rounded bg-fill px-1.5 font-mono text-meta text-fg-2 hover:text-fg-1">{id}</button>)}</span>
-              </div>
-            ))}
-          </section>
-        )}
-        {projects.map(([p, rs]) => <Theme key={p} name={p} rows={rs} byId={byId} onOpen={onOpen} />)}
-        {side.length > 0 && <Theme rows={side} byId={byId} onOpen={onOpen} />}
-      </div>
-    </div>
-  )
+/** The pipeline's lanes: one per project (most to say first), side quests last; each ticket under the stages it is in. */
+function lanesOf(did: Did[], blockers: Blocker[], next: Next[]): Lane[] {
+  const lanes = new Map<string, Lane>()
+  const lane = (p?: string) => { const k = p ?? ''; if (!lanes.has(k)) lanes.set(k, { name: p, rows: { did: [], blockers: [], next: [] } }); return lanes.get(k)! }
+  for (const d of did) lane(d.project).rows.did.push({ id: d.id, title: d.title, lead: progressOf(d) })
+  for (const b of blockers) lane(b.project).rows.blockers.push({ id: b.id, title: b.title, lead: b.why })
+  for (const n of next) lane(n.project).rows.next.push({ id: n.id, title: n.title, lead: planOf(n) })
+  const size = (l: Lane) => l.rows.did.length + l.rows.blockers.length + l.rows.next.length
+  return [...lanes.values()].sort((a, b) => Number(!a.name) - Number(!b.name) || size(b) - size(a))
 }
 
-/** A project (or the side quests) as a list you read down: one aligned row per ticket, its title whole. */
-function Theme({ name, rows, byId, onOpen }: { name?: string; rows: BoardRow[]; byId: Map<string, TicketView>; onOpen: (id: string) => void }) {
-  const h = name ? hue(name) : 0
-  const sorted = [...rows].sort((a, b) => (byId.get(a.id)?.priority || 9) - (byId.get(b.id)?.priority || 9) || a.rank - b.rank)
-  const moved = rows.filter((r) => r.did).length, ahead = rows.filter((r) => r.next).length
+/** Your own lines for one part (what only you know), and a field to add one: said in the copy and the written one. */
+function Own({ title, own = [], onOwn, placeholder }: { title: string; own?: string[]; onOwn: (lines: string[]) => void; placeholder: string }) {
+  const [draft, setDraft] = useState('')
+  const add = () => { const v = draft.trim(); if (v) { onOwn([...own, v]); setDraft('') } }
   return (
-    <section>
-      <div className="mb-1 flex items-baseline gap-2 border-b border-line pb-1.5">
-        {name && <span className="size-2 shrink-0 translate-y-[-1px] rounded-full" style={{ backgroundColor: `hsl(${h} 70% 50%)` }} />}
-        <h3 className="min-w-0 text-body font-semibold text-fg-1">{name ?? 'Side quests'}</h3>
-        {!name && <span className="text-meta text-fg-3">bugs, tech debt and feedback outside a project</span>}
-        <span className="ml-auto shrink-0 text-meta tabular-nums text-fg-3">{[moved && `${moved} moved`, ahead && `${ahead} next`].filter(Boolean).join(' · ')}</span>
+    <section className="card px-3 py-2.5">
+      <p className="text-meta font-semibold text-fg-3">{title}, in your words</p>
+      {own.map((x, i) => (
+        <p key={i} className="group mt-1 flex items-baseline gap-2 text-small text-fg-1">
+          <span className="min-w-0 flex-1">{x}</span>
+          <button onClick={() => onOwn(own.filter((_, j) => j !== i))} aria-label="Remove" className="shrink-0 text-fg-4 opacity-0 transition-opacity hover:text-fg-1 group-hover:opacity-100 focus:opacity-100"><X className="size-3.5" /></button>
+        </p>
+      ))}
+      <div className="mt-1.5 flex items-center gap-2">
+        <Plus className="size-3.5 shrink-0 text-fg-4" />
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} maxLength={300} placeholder={placeholder} aria-label={`${title}: ${placeholder}`}
+               className="min-w-0 flex-1 bg-transparent text-small text-fg-1 outline-none placeholder:text-fg-4" />
       </div>
-      <ul>
-        {sorted.map((r) => {
-          const t = byId.get(r.id), st = statusOf(t), kind = name ? undefined : kindOf(t, r.title), P = t && PRIORITY[t.priority]
-          return (
-            <li key={r.id}>
-              <button onClick={() => onOpen(r.id)} title={st?.blocked ? st.label : undefined}
-                      className="grid w-full grid-cols-[6rem_minmax(0,1fr)_minmax(0,11rem)_minmax(0,13rem)] items-baseline gap-x-3 rounded-ctl px-1.5 py-1.5 text-left transition-colors hover:bg-hover">
-                <span className="flex items-center gap-1">
-                  <IdBadge id={r.id} team={r.id.split('-')[0]} />
-                  {P && t!.priority > 0 && <P.icon className={`size-3 shrink-0 ${P.tone}`} aria-label={P.label} />}
-                </span>
-                <span className="min-w-0 text-small text-fg-1">
-                  {st?.blocked && <span className="mr-1.5 inline-block size-1.5 translate-y-[-1px] rounded-full bg-wait" aria-label="Blocked" />}
-                  {r.title || r.id}{kind && <span className={`ml-1.5 rounded px-1.5 text-micro font-medium ${kind[1]}`}>{kind[0]}</span>}
-                </span>
-                <span className="min-w-0 truncate text-meta text-ok-text" title={r.did}>{r.did ? `✓ ${r.did}` : ''}</span>
-                <span className="min-w-0 truncate text-meta text-accent-text" title={r.next}>{r.next ? `→ ${r.next}` : ''}</span>
-              </button>
-            </li>
-          )
-        })}
-      </ul>
     </section>
   )
 }
-
-/** A steady hue per team, from its key: AI is always the same colour, without a table to keep. */
-const hue = (team: string) => [...team].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 
 /** The teams to speak for, as pills you toggle: none picked is every team. */
 function TeamPills({ teams, picked, count, onToggle, onClear }: { teams: string[]; picked: string[]; count: (t: string) => number; onToggle: (t: string) => void; onClear: () => void }) {
@@ -252,7 +182,7 @@ function Calendar({ from, onPick, busy }: { from: string; onPick: (k: string) =>
   const weekend = Array.from({ length: Math.max(0, span) }, (_, i) => { const d = dayOf(from); d.setDate(d.getDate() + i); return d.getDay() }).some((x) => x === 0 || x === 6)
   const shift = (n: number) => setMonth(new Date(month.getFullYear(), month.getMonth() + n, 1))
   return (
-    <section className="self-start card p-3 md:col-span-2 lg:col-span-1 ">
+    <section className="card p-3">
       <div className="flex items-center justify-between px-1">
         <button onClick={() => shift(-1)} aria-label="Previous month" className="rounded-md p-1 text-fg-3 hov hover:text-fg-1"><ChevronLeft className="size-4" /></button>
         <span className="text-small font-semibold">{month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</span>
@@ -291,12 +221,13 @@ function Calendar({ from, onPick, busy }: { from: string; onPick: (k: string) =>
  * from, so when they move on (a merge, a new review) it says so and offers to write it again, instead of quietly
  * calling the model on every change.
  */
-function WrittenPanel({ w, day, writing, onWrite, onOpen, titles, empty }: { w?: Written & { stale: boolean }; day: string; writing: boolean; onWrite: () => void; onOpen: (id: string) => void; titles: Map<string, string>; empty: boolean }) {
+function WrittenPanel({ w, day, writing, onWrite, onCopy, onOpen, titles, empty }: { w?: Written & { stale: boolean }; day: string; writing: boolean; onWrite: () => void; onCopy: () => void; onOpen: (id: string) => void; titles: Map<string, string>; empty: boolean }) {
   const btn = 'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium transition-all disabled:opacity-40'
   return (
-    <section className="min-h-0 min-w-0 overflow-y-auto card p-4 md:col-span-2 ">
+    <section className="min-w-0 card p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-small font-semibold text-fg-3">Written</h2>
+        <h2 className="text-small font-semibold text-fg-3">In your words</h2>
+        {w && <button onClick={onCopy} title="Copy this version" className="text-fg-4 transition-colors hover:text-fg-1"><Copy className="size-3.5" /></button>}
         {w && <span className="text-meta text-fg-3">{new Date(w.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · {ago(w.at, Date.now())} · from {w.tickets} ticket{w.tickets === 1 ? '' : 's'}</span>}
         <button onClick={onWrite} disabled={writing || empty} title="Write it now from the facts as they are (a small model call)"
                 className={`${btn} ml-auto ${w && !w.stale ? 'text-fg-2 ring-1 ring-line-strong hover:text-fg-1' : 'bg-accent text-on-accent hover:bg-accent'}`}>
@@ -316,7 +247,7 @@ function WrittenPanel({ w, day, writing, onWrite, onOpen, titles, empty }: { w?:
           })}
         </div>
       ) : (
-        <p className="mt-3 text-small text-fg-3">{empty ? 'Nothing on your tickets for this standup yet.' : `Not written yet. It's written at 07:00 on weekdays, or now with Write it. Until then, Agenda has it all.`}</p>
+        <p className="mt-3 text-small text-fg-3">{empty ? 'Nothing on your tickets for this standup yet.' : `Not written yet. It's written at 07:00 on weekdays, or now with Write it. Until then, the three parts have it all.`}</p>
       )}
     </section>
   )

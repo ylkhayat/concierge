@@ -857,12 +857,12 @@ function writeStandup(day: string, since: Date, teams: string[]) {
   if (writing.has(k)) return writing.get(k)!
   const p = (async () => {
     const s = await standupFacts(since)
-    const did = forTeams(s.did, teams), next = forTeams(s.next, teams)
-    if (!did.length && !next.length) return undefined
-    const { result, cost, provider, tokens } = await callClaude<{ text: string }>(writeInput(did, next), tmpdir(), undefined, () => {},
+    const did = forTeams(s.did, teams), next = forTeams(s.next, teams), blockers = forTeams(s.blockers, teams), notes = state.standupNotes?.[day] ?? {}
+    if (!did.length && !next.length && !blockers.length && !Object.values(notes).some((x) => x?.length)) return undefined
+    const { result, cost, provider, tokens } = await callClaude<{ text: string }>(writeInput(did, next, blockers, notes), tmpdir(), undefined, () => {},
       { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, 0.3, await method('standup', 'Keep the ticket IDs exactly as given, so they can be linked. The text field holds the update.'), 'haiku')
     addSpend(cost, provider, tokens)
-    const w: Written = { day, teams, since: since.toISOString(), key: factsKey(did, next), text: result.text.trim(), at: new Date().toISOString(), costUsd: cost, tickets: new Set([...did, ...next].map((x) => x.id)).size }
+    const w: Written = { day, teams, since: since.toISOString(), key: factsKey(did, next, blockers, notes), text: result.text.trim(), at: new Date().toISOString(), costUsd: cost, tickets: new Set([...did, ...next].map((x) => x.id)).size }
     // the newest 30 stay: a month of mornings
     state.standups = Object.fromEntries([...Object.entries(state.standups ?? {}), [k, w] as const].sort((a, b) => a[1].at.localeCompare(b[1].at)).slice(-30))
     save()
@@ -913,8 +913,22 @@ app.get('/standup', async (c) => {
   const day = c.req.query('day') ?? '', teams = (c.req.query('teams') ?? '').split(',').filter(Boolean)
   const s = await standupFacts(since)
   const written = day ? state.standups?.[writtenKey(day, teams)] : undefined
-  const now = factsKey(forTeams(s.did, teams), forTeams(s.next, teams))
-  return c.json({ ...s, written: written && { ...written, stale: written.key !== now || written.since !== since.toISOString() } })
+  const notes = (day && state.standupNotes?.[day]) || {}
+  const now = factsKey(forTeams(s.did, teams), forTeams(s.next, teams), forTeams(s.blockers, teams), notes)
+  return c.json({ ...s, notes, written: written && { ...written, stale: written.key !== now || written.since !== since.toISOString() } })
+})
+// your own lines for a day's standup, per part (what only you know): kept with the day, said in the copy and the written one
+app.post('/standup/notes', async (c) => {
+  const b = await c.req.json<{ day?: string; part?: string; lines?: unknown }>()
+  if (!b.day || !/^\d{4}-\d\d-\d\d$/.test(b.day) || !['did', 'blockers', 'next'].includes(b.part ?? '')) return c.json({ error: 'Which day, and which part?' }, 400)
+  if (!Array.isArray(b.lines) || b.lines.length > 20 || b.lines.some((x) => typeof x !== 'string' || x.length > 300)) return c.json({ error: 'Up to 20 lines of 300 characters' }, 400)
+  const lines = (b.lines as string[]).map((x) => x.trim()).filter(Boolean)
+  const all = { ...state.standupNotes }
+  all[b.day] = { ...all[b.day], [b.part!]: lines }
+  // a month of mornings, like the written ones
+  state.standupNotes = Object.fromEntries(Object.entries(all).sort(([a], [z]) => a.localeCompare(z)).slice(-30))
+  save()
+  return c.json({ ok: true, notes: state.standupNotes[b.day] })
 })
 app.post('/standup/write', async (c) => {
   const b = await c.req.json<{ day?: string; since?: string; teams?: string[] }>()

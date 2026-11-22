@@ -10,9 +10,13 @@ import type { ExecRun, Pr } from './store.ts'
 export type Did = { id: string; title: string; url?: string; lead: string; project?: string }
 /** Something to do next, on a ticket. `count`: open review comments, for `threads`. */
 export type Next = { kind: NextKind; id: string; title: string; url?: string; count?: number; project?: string }
-export type Standup = { since: string; did: Did[]; next: Next[]; text: string }
+/** Something holding a ticket up, said as the reason: an answer owed, CI red, a review not given yet. */
+export type Blocker = { id: string; title: string; url?: string; why: string; kind: 'answer' | 'ci' | 'review'; project?: string }
+/** Your own lines for a day's standup, per part: what only you know (a call, a wait on design, a plan). */
+export type Notes = { did?: string[]; blockers?: string[]; next?: string[] }
+export type Standup = { since: string; did: Did[]; blockers: Blocker[]; next: Next[]; text: string }
 type NextKind = 'answer' | 'threads' | 'tend' | 'continue' | 'pickup' | 'start' | 'review'
-type TicketLike = Pick<Ticket, 'id' | 'title' | 'url' | 'project'> & { priority?: number } & { bucket: Bucket; prs: { repo: string; number: number; merged?: boolean }[] }
+type TicketLike = Pick<Ticket, 'id' | 'title' | 'url' | 'project'> & { priority?: number; closed?: boolean } & { bucket: Bucket; prs: { repo: string; number: number; merged?: boolean }[]; pr?: { number: number; ci?: string; merged?: boolean } }
 
 // --- days, as YYYY-MM-DD in your time zone: which standup comes next, and where it counts from
 /** The day it is in a time zone. */
@@ -133,7 +137,19 @@ export function standup(o: { since: Date; runs: RunEvent[]; prs: Record<string, 
   for (const p of open.filter((p) => !p.mine && p.requested && !p.job?.reviewDone)) { const id = ticketOf(p); if (id) want('review', id) }
   const n = [...next.values()].sort((a, b) => NEXT_ORDER.indexOf(a.kind) - NEXT_ORDER.indexOf(b.kind))
 
-  return { since, did, next: n, text: asText(did, n) }
+  // --- what holds my tickets up now, one reason each, the one that matters most
+  const blockers: Blocker[] = []
+  for (const t of [...o.tickets].sort(byPriority)) {
+    if (t.closed) continue
+    const why: [Blocker['kind'], string] | undefined = t.bucket === 'needs-you' ? ['answer', 'Waiting on my answer: the agent asked a question']
+      : t.pr?.ci === 'failure' ? ['ci', `CI is red on #${t.pr.number}`]
+      : t.bucket === 'shipped' && t.pr && !t.pr.merged ? ['review', `Waiting for review on #${t.pr.number}`] : undefined
+    if (why) blockers.push({ id: t.id, title: titleOf(t.id), url: urlOf(t.id), kind: why[0], why: why[1], ...(t.project && { project: t.project }) })
+  }
+  const order: Blocker['kind'][] = ['answer', 'ci', 'review']
+  blockers.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))
+
+  return { since, did, blockers, next: n, text: asText(did, n, blockers) }
 }
 
 /** Only these teams' tickets (a team is the id's prefix: AC-1173 is AI's); none picked is every team. */
@@ -169,32 +185,39 @@ function split<T extends { project?: string }>(xs: T[], lines: (xs: T[]) => stri
 }
 
 /** The message to paste, as plain text: one short bullet each (what happened, then the ticket), every ticket id a Markdown link to Linear. */
-export function asText(did: Did[], next: Next[]) {
+export function asText(did: Did[], next: Next[], blockers: Blocker[] = [], notes: Notes = {}) {
   const link = (id: string, url?: string) => (url ? `[${id}](${url})` : id)
+  const mine = (xs?: string[]) => (xs ?? []).map((x) => `- ${x}`)
+  const part = (lines: string[], extra: string[] | undefined, none: string) => (lines.length || extra?.length ? [...lines, ...mine(extra)] : [`- ${none}`])
   return [
     'What I did:',
-    ...split(did, (xs) => xs.map((d) => `- ${d.lead} ${link(d.id, d.url)}`), (h) => `${h}:`, '- Nothing on my tickets'),
+    ...part(did.length ? split(did, (xs) => xs.map((d) => `- ${d.lead} ${link(d.id, d.url)}`), (h) => `${h}:`, '') : [], notes.did, 'Nothing on my tickets'),
+    '',
+    'Blockers:',
+    ...part(blockers.map((b) => `- ${b.why} (${link(b.id, b.url)})`), notes.blockers, 'None'),
     '',
     'What I will do:',
-    ...split(next, (xs) => nextLines(xs).map((l) => `- ${l.text(list(l.ids.map((id, i) => link(id, l.urls[i]))))}`), (h) => `${h}:`, '- Nothing waiting on me'),
+    ...part(next.length ? split(next, (xs) => nextLines(xs).map((l) => `- ${l.text(list(l.ids.map((id, i) => link(id, l.urls[i]))))}`), (h) => `${h}:`, '') : [], notes.next, 'Nothing waiting on me'),
   ].join('\n')
 }
 
 /** The same message as HTML, for pasting where links show as links (Slack, Linear, Docs). */
-export function asHtml(did: Did[], next: Next[]) {
+export function asHtml(did: Did[], next: Next[], blockers: Blocker[] = [], notes: Notes = {}) {
   const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   const link = (id: string, url?: string) => (url ? `<a href="${esc(url)}">${esc(id)}</a>` : esc(id))
   const ul = (xs: string[]) => `<ul>${xs.map((x) => `<li>${x}</li>`).join('')}</ul>`
-  const section = <T extends { project?: string }>(title: string, xs: T[], items: (xs: T[]) => string[], none: string) => {
+  const section = <T extends { project?: string }>(title: string, xs: T[], items: (xs: T[]) => string[], none: string, extra: string[] = []) => {
     const { product, side } = halves(xs)
-    const body = !xs.length ? ul([none]) : product.length && side.length
-      ? `<p><i>Product</i></p>${ul(items(product))}<p><i>Side quests</i></p>${ul(items(side))}` : ul(items(xs))
+    const own = extra.map(esc)
+    const body = !xs.length ? ul(own.length ? own : [none]) : product.length && side.length
+      ? `<p><i>Product</i></p>${ul(items(product))}<p><i>Side quests</i></p>${ul([...items(side), ...own])}` : ul([...items(xs), ...own])
     return `<p>${title}</p>${body}`
   }
   return [
-    section('What I did:', did, (xs) => xs.map((d) => `${esc(d.lead)} ${link(d.id, d.url)}`), 'Nothing on my tickets'),
+    section('What I did:', did, (xs) => xs.map((d) => `${esc(d.lead)} ${link(d.id, d.url)}`), 'Nothing on my tickets', notes.did),
+    section('Blockers:', blockers, (xs) => xs.map((b) => `${esc(b.why)} (${link(b.id, b.url)})`), 'None', notes.blockers),
     // the sentence around a placeholder, so the ids go in as links
-    section('What I will do:', next, (xs) => nextLines(xs).map((l) => l.text('\u0000').split('\u0000').map(esc).join(list(l.ids.map((id, i) => link(id, l.urls[i]))))), 'Nothing waiting on me'),
+    section('What I will do:', next, (xs) => nextLines(xs).map((l) => l.text('\u0000').split('\u0000').map(esc).join(list(l.ids.map((id, i) => link(id, l.urls[i]))))), 'Nothing waiting on me', notes.next),
   ].join('')
 }
 
@@ -202,12 +225,14 @@ export function asHtml(did: Did[], next: Next[]) {
 // stored with a fingerprint of the facts it was written from, so the page can say when they moved on since
 
 /** A fingerprint of the facts, so a written version knows whether it still says what the facts say. */
-export const factsKey = (did: Did[], next: Next[]) => JSON.stringify({ did: did.map((d) => [d.id, d.lead]), next: next.map((n) => [n.kind, n.id, n.count ?? 0]) })
+export const factsKey = (did: Did[], next: Next[], blockers: Blocker[] = [], notes: Notes = {}) => JSON.stringify({ did: did.map((d) => [d.id, d.lead]), next: next.map((n) => [n.kind, n.id, n.count ?? 0]), blockers: blockers.map((b) => [b.kind, b.id]), notes })
 
 /** What the model gets: the facts, in order, with each ticket's title and project (none: a side quest). */
-export function writeInput(did: Did[], next: Next[]) {
+export function writeInput(did: Did[], next: Next[], blockers: Blocker[] = [], notes: Notes = {}) {
   return JSON.stringify({
     did: did.map((d) => ({ id: d.id, title: d.title, happened: d.lead, project: d.project ?? null })),
+    blockers: blockers.map((b) => ({ id: b.id, title: b.title, why: b.why, project: b.project ?? null })),
+    myOwnLines: notes, // what the person added themselves, per part: say them as they wrote them
     next: nextLines(next).map((l) => ({ say: l.text(list(l.ids)), tickets: l.ids.map((id) => { const n = next.find((x) => x.id === id); return { id, title: n?.title ?? '', project: n?.project ?? null } }) })),
   }, null, 1)
 }

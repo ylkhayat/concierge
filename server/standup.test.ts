@@ -36,6 +36,9 @@ test('tells it per Linear ticket, in plain sentences, leaving PRs without a tick
     'What I did:',
     '- Progress on [AI-9](https://linear.app/acme/issue/AI-9/give)', // shipped, opened, feedback, approved: several things
     '',
+    'Blockers:',
+    '- None',
+    '',
     'What I will do:',
     '- Work through the review comments on [AI-9](https://linear.app/acme/issue/AI-9/give) (2 open)',
     '- Investigate closing of [AI-5](https://linear.app/acme/issue/AI-5)', // stalled; AI-6 is only Todo, which stays out
@@ -71,6 +74,23 @@ test('a written standup gets its ticket ids linked, as Markdown and as lists', (
 test('product work comes first, side quests apart; one kind alone needs no headings', () => {
   const did = [{ id: 'AC-1', title: 'Fix a crash', lead: 'Merged' }, { id: 'AC-2', title: 'Agent state', lead: 'Progress on', project: 'Checkout redesign' }]
   const next = [{ kind: 'continue' as const, id: 'AC-2', title: 'Agent state', project: 'Checkout redesign' }]
-  assert.deepEqual(asText(did, next).split('\n'), ['What I did:', 'Product:', '- Progress on AC-2', 'Side quests:', '- Merged AC-1', '', 'What I will do:', '- Continue the remaining work on AC-2'])
+  assert.deepEqual(asText(did, next).split('\n'), ['What I did:', 'Product:', '- Progress on AC-2', 'Side quests:', '- Merged AC-1', '', 'Blockers:', '- None', '', 'What I will do:', '- Continue the remaining work on AC-2'])
   assert.match(asHtml(did, next), /<p><i>Product<\/i><\/p><ul><li>Progress on AC-2<\/li><\/ul><p><i>Side quests<\/i><\/p>/)
+})
+
+test('blockers come from where the tickets stand, an answer owed first; your own lines join each part', () => {
+  const tickets = [
+    { id: 'AI-1', title: 'Review me', bucket: 'shipped', prs: [], pr: { number: 11 } },
+    { id: 'AI-2', title: 'Red', bucket: 'in-progress', prs: [], pr: { number: 12, ci: 'failure' } },
+    { id: 'AI-3', title: 'Asked', bucket: 'needs-you', prs: [] },
+    { id: 'AI-4', title: 'Merged already', bucket: 'shipped', prs: [], pr: { number: 14, merged: true } },
+    { id: 'AI-5', title: 'Done', bucket: 'shipped', prs: [], pr: { number: 15 }, closed: true },
+  ] as any
+  const s = standup({ since: new Date('2026-01-01'), runs: [], prs: {}, tickets, execs: {} })
+  assert.deepEqual(s.blockers.map((b) => [b.id, b.kind]), [['AI-3', 'answer'], ['AI-2', 'ci'], ['AI-1', 'review']])
+  const text = asText([], [], s.blockers, { blockers: ['Waiting on design for the empty state'], next: ['Pair with Sam on the release'] }).split('\n')
+  assert.ok(text.includes('- CI is red on #12 (AI-2)'))
+  assert.ok(text.includes('- Waiting on design for the empty state'))
+  assert.ok(text.includes('- Pair with Sam on the release'))
+  assert.ok(!text.includes('- Nothing waiting on me')) // your line fills the part
 })
