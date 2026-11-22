@@ -21,6 +21,7 @@ import { applyAll, LATER } from '../../server/planOps.ts'
 import { impact } from '../planDiff.ts'
 import { orderOf, planStream, ranksOf } from '../planStream.ts'
 import { areaOf, explore, refineOf } from '../planLook.tsx'
+import type { Gap } from '../../server/planOps.ts'
 
 type Toast = (m: string, tone?: 'ok' | 'error') => void
 // a change to a plan's own fields (its appetite in weeks; none: null)
@@ -160,7 +161,7 @@ function StageBar({ stages, onStep }: { stages: Stage[]; onStep: (s: Stage) => v
 }
 
 // --- the chat: the planning partner, its questions as cards and what to do next one click away ------------------------
-function Chat({ p, toast, stage, settings, onSelect, onReplay }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode; onSelect?: (id: string) => void; onReplay?: (from: number) => void }) {
+function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore }: { p: Plan; toast: Toast; stage?: Stage; settings: ReactNode; onSelect?: (id: string) => void; onReplay?: (from: number) => void; angles?: Gap[]; onExplore?: (g: Gap) => void }) {
   const [text, setText] = useState('')
   const [picks, setPicks] = useState<Record<number, number>>({})
   const scroll = useRef<HTMLDivElement>(null)
@@ -197,12 +198,38 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay }: { p: Plan; toas
   const placeholder = asks.length ? 'Anything to add to your answers (optional)…' : stage?.id === 'brief' ? 'Tell it about the project: the problem, who has it, the deadline…'
     : stage?.id === 'shape' ? 'Ask it to shape the plan, or say how you see the parts…' : stage?.id === 'slice' ? 'Ask for tickets, or how small they should be…'
     : stage?.id === 'fit' ? 'Ask it to fit the time, cut scope, or order by value…' : 'Ask for changes: split an epic, add a milestone, move something first…'
+  // wide (xl): the conversation in the middle, the agent's notes on its left (the brief, the angles not explored yet),
+  // what to do on its right (its questions, the next steps); narrower, all of it in the one column, as before
+  // the angles not explored yet: the board's (with the obligations its profile adds), else the planner's own
+  const notes = p.busy ? [] : angles ?? gaps
+  const gapsList = notes.length > 0 && (
+    <div className="space-y-1.5">
+      <p className="label text-fg-4">Not explored yet</p>
+      {notes.map((g) => { const ar = areaOf(g), I = ar.icon; return (
+        <button key={g.id} onClick={() => onExplore?.(g)} disabled={p.busy} title={`${ar.label}: ${g.why}`}
+                className="group/gap flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-small text-fg-2 transition-colors hover:bg-hover hover:text-fg-1 disabled:opacity-50">
+          <I className="mt-0.5 size-3.5 shrink-0" style={{ color: `oklch(0.7 0.13 ${ar.hue})` }} />
+          <span className="min-w-0 flex-1"><span className="block">{g.title}</span><span className="block text-meta text-fg-3">{g.why}</span></span>
+          <span className="shrink-0 text-meta font-medium text-accent-text opacity-0 transition-opacity group-hover/gap:opacity-100">Take it on</span>
+        </button>
+      ) })}
+    </div>
+  )
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {settings}
+      <div className="flex min-h-0 flex-1">
+        <aside aria-label="The agent's notes" className="hidden w-[clamp(220px,24%,360px)] shrink-0 flex-col gap-4 overflow-y-auto border-r border-line px-4 py-3 xl:flex">
+<details open className="group/brief rounded-xl bg-hover/50 px-3 py-2 text-small">
+            <summary className="cursor-pointer list-none font-medium text-fg-2"><span className="mr-1 inline-block transition-transform group-open/brief:rotate-90">›</span>The brief</summary>
+            <p className="mt-1.5 whitespace-pre-wrap text-fg-2">{p.brief || p.project?.vision || 'No brief yet: tell it below what the project is for.'}</p>
+          </details>
+          {gapsList}
+        </aside>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto">
        <div ref={inner} className="px-[max(0px,calc((100%-860px)/2))]">
-        <div className="flex flex-col gap-4 px-4 pt-4">
+        <div className="flex flex-col gap-4 px-4 pt-4 xl:hidden">
           <details className="group/brief rounded-xl bg-hover/50 px-3 py-2 text-small">
             <summary className="cursor-pointer list-none font-medium text-fg-2"><span className="mr-1 inline-block transition-transform group-open/brief:rotate-90">›</span>The brief</summary>
             <p className="mt-1.5 whitespace-pre-wrap text-fg-2">{p.brief || p.project?.vision || 'No brief yet: tell it below what the project is for.'}</p>
@@ -214,7 +241,7 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay }: { p: Plan; toas
         <div className="flex flex-col gap-4 px-4 pb-4">
           {p.busy && <p className="flex items-center gap-2 text-small text-accent-text"><Sparkles className="size-4 animate-pulse" />Drafting on the board…</p>}
           {p.error && <p className="rounded-xl bg-fail/10 px-3 py-2 text-small text-fail">{p.error}</p>}
-          {/* its questions: answered with a click, its pick chosen */}
+          <div className="xl:hidden">
           {asks.length > 0 && (
             <div className="space-y-2.5 rounded-2xl bg-surface-1 p-3 shadow-e1 ring-1 ring-accent/20">
               <p className="label text-accent-text">{asks.length === 1 ? 'A question' : `${asks.length} questions`}</p>
@@ -228,10 +255,12 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay }: { p: Plan; toas
               <button onClick={answer} disabled={!answers.length} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-40"><Send className="size-3.5" />Answer{answers.length > 1 ? ` all ${answers.length}` : ''}</button>
             </div>
           )}
+          </div>
         </div>
        </div>
       </div>
       <div className="mx-auto w-full max-w-[860px] space-y-2 px-3 pb-3 pt-1">
+        <div className="xl:hidden">
         {suggest.length > 0 && !asks.length && (
           <div className="flex flex-wrap gap-1.5" aria-label="What to do next">
             {suggest.map((x) => (
@@ -241,12 +270,41 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay }: { p: Plan; toas
             ))}
           </div>
         )}
+        </div>
         <div className="flex items-end gap-2 rounded-2xl bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
           <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder={placeholder}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (asks.length) answer(); else send(text) } }}
                     className="max-h-[200px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
           <button onClick={() => (asks.length ? answer() : send(text))} disabled={(!text.trim() && !answers.length) || p.busy} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent disabled:opacity-40">{p.busy ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</button>
         </div>
+      </div>
+        </div>
+        <aside aria-label="What to do" className="hidden w-[clamp(240px,26%,380px)] shrink-0 flex-col gap-4 overflow-y-auto border-l border-line px-4 py-3 xl:flex">
+          {asks.length > 0 && (
+            <div className="space-y-2.5 rounded-2xl bg-surface-1 p-3 shadow-e1 ring-1 ring-accent/20">
+              <p className="label text-accent-text">{asks.length === 1 ? 'A question' : `${asks.length} questions`}</p>
+              {asks.map((a, i) => (
+                <div key={i} className="space-y-1.5">
+                  <p className="text-small font-medium text-fg-1">{a.q}</p>
+                  <Pick wrap label={a.q} value={picks[i]} onChange={(j) => setPicks((x) => ({ ...x, [i]: j }))}
+                        options={a.options.map((o, j) => ({ value: j, label: <>{o}{a.pick === j && <span className="ml-1 text-micro opacity-70">its pick</span>}</> }))} />
+                </div>
+              ))}
+              <button onClick={answer} disabled={!answers.length} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-40"><Send className="size-3.5" />Answer{answers.length > 1 ? ` all ${answers.length}` : ''}</button>
+            </div>
+          )}
+          {suggest.length > 0 && !asks.length && (
+            <div className="space-y-1.5" aria-label="What to do next">
+              <p className="label text-fg-4">What to do next</p>
+              {suggest.map((x) => (
+                <button key={x} onClick={() => send(x)} disabled={p.busy} className="flex w-full items-start gap-2 rounded-xl bg-surface-1 px-3 py-2 text-left text-small text-fg-2 shadow-e1 transition-colors hover:text-fg-1 disabled:opacity-50">
+                  <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent-text" /><span>{x}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {!asks.length && !suggest.length && <p className="text-small text-fg-3">{p.busy ? 'It is drafting: its questions and next steps come here.' : 'Nothing waits on you here.'}</p>}
+        </aside>
       </div>
     </div>
   )
@@ -337,7 +395,6 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
       <span className="inline-flex items-center gap-1.5">
         <span className="label text-fg-4">Colour</span>
         <Tabs size="sm" label="Colour the tickets by" value={colorBy} onChange={onColorBy} options={[{ id: 'epic', label: 'Epic' }, { id: 'owner', label: 'Owner' }, { id: 'moscow', label: 'MoSCoW' }]} />
-        {colorBy === 'moscow' && <span className="inline-flex items-center gap-2 text-micro text-fg-3">{(['must', 'should', 'could', 'wont'] as const).map((m) => <span key={m} className="inline-flex items-center gap-1"><span className="size-2 rounded-full" style={{ background: `oklch(0.72 0.12 ${MOSCOW_HUE[m]})` }} />{m === 'wont' ? "won't" : m}</span>)}<span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-fg-4" />unset</span></span>}
       </span>
     </div>
   )
@@ -540,6 +597,14 @@ function withObligations(p: Plan, company?: Compliance): Plan {
   return open.length ? { ...p, gaps: [...mine, ...open.filter((o) => !mine.some((g) => g.title.toLowerCase().includes(o.title.toLowerCase().split(' ')[0])))].slice(0, 10) } : p
 }
 
+/** At least xl wide (the conversation's side columns show): read again as the window changes. */
+function useWide() {
+  const q = '(min-width: 1280px)'
+  const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(q).matches)
+  useEffect(() => { const m = matchMedia(q), f = () => setOn(m.matches); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, [])
+  return on
+}
+
 // the conversation's height under the board, as you dragged it (this browser only); none: its default share
 const DOCK_KEY = 'concierge:plan-dock'
 const savedDock = () => { try { const v = Number(localStorage.getItem(DOCK_KEY)); return v > 0 ? v : undefined } catch { return undefined } }
@@ -557,10 +622,13 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const [cfg, setCfg] = useState<'open' | 'skill' | 'team'>()
   // how much of the plan you see: every stream as one line (overview), its tickets as pebbles (streams), or listed by
   // name (tickets); any single stream opens and closes on its own
-  const [compact, setCompact] = useState(false), [open, setOpen] = useState<Set<string>>(new Set()), [legend, setLegend] = useState(false)
+  // the default: every ticket listed by name ('all' keeps it so as the draft adds epics)
+  const [compact, setCompact] = useState(false), [open, setOpen] = useState<Set<string> | 'all'>('all'), [legend, setLegend] = useState(false)
   const [colorBy, setColorBy] = useState<ColorBy>('epic')
   // the board and the conversation share the height: drag the line between them (double-click: back to the default)
   const [dock, setDock] = useState<number | undefined>(savedDock)
+  // wide: the conversation has the agent's notes and what to do beside it (the angles move there from the board)
+  const wide = useWide()
   const split = useRef<HTMLDivElement>(null)
   const dragDock = (e: React.PointerEvent) => {
     e.preventDefault()
@@ -583,8 +651,9 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   useEffect(() => {
     if (!p?.nodes.length || !wanted.current) return
     const l = wanted.current; wanted.current = null
-    if (l === 'overview') setCompact(true)
-    if (l === 'tickets') setOpen(new Set(planStream(p.nodes, p.links).streams.map((x) => x.id)))
+    if (l === 'overview') { setCompact(true); setOpen(new Set()) }
+    if (l === 'streams') setOpen(new Set())
+    if (l === 'tickets') setOpen('all')
   }, [p?.nodes.length]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!p) return <div className="flex flex-1 items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>
   const ops = (o: Op[]) => api(`${path}/edit`, { ops: o }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
@@ -603,6 +672,8 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const move = (m: Move) => void addTried([m])
   const shown = paced.length < tried.length ? applyAll(p, paced) : whatIf
   const fresh = paced.length < tried.length || paced.length === tried.length ? paced.at(-1) : undefined
+  // what the board draws, with the obligations its workspace's profile adds to what isn't explored yet
+  const board = withObligations(shown, profile)
   const set: SetPlan = (v) => api(path, v).then((r: Plan) => { remember(path, r); refresh('/plans'); if ('org' in v) refresh(`${path}/checks`) }, (e: Error) => toast(e.message, 'error'))
   const say = (text: string) => api(`${path}/say`, { text }).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))
   const items = p.nodes.filter((n) => n.kind !== 'goal'), made = p.nodes.filter((n) => n.created).length
@@ -617,9 +688,10 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const fits = appetiteEnd ? f.at <= appetiteEnd : undefined
   const refining = whatIf.nodes.filter((n) => n.kind === 'ticket' && refineOf(n)).length
   const streamIds = planStream(p.nodes, p.links, people, pace).streams.map((x) => x.id)
-  const level: Level | undefined = open.size === 0 ? (compact ? 'overview' : 'streams') : streamIds.every((x) => open.has(x)) ? 'tickets' : undefined
-  const setLevel = (l: Level) => { setCompact(l === 'overview'); setOpen(new Set(l === 'tickets' ? streamIds : [])) }
-  const toggle = (sid: string) => setOpen((o) => { const n = new Set(o); if (!n.delete(sid)) n.add(sid); return n })
+  const openSet = open === 'all' ? new Set(planStream(shown.nodes, shown.links, people, pace).streams.map((x) => x.id)) : open
+  const level: Level | undefined = compact ? 'overview' : open === 'all' || (open.size > 0 && streamIds.every((x) => open.has(x))) ? 'tickets' : open.size === 0 ? 'streams' : undefined
+  const setLevel = (l: Level) => { setCompact(l === 'overview'); setOpen(l === 'tickets' ? 'all' : new Set()) }
+  const toggle = (sid: string) => setOpen((o) => { const n = new Set(o === 'all' ? openSet : o); if (!n.delete(sid)) n.add(sid); return n })
   const stages = stagesOf(p, fits), stage = stages.find((s) => !s.done)
   const step = (s: Stage) => {
     if (s.id === 'linear') return p.team ? arm('create', create) : (setTeamsOn(true), setCfg('team'))
@@ -674,7 +746,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
                 <p className="text-body font-semibold text-fg-1">{p.busy || tried.length ? 'Drawing the plan…' : 'The plan draws itself here'}</p>
                 <p className="max-w-sm text-small text-fg-3">Each epic a stream flowing into the goal, its tickets along it when they would be worked on, and the time it is worth marked.</p>
               </div>
-            ) : <PlanStream p={withObligations(shown, profile)} base={tried.length ? p : undefined} draft={paced} fresh={fresh?.turn && 'id' in fresh ? `${fresh.id}:${paced.length}` : undefined} onMove={p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={open} onToggle={toggle} legend={legend} />}
+            ) : <PlanStream p={board} noGaps={wide} base={tried.length ? p : undefined} draft={paced} fresh={fresh?.turn && 'id' in fresh ? `${fresh.id}:${paced.length}` : undefined} onMove={p.creating ? undefined : move} colorBy={colorBy} people={people} pace={pace} selected={selected} onSelect={setSelected} onExplore={(g) => !p.busy && void say(explore(g))} compact={compact} open={compact ? new Set() : openSet} onToggle={toggle} legend={legend} />}
             {selected && <Inspector p={whatIf} id={selected} onOps={ops} onMove={move} onClose={() => setSelected(undefined)} />}
           </div>
         </section>
@@ -684,9 +756,9 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
           <span className="absolute inset-x-0 -bottom-1.5 -top-1.5 group-hover:bg-accent/20" />
         </div>
         <section aria-label="Chat" style={dock ? ({ '--dock': `${dock}px` } as React.CSSProperties) : undefined}
-                 className={`flex min-h-0 flex-1 flex-col bg-surface-1/60 lg:flex-none ${dock ? 'lg:h-[var(--dock)]' : 'lg:h-[clamp(300px,42%,560px)]'}`}>
+                 className={`flex min-h-0 flex-1 flex-col bg-surface-1/60 lg:flex-none ${dock ? 'lg:h-[var(--dock)]' : 'lg:h-[clamp(260px,34%,460px)]'}`}>
           {p.vision && <VisionCard p={p} set={set} toast={toast} />}
-          <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} onReplay={replayFrom} />
+          <Chat p={p} toast={toast} stage={stage} settings={settings} onSelect={setSelected} onReplay={replayFrom} angles={board.gaps ?? []} onExplore={(g) => !p.busy && void say(explore(g))} />
         </section>
       </div>
     </div>

@@ -2,8 +2,10 @@
 // as thick as the work in it, and its tickets are pebbles along it at the time they would be worked on (planStream.ts):
 // done ones solid, the one going on glowing, what lies past the appetite faded. The streams draw themselves in, and
 // pebbles glide when the plan changes. Hover a pebble: what it is, when, and what it waits for; click: open it.
-// A pebble shows its name (two lines at most, the rest on hover) and its points (~ when guessed), who picked it up, and
-// is hatched while it still needs refining; one too short for words shows its points alone. Below the
+// Listing tickets (the default level), names sit in a column on the left, one row per ticket, its bar on the timeline
+// at its time: always whole, aligned, never over another (inside the bars they were crushed or spilled onto the next).
+// A pebble (the streams level) shows its points (~ when guessed) and its name only when it fits inside, who picked
+// it up, and is hatched while it still needs refining. Below the
 // streams, the angles the plan hasn't explored yet flow faintly toward the goal: click one to have the planner take it on.
 // Moves (onMove): drag a pebble earlier or later, onto another stream, or down into Later to cut it; each is a move of
 // the scenario being tried. With a scenario, `base` is the plan before it: what moved leaves a dashed outline where it
@@ -25,7 +27,7 @@ export type Move = Extract<Op, { op: 'move' }>
 export type ColorBy = 'epic' | 'owner' | 'moscow'
 export const MOSCOW_HUE = { must: 25, should: 70, could: 230, wont: 280 } as const
 const nameHue = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7)
-export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, onSelect, onExplore, compact, open, onToggle, legend, onMove, draft = [], fresh }: { p: Plan; base?: Plan; draft?: Op[]; fresh?: string; people: number; pace: number; selected?: string; onSelect: (id?: string) => void; onExplore?: (g: Gap) => void
+export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, onSelect, onExplore, compact, open, onToggle, legend, onMove, draft = [], fresh, noGaps }: { p: Plan; base?: Plan; draft?: Op[]; fresh?: string; people: number; pace: number; selected?: string; onSelect: (id?: string) => void; onExplore?: (g: Gap) => void; noGaps?: boolean
   compact?: boolean; open?: Set<string>; onToggle?: (id: string) => void; legend?: boolean; onMove?: (m: Move) => void; colorBy?: ColorBy }) {
   const box = useRef<HTMLDivElement>(null)
   // the room the map is drawn in: it fits it, never scrolls (unless every ticket is listed and even packed they don't fit)
@@ -57,7 +59,10 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   useEffect(() => { const t = setTimeout(() => setDrawn(true), 1400); return () => clearTimeout(t) }, [])
 
   const goal = p.nodes.find((n) => n.kind === 'goal')
-  const LEFT = 24, RIGHT = 150, TOP = 46
+  // listing any stream's tickets: a column on the left for the names (epics and tickets), the timeline after it
+  const listing = !compact && s.streams.some((st) => open?.has(st.id))
+  const GUTTER = listing && w ? Math.round(Math.min(320, Math.max(190, w * 0.24))) : 0
+  const LEFT = 24 + GUTTER, RIGHT = 150, TOP = 46
   const t0 = Math.min(-0.5, ...s.streams.map((x) => x.start)), t1 = Math.max(1, s.end, appetite ?? 0, due ?? 0) + 0.3
   const span = Math.max(1, w - LEFT - RIGHT)
   const x = (t: number) => LEFT + ((t - t0) / (t1 - t0)) * span
@@ -84,9 +89,11 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
       const sub = new Map<string, number>(), ends: number[] = []
       for (const sl of [...st.slots].sort((a, b) => a.start - b.start)) { let j = ends.findIndex((e) => e <= sl.start + 1e-6); if (j < 0) { j = ends.length; ends.push(0) } ends[j] = sl.end; sub.set(sl.id, j) }
       const lanes = Math.max(1, ends.length), lanePh = compact ? Math.min(Math.max(6, thick(st.points) - 8), 22) : PEB()
-      const t = compact ? thick(st.points) : lanes === 1 ? Math.max(thick(st.points), PEB() + 8) : Math.max(thick(st.points), lanes * (lanePh + 4) + 6)
+      const listed = !!open?.has(st.id) && !compact
+      const t = compact ? thick(st.points) : listed ? 10 : lanes === 1 ? Math.max(thick(st.points), PEB() + 8) : Math.max(thick(st.points), lanes * (lanePh + 4) + 6)
       const yOf = (id: string) => (lanes === 1 ? 0 : ((sub.get(id) ?? 0) - (lanes - 1) / 2) * (lanePh + 4))
-      const cy = y + 16 + t / 2; const isOpen = !!open?.has(st.id); const listY = cy + t / 2 + 10; y = cy + t / 2 + gap + (isOpen ? st.slots.length * ROW + 4 : 0); return { st, t, cy, isOpen, listY, lanes, lanePh, yOf } })
+      // with the column the title is in it, level with the band (no line above it); listed, its tickets follow closely
+      const cy = y + (listing ? Math.max(12, t / 2) : 16 + t / 2); const isOpen = listed; const listY = cy + Math.max(t / 2, 8) + 8; y = cy + t / 2 + (isOpen ? 10 + st.slots.length * ROW : gap) + (isOpen ? gap / 2 : 0); return { st, t, cy, isOpen, listY, lanes, lanePh, yOf } })
     return { rows, end: y + 10 }
   }
   // the fit: thinner streams and less air until it fits (down to a floor); with room to spare, fuller streams, more air
@@ -94,7 +101,8 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   const n = streams.length
   let gap = 22, top = 0, L = layout(gap, 0)
   if (room > 0 && L.end > room) {
-    for (k = 0.95; k >= 0.35 && L.end > room; k -= 0.05) { gap = Math.max(6, 22 * k); ROW = Math.max(15, 26 * k); L = layout(gap, 0) }
+    // a listed ticket's row never gets too tight to read: past that, the board scrolls
+    for (k = 0.95; k >= 0.35 && L.end > room; k -= 0.05) { gap = Math.max(6, 22 * k); ROW = Math.max(listing ? 24 : 15, 26 * k); L = layout(gap, 0) }
   } else if (room > 0 && !compact) {
     while (k < 1.4) { k += 0.05; if (layout(gap, 0).end > room) { k -= 0.05; break } }
     L = layout(gap, 0)
@@ -109,7 +117,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   const nodeOf = new Map(p.nodes.map((n) => [n.id, n]))
   const title = (id: string) => nodeOf.get(id)?.title ?? id
   const cut = (t: string, px: number) => { const n = Math.max(4, Math.floor(px / 6.4)); return t.length > n ? `${t.slice(0, n - 1)}…` : t }
-  const slotAt = new Map(rows.flatMap((r) => r.st.slots.map((sl) => [sl.id, { sl, cy: r.cy + r.yOf(sl.id) }] as const)))
+  const slotAt = new Map(rows.flatMap((r) => r.st.slots.map((sl, j) => [sl.id, { sl, cy: r.isOpen ? r.listY + j * ROW + ROW / 2 : r.cy + r.yOf(sl.id) }] as const)))
   const weeks = Array.from({ length: Math.max(0, Math.floor(t1) - Math.ceil(t0) + 1) }, (_, i) => Math.ceil(t0) + i)
   const rowOf = new Map(rows.map((r) => [r.st.id, r]))
   const cutNodes = p.nodes.filter((n) => n.kind === 'ticket' && n.parent === LATER)
@@ -168,6 +176,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
     <div className="relative flex h-full min-h-0 w-full flex-col">
      <div ref={box} className={`relative min-h-0 flex-1 overflow-x-hidden ${room && H > room + 2 ? 'overflow-y-auto' : 'overflow-hidden'}`}>
       {legend && <Legend />}
+      {colorBy !== 'epic' && <ColorKey p={p} colorBy={colorBy} />}
       {w > 0 && (
         <svg ref={svgRef} width={w} height={H} className={`block select-none ${drag?.moved ? 'cursor-grabbing' : ''}`} role="img" aria-label="The plan over time">
           <defs>
@@ -201,7 +210,8 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
           {/* the streams, flowing into the goal */}
           {rows.map(({ st, t, cy: rowCy, isOpen, listY, lanes, lanePh, yOf }, i) => {
             const cy = rowCy
-            const h = hueOf(st.id), x0 = x(st.start), x1 = Math.max(x0 + t, x(st.end))
+            // listed, its band is the span of its tickets (from the first one's start, not from today)
+            const h = hueOf(st.id), x0 = x(isOpen && st.slots.length ? Math.min(...st.slots.map((sl) => sl.start)) : st.start), x1 = Math.max(x0 + t, x(st.end))
             const d = `M ${x0} ${cy} L ${x1} ${cy} C ${x1 + (gx - x1) * 0.55} ${cy}, ${gx - (gx - x1) * 0.45} ${gy}, ${gx} ${gy}`
             return (
               <g key={st.id}>
@@ -211,15 +221,24 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                       style={drawn ? undefined : { strokeDasharray: 1, animation: `stream-draw 1100ms var(--ease-out) ${i * 90}ms both` }} />
                 {/* open or close its tickets */}
                 <g role="button" tabIndex={0} aria-expanded={isOpen} aria-label={`${isOpen ? 'Hide' : 'Show'} the tickets of ${st.title}`} className="cursor-pointer outline-none" onClick={() => onToggle?.(st.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle?.(st.id) } }}>
-                  <rect x={x0 - 4} y={cy - t / 2 - 21} width={18} height={18} rx={5} className="fill-transparent hover:fill-[var(--surface-hover)]" />
+                  <rect x={(listing ? 8 : x0) - 4} y={(listing ? cy - 9 : cy - t / 2 - 21)} width={18} height={18} rx={5} className="fill-transparent hover:fill-[var(--surface-hover)]" />
                   <path d="M -2.5 -4 L 2.5 0 L -2.5 4" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="text-fg-3"
-                        style={{ transform: `translate(${x0 + 5}px, ${cy - t / 2 - 12}px) rotate(${isOpen ? 90 : 0}deg)`, transition: 'transform 200ms var(--ease-snappy)' }} />
+                        style={{ transform: `translate(${(listing ? 8 : x0) + 5}px, ${listing ? cy : cy - t / 2 - 12}px) rotate(${isOpen ? 90 : 0}deg)`, transition: 'transform 200ms var(--ease-snappy)' }} />
                 </g>
+                {listing ? (
+                  <foreignObject x={30} y={cy - 10} width={Math.max(0, GUTTER - 14)} height={20}>
+                    <button onClick={() => (st.node ? onSelect(st.node.id) : onToggle?.(st.id))} title={`${st.title}\n${st.slots.length} ticket${st.slots.length === 1 ? '' : 's'} · ${st.points} pt · ~${fmt(st.end)}`}
+                            className="block w-full truncate text-left text-[12px] font-semibold leading-5 text-fg-1 hover:underline">{st.title}</button>
+                  </foreignObject>
+                ) : (
                 <text x={x0 + 18} y={cy - t / 2 - 8} fontSize={12} fontWeight={600} className="fill-fg-1" style={{ cursor: 'pointer' }} onClick={() => (st.node ? onSelect(st.node.id) : onToggle?.(st.id))}>
                   {st.title.length > 60 ? `${st.title.slice(0, 58)}…` : st.title}
                   <tspan dx={8} fontSize={10.5} fontWeight={400} className="fill-fg-3">{st.slots.length} ticket{st.slots.length === 1 ? '' : 's'} · {st.points} pt{st.slots.some((sl) => sl.done) ? ` · ${Math.round(100 * st.slots.filter((sl) => sl.done).reduce((a, sl) => a + sl.points, 0) / Math.max(1, st.points))}% done` : ''} · ~{fmt(st.end)}</tspan>
                   {st.slots.some((sl) => sl.refine) && <tspan dx={6} fontSize={10.5} fontWeight={500} className="fill-wait">· {st.slots.filter((sl) => sl.refine).length} to refine</tspan>}
                 </text>
+                )}
+                {/* listed: what the stream holds, after its band */}
+                {listing && <text x={x1 + 10} y={cy + 3.5} fontSize={10.5} className="fill-fg-3" pointerEvents="none">{st.slots.length} ticket{st.slots.length === 1 ? '' : 's'} · {st.points} pt · ~{fmt(st.end)}{st.slots.some((sl) => sl.refine) ? ` · ${st.slots.filter((sl) => sl.refine).length} to refine` : ''}</text>}
                 {/* at a glance: how much of it is done, as a solid run along its line */}
                 {compact && (() => { const done = st.slots.filter((sl) => sl.done).reduce((a, sl) => a + sl.points, 0) / Math.max(1, st.points); return done > 0 ? <rect x={x0} y={cy - t / 2} width={Math.max(t, (x1 - x0) * done)} height={t} rx={t / 2} fill={col(h, 0.95)} style={{ transition: 'width 500ms var(--ease-snappy)' }} /> : null })()}
                 {/* open: every ticket on its own line, at its time, named */}
@@ -229,20 +248,23 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                   const lit = hover?.slot.id === sl.id || selected === sl.id
                   const id = n?.created?.identifier, state = sl.done ? 'Done' : sl.started ? (n?.state?.name ?? 'In progress') : sl.refine ? 'Needs refining' : n?.state?.name
                   const meta = [`${sl.sized ? '' : '~'}${sl.points} pt`, sl.who, state].filter(Boolean).join(' · ')
-                  // its name beside its bar: after it where there is room, else before it
-                  const roomR = w - RIGHT + 30 - (bx + bw + 8), right = roomR >= 240 || roomR >= bx - LEFT
-                  const room = (right ? roomR : bx - LEFT - 8) - meta.length * 5.6 - (id ? id.length * 6.6 + 8 : 0) - 12
                   return (
                     <g key={sl.id} className="cursor-pointer" onClick={() => onSelect(sl.id)} onMouseEnter={() => setHover({ slot: sl, x: bx + bw / 2, y: ry - 8 })} onMouseLeave={() => setHover(undefined)}
                        style={{ animation: `fade-in 260ms ${Math.min(j, 12) * 22}ms both` }}>
-                      <rect x={LEFT} y={ry - ROW / 2 + 1} width={Math.max(0, w - LEFT - 8)} height={ROW - 2} rx={6} fill={lit ? 'var(--surface-hover)' : 'transparent'} />
-                      <rect x={bx} y={ry - 6} width={bw} height={12} rx={6} fill={sl.refine && !later ? `url(#hatch-${i})` : col(h)} fillOpacity={sl.done ? 0.95 : later ? 0.2 : 0.7}
-                            stroke={sl.started ? col(h) : later || sl.refine ? col(h, 0.8) : 'none'} strokeWidth={sl.started ? 2 : 1} strokeDasharray={later || sl.refine ? '3 3' : undefined} className={sl.started ? 'animate-pulse' : undefined} />
-                      <text x={right ? bx + bw + 8 : bx - 8} y={ry + 4} textAnchor={right ? 'start' : 'end'} fontSize={11.5} className={sl.done ? 'fill-fg-3' : 'fill-fg-1'}>
-                        {id && <tspan fontFamily="var(--font-mono)" fontSize={10.5} className="fill-fg-3">{id}  </tspan>}
-                        <tspan fontWeight={500} textDecoration={sl.done ? 'line-through' : undefined}>{cut(title(sl.id), room)}</tspan>
-                        <tspan dx={8} fontSize={10.5} className={sl.refine ? 'fill-wait-text' : 'fill-fg-3'}>{meta}</tspan>
-                      </text>
+                      <rect x={4} y={ry - ROW / 2 + 1} width={Math.max(0, w - 12)} height={ROW - 2} rx={6} fill={lit ? 'var(--surface-hover)' : 'transparent'} />
+                      {/* its name, in the column: whole up to the column's width, its id before it */}
+                      <foreignObject x={40} y={ry - ROW / 2} width={Math.max(0, GUTTER - 24)} height={ROW} pointerEvents="none">
+                        <div className={`flex h-full items-center gap-1.5 text-[11.5px] ${sl.done ? 'text-fg-3 line-through' : 'text-fg-1'}`}>
+                          {id && <span className="shrink-0 font-mono text-[10.5px] text-fg-3">{id}</span>}
+                          <span className="min-w-0 truncate font-medium">{title(sl.id)}</span>
+                        </div>
+                      </foreignObject>
+                      <rect x={bx} y={ry - 7} width={bw} height={14} rx={7} fill={sl.refine && !later && colorBy === 'epic' ? `url(#hatch-${i})` : pebbleHue(sl, h) === null ? 'var(--fg-4)' : col(pebbleHue(sl, h)!)} fillOpacity={sl.done ? 0.95 : later ? 0.2 : 0.7}
+                            stroke={sl.started ? col(h) : later || sl.refine ? col(h, 0.8) : 'none'} strokeWidth={sl.started ? 2 : 1} strokeDasharray={later || sl.refine ? '3 3' : undefined} className={sl.started ? 'animate-pulse' : undefined}
+                            onPointerDown={(e) => { e.stopPropagation(); press(e, sl) }} opacity={drag?.moved && drag.id === sl.id ? 0.35 : 1} />
+                      {critical.has(sl.id) && !sl.done && <rect x={bx + 2} y={ry + 9} width={Math.max(2, bw - 4)} height={2} rx={1} fill="var(--accent)" pointerEvents="none" />}
+                      {/* after its bar: its size, who has it, where it stands */}
+                      <text x={bx + bw + 8} y={ry + 3.5} fontSize={10.5} pointerEvents="none" className={sl.refine ? 'fill-wait-text' : 'fill-fg-3'}>{meta}</text>
                     </g>
                   )
                 })}
@@ -250,11 +272,9 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
             )
           })}
           {/* the pebbles, in one layer: a ticket moved to another stream glides there; its right edge resizes it */}
-          {!compact && rows.flatMap(({ st, t, cy: rowCy, lanes, lanePh, yOf }, i) => {
+          {!compact && rows.flatMap(({ st, t, cy: rowCy, lanes, lanePh, yOf, isOpen }, i) => {
+            if (isOpen) return [] // listed: each ticket is on its own row below
             const h = hueOf(st.id)
-            // where the next ticket in the same lane starts: a name runs on past its pebble into the free stream up to it
-            // (or to the goal), so it reads whole without a hover; the timeline stays as it is
-            const nextAt = (sl: Slot) => { const lane = yOf(sl.id), n = st.slots.filter((o) => o.id !== sl.id && yOf(o.id) === lane && o.start > sl.start + 1e-6).sort((a, b) => a.start - b.start)[0]; return n ? x(n.start) : gx - 84 }
             return st.slots.map((sl, j) => {
               // a pebble never wider than its time: a short ticket is a smaller round one, never over its neighbour
               const later = appetite !== undefined && sl.start >= appetite
@@ -284,8 +304,9 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                 {/* on the critical path: what sets the end date */}
                 {critical.has(sl.id) && !sl.done && <rect height={2} rx={1} fill="var(--accent)" pointerEvents="none" style={{ x: left + 2, y: cy + ph / 2 + 2, width: Math.max(2, width - 4), transition: sizing ? 'none' : glide } as React.CSSProperties} />}
                 {/* its name and size inside it, when there is room for words: two lines at most, its points after */}
-                {!sizing && slotW >= 44 && ph >= 22 && (
-                  <foreignObject pointerEvents="none" style={{ x: left + 6, y: cy - ph / 2, width: Math.max(width - 12, Math.min(260, nextAt(sl) - left - 12)), height: ph, transition: glide } as React.CSSProperties}>
+                {/* its name inside it, only where it fits (the tickets level lists every name whole) */}
+                {!sizing && slotW >= 72 && ph >= 22 && (
+                  <foreignObject pointerEvents="none" style={{ x: left + 6, y: cy - ph / 2, width: Math.max(0, width - 12), height: ph, transition: glide } as React.CSSProperties}>
                     <div className="flex h-full items-center gap-1.5 overflow-hidden">
                       <span className={`shrink-0 text-[9.5px] font-semibold tabular-nums ${sl.done ? 'text-[var(--on-accent)]' : 'text-fg-2'}`}>{sl.sized ? '' : '~'}{pts}</span>
                       <span className={`${ph >= 40 ? 'line-clamp-3' : 'line-clamp-2'} min-w-0 flex-1 break-words text-[10.5px] font-medium leading-[12px] ${sl.done ? 'text-[var(--on-accent)] line-through' : 'text-fg-1'}`}>{title(sl.id)}</span>
@@ -293,7 +314,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                   </foreignObject>
                 )}
                 {/* its size alone, on a pebble too short for its name (and while it is being resized) */}
-                {((slotW >= 22 && slotW < 44 && ph >= 12) || sizing) && <text y={3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} pointerEvents="none" className={sl.done ? 'fill-[var(--on-accent)]' : 'fill-fg-1'}
+                {((slotW >= 22 && slotW < 72 && ph >= 12) || sizing) && <text y={3.5} textAnchor="middle" fontSize={9.5} fontWeight={600} pointerEvents="none" className={sl.done ? 'fill-[var(--on-accent)]' : 'fill-fg-1'}
                       style={{ transform: `translate(${left + width / 2}px, ${cy}px)`, transition: sizing ? 'none' : 'transform 500ms var(--ease-snappy)' }}>{sl.sized || sizing ? '' : '~'}{pts}</text>}
                 {/* who picked it up */}
                 {sl.who && (
@@ -346,7 +367,8 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
       )}
      </div>
       {/* under the map: the angles not explored yet (one click hands one to the planner), and Later, where cut work goes */}
-      {gaps.length > 0 && (
+      {/* noGaps: they are listed beside the conversation instead */}
+      {gaps.length > 0 && !noGaps && (
         <div className="mx-4 mt-1 flex shrink-0 items-center gap-1.5 overflow-x-auto py-1">
           <span className="label shrink-0 whitespace-nowrap text-fg-4">Not explored</span>
           {gaps.map((g) => { const a = areaOf(g), I = a.icon; return (
@@ -387,6 +409,22 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** What the colours mean when they aren't the epics': MoSCoW, or who works each ticket. Over the board's top right. */
+function ColorKey({ p, colorBy }: { p: Plan; colorBy: ColorBy }) {
+  const dot = (hue: number | null) => <span className="size-2 shrink-0 rounded-full" style={{ background: hue === null ? 'var(--fg-4)' : `oklch(0.72 0.12 ${hue})` }} />
+  const tickets = p.nodes.filter((n) => n.kind === 'ticket')
+  const items: [string, number | null][] = colorBy === 'moscow'
+    ? [...(['must', 'should', 'could', 'wont'] as const).map((m): [string, number] => [m === 'wont' ? "won't" : m, MOSCOW_HUE[m]]), ['unset', null]]
+    : [...new Set(tickets.map((n) => n.assignee).filter((x): x is string => !!x))].slice(0, 8).map((who): [string, number] => [who, nameHue(who)])
+  const unset = colorBy === 'moscow' ? tickets.filter((n) => !n.moscow).length : 0
+  return (
+    <div className="pointer-events-none absolute right-3 top-2 z-[2] flex max-w-[60%] flex-wrap items-center justify-end gap-x-3 gap-y-1 rounded-lg bg-surface-1/85 px-2.5 py-1 text-micro text-fg-3 shadow-e1 backdrop-blur-sm">
+      {items.length ? items.map(([label, hue]) => <span key={label} className="inline-flex items-center gap-1">{dot(hue)}{label}</span>) : <span>No one has picked any up yet</span>}
+      {colorBy === 'moscow' && unset === tickets.length && tickets.length > 0 && <span className="text-wait-text">none set yet: ask the planner to prioritise</span>}
     </div>
   )
 }
