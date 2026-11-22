@@ -17,8 +17,10 @@ const STAGES: { id: Stage; label: string; tone: string }[] = [
   { id: 'blockers', label: 'Blockers', tone: 'text-wait-text' },
   { id: 'next', label: "What I'll do", tone: 'text-accent-text' },
 ]
-const W = 340, GAP_X = 64, GAP_Y = 22, ROWS = 6
-const heightOf = (n: number) => 46 + Math.min(ROWS, n) * 58 + (n > ROWS ? 22 : 0)
+// a row has a fixed height (two lines of name, one of what happened), so a box's height is known before it is drawn
+// and the lanes below it never run into it
+const W = 340, GAP_X = 64, GAP_Y = 24, ROWS = 6, ROW_H = 64, HEAD_H = 38, MORE_H = 24, MIN_ZOOM = 0.7
+const heightOf = (n: number) => HEAD_H + 12 + Math.min(ROWS, n) * ROW_H + (n > ROWS ? MORE_H : 0)
 /** A steady hue per project, from its name: the same colour every day, without a table to keep. */
 // Lanes take one of a few hues far apart on the wheel, kept away from the two row marks (violet: my work, amber:
 // reviews), so no two projects and no project and a mark read alike. A project keeps its hue every day (from its name).
@@ -38,14 +40,14 @@ function BoxNode({ data }: NodeProps<Node<Box>>) {
   return (
     <div style={{ width: W }} className="card text-left">
       <In /><Out />
-      <p className="flex items-center gap-2 border-b border-line px-3 py-2">
+      <p className="flex h-[38px] items-center gap-2 border-b border-line px-3">
         <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: laneColour(hue) }} />
         <span className="min-w-0 flex-1 truncate text-small font-semibold text-fg-1" title={lane.name}>{lane.name ?? 'Side quests'}</span>
         <span className="text-meta tabular-nums text-fg-3">{rows.length}</span>
       </p>
       <div className="p-1.5">
         {rows.slice(0, ROWS).map((r) => <RowItem key={r.id} r={r} onOpen={onOpen} />)}
-        {rows.length > ROWS && <p className="px-2 pb-1 pt-0.5 text-meta text-fg-4">+{rows.length - ROWS} more</p>}
+        {rows.length > ROWS && <p className="flex h-6 items-center px-2 text-meta text-fg-4">+{rows.length - ROWS} more</p>}
       </div>
     </div>
   )
@@ -59,7 +61,7 @@ function RowItem({ r, onOpen }: { r: Row; onOpen: (id: string) => void }) {
   return (
     <>
       <button type="button" onClick={() => onOpen(r.id)} onMouseEnter={() => show(true)} onMouseLeave={() => show(false)} onFocus={() => show(true)} onBlur={() => show(false)}
-              style={{ anchorName: name } as CSSProperties} className="nodrag flex w-full min-w-0 items-start gap-2 rounded-ctl px-2 py-1.5 text-left transition-colors hover:bg-hover">
+              style={{ anchorName: name } as CSSProperties} className="nodrag flex h-16 w-full min-w-0 items-start gap-2 overflow-hidden rounded-ctl px-2 py-1.5 text-left transition-colors hover:bg-hover">
         <span style={{ backgroundColor: r.review ? REVIEW : MINE }} className="mt-1 h-3.5 w-1 shrink-0 rounded-full" aria-label={r.review ? "Review of someone else's PR" : 'My work'} />
         <span className="min-w-0 flex-1">
           <span className="line-clamp-2 text-small font-medium leading-snug text-fg-1">{r.title || r.id}</span>
@@ -111,13 +113,14 @@ export function StandupFlow({ lanes, counts, onOpen }: { lanes: Lane[]; counts: 
   // fitted to the width (the three stages fill it, readable), from the top; taller than the window, it scrolls down
   const box = useRef<HTMLDivElement>(null), rf = useRef<ReactFlowInstance<Node<Box | Label>, Edge>>(undefined)
   const span = 3 * W + 2 * GAP_X, pad = 24
-  const fit = () => { const w = box.current?.clientWidth; if (w && rf.current) { const z = Math.min(1.15, Math.max(0.45, (w - 2 * pad) / span)); void rf.current.setViewport({ x: (w - span * z) / 2, y: 52 * z + 8, zoom: z }) } }
+  const fit = () => { const w = box.current?.clientWidth; if (w && rf.current) { const z = Math.min(1.15, Math.max(MIN_ZOOM, (w - 2 * pad) / span)); void rf.current.setViewport({ x: (w - span * z) / 2, y: 52 * z + 8, zoom: z }) } }
   useEffect(() => { if (!box.current) return; const o = new ResizeObserver(fit); o.observe(box.current); return () => o.disconnect() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div ref={box} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card bg-[var(--bg-app)] ring-1 ring-line">
       <div className="relative min-h-0 flex-1">
         {nodes.length > STAGES.length ? (
-          <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={(i) => { rf.current = i; fit() }} minZoom={0.3} maxZoom={1.6}
+          <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={(i) => { rf.current = i; fit() }} minZoom={MIN_ZOOM} maxZoom={1.6}
+                     translateExtent={[[-pad - 40, -80], [span + pad + 40, Math.max(y, 200) + 60]]} /* panning stays on the pipeline */
                      onNodeClick={() => {}} /* a node with no handler gets no pointer events: its rows must click and hover */
                      nodesConnectable={false} elementsSelectable={false} panOnScroll proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--line)" />
