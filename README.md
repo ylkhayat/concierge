@@ -8,6 +8,9 @@ A dashboard on your own machine for AI coding agents. They review the PRs you're
 feedback on your PRs, and ship your Linear tickets. You read and decide: nothing reaches GitHub or Linear until you
 click.
 
+It runs the tools you already use and replaces none of them: reviews are still written in [crit](https://crit.md),
+Claude Code, Codex, Copilot or Llama still do the work, and GitHub and Linear stay the source of truth.
+
 It runs agents on **Claude** (Claude Code, with a claude.ai plan or an API key), **OpenAI** (Codex, with a ChatGPT
 plan or an API key), **Copilot** (GitHub Copilot's CLI, on your Copilot plan) and **Llama** (local models through Ollama). Add as many accounts as you like, and Concierge
 spreads the work across them.
