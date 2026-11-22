@@ -162,3 +162,6 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 
 /* a PR or ticket of a repository not on this machine (Settings → Repositories): seen in the list, not opened */
 [data-away] { opacity: 0.45; cursor: not-allowed; }
+/* a PR or ticket no machine can work on now (held.ts): dimmed, still opened to read; its actions are off */
+[data-held] { opacity: 0.5; }
+[data-held]:hover, [data-held][aria-current='true'] { opacity: 0.75; }

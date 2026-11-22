@@ -14,7 +14,8 @@ import { Description, ghost, SubmitDialog, Turns, usePrThread, type PrThreadProp
 import { api, enc, param, setParam, useFeedLoading } from '../lib.ts'
 import { explainPath } from '../query.ts'
 import { appendDraft } from '../draft.ts'
-import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
+import { Composer, NextCard, Off, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
+import { useHeld } from '../held.ts'
 import { sayTo, useDiscussions, useWork, useWorkFeed, withTurns, WorkStrip, type View } from './Discussion.tsx'
 import { lastUpdate, ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useToolCommands, type Command } from '../ui/Slash.tsx'
@@ -59,6 +60,7 @@ export function PrThread(props: PrThreadProps) {
   const x = usePrThread(props)
   const { pr, feed, toast, prs, onBack, job, busy, next, flow, asks, askFirst, act, url, resumeCmd, critDown, restartCrit, fixThreads, smartRebase, below, markRead, runFinalize, BIG, alsoLine, doNext, chips, statusField, parentLinks, stackNav, headerActions, people, submit, setSubmit } = x
   const feedLoading = useFeedLoading(pr.id)
+  const held = useHeld()[pr.repo] // no machine can work on its application now: read only
   const role = useRole(), panes = ROLE_PANES[role]
   const [paneState, setPaneState] = useState<Pane>(() => (PANES.find((p) => p === param('pane')) ?? (props.ticket ? 'ticket' : lastPane[role] ?? panes[0])))
   // a tab this role doesn't have: its own last one, or its first
@@ -182,9 +184,10 @@ export function PrThread(props: PrThreadProps) {
   return (
     <>
       <ThreadLayout
+        held={held}
         subject={pr.id}
         follow={`${pr.id}:${count}:${pr.status}:${next}`}
-        header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions}
+        header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions && <Off why={held}>{headerActions}</Off>}
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
         next={viaStackLine ?? (nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined)}
         composer={!asking && <Composer>{steer}</Composer>}

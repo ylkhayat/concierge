@@ -2,8 +2,9 @@ import { ArrowRight, CircleCheck, Coins, GitPullRequest, ListTodo, LoaderCircle,
 import { ago, type Health, type PrView, type TicketView } from '../lib.ts'
 import { groupOf } from './ExecList.tsx'
 import { waiting } from './PrList.tsx'
+import { useHeld } from '../held.ts'
 
-type Item = { key: string; kind: 'pr' | 'ticket'; id: string; ref: string; title: string; what: string; at: string }
+type Item = { key: string; kind: 'pr' | 'ticket'; id: string; ref: string; title: string; what: string; at: string; repo?: string }
 
 const prWhat = (p: PrView) => p.mine
   ? p.status === 'approved' ? 'Approved, a few comments to answer' : 'New feedback on your PR'
@@ -20,15 +21,16 @@ export function Today({ missing = [], onSkills, me, prs, tickets, health, now, o
   focus?: string; missing?: string[]; onSkills?: () => void; me?: string; prs: PrView[]; tickets: TicketView[]; health?: Health; now: number
   onPr: (id: string) => void; onTicket: (id: string) => void
 }) {
+  const held = useHeld()
   const open = prs.filter((p) => !p.closed)
   const queue: Item[] = [
-    ...tickets.filter((t) => groupOf(t).id === 'needs-you').map((t) => ({ key: t.id, kind: 'ticket' as const, id: t.id, ref: t.id, title: t.title, what: ticketWhat(t), at: t.updatedAt })),
-    ...open.filter(waiting).map((p) => ({ key: p.id, kind: 'pr' as const, id: p.id, ref: `#${p.number}`, title: p.title, what: prWhat(p), at: p.updatedAt })),
-    ...tickets.filter((t) => groupOf(t).id === 'tend').map((t) => ({ key: t.id, kind: 'ticket' as const, id: t.id, ref: t.id, title: t.title, what: ticketWhat(t), at: t.updatedAt })),
+    ...tickets.filter((t) => groupOf(t).id === 'needs-you').map((t) => ({ key: t.id, kind: 'ticket' as const, id: t.id, ref: t.id, title: t.title, what: ticketWhat(t), at: t.updatedAt, repo: t.repo })),
+    ...open.filter(waiting).map((p) => ({ key: p.id, kind: 'pr' as const, id: p.id, ref: `#${p.number}`, title: p.title, what: prWhat(p), at: p.updatedAt, repo: p.repo })),
+    ...tickets.filter((t) => groupOf(t).id === 'tend').map((t) => ({ key: t.id, kind: 'ticket' as const, id: t.id, ref: t.id, title: t.title, what: ticketWhat(t), at: t.updatedAt, repo: t.repo })),
   ]
   const working = [
-    ...open.filter((p) => p.status === 'preparing' || p.status === 'posting' || p.status === 'queued').map((p) => ({ key: p.id, go: () => onPr(p.id), ref: `#${p.number}`, title: p.title, what: p.status === 'queued' ? 'queued' : p.mine ? 'revising' : 'reviewing' })),
-    ...tickets.filter((t) => t.busy).map((t) => ({ key: t.id, go: () => onTicket(t.id), ref: t.id, title: t.title, what: t.run?.state === 'queued' ? 'queued' : 'shipping' })),
+    ...open.filter((p) => p.status === 'preparing' || p.status === 'posting' || p.status === 'queued').map((p) => ({ key: p.id, go: () => onPr(p.id), ref: `#${p.number}`, title: p.title, what: p.status === 'queued' ? 'queued' : p.mine ? 'revising' : 'reviewing', repo: p.repo })),
+    ...tickets.filter((t) => t.busy).map((t) => ({ key: t.id, go: () => onTicket(t.id), ref: t.id, title: t.title, what: t.run?.state === 'queued' ? 'queued' : 'shipping', repo: t.repo })),
   ]
   const shipped = tickets.filter((t) => groupOf(t).id === 'shipped')
   const go = (i: Item) => (i.kind === 'pr' ? onPr(i.id) : onTicket(i.id))
@@ -78,16 +80,16 @@ export function Today({ missing = [], onSkills, me, prs, tickets, health, now, o
         <div className="grid gap-6 md:grid-cols-2">
           <Section icon={ListTodo} title="Waiting on you" n={queue.length}>
             {queue.slice(1, 8).map((i) => (
-              <Row key={i.key} onClick={() => go(i)} ref_={i.ref} title={i.title} meta={<>{i.what} · {ago(i.at, now)}</>} />
+              <Row key={i.key} onClick={() => go(i)} ref_={i.ref} title={i.title} meta={<>{i.what} · {ago(i.at, now)}</>} held={i.repo ? held[i.repo] : undefined} />
             ))}
             {queue.length <= 1 && <Empty>{queue.length ? 'Only the one above.' : 'Nothing.'}</Empty>}
           </Section>
           <Section icon={LoaderCircle} spin={working.length > 0} title="Agents at work" n={working.length}>
-            {working.slice(0, 7).map((w) => <Row key={w.key} onClick={w.go} ref_={w.ref} title={w.title} meta={w.what} />)}
+            {working.slice(0, 7).map((w) => <Row key={w.key} onClick={w.go} ref_={w.ref} title={w.title} meta={w.what} held={w.repo ? held[w.repo] : undefined} />)}
             {!working.length && <Empty>Idle. Runs you start show up here.</Empty>}
           </Section>
           <Section icon={GitPullRequest} title="Shipped, waiting for review" n={shipped.length}>
-            {shipped.slice(0, 5).map((t) => <Row key={t.id} onClick={() => onTicket(t.id)} ref_={t.id} title={t.title} meta={t.prs.length > 1 ? `${t.prs.length} PRs, CI green` : 'CI green, no threads'} />)}
+            {shipped.slice(0, 5).map((t) => <Row key={t.id} onClick={() => onTicket(t.id)} ref_={t.id} title={t.title} meta={t.prs.length > 1 ? `${t.prs.length} PRs, CI green` : 'CI green, no threads'} held={t.repo ? held[t.repo] : undefined} />)}
             {!shipped.length && <Empty>Nothing yet.</Empty>}
           </Section>
           <Section icon={Coins} title="What it costs">
@@ -113,8 +115,9 @@ function Section({ icon: Icon, spin, title, n, children }: { icon: typeof ListTo
     </section>
   )
 }
-const Row = ({ onClick, ref_, title, meta }: { onClick: () => void; ref_: string; title: string; meta: React.ReactNode }) => (
-  <button onClick={onClick} className="flex w-full flex-col rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-hover">
+// held: no machine can work on its application now (held.ts): dimmed, still opened to read
+const Row = ({ onClick, ref_, title, meta, held }: { onClick: () => void; ref_: string; title: string; meta: React.ReactNode; held?: string }) => (
+  <button onClick={onClick} data-held={held ? true : undefined} title={held ? `Actions off: ${held}` : undefined} className="flex w-full flex-col rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-hover">
     <span className="flex gap-2 text-body"><span className="shrink-0 font-mono text-fg-3">{ref_}</span><span className="truncate text-fg-2 ">{title}</span></span>
     <span className="text-meta text-fg-3">{meta}</span>
   </button>

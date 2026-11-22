@@ -2,7 +2,7 @@
 // next step as the latest message, and the composer) in a column that never moves; and beside it a panel of tabs for
 // everything else (its vitals: shipping, intent, understanding; Explain; the description). Switching tabs changes only
 // the panel, and a passage selected in it can be quoted into the composer, to ask the agent about that point.
-import { ChevronRight, LoaderCircle, MessageSquareQuote, type LucideIcon } from 'lucide-react'
+import { ChevronRight, CloudOff, LoaderCircle, MessageSquareQuote, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 export type Tone = 'ok' | 'wait' | 'fail' | 'run' | 'quiet'
@@ -29,7 +29,13 @@ const SPLIT: Record<string, number> = { main: 0.58, 'main:fill': 0.42, 'main:rai
 const MIN = 360 // px, for either column
 const savedSplits = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem('thread-split') ?? '{}') } catch { return {} } }
 
-export function ThreadLayout<Id extends string>({ header, children, next, composer, follow, tabs, tab, onTab, pane, onAsk, subject, vitals }: {
+/** Actions that can't run now (`why`: no machine can work on this application): dimmed, and every control in them off. */
+export function Off({ why, children }: { why?: string; children: ReactNode }) {
+  if (!why) return <>{children}</>
+  return <fieldset disabled title={`Off: ${why}`} className="m-0 min-w-0 border-0 p-0 opacity-45 [&_*]:cursor-not-allowed">{children}</fieldset>
+}
+
+export function ThreadLayout<Id extends string>({ header, children, next, composer, follow, tabs, tab, onTab, pane, onAsk, subject, vitals, held }: {
   subject?: string // the PR or ticket shown: opening another one shows it at once, with nothing animating in
   header: ReactNode
   vitals?: ReactNode // its vitals (shipping, intent, understanding): always in sight, at the head of the chat
@@ -40,6 +46,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
   tabs: PaneTab<Id>[]; tab: Id; onTab: (t: Id) => void
   pane: ReactNode // the open tab's content
   onAsk?: (quote: string) => void // a passage selected in the panel, quoted into the composer
+  held?: string // why no machine can work on its application now: its next step and box are off, and say so
 }) {
   // another PR or ticket: everything in it simply appears (no fades, no sliding split) for a moment; changes made while
   // it is open (a new message, a filter, a tab) still animate
@@ -81,7 +88,10 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
   }
   // the bottom row: the box under the chat, the next step under the panel; with no box the next step takes the chat's place
   const nextShown = next || undefined
-  const left = composer || nextShown, under = composer ? nextShown : undefined
+  // held: the box says why instead, and the next step is shown but off
+  const box = held ? <p className="flex items-start gap-2 rounded-xl bg-fill px-3 py-2.5 text-small text-fg-3"><CloudOff className="mt-0.5 size-3.5 shrink-0 text-wait-text" /><span>Actions are off here: no machine can work on this application now ({held}). Everything stays to read; they come back when a machine it is allowed on is online.</span></p> : composer
+  const step = held && nextShown ? <Off why={held}>{nextShown}</Off> : nextShown
+  const left = box || step, under = box ? step : undefined
   const reset = () => { const { [key]: _, ...rest } = savedSplits(); setSplits(rest); try { localStorage.setItem('thread-split', JSON.stringify(rest)) } catch { /* private window */ } }
 
   return (

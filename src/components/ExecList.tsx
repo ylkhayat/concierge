@@ -1,4 +1,5 @@
 import { useAway } from '../away.ts'
+import { useHeld } from '../held.ts'
 import type { Prep } from '../../server/plan.ts'
 import { askLine } from '../../server/reply.ts'
 import { queuedText } from '../time.ts'
@@ -130,6 +131,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
   query: string; onQuery: (q: string) => void; now: number
 }) {
   const away = useAway() // repositories not on this machine: their tickets are shown, not opened
+  const held = useHeld() // no machine can work on their application now: dimmed, opened to read, not picked
   // a bookmark or dim clicked here shows at once (the row moves to where it now belongs); the server's next update agrees
   const [over, setOver] = useState<Record<string, { pinned?: boolean; dimmed?: boolean }>>({})
   useEffect(() => setOver({}), [given])
@@ -178,14 +180,14 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
     const P = PRIORITY[t.priority] ?? PRIORITY[0]
     const outcome = t.run?.outcomes[t.id]?.outcome
     const phase = t.busy ? (t.run?.phases[t.id] ?? t.run?.phase) : undefined
-    const pickable = !t.busy && !!t.repo
+    const pickable = !t.busy && !!t.repo && !held[t.repo]
     // what its agent waits on you for: said on the row, so the list is the overview
     const asks = !t.busy && t.run?.state === 'done' ? askLine(t.run.next) : undefined
     const pr = t.prs[0] ?? t.pr
     const mine = g.id === 'needs-you' || g.id === 'tend' // waiting on you: the whole title, it's what you came for
     const done = isDone(t)
     return (
-      <div key={t.id} data-flip={t.id} ref={active ? activeRef : undefined} onClick={() => !(t.repo && away.has(t.repo)) && onSelect(t.id)} data-away={(t.repo && away.has(t.repo)) || undefined} aria-disabled={(t.repo && away.has(t.repo)) || undefined} onMouseEnter={() => prefetchFeed(`ticket:${t.id}`)} {...drag(t.id, pickable)} role="button" tabIndex={0} aria-current={active} style={t.repo ? appColor(t.repo).style : undefined}
+      <div key={t.id} data-flip={t.id} ref={active ? activeRef : undefined} onClick={() => !(t.repo && away.has(t.repo)) && onSelect(t.id)} data-away={(t.repo && away.has(t.repo)) || undefined} data-held={(!!t.repo && !!held[t.repo] && !away.has(t.repo)) || undefined} title={t.repo && held[t.repo] ? `Actions off: ${held[t.repo]}` : undefined} aria-disabled={(t.repo && away.has(t.repo)) || undefined} onMouseEnter={() => prefetchFeed(`ticket:${t.id}`)} {...drag(t.id, pickable)} role="button" tabIndex={0} aria-current={active} style={t.repo ? appColor(t.repo).style : undefined}
            onKeyDown={(e) => e.key === 'Enter' && !(t.repo && away.has(t.repo)) && onSelect(t.id)}
            className={`group relative ${up || down ? '' : 'mb-0.5'} flex w-full cursor-pointer ${active && moved ? 'animate-[moved_1.6s_ease-out]' : ''} items-center gap-2.5 overflow-hidden rounded-ctl px-2.5 py-2 text-left -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${
              active ? 'sel' : on ? 'bg-accent/6 ring-1 ring-accent/25' : 'hov'}`}>
@@ -194,7 +196,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
         {t.busy && <span className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-run/10"><span className="block h-full w-1/3 animate-[shimmer_1.4s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-run to-transparent" /></span>}
         {/* the team's mark, like the Review list's avatar; it turns into the pick box on hover (or once anything is picked) */}
         <button onClick={(e) => { e.stopPropagation(); if (pickable) toggle(t.id) }} disabled={!pickable}
-                title={!t.repo ? 'No repository mapped for this team' : t.busy ? 'Already running' : on ? `Picked #${picked.indexOf(t.id) + 1}` : 'Add to the next run'}
+                title={!t.repo ? 'No repository mapped for this team' : held[t.repo] ? `Can't run now: ${held[t.repo]}` : t.busy ? 'Already running' : on ? `Picked #${picked.indexOf(t.id) + 1}` : 'Add to the next run'}
                 className="relative z-10 size-6 shrink-0 rounded-full transition-transform duration-200 group-hover:scale-105">
           {on
             ? <span className="flex size-full items-center justify-center rounded-full bg-accent text-micro font-semibold text-on-accent">{picked.indexOf(t.id) + 1}</span>

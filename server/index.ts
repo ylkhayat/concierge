@@ -592,6 +592,32 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'GET') return next() // the main server didn't answer: this machine's own view, as before
   return c.json({ error: fleet.whyNot?.() ?? `${fleet.elsewhere() ?? 'Another machine'} runs Concierge now: nothing done here is kept. Reload in a moment.` }, 409)
 })
+// an application no machine can work on now (machines.ts heldWhy): its pull requests and tickets are there to read, but
+// nothing is started for them (a run, a reply, an explanation, an action, a post), so nothing lands where it can't go.
+// What only reads or tidies stays open: marking read, dismissing, cancelling or stopping what runs, its domain
+const OPEN_ON_HELD = /^(read|dismiss|op\/dismiss|cancel|background\/stop|domain|resume-terminal)$/
+async function heldTarget(c: { req: { path: string; json: <T>() => Promise<T> } }): Promise<string | undefined> {
+  const m = c.req.path.match(/^\/api\/(?:prs\/([^/]+)\/(.+)|exec\/tickets\/([^/]+)\/(actions|steer)|exec\/([^/]+)\/(reply|steer)|exec\/(action|plan)|stacks\/(say|drive))$/)
+  if (!m) return undefined
+  const body = () => c.req.json<{ id?: unknown; ids?: unknown; pr?: unknown }>().catch(() => ({} as { id?: unknown; ids?: unknown; pr?: unknown }))
+  const ticketRepo = (id: unknown) => (typeof id === 'string' ? ticketViews().find((t) => t.id === id)?.repo : undefined)
+  const repos: (string | undefined)[] =
+    m[1] ? (OPEN_ON_HELD.test(m[2]) ? [] : [repoOfPr(decodeURIComponent(m[1]))])
+    : m[3] ? [ticketRepo(decodeURIComponent(m[3]))]
+    : m[5] ? [state.execs[m[5]]?.repo]
+    : m[7] === 'action' ? [ticketRepo((await body()).id)]
+    : m[7] === 'plan' ? [((await body()).ids as unknown[] | undefined) ?? []].flat().map(ticketRepo)
+    : m[8] === 'say' ? [((await body()).ids as unknown[] | undefined) ?? []].flat().map((id) => (typeof id === 'string' ? repoOfPr(id) : undefined))
+    : [typeof (await body()).pr === 'string' ? repoOfPr((await body()).pr as string) : undefined]
+  for (const r of repos) { const why = r && heldWhy(r); if (why) return why }
+  return undefined
+}
+app.use('*', async (c, next) => {
+  if (c.req.method !== 'POST' || !fleet.machine) return next()
+  const why = await heldTarget(c)
+  if (!why) return next()
+  return c.json({ error: `No machine can work on this now: ${why}. It is here to read; actions wait until one of its machines is back.`, held: true }, 409)
+})
 app.get('/alerts', (c) => c.json(alerts()))
 // dim a ticket for now: it stays listed, faded and last in its group, until its state changes
 app.post('/exec/tickets/:id/dim', async (c) => {

@@ -12,7 +12,8 @@ import { SectionHeadings } from '../components/NextPanel.tsx'
 import { PHASE_LABEL } from '../components/ExecList.tsx'
 import { api, param, setParam, useFeedLoading, type TicketView } from '../lib.ts'
 import { appendDraft } from '../draft.ts'
-import { Composer, NextCard, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
+import { Composer, NextCard, Off, ThreadHeader, ThreadLayout, WorkingBar } from '../ui/Thread.tsx'
+import { useHeld } from '../held.ts'
 import { sayTo, useDiscussions, useWork, useWorkFeed, withTurns, WorkStrip } from './Discussion.tsx'
 import { lastUpdate, ShippingVital, useLaneActions, Vitals } from './Vitals.tsx'
 import { useRole } from '../role.ts'
@@ -34,6 +35,8 @@ let lastPane: Pane | undefined
 export function TicketThread(props: TicketThreadProps) {
   const { t, feed, toast, run, siblings, prItems, onOpenLinked, runIt, act, missing, chips, openPr, statusField, parentLinks, stackNav, headerActions, panelBody, ticketBody, asking, runAsks, next } = useTicketThread(props)
   const feedLoading = useFeedLoading(`ticket:${t.id}`)
+  const heldRepos = useHeld()
+  const held = t.repo ? heldRepos[t.repo] : undefined // no machine can work on its application now: read only
   // product and design read the ticket's domain beside the ticket; the tools are a developer's
   const role = useRole(), panes: Pane[] = role === 'developer' ? ['overview', 'ticket'] : ['overview', 'ticket', 'domain']
   const [paneState, setPaneState] = useState<Pane>(() => (PANES.find((p) => p === param('tpane')) ?? lastPane ?? 'overview'))
@@ -78,9 +81,10 @@ export function TicketThread(props: TicketThreadProps) {
 
   return (
     <ThreadLayout
+      held={held}
       subject={t.id}
       follow={`${t.id}:${count}:${t.busy}:${next}`}
-      header={<ThreadHeader crumb={parentLinks} title={t.title} status={statusField} meta={chips} links={<>{stackNav}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>} actions={headerActions} />}
+      header={<ThreadHeader crumb={parentLinks} title={t.title} status={statusField} meta={chips} links={<>{stackNav}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>} actions={headerActions && <Off why={held}>{headerActions}</Off>} />}
       next={runAsks && next === 'dock' ? (
         // it handed back with questions: answering them is the next step, and the plan is under Understanding
         <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent asks you" actions={steer} />
