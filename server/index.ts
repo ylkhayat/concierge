@@ -3347,8 +3347,10 @@ app.post('/machines/:name/signin', async (c) => {
   const name = c.req.param('name'), b = await c.req.json() as { account?: string; step?: string; input?: string }
   try {
     if (name === (fleet.machine ?? 'this machine')) return c.json(await signinHere(b))
-    const [[, r]] = await ask('signin', b, name)
-    return r ? c.json(r) : c.json({ error: `${name} didn't answer` }, 502)
+    // only a machine reporting in is asked: none answering is said in words, never as a crash of an empty answer
+    const r = (await ask('signin', b, name))[0]?.[1]
+    if (!machines.get(name)?.status) return c.json({ error: `${name} isn't reachable from here right now: is it on and online? Try again once it shows online under Settings → Machines` }, 502)
+    return r ? c.json(r) : c.json({ error: `${name} didn't answer the sign-in (an older version there? It updates itself when idle)` }, 502)
   } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })
 /** Every other machine gets the control plane's connectors: after a change here, and when one comes back. */
