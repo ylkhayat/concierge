@@ -31,8 +31,11 @@ const laneColour = (lane?: number) => (lane === undefined ? 'var(--fg-3)' : `okl
 // the row marks: my own work, and reviews of someone else's PR, in colours no theme accent or lane takes
 const MINE = 'oklch(0.66 0.22 295)', REVIEW = 'oklch(0.8 0.16 75)'
 
-const In = () => <Handle type="target" position={Position.Left} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
-const Out = () => <Handle type="source" position={Position.Right} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
+// links leave and arrive at the header (a lane's boxes start at the same y, their headers the same height), so each one is
+// a straight line across, whatever each box's length or the zoom
+const atHeader = { top: HEAD_H / 2 }
+const In = () => <Handle type="target" position={Position.Left} style={atHeader} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
+const Out = () => <Handle type="source" position={Position.Right} style={atHeader} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
 
 function BoxNode({ data }: NodeProps<Node<Box>>) {
   const { lane, stage, hue, onOpen } = data
@@ -105,7 +108,7 @@ export function StandupFlow({ lanes, counts, onOpen }: { lanes: Lane[]; counts: 
     if (!here.length) continue
     here.forEach((s) => nodes.push({ id: `${i}:${s.id}`, type: 'box', position: { x: STAGES.indexOf(s) * (W + GAP_X), y }, data: { lane, stage: s.id, hue, onOpen }, draggable: false }))
     for (let k = 1; k < here.length; k++) edges.push({
-      id: `${i}:${here[k - 1].id}>${here[k].id}`, source: `${i}:${here[k - 1].id}`, target: `${i}:${here[k].id}`, type: 'smoothstep', animated: here[k].id === 'next',
+      id: `${i}:${here[k - 1].id}>${here[k].id}`, source: `${i}:${here[k - 1].id}`, target: `${i}:${here[k].id}`, type: 'straight', animated: here[k].id === 'next',
       style: { stroke: `color-mix(in oklch, ${laneColour(hue)} 60%, transparent)`, strokeWidth: 2 },
     })
     y += Math.max(...here.map((s) => heightOf(lane.rows[s.id].length))) + GAP_Y
