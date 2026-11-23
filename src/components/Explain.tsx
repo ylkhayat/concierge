@@ -807,7 +807,7 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
                 onPaneClick={() => { clearTimeout(clickTimer.current); setSelected(undefined) }}
                 zoomOnDoubleClick={false} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false}
                 colorMode={dark ? 'dark' : 'light'}
-                minZoom={0.3} maxZoom={1.5} proOptions={{ hideAttribution: true }}
+                minZoom={0.6} maxZoom={1.5} proOptions={{ hideAttribution: true }}
                 className="!bg-transparent">
                 <Background variant={BackgroundVariant.Dots} gap={18} size={1} className="!bg-transparent opacity-60" />
                 <Controls showInteractive={false} className={flowControls} />

@@ -37,12 +37,15 @@ function Missing({ prId, busy, toast }: { prId: string; busy: boolean; toast: (m
 // has many files) and its files, each with its new behaviour; and a branch for the behaviour it changes (its flows).
 // Two sides like a hand-drawn mind map (ELK lays out each as a tree); lines run centre to centre, under the boxes.
 
-type MNode = { id: string; kind: 'root' | 'area' | 'flows'; title: string; line?: string; touched: Touched[]; flows?: Overlay['flows'] }
+// plain: a part said in words only (a tour step): its what and a count, its changes one click away, never as rows
+type MNode = { id: string; kind: 'root' | 'area' | 'flows'; title: string; line?: string; touched: Touched[]; flows?: Overlay['flows']; plain?: boolean }
 type MData = { n: MNode; on?: string; pick: (id: string) => void }
 const KIND = { added: 'text-ok-text', modified: 'text-accent-text', removed: 'text-fail-text' } as const
+const DOT = { added: 'bg-ok', modified: 'bg-accent', removed: 'bg-fail' } as const
+const WORD = { added: 'New', modified: 'Changed', removed: 'Gone' } as const
 const ROWS = 6 // file rows shown in a part before "+N more"
 const W = { root: 280, area: 270, flows: 270 }
-const heightOf = (n: MNode) => n.kind === 'root' ? 120 : 58 + Math.min(ROWS, n.kind === 'flows' ? n.flows!.length : n.touched.length) * 40 + ((n.kind === 'area' && n.touched.length > ROWS) ? 22 : 0)
+const heightOf = (n: MNode) => n.kind === 'root' ? 120 : n.plain ? 120 : 58 + (n.line ? 34 : 0) + Math.min(ROWS, n.kind === 'flows' ? n.flows!.length : n.touched.length) * 46 + ((n.kind === 'area' && n.touched.length > ROWS) ? 22 : 0)
 const mark = (c: Touched['change']) => (c === 'added' ? '+' : c === 'removed' ? '−' : '~')
 
 const Hub = () => <Handle type="source" position={Position.Top} className="!left-1/2 !top-1/2 !size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
@@ -65,36 +68,51 @@ function MindNode({ data }: NodeProps<Node<MData>>) {
     <div style={{ width: W[n.kind] }} className={`rounded-card bg-surface-1 p-2 text-left ${on === n.id ? 'shadow-[0_0_0_2px_var(--lane),var(--e2)]' : 'shadow-[var(--e1)] ring-1 ring-line'}`}>
       <HubIn /><Hub />
       <button type="button" onClick={() => pick(n.id)} className="nodrag w-full rounded-ctl px-2 py-1 text-left hover:bg-hover">
-        <p className="truncate font-mono text-meta font-semibold text-fg-1" title={n.title}>{n.title}</p>
+        <p className="truncate text-small font-semibold text-fg-1" title={n.title}>{n.title}</p>
+        {n.kind === 'area' && n.line && <p className={`mt-0.5 text-meta leading-snug text-fg-2 ${n.plain ? 'line-clamp-3' : 'line-clamp-2'}`}>{n.line}</p>}
         <p className="flex gap-2 text-micro tabular-nums text-fg-3">
           {n.kind === 'flows' ? `${n.flows!.length} flow${n.flows!.length === 1 ? '' : 's'} it changes` : <>
-            {count('added') > 0 && <span className={KIND.added}>+{count('added')} new</span>}
-            {count('modified') > 0 && <span className={KIND.modified}>~{count('modified')} changed</span>}
-            {count('removed') > 0 && <span className={KIND.removed}>−{count('removed')} gone</span>}
+            {count('added') > 0 && <span className={KIND.added}>{count('added')} new</span>}
+            {count('modified') > 0 && <span className={KIND.modified}>{count('modified')} changed</span>}
+            {count('removed') > 0 && <span className={KIND.removed}>{count('removed')} gone</span>}
           </>}
         </p>
       </button>
-      <div className="mt-0.5 space-y-px">
+      {!n.plain && <div className="mt-0.5 space-y-px">
         {n.kind === 'flows' ? n.flows!.slice(0, ROWS).map((f, k) => (
           <button key={k} type="button" onClick={() => pick(`flow:${k}`)} className={row(`flow:${k}`, on === `flow:${k}`)}>
             <span className="truncate text-meta font-medium text-fg-1">{f.title}</span>
             <span className="truncate text-micro text-fg-3">{f.after}</span>
           </button>
         )) : n.touched.slice(0, ROWS).map((t) => (
-          <button key={t.path} type="button" onClick={() => pick(`f:${t.path}`)} className={row(`f:${t.path}`, on === `f:${t.path}`)} title={t.path}>
-            <span className="truncate font-mono text-meta text-fg-1"><span className={`mr-1 ${KIND[t.change]}`}>{mark(t.change)}</span>{t.path.slice(n.id.length - 1).replace(/^\//, '') || t.path.split('/').pop()}</span>
-            <span className="truncate text-micro text-fg-3">{t.after}</span>
+          <button key={t.path} type="button" onClick={() => pick(`f:${t.path}`)} className={row(`f:${t.path}`, on === `f:${t.path}`)} title={t.after}>
+            <span className="flex min-w-0 items-start gap-1.5"><span className={`mt-[5px] size-1.5 shrink-0 rounded-full ${DOT[t.change]}`} aria-label={WORD[t.change]} />
+              <span className="line-clamp-2 text-meta leading-snug text-fg-1">{t.after}</span></span>
           </button>
         ))}
         {n.kind === 'area' && n.touched.length > ROWS && <button type="button" onClick={() => pick(n.id)} className="nodrag px-2 text-micro text-fg-4 hover:text-fg-2">+{n.touched.length - ROWS} more</button>}
-      </div>
+      </div>}
     </div>
   )
 }
 const nodeTypes = { mind: MindNode }
 
 /** The map's boxes: the centre, each part of the system it touches (its files inside, by folder), and the flows. */
+/** A folder as words, for a part with no name of its own: "apps/billing-service" → "Billing service". */
+const said = (folder: string) => { const w = (folder.split('/').filter(Boolean).pop() ?? folder).replace(/[-_.]+/g, ' ').trim(); return w.charAt(0).toUpperCase() + w.slice(1) }
+/** Said as words: code marks (`like this`) dropped, so a line reads as a sentence. */
+const words = (x?: string) => x?.replace(/`([^`]+)`/g, '$1')
+const STEP_KIND: Record<string, string> = { context: 'Background', core: 'The change itself', supporting: 'What it needs around it', tests: 'How it is checked', cleanup: 'Tidying up' }
+
 export function mindOf(o: Overlay): { nodes: MNode[]; links: [string, string][] } {
+  // the guided tour already groups the change into steps, in plain words: those are the parts, no paths to read
+  const steps = o.tour?.steps?.filter((st) => st.paths.length) ?? []
+  if (steps.length) {
+    const nodes: MNode[] = [{ id: 'root', kind: 'root', title: o.business.headline, line: o.business.what, touched: o.touched }]
+    steps.slice(0, 10).forEach((st, i) => nodes.push({ id: `a:step${i}`, kind: 'area', plain: true, title: st.title || STEP_KIND[st.kind] || 'Part of the change', line: words(st.what ?? st.narrative), touched: o.touched.filter((t) => st.paths.includes(t.path)) }))
+    if (o.flows.length) nodes.push({ id: 'flows', kind: 'flows', title: 'How it behaves', touched: [], flows: o.flows })
+    return { nodes, links: nodes.filter((n) => n.id !== 'root').map((n) => ['root', n.id] as [string, string]) }
+  }
   const roots = [...o.facts.roots].sort((a, b) => b.length - a.length)
   const rootOf = (p: string) => roots.find((r) => p === r || p.startsWith(`${r}/`)) ?? p.split('/').slice(0, Math.min(2, p.split('/').length - 1) || 1).join('/')
   const nodes: MNode[] = [{ id: 'root', kind: 'root', title: o.business.headline, line: o.business.what, touched: o.touched }]
@@ -112,9 +130,9 @@ export function mindOf(o: Overlay): { nodes: MNode[]; links: [string, string][] 
     }
   }
   for (const [area, list] of [...byArea].sort((a, b) => b[1].length - a[1].length).slice(0, 10)) {
-    nodes.push({ id: `a:${area}`, kind: 'area', title: area, touched: [...list].sort((x, y) => x.path.localeCompare(y.path)) })
+    nodes.push({ id: `a:${area}`, kind: 'area', title: said(area), touched: [...list].sort((x, y) => x.path.localeCompare(y.path)) })
   }
-  if (o.flows.length) nodes.push({ id: 'flows', kind: 'flows', title: 'Behaviour', touched: [], flows: o.flows })
+  if (o.flows.length) nodes.push({ id: 'flows', kind: 'flows', title: 'How it behaves', touched: [], flows: o.flows })
   return { nodes, links: nodes.filter((n) => n.id !== 'root').map((n) => ['root', n.id] as [string, string]) }
 }
 
@@ -164,23 +182,23 @@ function MapCanvas({ o }: { o: Overlay }) {
   const nodes: Node<MData>[] = mind.map((n) => ({ id: n.id, type: 'mind', position: pos?.get(n.id) ?? { x: 0, y: 0 }, data: { n, on, pick }, draggable: false }))
   const edges: Edge[] = links.map(([a, b]) => ({ id: `${a}>${b}`, source: a, target: b, type: 'straight', style: { stroke: a === 'root' ? 'color-mix(in oklch, var(--lane) 55%, transparent)' : 'var(--line-strong)', strokeWidth: a === 'root' ? 2 : 1.25 } }))
   // what the side panel shows: a part (its files), one file, or one flow
-  const sel = !on ? undefined : on.startsWith('f:') ? (() => { const t = o.touched.find((x) => `f:${x.path}` === on); return t && { id: on, kind: 'file' as const, title: t.path, touched: [t] } })()
+  const sel = !on ? undefined : on.startsWith('f:') ? (() => { const t = o.touched.find((x) => `f:${x.path}` === on); return t && { id: on, kind: 'file' as const, title: mind.find((n) => n.kind === 'area' && n.touched.includes(t))?.title ?? 'This change', touched: [t] } })()
     : on.startsWith('flow:') ? { id: on, kind: 'flow' as const, title: o.flows[Number(on.slice(5))]?.title ?? '', touched: [] as Touched[] }
     : (() => { const n = mind.find((x) => x.id === on); return n && n.kind === 'area' ? { id: on, kind: 'area' as const, title: n.title, touched: n.touched } : undefined })()
   return (
     <div className="flex min-h-0 flex-1 gap-3">
       <div className={`relative min-h-0 flex-1 overflow-hidden rounded-card bg-[var(--bg-app)] ring-1 ring-line transition-opacity duration-200 ${pos ? 'opacity-100' : 'opacity-0'}`}>
         {pos && (
-          <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.06, maxZoom: 1 }} minZoom={0.2} maxZoom={1.6}
+          <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.06, maxZoom: 1 }} minZoom={0.6} maxZoom={1.6}
                      nodesConnectable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }} onPaneClick={() => setOn(undefined)}>
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--line)" />
           </ReactFlow>
         )}
-        {!sel && <p className="pointer-events-none absolute bottom-2 left-3 text-micro text-fg-4">Click a part or a file for what changed in it · scroll to zoom, drag to move</p>}
+        {!sel && <p className="pointer-events-none absolute bottom-2 left-3 text-micro text-fg-4">Click a part or a change for what it does · scroll to zoom, drag to move</p>}
       </div>
       {sel && (sel.touched.length > 0 || sel.kind === 'flow') && (
         <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-card bg-surface-1 ring-1 ring-line">
-          <p className="flex items-center gap-2 border-b border-line px-3 py-2 font-mono text-meta font-semibold text-fg-1"><span className="min-w-0 flex-1 truncate" title={sel.title}>{sel.title}</span>
+          <p className="flex items-center gap-2 border-b border-line px-3 py-2 text-small font-semibold text-fg-1"><span className="min-w-0 flex-1 truncate" title={sel.title}>{sel.title}</span>
             <button onClick={() => setOn(undefined)} aria-label="Close" className="text-fg-4 hover:text-fg-1"><X className="size-3.5" /></button></p>
           <ul className="min-h-0 flex-1 divide-y divide-line overflow-y-auto">
             {sel.kind === 'flow' ? (() => { const f = o.flows[Number(sel.id.slice(5))]; return (
@@ -188,14 +206,13 @@ function MapCanvas({ o }: { o: Overlay }) {
                 <p className="text-small font-medium text-fg-1">{f.title}</p>
                 {f.before && <p className="text-meta leading-snug text-fg-4 line-through decoration-fg-4/40">{f.before}</p>}
                 <p className="text-small leading-snug text-fg-1">{f.after}</p>
-                {f.scope && <p className="font-mono text-micro text-fg-3">{f.scope}</p>}
               </li>
             ) })() : sel.touched.map((t) => (
               <li key={t.path} className="space-y-1 px-3 py-2">
-                <p className="flex items-center gap-1.5 font-mono text-micro"><span className={KIND[t.change]}>{t.change === 'added' ? '+' : t.change === 'removed' ? '−' : '~'}</span><span className="truncate text-fg-2" title={t.path}>{t.path}</span></p>
-                {t.before && <p className="text-meta leading-snug text-fg-4 line-through decoration-fg-4/40">{t.before}</p>}
-                <p className="text-small leading-snug text-fg-1">{t.after}</p>
-                {t.why && <p className="text-meta leading-snug text-fg-3">{t.why}</p>}
+                <p className={`text-micro font-semibold uppercase tracking-wide ${KIND[t.change]}`}>{WORD[t.change]}</p>
+                {t.before && <p className="text-meta leading-snug text-fg-4 line-through decoration-fg-4/40">{words(t.before)}</p>}
+                <p className="text-small leading-snug text-fg-1">{words(t.after)}</p>
+                {t.why && <p className="text-meta leading-snug text-fg-3">{words(t.why)}</p>}
               </li>
             ))}
           </ul>

@@ -102,7 +102,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   let gap = 22, top = 0, L = layout(gap, 0)
   if (room > 0 && L.end > room) {
     // a listed ticket's row never gets too tight to read: past that, the board scrolls
-    for (k = 0.95; k >= 0.35 && L.end > room; k -= 0.05) { gap = Math.max(6, 22 * k); ROW = Math.max(listing ? 24 : 15, 26 * k); L = layout(gap, 0) }
+    for (k = 0.95; k >= 0.7 && L.end > room; k -= 0.05) { gap = Math.max(6, 22 * k); ROW = Math.max(listing ? 24 : 15, 26 * k); L = layout(gap, 0) }
   } else if (room > 0 && !compact) {
     while (k < 1.4) { k += 0.05; if (layout(gap, 0).end > room) { k -= 0.05; break } }
     L = layout(gap, 0)
