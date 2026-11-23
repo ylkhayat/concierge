@@ -218,7 +218,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
           </Suspense>
         </div>
       ) : b || d?.messages.length ? <Slides slides={[...slidesOf(b, d?.messages ?? []), ...perPrSlides]} /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}
-      {prId && (() => { const m = d?.messages.at(-1); return m?.who === 'agent' && <p className="line-clamp-2 shrink-0 rounded-ctl bg-fill px-3 py-1.5 text-small text-fg-2"><b className="font-medium text-fg-1">Answered: </b>{m.text.replace(/[#*_`>]/g, '')}</p> })()}
+      {prId && (() => { const m = d?.messages.at(-1); return m?.who === 'agent' && <Answered text={m.text.replace(/[#*_`>]/g, '')} /> })()}
       {d?.steer && (
         <div className="flex items-start gap-2 rounded-ctl bg-fill px-2.5 py-2">
           <span className="min-w-0 flex-1 text-small text-fg-1"><b className="font-semibold">For the agent:</b> {d.steer}</span>
@@ -285,6 +285,17 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
         <div className={inline ? '' : `absolute inset-x-3 top-full z-30 -mt-1 overflow-hidden rounded-card shadow-[var(--e3)] ${rest.prId ? '' : 'max-h-[min(70vh,560px)] overflow-y-auto'}`} style={inline || !rest.prId ? undefined : { height: room }}>{v[0].details}{v[1].details}</div>
       )}
     </div>
+  )
+}
+
+/** The card's last answer: two lines (clipped inside the padding, so no line shows half), the whole of it on a click. */
+function Answered({ text }: { text: string }) {
+  const [all, setAll] = useState(false)
+  return (
+    <button type="button" onClick={() => setAll(!all)} aria-expanded={all} title={all ? 'Show less' : 'Show the whole answer'}
+            className={`shrink-0 rounded-ctl bg-fill px-3 py-1.5 text-left text-small text-fg-2 transition-colors hover:bg-fill-strong ${all ? 'max-h-48 overflow-y-auto' : ''}`}>
+      <span className={all ? 'whitespace-pre-line' : 'line-clamp-2'}><b className="font-medium text-fg-1">Answered: </b>{text}</span>
+    </button>
   )
 }
 
