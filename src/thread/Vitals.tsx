@@ -81,8 +81,10 @@ export type Attach = { count: number; chips: ReactNode; words: () => string; run
  * words too, and one Send does all of it. Steers for the agent go in your message to it; a question for someone is
  * copied; a part of Explain opens (where there is none, it is asked for in words).
  */
+const SHOWN = 3
 export function useLaneActions({ d, target, onChange, onSteer, onView, toast }: { d?: Discussions; target: string; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast }): Attach | undefined {
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [more, setMore] = useState(false)
   const items = (['intent', 'understanding'] as const).flatMap((topic) => {
     const x = d?.[topic]
     if (!x || x.busy || !x.messages.length) return []
@@ -94,7 +96,8 @@ export function useLaneActions({ d, target, onChange, onSteer, onView, toast }: 
   const toggle = (k: string) => setPicked((p) => { const n = new Set(p); if (!n.delete(k)) n.add(k); return n })
   const chips = (
     <div className="mb-2 flex flex-wrap gap-1.5" aria-label="Suggested: pick any, then Send">
-      {items.map(({ key, topic, a }) => {
+      {/* three at most, the agent's own steer first: more of them crowded out the box; the rest one click away (a picked one always shows) */}
+      {items.filter((x, i) => more || i < SHOWN || picked.has(x.key)).map(({ key, topic, a }) => {
         const on = picked.has(key)
         return (
           <button key={key} type="button" aria-pressed={on} title={a.text ?? a.label} onClick={() => toggle(key)} style={{ '--lane': `var(--vital-${topic})` } as React.CSSProperties}
@@ -104,6 +107,11 @@ export function useLaneActions({ d, target, onChange, onSteer, onView, toast }: 
           </button>
         )
       })}
+      {items.length > SHOWN && (
+        <button type="button" onClick={() => setMore(!more)} className="rounded-full px-2.5 py-1 text-small font-medium text-fg-3 transition-colors hover:text-fg-1">
+          {more ? 'Fewer' : `+${items.length - SHOWN} more`}
+        </button>
+      )}
     </div>
   )
   return {
