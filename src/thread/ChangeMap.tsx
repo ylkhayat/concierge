@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Diagram } from '../../server/discussions.ts'
 import type { Overlay, Shape, Touched } from '../../server/explain.ts'
 import { api, enc } from '../lib.ts'
+import { stepsOf } from './flowSteps.ts'
 import { keepSame, useApi } from '../query.ts'
 
 type Explained = { overlay?: Overlay; stale?: boolean; task?: { state: string } }
@@ -21,13 +22,23 @@ function useExplained(prId: string, path?: string) {
   return useApi<Explained>(path ?? `/prs/${enc(prId)}/explain`, { staleTime: 60_000, placeholderData: keepSame(`/prs/${enc(prId)}/explain`) })
 }
 
+// opening the card is asking for it: the explanation starts by itself (once per PR on this page), no second click
+const started = new Set<string>()
 function Missing({ prId, busy, toast }: { prId: string; busy: boolean; toast: (m: string, tone?: 'ok' | 'error') => void }) {
+  const [asked, setAsked] = useState(busy || started.has(prId))
+  const [failed, setFailed] = useState<string>()
+  useEffect(() => {
+    if (busy || started.has(prId)) return
+    started.add(prId); setAsked(true)
+    api(`/prs/${enc(prId)}/explain`, {}).catch((e: Error) => { started.delete(prId); setAsked(false); setFailed(e.message) })
+  }, [prId, busy])
+  const working = busy || asked
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
       <span className="flex size-10 items-center justify-center rounded-2xl bg-accent-soft"><Sparkles className="size-5 text-accent-text" /></span>
-      <p className="max-w-sm text-small text-fg-2">{busy ? 'Explaining the change: the picture appears here when it is ready.' : 'This picture is drawn from the PR’s explanation, which isn’t written yet.'}</p>
-      {busy ? <LoaderCircle className="size-4 animate-spin text-fg-3" />
-        : <button onClick={() => api(`/prs/${enc(prId)}/explain`, {}).then(() => toast('Explaining the change'), (e: Error) => toast(e.message, 'error'))} className="btn-primary btn-sm">Explain this PR</button>}
+      <p className="max-w-sm text-small text-fg-2">{working ? 'Explaining the change: the picture appears here when it is ready.' : failed ?? 'This picture is drawn from the PR’s explanation, which isn’t written yet.'}</p>
+      {working ? <LoaderCircle className="size-4 animate-spin text-fg-3" />
+        : <button onClick={() => api(`/prs/${enc(prId)}/explain`, {}).then(() => { started.add(prId); setAsked(true); toast('Explaining the change') }, (e: Error) => toast(e.message, 'error'))} className="btn-primary btn-sm">Try again</button>}
     </div>
   )
 }
@@ -45,7 +56,7 @@ const DOT = { added: 'bg-ok', modified: 'bg-accent', removed: 'bg-fail' } as con
 const WORD = { added: 'New', modified: 'Changed', removed: 'Gone' } as const
 const ROWS = 6 // file rows shown in a part before "+N more"
 const W = { root: 280, area: 270, flows: 270 }
-const heightOf = (n: MNode) => n.kind === 'root' ? 120 : n.plain ? 120 : 58 + (n.line ? 34 : 0) + Math.min(ROWS, n.kind === 'flows' ? n.flows!.length : n.touched.length) * 46 + ((n.kind === 'area' && n.touched.length > ROWS) ? 22 : 0)
+const heightOf = (n: MNode) => n.kind === 'root' ? 120 : n.plain ? 120 : 58 + (n.line ? 34 : 0) + Math.min(ROWS, n.kind === 'flows' ? n.flows!.length : n.touched.length) * (n.kind === 'flows' ? 64 : 46) + ((n.kind === 'area' && n.touched.length > ROWS) ? 22 : 0)
 const mark = (c: Touched['change']) => (c === 'added' ? '+' : c === 'removed' ? '−' : '~')
 
 const Hub = () => <Handle type="source" position={Position.Top} className="!left-1/2 !top-1/2 !size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
@@ -59,8 +70,8 @@ function MindNode({ data }: NodeProps<Node<MData>>) {
     <div style={{ width: W.root }} className="rounded-card bg-[color-mix(in_oklch,var(--lane)_16%,var(--surface-1))] p-3.5 text-left ring-1 ring-[color-mix(in_oklch,var(--lane)_45%,transparent)]">
       <HubIn /><Hub />
       <p className="label mb-1 text-[var(--lane)]">What changes</p>
-      <p className="text-small font-semibold leading-snug text-fg-1">{n.title}</p>
-      {n.line && <p className="mt-1 line-clamp-3 text-meta leading-snug text-fg-2">{n.line}</p>}
+      <p className="text-small font-semibold leading-snug text-fg-1">{words(n.title)}</p>
+      {n.line && <p className="mt-1 line-clamp-3 text-meta leading-snug text-fg-2">{words(n.line)}</p>}
     </div>
   )
   const row = (id: string, active: boolean) => `nodrag flex w-full min-w-0 flex-col rounded-ctl px-2 py-1 text-left transition-colors ${active ? 'bg-[color-mix(in_oklch,var(--lane)_14%,transparent)]' : 'hover:bg-hover'}`
@@ -82,7 +93,7 @@ function MindNode({ data }: NodeProps<Node<MData>>) {
         {n.kind === 'flows' ? n.flows!.slice(0, ROWS).map((f, k) => (
           <button key={k} type="button" onClick={() => pick(`flow:${k}`)} className={row(`flow:${k}`, on === `flow:${k}`)}>
             <span className="truncate text-meta font-medium text-fg-1">{f.title}</span>
-            <span className="truncate text-micro text-fg-3">{f.after}</span>
+            <span className="mt-0.5 block"><Chain steps={stepsOf(f.after).slice(0, 4)} />{stepsOf(f.after).length > 4 && <span className="ml-1 text-micro text-fg-4">+{stepsOf(f.after).length - 4} more</span>}</span>
           </button>
         )) : n.touched.slice(0, ROWS).map((t) => (
           <button key={t.path} type="button" onClick={() => pick(`f:${t.path}`)} className={row(`f:${t.path}`, on === `f:${t.path}`)} title={t.after}>
@@ -102,6 +113,12 @@ const nodeTypes = { mind: MindNode }
 const said = (folder: string) => { const w = (folder.split('/').filter(Boolean).pop() ?? folder).replace(/[-_.]+/g, ' ').trim(); return w.charAt(0).toUpperCase() + w.slice(1) }
 /** Said as words: code marks (`like this`) dropped, so a line reads as a sentence. */
 const words = (x?: string) => x?.replace(/`([^`]+)`/g, '$1')
+/** A flow's steps as pills with arrows between them, wrapping onto more lines. */
+const Chain = ({ steps, faded }: { steps: string[]; faded?: boolean }) => (
+  <span className={`flex flex-wrap items-center gap-1 ${faded ? 'opacity-60' : ''}`}>
+    {steps.map((x, i) => <span key={i} className="contents">{i > 0 && <ArrowRight className="size-3 shrink-0 text-fg-4" aria-hidden />}<span className="rounded-full bg-fill px-2 py-0.5 text-micro text-fg-1">{x}</span></span>)}
+  </span>
+)
 const STEP_KIND: Record<string, string> = { context: 'Background', core: 'The change itself', supporting: 'What it needs around it', tests: 'How it is checked', cleanup: 'Tidying up' }
 
 export function mindOf(o: Overlay): { nodes: MNode[]; links: [string, string][] } {
@@ -204,8 +221,8 @@ function MapCanvas({ o }: { o: Overlay }) {
             {sel.kind === 'flow' ? (() => { const f = o.flows[Number(sel.id.slice(5))]; return (
               <li className="space-y-1.5 px-3 py-2">
                 <p className="text-small font-medium text-fg-1">{f.title}</p>
-                {f.before && <p className="text-meta leading-snug text-fg-4 line-through decoration-fg-4/40">{f.before}</p>}
-                <p className="text-small leading-snug text-fg-1">{f.after}</p>
+                {f.before && <><p className="label text-fg-4">Before</p><Chain steps={stepsOf(f.before)} faded /></>}
+                <p className="label pt-1 text-fg-4">{f.before ? 'Now' : 'How it goes'}</p><Chain steps={stepsOf(f.after)} />
               </li>
             ) })() : sel.touched.map((t) => (
               <li key={t.path} className="space-y-1 px-3 py-2">
