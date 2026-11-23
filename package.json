@@ -6,7 +6,7 @@
     "dev": "node --watch server/index.ts & vite",
     "build": "vite build",
     "start": "NODE_ENV=production node server/index.ts",
-    "test": "node --import ./server/test-env.ts --test --test-concurrency=1 server/*.test.ts src/*.test.ts src/design/*.test.ts",
+    "test": "node --import ./server/test-env.ts --test --test-concurrency=1 server/*.test.ts src/*.test.ts src/design/*.test.ts src/thread/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
