@@ -47,6 +47,17 @@ export type PerPr = { number: number; decision: string; steer?: string | null; s
 export type Adr = { title: string; status: 'proposed' | 'accepted'; context: string; decision: string; consequences: string; alternatives?: string }
 export type Action = { kind: 'tour' | 'business' | 'technical' | 'norms' | 'ask-author' | 'ask-community' | 'steer'; label: string; text?: string }
 
+/**
+ * The steps an answer recommends become things to do: each bullet of the reply ("- Rate-limit at the bridge") that no
+ * action already covers is added as a steer for the coding agent, so a recommendation always has a button. A bullet
+ * that asks something ("…?") is a question for the author instead.
+ */
+export function withSteps(reply: string, actions: Action[]): Action[] {
+  const has = (x: string) => actions.some((a) => (a.text ?? a.label).toLowerCase().includes(x.toLowerCase().slice(0, 24)))
+  const steps = [...reply.matchAll(/^\s*(?:[-*•]|\d+[.)])\s+(.+)$/gm)].map((m) => m[1].replace(/[*_`]/g, '').trim()).filter((x) => x.length > 3 && !has(x))
+  return [...actions, ...steps.slice(0, 4).map((x): Action => ({ kind: x.endsWith('?') ? 'ask-author' : 'steer', label: x.length > 60 ? `${x.slice(0, 57)}…` : x, text: x }))]
+}
+
 const ACTIONS = { type: 'array', items: { type: 'object', properties: {
   kind: { type: 'string', enum: ['tour', 'business', 'technical', 'norms', 'ask-author', 'ask-community', 'steer'] },
   label: { type: 'string' }, text: { type: 'string' },
@@ -76,11 +87,11 @@ const MULTI = 'This covers several pull requests together (a stack, bottom first
 const FORMAT: Record<Topic, string> = {
   intent: [
     'Draft the decision record early with status proposed; when the developer agrees with it, set its status to accepted and the stage to concluded.',
-    'actions: what to do next, when it helps: ask-author (text: the question for the PR author or ticket reporter), ask-community (text: the question for the team), steer (text: what the coding agent should change). Empty when nothing fits.',
+    'actions: what to do next: ask-author (text: the question for the PR author or ticket reporter), ask-community (text: the question for the team), steer (text: what the coding agent should change). Every step your reply recommends is also one action here (a change to the work is a steer, a question is an ask): a recommendation without its action leaves the developer nothing to press. Empty only when you recommend nothing.',
     'Return: reply (markdown, at most 30 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage; status (at most 6 words on where the developer stands, e.g. "2 open questions", "record agreed"); summary (1 or 2 plain sentences); steer (the instruction for the coding agent if the decision changes the work, else null); actions; adr.',
   ].join('\n'),
   understanding: [
-    'actions: tour (take the guided tour), business, technical or norms (open that view of Explain; label says what to look at there), ask-author or ask-community (text: the question to ask), steer (text: a change for the coding agent, such as a missing test).',
+    'actions: tour (take the guided tour), business, technical or norms (open that view of Explain; label says what to look at there), ask-author or ask-community (text: the question to ask), steer (text: a change for the coding agent, such as a missing test). Every step your reply recommends is also one action here.',
     'Return: reply (markdown, at most 30 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage (concluded once they understand what matters); status (at most 6 words on their grasp, e.g. "knows the flow, not the retries"); summary (what they understand and what is still unclear, 1 to 3 sentences); steer (the changes collected for the coding agent, as one instruction, else null); actions.',
   ].join('\n'),
 }
@@ -189,7 +200,9 @@ const all = () => (state.discussions ??= {})
 /** A target's discussions, as they stand: one per topic, empty when not started. */
 export function discussionsOf(target: string): Record<Topic, Discussion> {
   const blank = (topic: Topic): Discussion => ({ target, topic, messages: [], stage: 'new', status: 'not discussed', summary: '', costUsd: 0 })
-  return { intent: all()[keyOf(target, 'intent')] ?? blank('intent'), understanding: all()[keyOf(target, 'understanding')] ?? blank('understanding') }
+  // an answer written before its steps became actions (withSteps) gets them here too, as it is read
+  const steps = (d: Discussion): Discussion => { const last = d.messages.at(-1); return last?.who === 'agent' ? { ...d, actions: withSteps(last.text, d.actions ?? []) } : d }
+  return { intent: steps(all()[keyOf(target, 'intent')] ?? blank('intent')), understanding: steps(all()[keyOf(target, 'understanding')] ?? blank('understanding')) }
 }
 
 /**
@@ -232,7 +245,7 @@ export function say(target: string, topic: Topic, text: string, context: string,
       if (!o) throw new Error(m.result || 'no answer')
       d.messages.push({ who: 'agent', text: o.reply, at: new Date().toISOString() })
       then?.(o.reply)
-      Object.assign(d, { sessionId, stage: o.stage, status: o.status, summary: o.summary, actions: o.actions ?? [], costUsd: d.costUsd + (m.total_cost_usd ?? 0), ...(o.adr && { adr: o.adr }) })
+      Object.assign(d, { sessionId, stage: o.stage, status: o.status, summary: o.summary, actions: withSteps(o.reply, o.actions ?? []), costUsd: d.costUsd + (m.total_cost_usd ?? 0), ...(o.adr && { adr: o.adr }) })
       // a new steer is a new thing to send; the same one already sent stays sent
       if (o.steer && o.steer !== d.steer) Object.assign(d, { steer: o.steer, sentAt: undefined })
       // per PR: a steer that changed is to send again; one sent and unchanged stays sent
