@@ -70,7 +70,9 @@ export const runKey = (t: TicketView) => t.stack?.key
 export function groupedTickets(tickets: TicketView[], q: string): { tier: Tier; units: TicketView[][] }[] {
   const needle = q.trim().toLowerCase()
   const hit = (t: TicketView) => (!needle || `${t.id} ${t.title} ${t.labels.join(' ')}`.toLowerCase().includes(needle))
-    && (t.bucket !== 'closed' || isDone(t)) // a closed one only while it's freshly done (else it's kept just for what names it)
+    // a closed one only while it's freshly done (else it's kept just for what names it), or while a run works on it (a
+    // handover to a ticket that was already Done: it shows under Agents on it, never hidden)
+    && (t.bucket !== 'closed' || isDone(t) || t.busy)
   const prio = (p: number) => (p === 0 ? 5 : p)
   const gi = (t: TicketView) => ORDER.indexOf(groupOf(t).id)
   const units = new Map<string, TicketView[]>()
