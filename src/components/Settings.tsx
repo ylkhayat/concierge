@@ -375,6 +375,7 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   const repos = setup?.config.repos ?? {}
   // which account each repository is kept to (none: the order in Accounts)
   const pins = setup?.config.repoAccounts ?? {}
+  const greens = setup?.config.mergeOnGreen ?? [] // repositories whose Ship as one PR runs merge their PR on green
   const [accts, setAccts] = useState<{ id: string; label: string }[]>([])
   useEffect(() => { api('/usage/accounts').then((a: { id: string; label: string }[]) => setAccts(a.map(({ id, label }) => ({ id, label })))).catch(() => {}) }, [])
   const [bases, setBases] = useState<BaseInfo[]>([])
@@ -427,6 +428,12 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
                         route={setup?.placement?.find((r) => r.repo === repo)}
                         onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${m}` : `${repo} stays off ${m}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
                         accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
+          {/* your own projects: Ship as one PR may merge its PR itself once the checks pass (never set for a team's repository) */}
+          <label className="flex cursor-pointer items-center gap-2 px-4 py-2 text-meta text-fg-3 hover:bg-hover/50" title="For your own projects: Ship as one PR merges its pull request itself once its checks pass. Leave it off for any repository others review.">
+            <input type="checkbox" checked={greens.includes(repo)} className="accent-current"
+                   onChange={(e) => void saveConfig({ mergeOnGreen: e.target.checked ? [...greens, repo] : greens.filter((r) => r !== repo) }, e.target.checked ? `${repo}: Ship as one PR merges once checks pass` : `${repo}: you merge its PRs yourself`)} />
+            Let Ship as one PR merge its pull request once the checks pass <span className="text-fg-4">(your own projects)</span>
+          </label>
               </Fragment>
             ))}
             <OwnerRepos owner={owner} watched={Object.keys(repos)} onAdd={(r) => addRepo(r, '')} />

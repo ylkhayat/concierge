@@ -31,6 +31,10 @@ export type Batch = {
   said?: string // your direction, for every run of it
   prep?: { ids: string[]; task: string; branch?: string; brief?: string }
   submitted: Record<string, string> // a stack's first ticket → its submit run
+  // 'one-pr': Ship as one PR. Each ticket is built side by side by an agent that decides on its own (never asks), then
+  // one combine run merges the branches of those that got done into one PR, and merges it when the repo allows
+  // (config.mergeOnGreen). A ticket that fails doesn't hold the others: it stays open with its reason
+  mode?: 'one-pr'
 }
 type GateRun = { batch?: string; role?: string; state: string; ids: string[]; queuedAt: string; outcomes: Record<string, Outcome> }
 
@@ -44,6 +48,27 @@ export function gate(stack: string[], runs: GateRun[], batch: string):
     if (o?.branch && (o.outcome === 'ready' || o.outcome === 'shipped')) go.push({ id, branch: o.branch, sha: o.sha }); else waiting.push(id)
   }
   return waiting.length ? { ready: go.map((g) => g.id), waiting } : { go }
+}
+
+/**
+ * Ship as one PR: whether every ticket in it is over (its latest work run in the batch ended), and which of them got
+ * done (ready, with a branch) and which didn't (failed, refined, or no outcome). Undefined while any is still worked.
+ */
+export function allOver(ids: string[], runs: GateRun[], batch: string): { go: { id: string; branch: string; sha?: string }[]; left: string[] } | undefined {
+  const go: { id: string; branch: string; sha?: string }[] = [], left: string[] = []
+  for (const id of ids) {
+    const r = runs.filter((x) => x.batch === batch && !x.role && x.ids.includes(id)).sort((x, y) => y.queuedAt.localeCompare(x.queuedAt))[0]
+    if (!r || r.state === 'queued' || r.state === 'running') return undefined
+    const o = r.state === 'done' ? r.outcomes[id] : undefined
+    if (o?.branch && (o.outcome === 'ready' || o.outcome === 'shipped')) go.push({ id, branch: o.branch, sha: o.sha }); else left.push(id)
+  }
+  return { go, left }
+}
+
+/** The decisions a ticket's agent made on its own (Ship as one PR), from its final message's "Decisions" part. */
+export function decisionsIn(text: string): string | undefined {
+  const m = text.match(/(?:^|\n)#*\s*\**Decisions\**:?\s*\n([\s\S]*?)(?=\n#+\s|\n[A-Z][A-Z0-9]*-\d+ \S+ [0-9a-f]{7,40} (?:ready|shipped)|$)/i)
+  return m?.[1].trim().slice(0, 1500) || undefined
 }
 
 /** The prep run's last line: `PREP <branch>` or `PREP none`. Undefined: it didn't finish (it asked you, or failed). */
@@ -63,6 +88,16 @@ End your final message with the brief the ticket agents get: the decisions, what
 export function workNote(b: Batch, id: string): string {
   const stack = b.stacks.find((s) => s.includes(id)) ?? [id]
   let out = ''
+  if (b.mode === 'one-pr') {
+    if (b.prep?.brief && b.prep.ids.includes(id)) out += `\n\nShared ground was prepared before you.${b.prep.branch ? ` Branch off \`${b.prep.branch}\`, not the base branch.` : ''} The brief:\n<brief>\n${b.prep.brief}\n</brief>`
+    const others = b.stacks.flat().filter((x) => x !== id)
+    return out + `\n\n${id} ships in one pull request${others.length ? ` together with ${others.join(', ')}, each built by its own agent right now` : ''}. Work it to the end on your own:
+- Never ask me, on Linear or anywhere, and never end it refined: when something is unclear, decide the way the ticket, the code and the product suggest, and go on.
+- Don't open a PR and don't run gh stack submit. Do everything else (implement, run the checks that cover it, self-review, commit), push your branch, and end with \`${id} <branch> <sha> ready\`. Concierge combines the branches into one PR.
+- Before that last line, list every decision you made on your own under a "Decisions" heading, one short line each (what, and why), so I can check them in the PR. None: say so.
+- Only if it truly can't be done: end with \`${id} failed: <why>\`. The other tickets go on without it.
+- Never wait for the other tickets.`
+  }
   if (b.prep?.brief && b.prep.ids.includes(id)) out += `\n\nShared ground was prepared for ${b.prep.ids.join(', ')} before you.${b.prep.branch ? ` Branch off \`${b.prep.branch}\`, not the base branch: its commits come along in the stack.` : ''} The brief:\n<brief>\n${b.prep.brief}\n</brief>`
   if (stack.length > 1) out += `\n\n${id} ships in one stack with ${stack.filter((x) => x !== id).join(', ')} (bottom to top: ${stack.join(' → ')}), each built by its own agent right now. `
     + `Don't open a PR and don't run gh stack submit. Do everything else (fix, self-review, commit; no typecheck, lint or test suites: CI runs them on the PR), push your branch, and end with \`${id} <branch> <sha> ready\` instead of shipped. `
@@ -75,6 +110,18 @@ export const submitPrompt = (go: { id: string; branch: string }[], command: stri
 - Push the moved branches (--force-with-lease), then submit them as one stack with gh stack, opening each PR the way \`${command}\` does (title, body, links, Linear state). A branch that already has a PR keeps it.
 - Never merge one branch into another.
 End with one line per ticket: \`<ID> <branch> <sha> shipped\`, or \`<ID> failed: <why>\`.`
+
+/** Ship as one PR's last step: the done tickets' branches into one branch and one PR, merged once green if allowed. */
+export const combinePrompt = (p: { go: { id: string; branch: string }[]; left: { id: string; why: string }[]; decisions: Record<string, string>; command: string; merge: boolean; said?: string }) => `Combine these tickets into one pull request: ${p.go.map((g) => `${g.id} \`${g.branch}\``).join(', ')}. Each was built on its own branch by another agent, checked, self-reviewed and pushed.${p.said ? `\n\nMy direction for these tickets: ${p.said}` : ''}
+- Fetch. Make one branch \`ship/${p.go.map((g) => g.id.toLowerCase()).join('-').slice(0, 60)}\` off the up-to-date base branch, in a new worktree, and merge each ticket branch into it in the order above (git merge --no-ff). A conflict: resolve it keeping every ticket's intent.
+- Run the project's own checks over the whole (typecheck, lint, tests, build: what it has) and fix what fails. Commit (conventional commits) and push.
+- Open ONE PR the way \`${p.command}\` opens one (its title covering all of them, its links and Linear states), with a body that has: one short section per ticket (what changed), the words that close each ticket, a "Decisions made without you" section with the decisions below, by ticket${p.left.length ? ', and a "Not in this PR" section with the tickets below that didn\'t get done and why' : ''}.
+${p.merge ? `- Then wait for its checks (gh pr checks --watch). Green: merge it (gh pr merge --squash --delete-branch). Red: fix it, push, and wait again, three times at most; still red: leave it open and say why.` : `- Don't merge it: I merge it myself.`}
+
+The decisions each ticket's agent made on its own:
+${p.go.map((g) => `${g.id}:\n${p.decisions[g.id] ?? '(none listed)'}`).join('\n\n')}
+${p.left.length ? `\nNot in this PR:\n${p.left.map((l) => `- ${l.id}: ${l.why}`).join('\n')}\n` : ''}
+End with one line per ticket in it: \`<ID> <branch> <sha> shipped\` (the combined branch and its last commit), or \`<ID> failed: <why>\`. Then a last line: \`PR <url> merged\` or \`PR <url> open\`.`
 
 /** For a run of several tickets: none waits on another, and each one's outcome is said the moment it is known. */
 export const MULTI_NOTE = `

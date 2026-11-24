@@ -153,3 +153,23 @@ test('a review or revise goal is to reach the person: crit up and next steps, wi
   assert.doesNotMatch(p, /background_tasks is empty/)
   assert.match(JSON.parse(goalSettings(['AC-1'])).hooks.Stop[0].hooks[0].prompt, /background_tasks is empty/)
 })
+
+test('Ship as one PR: over once every ticket is, the done ones combined and the rest left out with no wait on them', async () => {
+  const { allOver, decisionsIn, workNote, combinePrompt } = await import('./exec.ts')
+  const run = (id: string, state: string, outcome?: Record<string, unknown>, at = '2026-11-24T10:00:00Z') => ({ batch: 'b1', state, ids: [id], queuedAt: at, outcomes: outcome ? { [id]: outcome } : {} }) as Parameters<typeof allOver>[1][number]
+  const ids = ['ELBU-3', 'ELBU-4', 'ELBU-5']
+  assert.equal(allOver(ids, [run('ELBU-3', 'done', { outcome: 'ready', branch: 'b3', sha: 'abc1234' }), run('ELBU-4', 'running'), run('ELBU-5', 'failed')], 'b1'), undefined) // ELBU-4 still worked
+  const s = allOver(ids, [run('ELBU-3', 'done', { outcome: 'ready', branch: 'b3', sha: 'abc1234' }), run('ELBU-4', 'done', { outcome: 'failed', reason: 'no API' }), run('ELBU-5', 'failed')], 'b1')!
+  assert.deepEqual(s.go.map((g) => g.id), ['ELBU-3']); assert.deepEqual(s.left, ['ELBU-4', 'ELBU-5'])
+  // a re-run counts, not the first try
+  assert.deepEqual(allOver(['ELBU-4'], [run('ELBU-4', 'failed'), run('ELBU-4', 'done', { outcome: 'ready', branch: 'b4' }, '2026-11-24T11:00:00Z')], 'b1')!.go.map((g) => g.id), ['ELBU-4'])
+
+  assert.equal(decisionsIn('Built it.\n\n## Decisions\n- Levels as an enum: the API returns them\n- No migration: empty table\n\nELBU-3 feat/x abc1234 ready'), '- Levels as an enum: the API returns them\n- No migration: empty table')
+  assert.equal(decisionsIn('Built it.\nELBU-3 feat/x abc1234 ready'), undefined)
+
+  const note = workNote({ id: 'b1', at: '', stacks: [ids], submitted: {}, mode: 'one-pr' }, 'ELBU-3')
+  assert.match(note, /Never ask me/); assert.match(note, /ELBU-3 <branch> <sha> ready/); assert.match(note, /together with ELBU-4, ELBU-5/)
+  const p = (merge: boolean) => combinePrompt({ go: [{ id: 'ELBU-3', branch: 'b3' }], left: [{ id: 'ELBU-4', why: 'no API' }], decisions: { 'ELBU-3': '- Levels as an enum' }, command: '/my-exec ELBU-3', merge })
+  assert.match(p(true), /gh pr merge --squash/); assert.doesNotMatch(p(false), /gh pr merge/)
+  assert.match(p(true), /Not in this PR:\n- ELBU-4: no API/); assert.match(p(true), /ELBU-3:\n- Levels as an enum/)
+})
