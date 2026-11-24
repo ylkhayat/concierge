@@ -183,6 +183,7 @@ export type Pr = {
   feedbackAt?: string // when threads last started (or grew) waiting on you: a round older than this hasn't seen them
   readAt?: string // you said nothing of what waited needs an answer (Nothing to answer): only what comes after counts
   seenReviews?: string[] // review ids already reported, so each new review shows once in Activity
+  heardAt?: string // the newest comment by someone else already reported in Activity (newer ones show, once each)
   reviewers?: string[] // who opened the open threads (or asked for changes): who to ask for a re-review
   verdicts?: { who: string; state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'REQUESTED' }[] // yours: each reviewer's latest word, or a request still open
   reviewDecision?: string | null // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED (mine only)

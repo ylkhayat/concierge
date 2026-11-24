@@ -196,7 +196,7 @@ async function doPoll(forced?: unknown) {
     for (const e of outside.splice(0)) {
       note(e.id, { at: e.at ?? new Date().toISOString(), kind: 'event', who: e.who, text: e.text })
       const p = state.prs[e.id]
-      if (p) alert(prTarget(p), e.who ? `${e.who}: ${e.text}` : e.text, p.mine ? 'you' : 'info')
+      if (p) alert(prTarget(p), e.who ? `${e.who}: ${e.text}` : e.text, p.mine && !e.info ? 'you' : 'info')
     }
     // First ever poll: show the backlog but only auto-run requests that arrive from now on.
     if (!state.seeded) { state.seeded = true; save() }
