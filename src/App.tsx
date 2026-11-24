@@ -193,7 +193,7 @@ export function App() {
   const execWaiting = tickets.filter((t) => !t.dimmed && ['needs-you', 'tend'].includes(groupOf(t).id)).length // dimmed: not now
   const runPicked = (stacks?: string[][], note?: string, prep?: Prep, mode?: 'one-pr') =>
     api('/exec', { ids: picked, stacks, note, prep, mode }).then((r: { stacks: string[][]; prep?: Prep; merge?: boolean }) => {
-      toast(mode ? `Shipping ${picked.length} as one PR: each built now, then combined${r.merge ? ' and merged once checks pass' : ''}` : r.prep ? `A short prep for ${r.prep.ids.join(', ')} first, then all ${picked.length} at once` : picked.length > 1 ? `Running all ${picked.length} at once: ${r.stacks.map((s) => s.join(' → ')).join('  ·  ')}` : `Running ${picked[0]}`)
+      toast(mode ? `One agent works ${picked.length} together into one PR${r.merge ? ', merged once checks pass' : ''}` : r.prep ? `A short prep for ${r.prep.ids.join(', ')} first, then all ${picked.length} at once` : picked.length > 1 ? `Running all ${picked.length} at once: ${r.stacks.map((s) => s.join(' → ')).join('  ·  ')}` : `Running ${picked[0]}`)
       select(picked[0]); setPicked([])
     }, (e: Error) => toast(e.message, 'error'))
 

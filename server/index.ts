@@ -26,7 +26,7 @@ import { addException, exceptionsOf } from './norms.ts'
 import { defaultBranch, tokenChanged, getMe, gh, ghBudget, outside, poll, prHealth, refreshOne, setOnStacks } from './github.ts'
 import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
 import { assignToMe, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
-import { combinePrompt, decisionsIn, execCommand, gate, prepOf, prepPrompt, repoFor, allOver, settledIn, submitPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
+import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, togetherPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
 import { cachedStackTour, makeStackTour, writingStackTour } from './stackTour.ts'
 import { trackTurns } from './turns.ts'
@@ -315,22 +315,35 @@ bus.on('exec-finished', (run: ExecRun) => {
 })
 
 /** Start picked tickets as a batch: every ticket now, side by side; the ones that share something after their short prep. */
-function startBatch(stacks: string[][], said: string, prep?: Batch['prep'], mode?: Batch['mode']) {
+function startBatch(stacks: string[][], said: string, prep?: Batch['prep']) {
   const at = new Date().toISOString(), old = Date.now() - 14 * 86_400_000
   for (const [k, x] of Object.entries(state.batches)) if (Date.parse(x.at) < old) delete state.batches[k]
-  const b: Batch = { id: randomUUID().slice(0, 8), at, stacks, ...(said && { said }), ...(prep && { prep }), ...(mode && { mode }), submitted: {} }
+  const b: Batch = { id: randomUUID().slice(0, 8), at, stacks, ...(said && { said }), ...(prep && { prep }), submitted: {} }
   state.batches[b.id] = b; save()
   const p = prep && enqueueExec(prep.ids, repoFor(prep.ids[0], config.exec.repoByPrefix)!, false, { label: 'Prep', role: 'prep', batch: b.id, prompt: prepPrompt(prep, said), said: said || `Prep: ${prep.task}` })
   // the tickets the prep isn't for start now; its own once it hands over
   return [...(p ? [p] : []), ...startWork(b, b.stacks.flat().filter((id) => !p || !prep.ids.includes(id)))]
+}
+/**
+ * Ship as one PR: the tickets become one piece of work (one Work: what you say on any of them reaches the run, and
+ * they show as one group with one page), worked by one agent together, into one PR, merged on green where allowed.
+ */
+function shipTogether(ids: string[], said: string) {
+  const repo = repoFor(ids[0], config.exec.repoByPrefix)!
+  const first = `ticket:${ids[0]}`, { w } = workOfMember(first)
+  for (const id of ids.slice(1)) if (!w.links.some(([a, b]) => a === first && b === `ticket:${id}`)) w.links.push([first, `ticket:${id}`])
+  workOfMember(first) // links them into one Work
+  if (said) rememberWork(w, first, said)
+  save(); stale('/works')
+  const merge = (config.mergeOnGreen ?? []).includes(repo)
+  const run = enqueueExec(ids, repo, false, { label: merge ? 'Together, one PR, merged on green' : 'Together, one PR', prompt: togetherPrompt({ ids, command: execCommand(slot('exec'), ids), merge, said: said || undefined }), ...(said && { said }) })
+  return { run, merge }
 }
 const startWork = (b: Batch, ids: string[]) => ids.map((id) => enqueueExec([id], repoFor(id, config.exec.repoByPrefix)!, false, { batch: b.id, ...(b.said && { said: b.said }), brief: workNote(b, id) })).filter(Boolean)
 
 /** A batch run ended: a prep hands over to the tickets; a ticket ready in a stack submits it once the whole stack is. */
 function batchStep(run: ExecRun) {
   const b = run.batch ? state.batches[run.batch] : undefined, key = `exec:${run.id}`, at = new Date().toISOString()
-  // Ship as one PR: a ticket that failed doesn't hold the others, so any end counts
-  if (b?.mode === 'one-pr' && run.role !== 'submit' && run.role !== 'prep' && run.state !== 'queued' && run.state !== 'running') return combineStep(b, run)
   if (!b || run.state !== 'done' || run.role === 'submit') return
   if (run.role === 'prep') {
     const p = prepOf(run.summary ?? '')
@@ -350,28 +363,6 @@ function batchStep(run: ExecRun) {
       note(key, { at, kind: 'event', text: r ? `All of ${s.join(' → ')} are ready: submitting them as one stack.` : `${s.join(' → ')} are ready, but the submit couldn't start (one is busy). Run it again once they're free.` })
     } else if (run.ids.some((id) => g.ready.includes(id))) note(key, { at, kind: 'event', text: `Ready. The stack ${s.join(' → ')} is submitted once ${g.waiting.join(', ')} ${g.waiting.length === 1 ? 'is' : 'are'} too.` })
   }
-}
-
-/**
- * Ship as one PR: once every ticket's run is over, one combine run takes the ones that got done into one PR (and merges
- * it when its repository allows: Settings → Repositories). Tickets that didn't get done stay open, with their reason
- * in the PR and on their own page.
- */
-function combineStep(b: Batch, run: ExecRun) {
-  const ids = b.stacks.flat(), key = `exec:${run.id}`, at = new Date().toISOString()
-  if (b.submitted[ids[0]]) return
-  const s = allOver(ids, Object.values(state.execs), b.id)
-  if (!s) { note(key, { at, kind: 'event', text: 'Done here. The one PR is made once the other tickets are over too.' }); return }
-  if (!s.go.length) { note(key, { at, kind: 'event', text: `None of ${ids.join(', ')} got done, so there is no PR to make. Each one's page says why.` }); return }
-  const runs = Object.values(state.execs).filter((x) => x.batch === b.id && !x.role)
-  const latest = (id: string) => runs.filter((x) => x.ids.includes(id)).sort((x, y) => y.queuedAt.localeCompare(x.queuedAt))[0]
-  const decisions = Object.fromEntries(s.go.map((g) => [g.id, decisionsIn(latest(g.id)?.summary ?? '') ?? '(none listed)']))
-  const left = s.left.map((id) => ({ id, why: latest(id)?.outcomes[id]?.reason ?? latest(id)?.error?.slice(0, 200) ?? (latest(id)?.outcomes[id]?.outcome === 'refined' ? 'it stopped to ask' : 'it didn\'t finish') }))
-  const repo = repoFor(s.go[0].id, config.exec.repoByPrefix)!
-  const merge = (config.mergeOnGreen ?? []).includes(repo)
-  const r = enqueueExec(s.go.map((g) => g.id), repo, false, { label: merge ? 'Ship as one PR and merge' : 'Ship as one PR', role: 'submit', batch: b.id, prompt: combinePrompt({ go: s.go, left, decisions, command: execCommand(slot('exec'), s.go.map((g) => g.id)), merge, said: b.said }) })
-  if (r) { b.submitted[ids[0]] = r.id; save() }
-  note(key, { at, kind: 'event', text: r ? `${s.go.map((g) => g.id).join(', ')} are done: combining them into one PR${merge ? ', merged once its checks pass' : ''}.${s.left.length ? ` Not in it: ${s.left.join(', ')}.` : ''}` : `Ready to combine into one PR, but it couldn't start (one of them is busy). Run it again once they're free.` })
 }
 
 /**
@@ -1511,11 +1502,12 @@ app.post('/exec', async (c) => {
   const { ids, stacks, note: given, prep, mode } = await c.req.json() as { ids?: unknown; stacks?: unknown; note?: unknown; prep?: Prep; mode?: unknown }
   const picked = pickedTickets(ids), note = noteOf(given)
   if ('error' in picked) return c.json({ error: picked.error }, picked.code)
-  // Ship as one PR: no plan to make, every picked ticket side by side, then one PR of those that got done
+  // Ship as one PR: no plan to make; one agent works them together into one PR
   if (mode === 'one-pr') {
     if (new Set(picked.map((t) => t.repo)).size > 1) return c.json({ error: 'One PR is one repository: pick tickets of one repository' }, 400)
-    const ids1 = picked.map((t) => t.id)
-    return c.json({ stacks: [ids1], why: '', runs: startBatch([ids1], note, undefined, 'one-pr'), merge: (config.mergeOnGreen ?? []).includes(picked[0].repo) })
+    const ids1 = picked.map((t) => t.id), { run, merge } = shipTogether(ids1, note)
+    if (!run) return c.json({ error: 'It couldn\'t start: one of them is busy' }, 409)
+    return c.json({ stacks: [ids1], why: '', runs: [run], merge })
   }
   let plan: { stacks: string[][]; why: string; prep?: Prep }
   if (stacks !== undefined) {
@@ -1597,10 +1589,10 @@ function ticketTools(id: string) {
     },
     {
       id: 'one-pr', group: 'Ticket', label: 'Ship as one PR', missing: missingFor(slot('exec')),
-      hint: `Build them side by side, each agent deciding on its own (no questions), then combine the ones that got done into one pull request${(config.mergeOnGreen ?? []).includes(t.repo ?? '') ? ', merged once its checks pass' : ''}. All takes every ticket of this repository in this column.`,
+      hint: `One agent works them together, with one shared memory, deciding on its own (no questions), into one pull request${(config.mergeOnGreen ?? []).includes(t.repo ?? '') ? ', merged once its checks pass' : ''}. All takes every ticket of this repository in this column.`,
       confirm: 'Ship {n} as one PR?',
       targets: { this: free(t) ? [t.id] : [], stack: lastRun && lastRun.every((i) => !ticketBusy(i)) ? lastRun : [], all: column.filter((x) => x.repo === t.repo).map((x) => x.id) },
-      go: (ids, _scope, note) => startBatch([ids], note, undefined, 'one-pr'),
+      go: (ids, _scope, note) => shipTogether(ids, note),
     },
     ...config.exec.actions.filter((a) => !a.env || t.env.env === 'unknown' || a.env === t.env.env).map((a) => ({
       id: `action:${a.id}`, group: a.env ? 'Investigate' : 'Ticket', label: a.label, missing: missingFor(a.prompt),
