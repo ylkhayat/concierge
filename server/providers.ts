@@ -27,7 +27,9 @@ export type Work = 'review' | 'revise' | 'exec' | 'small' // what a run is for; 
  */
 // login: who it is signed in as (identityOf), pinned when first seen with several machines: each machine must sign it in
 // as that one, or it takes none of the account's work there (machines.ts)
-export type Account = { id: string; label: string; kind: Kind; home?: string; host?: string; login?: string }
+// keyEverywhere: an added Claude account that runs on its setup token on every machine (one key, kept once and shared
+// over the tailnet), never a per-machine claude.ai sign-in: nothing to sign in, nothing that lapses (claudeLogin.ts)
+export type Account = { id: string; label: string; kind: Kind; home?: string; host?: string; login?: string; keyEverywhere?: boolean }
 const BUILT_IN: Account[] = [{ id: 'claude', label: 'Claude', kind: 'claude' }, { id: 'openai', label: 'OpenAI', kind: 'openai' }, { id: 'llama', label: 'Llama', kind: 'llama' }, { id: 'copilot', label: 'Copilot', kind: 'copilot' }]
 export const accounts = (): Account[] => {
   const mine = config.accounts ?? []
@@ -187,7 +189,7 @@ export function envOf(p: ProviderId, base: NodeJS.ProcessEnv = process.env): Nod
     const env: NodeJS.ProcessEnv = { ...base, CLAUDE_CONFIG_DIR: a.home }
     delete env.CLAUDE_CODE_OAUTH_TOKEN // its own login, never the first account's token
     // its login stopped working on this machine: its own fallback token, so its work goes on (claudeLogin.ts)
-    if (onFallbackToken(p)) env.CLAUDE_CODE_OAUTH_TOKEN = accountToken(p)
+    if (onFallbackToken(p) || (a.keyEverywhere && accountToken(p))) env.CLAUDE_CODE_OAUTH_TOKEN = accountToken(p)
     return env
   }
   if (a.kind === 'openai' && a.home) return { ...base, CODEX_HOME: a.home }

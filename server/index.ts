@@ -2199,9 +2199,9 @@ const providersView = async () => ({
     models: { large: modelOf(a.id, 'large'), small: modelOf(a.id, 'small') },
     available: available(a.id), why: whyNot(a.id)?.why, limitedUntil: limitedUntil(a.id), plan: a.kind === 'claude' ? planSpent(a.id) : undefined,
     who: who && { ...who, ...(twinOf(a.id) && { samePlanAs: accountOf(twinOf(a.id)!.id).label }) },
-    signedIn: a.kind === 'claude' ? who!.signedIn : a.kind === 'openai' ? openaiAuth(a.id) !== 'none' : undefined,
+    signedIn: a.kind === 'claude' ? who!.signedIn || (!!a.keyEverywhere && !!accountToken(a.id)) : a.kind === 'openai' ? openaiAuth(a.id) !== 'none' : undefined,
     // an added Claude account's own setup token: since when it is set (never the value), and whether runs here use it now
-    fallbackToken: a.kind === 'claude' && a.home ? { set: accountTokenAt(a.id), inUse: onFallbackToken(a.id) } : undefined,
+    fallbackToken: a.kind === 'claude' && a.home ? { set: accountTokenAt(a.id), inUse: onFallbackToken(a.id), everywhere: !!a.keyEverywhere } : undefined,
     openai: a.kind === 'openai' ? openaiAuth(a.id) : undefined,
     llama: a.kind === 'llama' ? { ...await ollamaState(a.id), pulling: llamaPulling(a.id) } : undefined,
     today: state.spendBy?.[today()]?.[a.id],
@@ -2352,6 +2352,8 @@ app.post('/accounts/:id/login', async (c) => {
 function keepAccountToken(id: string, v: string | null) {
   const all = { ...(readSecrets().accountTokens ?? {}) }
   if (v) all[id] = { value: v, at: new Date().toISOString() }; else delete all[id]
+  // no key left: an account that ran on it everywhere goes back to each machine's own sign-in
+  if (!v && accountOf(id).keyEverywhere) saveConfig({ accounts: (userConfig().accounts ?? []).map((a) => a.id === id ? { ...a, keyEverywhere: undefined } : a) })
   saveSecrets({ accountTokens: all })
   applyShared(true)
   console.log(`accounts: ${accountOf(id).label}'s fallback token ${v ? 'set' : 'removed'}`)
@@ -2360,7 +2362,15 @@ const addedClaude = (id: string) => accounts().find((a) => a.id === id && a.kind
 app.post('/accounts/:id/token', async (c) => {
   const id = c.req.param('id')
   if (!addedClaude(id)) return c.json({ error: 'Only a Claude account you added has its own fallback token' }, 400)
-  const { value } = await c.req.json() as { value?: string | null }
+  const { value, everywhere } = await c.req.json() as { value?: string | null; everywhere?: boolean }
+  // the key on every machine (or back to each machine's own sign-in): the account's setting, every machine follows it
+  if (typeof everywhere === 'boolean') {
+    if (everywhere && !accountToken(id)) return c.json({ error: 'Set its key first' }, 400)
+    saveConfig({ accounts: (userConfig().accounts ?? []).map((a) => a.id === id ? { ...a, keyEverywhere: everywhere || undefined } : a) })
+    console.log(`accounts: ${accountOf(id).label} ${everywhere ? 'runs on its key on every machine' : 'signs in on each machine again'}`)
+    alignLater(); void loginNotice()
+    return c.json(await providersView())
+  }
   const v = typeof value === 'string' ? value.trim() : null
   if (v !== null && !/^sk-ant-oat[\w-]{20,}$/.test(v)) return c.json({ error: 'That isn\'t a claude setup-token token (it starts with sk-ant-oat)' }, 400)
   keepAccountToken(id, v)
@@ -3286,6 +3296,7 @@ async function signedInHere(account = 'claude') {
   if (!a) return false
   if (a.kind === 'openai') return openaiAuth(a.id) !== 'none'
   if (a.kind === 'llama') return (await ollamaState(a.id)).up
+  if (a.keyEverywhere && accountToken(a.id)) return true // its one key, shared with every machine: nothing to sign in here
   return (await claudeAuth(a.home)).loggedIn
 }
 // --- aligning the machines: one protocol over the tailnet, between machines that are online -----------------------------

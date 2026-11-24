@@ -119,3 +119,33 @@ test("each kind of work runs on the model picked for it on that account; unpicke
   assert.deepEqual(claudeModels(['--model', 'claude-opus-5-5']), ['--model', 'claude-opus-5-5']) // a model named outright stays
   delete config.providers
 })
+
+test("an added account's login lapsed on this machine: its runs go on its own fallback token, never the first account's", async () => {
+  const { envOf } = await import('./providers.ts')
+  const { setLapsedForTest } = await import('./claudeLogin.ts')
+  const { setAccountTokensForTest } = await import('./sharedEnv.ts')
+  const { config } = await import('./store.ts')
+  config.accounts = [{ id: 'person', label: 'Claude (Person)', kind: 'claude', home: '/h/person' }]
+  const base = { CLAUDE_CODE_OAUTH_TOKEN: 'first-account-token', PATH: '/bin' }
+  setAccountTokensForTest({ person: { value: 'sk-ant-oat01-person', at: '2026-11-24T00:00:00Z' } })
+  assert.equal(envOf('person', base).CLAUDE_CODE_OAUTH_TOKEN, undefined) // its login works: the login, as before
+  setLapsedForTest(['person'])
+  const env = envOf('person', base)
+  assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, 'sk-ant-oat01-person'); assert.equal(env.CLAUDE_CONFIG_DIR, '/h/person') // its own token, its own folder
+  setAccountTokensForTest({})
+  assert.equal(envOf('person', base).CLAUDE_CODE_OAUTH_TOKEN, undefined) // no fallback token: never the first account's
+  setLapsedForTest([]); delete config.accounts
+})
+
+test("an account on its key everywhere runs on that key on every machine, signed in or not, and never on the first account's", async () => {
+  const { envOf } = await import('./providers.ts')
+  const { setAccountTokensForTest } = await import('./sharedEnv.ts')
+  const { config } = await import('./store.ts')
+  config.accounts = [{ id: 'person', label: 'Claude (Person)', kind: 'claude', home: '/h/person', keyEverywhere: true }]
+  const base = { CLAUDE_CODE_OAUTH_TOKEN: 'first-account-token', PATH: '/bin' }
+  setAccountTokensForTest({ person: { value: 'sk-ant-oat01-person', at: '2026-11-24T00:00:00Z' } })
+  assert.equal(envOf('person', base).CLAUDE_CODE_OAUTH_TOKEN, 'sk-ant-oat01-person') // no lapse needed: always the key
+  setAccountTokensForTest({})
+  assert.equal(envOf('person', base).CLAUDE_CODE_OAUTH_TOKEN, undefined) // the key gone: its own login, never the first account's
+  delete config.accounts
+})

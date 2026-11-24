@@ -762,7 +762,7 @@ export type AccountView = {
   // in as the same login
   who?: { email?: string; org?: string; tier?: string; byToken: boolean; tokenSet?: string; tokenFrom?: string; samePlanAs?: string }
   openai?: 'chatgpt' | 'api-key' | 'none'; llama?: { up: boolean; models: string[]; pulling?: string[] }; today?: Spend
-  fallbackToken?: { set?: string; inUse: boolean } // an added Claude account's own setup token (FallbackToken.tsx)
+  fallbackToken?: { set?: string; inUse: boolean; everywhere: boolean } // an added Claude account's own setup token (FallbackToken.tsx)
 }
 export type ProvidersView = {
   use: Partial<Record<string, string>>; fallback: string[]; budgets: Record<string, number>; tiers?: Record<string, string | null>

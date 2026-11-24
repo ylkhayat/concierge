@@ -19,6 +19,7 @@ export function FallbackToken({ a, onChange, toast }: { a: AccountView; onChange
   const path = `/accounts/${encodeURIComponent(a.id)}/token`
   const refresh = () => api('/providers').then(onChange, () => {})
   const save = (value: string | null) => api(path, { value }).then((r: ProvidersView) => { onChange(r); setPasting(undefined); toast(value ? 'Fallback token set' : 'Fallback token removed') }, (e: Error) => toast(e.message, 'error'))
+  const everywhere = (on: boolean) => api(path, { everywhere: on }).then((r: ProvidersView) => { onChange(r); toast(on ? `${a.label} runs on its key on every machine` : `${a.label} signs in on each machine again`) }, (e: Error) => toast(e.message, 'error'))
   const make = () => {
     const tab = window.open('about:blank', '_blank') // opened while the click still counts; it goes to claude.ai below
     setMaking({ input: '' })
@@ -34,9 +35,9 @@ export function FallbackToken({ a, onChange, toast }: { a: AccountView; onChange
     <div className="mt-2 rounded-lg bg-fill/50 px-2.5 py-2 text-meta text-fg-3 ring-1 ring-line">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <KeyRound className="size-3.5 shrink-0" />
-        <span className="font-medium text-fg-2">Fallback token</span>
+        <span className="font-medium text-fg-2">{t.everywhere ? 'Key' : 'Fallback token'}</span>
         {t.set
-          ? <span>set {new Date(t.set).toLocaleDateString()}{t.inUse ? <b className="font-medium text-wait-text"> · in use here: its login on this machine stopped working</b> : ''}</span>
+          ? <span>set {new Date(t.set).toLocaleDateString()}{t.everywhere ? ' · used on every machine' : t.inUse ? <b className="font-medium text-wait-text"> · in use here: its login on this machine stopped working</b> : ''}</span>
           : <span className="text-wait-text">none: if its login stops working on a machine, that machine takes none of its work</span>}
         {!making && pasting === undefined && <span className="ml-auto flex gap-3">
           <button onClick={make} className={link}>{t.set ? 'Make a new one' : 'Make one'}</button>
@@ -44,7 +45,15 @@ export function FallbackToken({ a, onChange, toast }: { a: AccountView; onChange
           {t.set && <button onClick={() => save(null)} className={`${link} text-fail-text`}>Remove</button>}
         </span>}
       </div>
-      <p className="mt-1">Used only on a machine where this account&apos;s claude.ai login stopped working, until it is signed in again there. Runs on it don&apos;t have the account&apos;s claude.ai connectors.</p>
+      {t.everywhere
+        ? <p className="mt-1">Every machine runs this account on this one key, shared with them over your tailnet: no sign-in on any machine, nothing that lapses (it lasts a year). Runs don&apos;t have the account&apos;s claude.ai connectors.</p>
+        : <p className="mt-1">Used only on a machine where this account&apos;s claude.ai login stopped working, until it is signed in again there. Runs on it don&apos;t have the account&apos;s claude.ai connectors.</p>}
+      {t.set && (
+        <label className="mt-1.5 flex w-fit cursor-pointer items-center gap-2 text-fg-2">
+          <input type="checkbox" checked={t.everywhere} onChange={(e) => everywhere(e.target.checked)} className="accent-current" />
+          Use this key on every machine (no sign-in per machine)
+        </label>
+      )}
       {making && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-small">
           {!making.url ? <span className="text-fg-3">Starting…</span> : <>

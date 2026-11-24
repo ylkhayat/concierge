@@ -113,12 +113,14 @@ const lapsedHere = new Set<string>(), strikes = new Map<string, number>()
 export const lapsedLogins = () => [...lapsedHere]
 /** Whether an added account's runs here go on its fallback token now. */
 export const onFallbackToken = (id: string) => lapsedHere.has(id) && !!accountToken(id)
-type Added = { id: string; label: string; home?: string }
+type Added = { id: string; label: string; home?: string; keyEverywhere?: boolean }
 let accountChecking: Promise<void> | undefined
 /** Check each added Claude account's login here, once at a time; `changed` hears which ones lapsed or came back. */
 export const checkAccountLogins = (list: Added[], changed?: (id: string, lapsed: boolean) => void) => (accountChecking ??= (async () => {
   for (const a of list) {
     if (!a.home) continue
+    // on its key everywhere: no login here to lapse, so nothing to say (and an old lapse is forgotten)
+    if (a.keyEverywhere && accountToken(a.id)) { strikes.delete(a.id); if (lapsedHere.delete(a.id)) changed?.(a.id, false); continue }
     const ok = await claudeAuth(a.home).then((x) => x.loggedIn, () => false)
     if (ok) {
       strikes.delete(a.id)
