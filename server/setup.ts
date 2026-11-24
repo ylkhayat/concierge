@@ -245,6 +245,9 @@ export async function ensureClones() {
     for (const [repo, path] of Object.entries(config.repos)) {
       if (await stat(path).then(() => true, () => false)) {
         if (!unticked(repo)) { untickedAt.delete(repo); clones.delete(repo); continue }
+        // unticked, as this machine's settings say: only once they are the running machine's since this start (stale
+        // ones, from before a restart, may still hold an untick that was undone meanwhile)
+        if (!(await import('./replica.ts')).settingsFresh()) { clones.delete(repo); later(10_000); continue }
         // a grace period first: an untick followed by another choice (its whole organization ticked here) keeps it
         const since = untickedAt.get(repo) ?? (untickedAt.set(repo, Date.now()), Date.now())
         if (Date.now() - since < GRACE_MS) { clones.set(repo, `leaving: taken off in ${Math.ceil((GRACE_MS - (Date.now() - since)) / 1000)}s unless it is ticked again`); later(GRACE_MS - (Date.now() - since) + 500); continue }

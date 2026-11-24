@@ -218,6 +218,57 @@ async function pullFiles() {
   }
 }
 
+// --- the settings first: right after a start, before the full scan ------------------------------------------------------
+// The full pull above waits for this machine's first scan of every file that travels, which takes minutes after each
+// restart (an update restarts it). Meanwhile the machine acted on settings that may have changed while it was down: a
+// repository unticked and ticked again elsewhere looked still unticked here, and was taken off. So the settings at the
+// top of the folder (config.json, secrets.json, …) come over at once, compared with the files themselves rather than
+// the index, every few seconds until the full pull has caught up with the machine running Concierge.
+let settingsAt = 0, warnedOld = false // when this machine last had the running machine's settings (0: not since it started)
+/** The settings at the top of the folder, as this machine has them now: what another one takes first after its start. */
+async function settingsHere(): Promise<[string, number, number][]> {
+  const out: [string, number, number][] = []
+  for (const f of await readdir(CONFIG_DIR).catch(() => [] as string[])) {
+    if (!travels('config', f)) continue
+    const st = await stat(join(CONFIG_DIR, f)).catch(() => undefined)
+    if (st?.isFile() && st.size <= MAX) out.push([`config:${f}`, st.size, Math.floor(st.mtimeMs)])
+  }
+  return out
+}
+/** Whether this machine has the settings of the machine running Concierge since it started (or runs it itself). */
+export const settingsFresh = () => !fleet.machine || fleet.mayWrite() || settingsAt > 0
+async function pullSettings() {
+  if (!fleet.machine || fleet.mayWrite()) return
+  const peer = (await peers()).find((p) => p.active)
+  if (!peer) return
+  // only the few files at the top of the settings, read from disk there (not its whole index, nor its scan)
+  const list = await call<[string, number, number][]>(peer.base, token(), 'POST', '/x/replica-settings', {}, 15_000).catch((e: Error) => {
+    if (!warnedOld) { warnedOld = true; console.warn(`replica: ${peer.name} can't send its settings alone yet (${e.message}): they come with the full pull`) }
+    return undefined
+  })
+  if (!list) return
+  for (const [k, size, mtimeMs] of list) {
+    if (!k.startsWith('config:') || k.slice(7).includes('/') || !travels('config', k.slice(7))) continue
+    const abs = join(CONFIG_DIR, k.slice(7))
+    const st = await stat(abs).catch(() => undefined)
+    const here = st && { size: st.size, mtimeMs: Math.floor(st.mtimeMs) }
+    if (!takes(k, peer, { size, mtimeMs }, here, false)) continue
+    const tmp = `${abs}.${proc.slice(0, 8)}.tmp`
+    await writeFile(tmp, '')
+    for (let from = 0; from < size;) {
+      const p = await call<{ data: string }>(peer.base, token(), 'POST', '/x/replica-file', { key: k, from }, 120_000)
+      const buf = Buffer.from(p.data, 'base64')
+      if (!buf.length) break
+      await appendFile(tmp, buf); from += buf.length
+    }
+    await rename(tmp, abs)
+    await utimes(abs, new Date(), new Date(mtimeMs)).catch(() => {})
+    if (k === 'config:config.json') { await reloadConfig(); void import('./setup.ts').then((m) => m.ensureClones()) }
+    console.log(`replica: took the settings' ${k.slice(7)} from ${peer.name} first`)
+  }
+  settingsAt = Date.now()
+}
+
 // --- where it stands (Settings → Machines, and bin/standby before a hand-over) ----------------------------------------
 export function replicaStatus() {
   const now = Date.now()
@@ -257,6 +308,7 @@ export const replicaExtras = {
   'replica-files': async (b: { since?: number; proc?: string }) => filesSince(Number(b.since) || 0, b.proc),
   'replica-file': async (b: { key: string; from?: number }) => readPiece(String(b.key), Number(b.from) || 0),
   'replica-status': async () => replicaStatus(),
+  'replica-settings': async () => settingsHere(),
 }
 
 if (fleet.machine) {
@@ -265,5 +317,15 @@ if (fleet.machine) {
   const every = Number(process.env.DECK_REPLICA_MS) || 2_000, filesEvery = Number(process.env.DECK_REPLICA_FILES_MS) || 20_000
   setInterval(() => { if (busy) return; busy = true; void pullState().finally(() => { busy = false }) }, every).unref()
   setInterval(() => { if (filesBusy) return; filesBusy = true; void scan().then(pullFiles).finally(() => { filesBusy = false }) }, filesEvery).unref()
+  // the settings first, every 5s, until the full pull has caught up from the running machine (then it carries them)
+  let settingsBusy = false
+  const settingsTick = setInterval(() => {
+    const from = fleet.elsewhere()
+    if (from && pulled.get(from)?.at && !pulled.get(from)?.pending) { clearInterval(settingsTick); return }
+    if (settingsBusy) return
+    settingsBusy = true
+    void pullSettings().catch((e: Error) => console.warn(`replica: settings: ${e.message}`)).finally(() => { settingsBusy = false })
+  }, Number(process.env.DECK_REPLICA_SETTINGS_MS) || 5_000)
+  settingsTick.unref()
   void (scanned ??= scan())
 }
