@@ -151,6 +151,17 @@ type MineNode = {
   reviewRequests: { nodes: { requestedReviewer: { login?: string } | null }[] }
 }
 
+/** A write to GitHub's REST API (create an issue, a milestone, a sub-issue link): its answer, or what GitHub said. */
+export async function ghSend<T>(method: 'POST' | 'PATCH', path: string, body: unknown): Promise<T> {
+  const res = await fetch(`https://api.github.com${path}`, {
+    method, body: JSON.stringify(body),
+    headers: { Authorization: `Bearer ${await getToken()}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
+  })
+  const json = await res.json().catch(() => ({})) as T & { message?: string }
+  if (!res.ok) throw new Error(`GitHub: ${json.message ?? res.status}`)
+  return json
+}
+
 /** GitHub's GraphQL budget as of the last poll (5000 points an hour, shared with your own `gh`). */
 export const ghBudget: { remaining?: number; resetAt?: string } = {}
 export async function graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {

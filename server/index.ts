@@ -2534,8 +2534,9 @@ app.post('/plans', async (c) => { const b = await c.req.json<{ title?: string; b
 app.get('/plans/:id/checks', async (c) => {
   const p = planOf(c.req.param('id'))
   if (!p) return c.json({ error: 'No such plan' }, 404)
-  const org = await planOrg(p)
-  return c.json({ org, profile: (await complianceFor(org)) ?? {} })
+  const org = await planOrg(p), o = (await orgs().catch(() => [])).find((x) => x.owner === org)
+  // where its tickets go: the organization's tracker (Linear, or GitHub issues in its first watched repository)
+  return c.json({ org, tracker: o?.tracker ?? 'linear', repo: o?.tracker === 'github' ? o.repos[0] : undefined, profile: (await complianceFor(org)) ?? {} })
 })
 app.get('/plans/teams', async (c) => { try { return c.json({ teams: await linearTeams() }) } catch (e) { return planErr(c, e) } })
 // an organization's projects, from where it manages its work: Linear's, or its GitHub Projects (orgs.ts). No organization

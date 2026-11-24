@@ -21,7 +21,8 @@ import { bankArgs } from './bank.ts'
 import { impact } from '../src/planDiff.ts'
 import { config } from './config.ts'
 import { coverage, obligations } from './readiness.ts'
-import { complianceFor, planOrg } from './orgs.ts'
+import { complianceFor, orgs, planOrg, type Org } from './orgs.ts'
+import { ghSend } from './github.ts'
 export * from './planOps.ts'
 
 const all = () => (state.plans ??= {})
@@ -106,7 +107,9 @@ export async function applyScenario(id: string) {
   if (!p.scenario?.ops.length) throw new Error('No moves to apply')
   const whatIf = applyAll(p, p.scenario.ops)
   const people = p.people ?? Math.max(1, p.project?.members ?? 1)
-  const { writes } = impact(p, whatIf, people, p.pace ?? 5)
+  // an organization on GitHub: its tickets are GitHub issues, so the moves change the plan alone (no Linear to write)
+  const org = await planOrg(p), onGithub = (await orgs().catch(() => [] as Org[])).find((x) => x.owner === org)?.tracker === 'github'
+  const writes = onGithub ? [] : impact(p, whatIf, people, p.pace ?? 5).writes
   const results: { identifier?: string; ok: boolean; error?: string }[] = []
   for (const w of writes) {
     try {
@@ -274,6 +277,9 @@ export function topDown(nodes: PlanNode[]): PlanNode[] {
  */
 export async function create(id: string) {
   const p = planOf(id); if (!p) throw new Error('No such plan')
+  // where the plan's organization manages its work (orgs.ts): GitHub issues in its repository, or Linear
+  const org = await planOrg(p), o = (await orgs().catch(() => [] as Org[])).find((x) => x.owner === org)
+  if (o?.tracker === 'github') return createOnGithub(p, o)
   if (!p.team) throw new Error('Pick a Linear team first')
   if (p.creating || p.busy) throw new Error('Wait for it to finish')
   Object.assign(p, { creating: true, error: undefined }); forget(id); save()
@@ -312,6 +318,42 @@ export async function create(id: string) {
         if (!a || !b || made.includes(key)) continue
         await gql('mutation($i: IssueRelationCreateInput!) { issueRelationCreate(input: $i) { success } }', { i: { issueId: a, relatedIssueId: b, type: 'blocks' } })
         made.push(key); save()
+      }
+    } catch (e) { p.error = (e as Error).message.slice(0, 300) }
+    p.creating = false; save()
+  })()
+  return p
+}
+
+/**
+ * The plan as GitHub issues, for an organization that manages its work there: the goal (and each milestone) a GitHub
+ * milestone, each epic and ticket an issue in the organization's first watched repository, a ticket a sub-issue of its epic, and its estimate and what it still needs said in its body.
+ */
+async function createOnGithub(p: Plan, o: Org) {
+  const repo = o.repos[0] // ponytail: the organization's first watched repository; a pick per plan when an organization's work spans several
+  if (!repo) throw new Error(`${o.owner} has no repository here to put the issues in: add one in Settings → Workspaces`)
+  if (p.creating || p.busy) throw new Error('Wait for it to finish')
+  Object.assign(p, { creating: true, error: undefined }); forget(p.id); save()
+  void (async () => {
+    try {
+      const milestone = async (n: PlanNode, extra = '') => {
+        const r = await ghSend<{ number: number; html_url: string }>('POST', `/repos/${repo}/milestones`, { title: n.title.slice(0, 250), description: [n.description, extra].filter(Boolean).join('\n\n').slice(0, 2000) || undefined, ...(n.target && { due_on: new Date(n.target).toISOString() }) })
+        n.created = { id: String(r.number), url: r.html_url }; save()
+      }
+      const goal = p.nodes.find((n) => n.kind === 'goal')
+      if (goal && !goal.created) await milestone(goal, p.brief)
+      const milestoneOf = (n: PlanNode): number | undefined => { let x: PlanNode | undefined = n; for (let i = 0; x && i < 50; i++) { x = p.nodes.find((y) => y.id === x!.parent); if (x?.kind === 'milestone' && x.created) return Number(x.created.id) } return goal?.created ? Number(goal.created.id) : undefined }
+      for (const n of topDown(p.nodes)) {
+        if (n.created || n.kind === 'goal') continue
+        if (n.kind === 'milestone') { await milestone(n); continue }
+        const body = [n.refine ? `**Needs refinement:** ${n.refine}` : '', n.description, n.estimate ? `Estimate: ${n.estimate} points` : ''].filter(Boolean).join('\n\n')
+        const r = await ghSend<{ id: number; number: number; html_url: string }>('POST', `/repos/${repo}/issues`, { title: n.title.slice(0, 250), ...(body && { body }), ...(milestoneOf(n) && { milestone: milestoneOf(n) }) })
+        n.created = { id: String(r.id), identifier: `#${r.number}`, url: r.html_url }; save()
+        // under its epic (or the ticket it splits): GitHub's sub-issues
+        const up = p.nodes.find((y) => y.id === n.parent)
+        if (up && (up.kind === 'epic' || up.kind === 'ticket') && up.created?.identifier) {
+          await ghSend('POST', `/repos/${repo}/issues/${up.created.identifier.slice(1)}/sub_issues`, { sub_issue_id: r.id }).catch((e: Error) => console.warn(`plan ${p.id}: sub-issue ${r.number} under ${up.created!.identifier}: ${e.message}`))
+        }
       }
     } catch (e) { p.error = (e as Error).message.slice(0, 300) }
     p.creating = false; save()

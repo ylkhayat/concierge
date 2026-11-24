@@ -84,7 +84,9 @@ function Inspector({ p, id, onOps, onMove, onClose }: { p: Plan; id: string; onO
         <button onClick={onClose} aria-label="Close" className="ml-auto rounded-md p-1 text-fg-3 hov hover:text-fg-1"><X className="size-4" /></button>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {fixed && <p className="rounded-lg bg-hover/60 px-2.5 py-1.5 text-meta text-fg-3">In Linear{n.state ? ` · ${n.state.name}` : ''}{n.assignee ? ` · ${n.assignee}` : ''}. Its words change there; Sync brings them here. Moves above (order, epic, priority, owner, cut) are tried here and written to Linear on Apply.</p>}
+        {fixed && (n.created!.url.includes('github.com')
+          ? <p className="rounded-lg bg-hover/60 px-2.5 py-1.5 text-meta text-fg-3">A GitHub issue now: its words change there. Moves above (order, epic, priority, owner, cut) change this plan only.</p>
+          : <p className="rounded-lg bg-hover/60 px-2.5 py-1.5 text-meta text-fg-3">In Linear{n.state ? ` · ${n.state.name}` : ''}{n.assignee ? ` · ${n.assignee}` : ''}. Its words change there; Sync brings them here. Moves above (order, epic, priority, owner, cut) are tried here and written to Linear on Apply.</p>)}
         {refineOf(n) && (
           <div className="flex items-start gap-2 rounded-lg border border-dashed border-wait/50 bg-wait/10 px-2.5 py-1.5 text-meta">
             <span className="min-w-0 flex-1 text-fg-2"><b className="font-semibold text-wait">Needs refining</b> · {refineOf(n)}</span>
@@ -129,7 +131,7 @@ const Dep = ({ label, onRemove }: { label: string; onRemove: () => void }) => (
 
 // --- where the plan stands: brief, shape, slice, fit, Linear -----------------------------------------------------------
 type Stage = { id: string; label: string; done: boolean; ask?: string; hint: string }
-function stagesOf(p: Plan, fits: boolean | undefined): Stage[] {
+function stagesOf(p: Plan, fits: boolean | undefined, github = false): Stage[] {
   const heads = p.nodes.filter((n) => n.kind === 'epic' || n.kind === 'milestone'), tickets = p.nodes.filter((n) => n.kind === 'ticket')
   const sliced = !!tickets.length && heads.every((h) => tickets.some((t) => t.parent === h.id))
   const estimated = tickets.length > 0 && tickets.filter((t) => t.estimate).length / tickets.length >= 0.8
@@ -139,7 +141,7 @@ function stagesOf(p: Plan, fits: boolean | undefined): Stage[] {
     { id: 'shape', label: 'Shape', done: heads.length > 0, ask: p.method === 'waterfall' ? 'Shape this into phases, in order' : 'Shape this into epics: outcomes a user would notice', hint: p.method === 'waterfall' ? 'Phases in order' : 'Epics: outcomes a user would notice' },
     { id: 'slice', label: 'Slice', done: sliced, ask: 'Slice every epic into thin tickets, each a few days at most, with acceptance criteria', hint: 'Thin tickets under each epic' },
     { id: 'fit', label: 'Fit', done: fits === undefined ? estimated : fits && estimated, ask: p.appetite ? `Estimate every ticket and fit the plan to the ${p.appetite.weeks}-week appetite: move what doesn't fit under Later` : 'Estimate every ticket in points', hint: p.appetite ? `Within the ${p.appetite.weeks}-week appetite` : 'Estimated, and within the time it is worth' },
-    { id: 'linear', label: 'Linear', done: items.length > 0 && items.every((n) => n.created), hint: 'Created in Linear' },
+    { id: 'linear', label: github ? 'GitHub' : 'Linear', done: items.length > 0 && items.every((n) => n.created), hint: github ? 'Created as GitHub issues' : 'Created in Linear' },
   ]
 }
 function StageBar({ stages, onStep }: { stages: Stage[]; onStep: (s: Stage) => void }) {
@@ -539,9 +541,10 @@ function History({ p, onBack }: { p: Plan; onBack: (undo: boolean) => unknown })
   )
 }
 
-function ScenarioBar({ p, whatIf, people, pace, toast, onSet }: { p: Plan; whatIf: Plan; people: number; pace: number; toast: Toast; onSet: (ops: Op[]) => Promise<unknown> }) {
+function ScenarioBar({ p, whatIf, people, pace, toast, onSet, gh }: { p: Plan; whatIf: Plan; people: number; pace: number; toast: Toast; onSet: (ops: Op[]) => Promise<unknown>; gh?: boolean }) {
   const ops = p.scenario?.ops ?? []
-  const i = impact(p, whatIf, people, pace)
+  // on GitHub the moves change the plan alone (the server writes nothing to Linear for it): no writes to confirm or list
+  const i = ((x) => (gh ? { ...x, writes: [] } : x))(impact(p, whatIf, people, pace))
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false)
   const { armed, arm } = useArm()
   const apply = () => {
@@ -641,7 +644,9 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   }
   const setup = useApi<SetupView>('/setup', { staleTime: 60_000 })
   // its organization and the compliance profile its plans are checked against (its own, the shared one, or off)
-  const checks = useApi<{ org?: string; profile: Compliance }>(`/plans/${id}/checks`, { staleTime: 60_000 })
+  const checks = useApi<{ org?: string; tracker?: 'linear' | 'github'; repo?: string; profile: Compliance }>(`/plans/${id}/checks`, { staleTime: 60_000 })
+  // where the tickets go: the organization's tracker (orgs.ts); GitHub issues in its repository, or Linear
+  const gh = checks.data?.tracker === 'github', where = gh ? 'GitHub' : 'Linear'
   const orgsQ = useApi<Org[]>('/orgs', { staleTime: 10 * 60_000 })
   const profile = checks.data?.profile
   // the draft as the board shows it: the planner's changes one at a time as they come in (yours at once), so each is seen
@@ -692,7 +697,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const level: Level | undefined = compact ? 'overview' : open === 'all' || (open.size > 0 && streamIds.every((x) => open.has(x))) ? 'tickets' : open.size === 0 ? 'streams' : undefined
   const setLevel = (l: Level) => { setCompact(l === 'overview'); setOpen(l === 'tickets' ? 'all' : new Set()) }
   const toggle = (sid: string) => setOpen((o) => { const n = new Set(o === 'all' ? openSet : o); if (!n.delete(sid)) n.add(sid); return n })
-  const stages = stagesOf(p, fits), stage = stages.find((s) => !s.done)
+  const stages = stagesOf(p, fits, gh), stage = stages.find((s) => !s.done)
   const step = (s: Stage) => {
     if (s.id === 'linear') return p.team ? arm('create', create) : (setTeamsOn(true), setCfg('team'))
     if (s.ask && !p.busy) void say(s.ask)
@@ -700,7 +705,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   const settings = (
     <div className="border-b border-line px-4 py-2 text-meta text-fg-3">
       <button onClick={() => setCfg(cfg ? undefined : 'open')} className="flex w-full items-center gap-1.5 text-left hover:text-fg-1">
-        <span className="min-w-0 flex-1 truncate">{checks.data?.org && <>{checks.data.org}{profile?.off ? ' (compliance off)' : ''} · </>}<span className="capitalize">{p.method}</span> · {p.skill || 'Your planning skill'} · {p.project ? p.project.name : teamName ?? 'no Linear team yet'}</span>
+        <span className="min-w-0 flex-1 truncate">{checks.data?.org && <>{checks.data.org}{profile?.off ? ' (compliance off)' : ''} · </>}<span className="capitalize">{p.method}</span> · {p.skill || 'Your planning skill'} · {gh ? `issues in ${checks.data?.repo ?? 'its repository'}` : p.project ? p.project.name : teamName ?? 'no Linear team yet'}</span>
         <span className="text-accent-text">{cfg ? 'Done' : 'Change'}</span>
       </button>
       {cfg && (
@@ -709,7 +714,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
           <Chips label="Method" value={p.method} options={[['agile', 'Agile: epics of thin slices'], ['waterfall', 'Waterfall: phases in order']]} onChange={(m) => void set({ method: m })} />
           <div><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Planning skill</p>
             <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'The one in Settings', hint: 'Settings → Workflows → What each feature runs' }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
-          {!p.project && <div onFocus={() => setTeamsOn(true)} onMouseEnter={() => setTeamsOn(true)}><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Linear team</p>
+          {!p.project && !gh && <div onFocus={() => setTeamsOn(true)} onMouseEnter={() => setTeamsOn(true)}><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Linear team</p>
             <InlineList value={p.team} empty={teams.isLoading || !teams.data ? 'Reading your Linear teams…' : 'No teams'} options={(teams.data?.teams ?? []).map((t) => ({ value: t.id, label: t.name, hint: t.key }))} onPick={(v) => { void set({ team: v }); if (cfg === 'team') setCfg(undefined) }} /></div>}
         </div>
       )}
@@ -723,11 +728,11 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
         <History p={p} onBack={back} />
         <StageBar stages={stages} onStep={step} />
         {p.creating ? <span className="inline-flex items-center gap-1.5 text-small text-run"><LoaderCircle className="size-3.5 animate-spin" />Creating {made}/{p.nodes.length}…</span>
-          : made === p.nodes.length && made > 0 ? <span className="inline-flex items-center gap-1 text-small font-medium text-ok"><Check className="size-4" />In Linear</span>
-          : <button disabled={!items.length || p.busy} title={!p.team && !p.project ? 'Pick the Linear team first' : undefined}
-                    onClick={() => (p.team ? arm('create', create) : (setTeamsOn(true), setCfg('team')))}
+          : made === p.nodes.length && made > 0 ? <span className="inline-flex items-center gap-1 text-small font-medium text-ok"><Check className="size-4" />{gh ? 'On GitHub' : 'In Linear'}</span>
+          : <button disabled={!items.length || p.busy} title={gh ? `As issues in ${checks.data?.repo ?? 'its repository'}` : !p.team && !p.project ? 'Pick the Linear team first' : undefined}
+                    onClick={() => (gh || p.team ? arm('create', create) : (setTeamsOn(true), setCfg('team')))}
                     className="relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40">
-              <Flag className="size-3.5" />{armed === 'create' ? <><ArmLabel>{`Confirm: ${p.nodes.length - made} in Linear`}</ArmLabel><ArmBar on="plain" /></> : made ? `Create the other ${p.nodes.length - made}` : 'Create in Linear'}
+              <Flag className="size-3.5" />{armed === 'create' ? <><ArmLabel>{`Confirm: ${p.nodes.length - made} ${gh ? 'on GitHub' : 'in Linear'}`}</ArmLabel><ArmBar on="plain" /></> : made ? `Create the other ${p.nodes.length - made}` : `Create ${gh ? 'on' : 'in'} ${where}`}
             </button>}
       </header>
       {/* the board on top, the conversation docked under it (on a phone: the conversation alone) */}
@@ -737,7 +742,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
                                      status={<Readiness whatIf={whatIf} company={profile} checksOff={!!profile?.off} org={checks.data?.org} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
                                                 onAdd={(ob) => void ops([{ op: 'add', id: `r-${ob.id}`, kind: 'ticket', title: ob.title, description: ob.why, parent: p.nodes.find((n) => n.kind === 'goal')?.id, covers: [ob.id], moscow: 'must' }])} />}
                                      tools={<Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />} />}
-          {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} />}
+          {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} gh={gh} />}
           <div className="relative min-h-0 flex-1">
             {/* the plan, or the draft on top of it: a first draft (nothing applied yet) is drawn too, not only once applied */}
             {!shown.nodes.length ? (
