@@ -57,7 +57,8 @@ test('captures read back newest first, each image a plain file of its own folder
 test('the capture asks for before and after, from stories when there are any, into the PR commit\'s own folder', () => {
   const pr = { id: 'ylkhayat/elbuffeh#40', number: 40, title: 'Levels as chips', base: 'main', head: 'elbu-3', headSha: 'bbbbbbbcccc' }
   const p = capturePrompt({ pr, out: '/s/visuals/x/bbbbbbbcccc', files: ['src/components/Course.tsx'], said: 'also at phone width' })
-  assert.match(p, /Storybook/); assert.match(p, /Playwright/); assert.match(p, /before-<screen>\.png and after-<screen>\.png/)
+  assert.match(p, /Storybook/); assert.match(p, /Playwright/); assert.match(p, /before-<screen>-<viewport>\.png and after-<screen>-<viewport>\.png/)
+  assert.match(p, /storybook-stories skill/); assert.match(p, /parameters\.capture\.viewports/); assert.match(p, /phone \(375 wide\) and laptop \(1280 wide\)/)
   assert.match(p, /\/s\/visuals\/x\/bbbbbbbcccc/); assert.match(p, /src\/components\/Course\.tsx/); assert.match(p, /also at phone width/)
   assert.match(p, /Never push/)
   assert.match(capturePrompt({ pr, out: '/o', files: [], said: 'the empty state', again: true }), /^the empty state[\s\S]*Capture again/)

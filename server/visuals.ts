@@ -77,7 +77,7 @@ export async function setsOf(prId: string): Promise<VisualSet[]> {
     if (!/^[0-9a-f]{7,40}$/.test(sha)) continue
     const m = await readFile(join(dir, sha, 'manifest.json'), 'utf8').then((t) => JSON.parse(t) as Manifest, () => undefined)
     if (!m || !Array.isArray(m.shots)) continue
-    const shots = m.shots.filter((s) => s && typeof s.name === 'string').slice(0, 40).map((s) => ({ name: String(s.name).slice(0, 120), note: s.note ? String(s.note).slice(0, 400) : undefined, before: safeFile(s.before), after: safeFile(s.after), width: Number(s.width) || undefined }))
+    const shots = m.shots.filter((s) => s && typeof s.name === 'string').slice(0, 60).map((s) => ({ name: String(s.name).slice(0, 120), note: s.note ? String(s.note).slice(0, 400) : undefined, before: safeFile(s.before), after: safeFile(s.after), width: Number(s.width) || undefined }))
     out.push({ ...m, sha, source: m.source === 'storybook' ? 'storybook' : 'app', summary: m.summary ? String(m.summary).slice(0, 2000) : undefined, shots })
   }
   return out.sort((a, b) => b.at.localeCompare(a.at))
@@ -102,12 +102,12 @@ Where: the PR's branch \`${p.pr.head}\` (commit ${p.pr.headSha.slice(0, 7)}) is 
 ${p.files.length ? `The files it changes that people see: ${p.files.slice(0, 30).join(', ')}.` : 'Find from its diff which screens and components it changes.'}
 
 How:
-- The repository has Storybook (a .storybook folder, or @storybook in a package.json): capture the stories of the components it changes (build Storybook, or run it, and screenshot each story's iframe page with Playwright). Changed components without a story: write a small story for them in the after worktree only, never committed.
-- No Storybook: run the app (its dev server, the way its README or package.json says) and screenshot the screens it changes with Playwright, logged out unless a seed or test account makes the screen meaningful. A screen that needs data you can't get: say so in its note, never fake it.
-- The same screens, the same viewport (1280x800 unless the change is about another width) and the same state before and after. A screen that is new has no before; one that is gone has no after.
+- The repository has Storybook (a .storybook folder, or @storybook in a package.json): capture the stories of the components it changes, each state the change touches. Build Storybook in each worktree and screenshot each story's iframe page (#storybook-root) with Playwright, at the viewports the story lists in parameters.capture.viewports, else the repo's viewport set's phone and laptop sizes (its .storybook/preview, named as the repo names them). Changed components without stories: write their state matrix with the storybook-stories skill in the after worktree only, never committed, and say in the summary which stories the PR should add.
+- No Storybook: run the app (its dev server, the way its README or package.json says) and screenshot the screens it changes with Playwright at phone (375 wide) and laptop (1280 wide), logged out unless a seed or test account makes the screen meaningful. A screen that needs data you can't get: say so in its note, never fake it. Say in the summary that stories (the storybook-architecture skill) would make these captures exact.
+- The same screens, the same viewports and the same state before and after. A screen that is new has no before; one that is gone has no after.
 - Never push, commit to the PR, or open anything; this only looks.
 ${p.said ? `\nWhat I asked for: ${p.said}\n` : ''}
-Save into ${p.out} (make it): the images as PNG, named like before-<screen>.png and after-<screen>.png (letters, digits, dots and dashes only), and manifest.json:
-{"head":"${p.pr.headSha}","base":"<the base commit you used>","at":"<now, ISO>","source":"storybook" or "app","summary":"<two or three sentences: what changed visually>","shots":[{"name":"<screen>","note":"<what to look at here>","before":"before-<screen>.png","after":"after-<screen>.png"}]}
-At most 12 screens: the ones that matter most. End with the summary in one short paragraph.`
+Save into ${p.out} (make it): the images as PNG, named like before-<screen>-<viewport>.png and after-<screen>-<viewport>.png (letters, digits, dots and dashes only), and manifest.json with one shot per screen and viewport:
+{"head":"${p.pr.headSha}","base":"<the base commit you used>","at":"<now, ISO>","source":"storybook" or "app","summary":"<two or three sentences: what changed visually>","shots":[{"name":"<screen or story> · <viewport>","note":"<what to look at here>","width":<viewport width>,"before":"before-<screen>-<viewport>.png","after":"after-<screen>-<viewport>.png"}]}
+At most 24 shots: the screens that matter most, at their viewports. End with the summary in one short paragraph.`
 }
