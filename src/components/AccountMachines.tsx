@@ -36,26 +36,13 @@ const LINE: Record<State, string> = {
  */
 export function AccountMachines({ account, label, m, again, toast }: { account: string; label: string; m?: Machines; again: () => void; toast: (msg: string, tone?: 'ok' | 'error') => void }) {
   const signIn = useMachineSignIn(account, again)
-  const [making, setMaking] = useState<{ url?: string; input: string; waiting?: boolean }>()
   const [pasting, setPasting] = useState<string>()
   if (!m) return <p className="mt-3 flex items-center gap-1.5 text-meta text-fg-4"><LoaderCircle className="size-3 animate-spin" />Asking each machine…</p>
   const path = `/accounts/${encodeURIComponent(account)}/token`
   const everywhere = !!m.key?.everywhere
   const setKeyEverywhere = (on: boolean) => api(path, { everywhere: on }).then(() => { again(); toast(on ? `${label} now uses one key on every machine` : `${label} signs in on each machine again`) }, (e: Error) => toast(e.message, 'error'))
-  // the key: made here (approved on claude.ai, its code pasted back), then every machine uses it
-  const make = () => {
-    const tab = window.open('about:blank', '_blank') // opened while the click still counts; it goes to claude.ai below
-    setMaking({ input: '' })
-    api(`${path}/start`, {}).then((r: { url: string }) => { setMaking({ url: r.url, input: '' }); if (tab) tab.location.href = r.url; else window.open(r.url, '_blank') },
-      (e: Error) => { tab?.close(); setMaking(undefined); toast(e.message, 'error') })
-  }
-  const wait = (tries = 0): void => void api(`${path}/state`).then((s: { done: boolean; ok: boolean; error?: string } | null) => {
-    if (s?.done) { setMaking(undefined); if (s.ok) void setKeyEverywhere(true); else toast(s.error ?? 'No key came back: try again', 'error'); return }
-    if (tries < 30) setTimeout(() => wait(tries + 1), 2000); else { setMaking(undefined); toast('No key came back: try again', 'error') }
-  }, () => {})
-  const finish = () => making && api(`${path}/finish`, { input: making.input }).then(() => { setMaking({ ...making, waiting: true }); wait() }, (e: Error) => toast(e.message, 'error'))
   const paste = (v: string) => api(path, { value: v }).then(() => { setPasting(undefined); void setKeyEverywhere(true) }, (e: Error) => toast(e.message, 'error'))
-  const busy = !!making || pasting !== undefined || !!signIn.flow
+  const busy = pasting !== undefined || !!signIn.flow
   const notReady = notReadyOn(m)
 
   return (
@@ -70,7 +57,7 @@ export function AccountMachines({ account, label, m, again, toast }: { account: 
             ? <button onClick={() => setKeyEverywhere(false)} className={link} title="Each machine then needs its own claude.ai sign-in again (which brings the account's claude.ai connectors)">Sign in per machine instead</button>
             : m.key.set
               ? <button onClick={() => setKeyEverywhere(true)} className={link}>Use its key on all machines</button>
-              : <button onClick={make} className={link} title="Make one key (approved once on claude.ai) and use it on every machine: no sign-ins, nothing that lapses">Use one key on all machines</button>}
+              : <button onClick={() => setPasting('')} className={link} title="One key for every machine: no sign-ins, nothing that lapses">Use one key on all machines</button>}
         </span>}
       </div>
 
@@ -94,27 +81,20 @@ export function AccountMachines({ account, label, m, again, toast }: { account: 
 
       <SignInSteps s={signIn} />
 
-      {making && (
-        <div className="mt-2 space-y-1.5 border-t border-line pt-2 text-small">
-          {!making.url ? <p className="text-fg-3">Starting…</p> : <>
-            <p className="text-fg-2">1. Approve it in the tab that opened (<a href={making.url} target="_blank" rel="noreferrer" className="text-accent-text hover:underline">open again</a>).</p>
-            <div className="flex gap-1.5">
-              <input value={making.input} onChange={(e) => setMaking({ ...making, input: e.target.value })} placeholder="2. Paste the code it shows" aria-label="Code" className="min-w-0 flex-1 rounded-md bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
-              <button onClick={finish} disabled={!making.input.trim() || making.waiting} className={btn}>{making.waiting ? <LoaderCircle className="size-3.5 animate-spin" /> : null}Finish</button>
-            </div>
-          </>}
-          <span className="flex gap-3">
-            <button onClick={() => setMaking(undefined)} className="text-meta text-fg-4 hover:text-fg-1">Cancel</button>
-            <button onClick={() => { setMaking(undefined); setPasting('') }} className="text-meta text-fg-4 hover:text-fg-1">I already have a key (from claude setup-token)</button>
-          </span>
-        </div>
-      )}
       {pasting !== undefined && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2 text-small">
-          <KeyRound className="size-3.5 text-fg-3" />
-          <input value={pasting} onChange={(e) => setPasting(e.target.value)} placeholder="sk-ant-oat…" type="password" aria-label="Key" className="w-72 rounded-md bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
-          <button onClick={() => paste(pasting.trim())} disabled={!pasting.trim()} className={btn}>Use on all machines</button>
-          <button onClick={() => setPasting(undefined)} className="text-meta text-fg-4 hover:text-fg-1">Cancel</button>
+        <div className="mt-2 space-y-2 border-t border-line pt-2 text-small">
+          <p className="text-fg-2">1. In a terminal on any computer with Claude Code, run this and approve in the browser it opens (signed in to this account):</p>
+          <div className="flex items-center gap-2">
+            <code className="rounded-md bg-fill px-2 py-1 font-mono text-meta text-fg-1">claude setup-token</code>
+            <button onClick={() => void navigator.clipboard?.writeText('claude setup-token').then(() => toast('Copied'), () => {})} className="text-meta text-fg-4 hover:text-fg-1">Copy</button>
+          </div>
+          <p className="text-fg-2">2. Paste the key it prints (it starts with <code className="font-mono text-meta">sk-ant-oat</code>):</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <KeyRound className="size-3.5 text-fg-3" />
+            <input autoFocus value={pasting} onChange={(e) => setPasting(e.target.value)} placeholder="sk-ant-oat…" type="password" aria-label="Key" className="w-72 rounded-md bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
+            <button onClick={() => paste(pasting.trim())} disabled={!pasting.trim()} className={btn}>Use on all machines</button>
+            <button onClick={() => setPasting(undefined)} className="text-meta text-fg-4 hover:text-fg-1">Cancel</button>
+          </div>
         </div>
       )}
       {everywhere && m.key?.set && <p className="mt-1.5 text-meta text-fg-4">Key made {new Date(m.key.set).toLocaleDateString()}; it lasts a year. Runs on it don&apos;t have the account&apos;s claude.ai connectors (Linear and GitHub still work through Concierge&apos;s own keys).</p>}

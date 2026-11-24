@@ -53,7 +53,7 @@ import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadS
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
-import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepAccountLogins, keepClaudeAuth, lapsedLogins, onFallbackToken, setupTokenState, startClaudeLogin, startSetupToken, finishSetupToken, stopUsingLogin } from './claudeLogin.ts'
+import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepAccountLogins, keepClaudeAuth, lapsedLogins, onFallbackToken, startClaudeLogin, stopUsingLogin } from './claudeLogin.ts'
 import { readSecrets, rereadSecrets, saveSecrets, scrub, SECRETS_FILE } from './scrub.ts'
 import { applyConnectors, addCustom, customName, ownServers, removeCustom, connect, connectSentry, connections, recheck, finishLogin, loginState, reconnect, removeFix, startLogin, accountConnections } from './connections.ts'
 import { spentText } from './usage.ts'
@@ -580,9 +580,8 @@ app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
 const HERE_ONLY = /^\/api\/(update$|claude-auth\/|azure\/login$|github\/login$|connections\/login|accounts\/[^/]+\/(login|adopt-login)$|setup\/(clone|validate|skills)$|worktrees\/clean$|debug\/|(prs|exec)\/[^/]+\/resume-terminal$)/
 // what only the main server knows whole (every machine, how full each is, the joins, where they differ): a follower
 // shows the main server's, so Settings → Machines lists the whole fleet on any machine's localhost
-// (an account's machines and its sync check ask every machine, which only the main one knows; a key being made lives in the
-// main one's memory, where its clicks went)
-const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment|repos\/held|accounts\/[^/]+\/(machines|security|token\/state))$/
+// (an account's machines and its sync check ask every machine, which only the main one knows)
+const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment|repos\/held|accounts\/[^/]+\/(machines|security))$/
 app.use('*', async (c, next) => {
   if (fleet.mayWrite() || (c.req.method === 'GET' ? !FLEET_VIEW.test(c.req.path) : HERE_ONLY.test(c.req.path))) return next()
   const main = (await replicaPeers()).find((p) => p.active)
@@ -2350,7 +2349,8 @@ app.post('/accounts/:id/login', async (c) => {
   try { return c.json(a.kind === 'openai' ? await startOpenaiLogin(a.id) : { url: await startClaudeLogin(a.home) }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })
 
-// an added Claude account's fallback token (claudeLogin.ts): pasted, or made here in the browser (claude setup-token)
+// an added Claude account's key (claude setup-token, run in a terminal and pasted on the page: making it from here, by
+// driving that full-screen CLI, never worked reliably)
 function keepAccountToken(id: string, v: string | null) {
   const all = { ...(readSecrets().accountTokens ?? {}) }
   if (v) all[id] = { value: v, at: new Date().toISOString() }; else delete all[id]
@@ -2378,16 +2378,6 @@ app.post('/accounts/:id/token', async (c) => {
   keepAccountToken(id, v)
   return c.json(await providersView())
 })
-app.post('/accounts/:id/token/start', async (c) => {
-  const id = c.req.param('id')
-  if (!addedClaude(id)) return c.json({ error: 'Only a Claude account you added has its own fallback token' }, 400)
-  try { return c.json({ url: await startSetupToken((t) => keepAccountToken(id, t)) }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
-})
-app.post('/accounts/:id/token/finish', async (c) => {
-  const { input } = await c.req.json<{ input?: string }>()
-  try { finishSetupToken(String(input ?? '')); return c.json({ ok: true }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
-})
-app.get('/accounts/:id/token/state', (c) => c.json(setupTokenState() ?? null))
 
 app.get('/prs', (c) => { const away = scopeOf(c) === 'self' ? awayHere() : undefined; return c.json(away ? views().filter((p) => !away.has(p.repo)) : views()) })
 app.get('/prs/:id/activity', async (c) => c.json(await loadActivity(decodeURIComponent(c.req.param('id')))))

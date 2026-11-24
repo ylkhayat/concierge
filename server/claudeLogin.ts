@@ -157,53 +157,6 @@ export function keepAccountLogins(list: () => Added[], changed: (id: string, lap
 /** For a test: the accounts lapsed here. */
 export const setLapsedForTest = (ids: string[]) => { lapsedHere.clear(); for (const id of ids) lapsedHere.add(id) }
 
-// --- an account's fallback token, made in the browser: `claude setup-token` (a year-long, model-only token) ------------
-let pendingToken: { child: ReturnType<typeof spawn>; out: string; done?: boolean; ok?: boolean; error?: string } | undefined
-/** Start making a setup token for an added account; `keep` gets it once you approved. Returns the address to approve. */
-export function startSetupToken(keep: (token: string) => Promise<void> | void): Promise<string> {
-  pendingToken?.child.kill()
-  const env: NodeJS.ProcessEnv = { ...process.env, COLUMNS: '1000' } // wide: the token comes back on one line
-  delete env.CLAUDE_CODE_OAUTH_TOKEN
-  const child = spawn('script', ['-qfec', 'stty cols 1000 2>/dev/null; claude setup-token', '/dev/null'], { cwd: '/tmp', env, stdio: ['pipe', 'pipe', 'pipe'] })
-  const p: NonNullable<typeof pendingToken> = { child, out: '' }
-  pendingToken = p
-  const stop = setTimeout(() => child.kill(), 10 * 60_000)
-  // the key is read the moment it shows (the CLI then waits for a key press, so it never closes by itself), and a
-  // refused code ends it at once with the reason instead of a minute of waiting
-  let settled = false
-  const settle = async (token?: string, error?: string) => {
-    if (settled) return
-    settled = true; clearTimeout(stop)
-    if (token) { try { await keep(token); p.ok = true } catch (e) { p.error = (e as Error).message } } else p.error = error ?? 'No key came back: start it again'
-    p.done = true
-    child.kill()
-  }
-  const watch = () => {
-    const token = plain(p.out).match(/sk-ant-oat[\w-]{20,}/)?.[0]
-    if (token) return void settle(token)
-    const refused = refusedIn(p.out)
-    if (refused) void settle(undefined, `Claude refused the code (${refused.replace(/^OAuth error:\s*/, '')}): start it again and paste the newest code`)
-  }
-  child.stdout!.on('data', watch); child.stderr!.on('data', watch)
-  child.on('close', () => void settle())
-  return new Promise((resolve, reject) => {
-    const give = setTimeout(() => reject(new Error('No sign-in address came back')), 30_000)
-    let url: string | undefined
-    const read = (c: Buffer) => {
-      p.out = (p.out + c).slice(-20_000)
-      const m = p.out.match(/https:\/\/\S*(?:claude\.(?:ai|com)|anthropic\.com)\S*oauth\S*/)
-      if (m && !url) { url = m[0].split(/[\u0007\u001b]/)[0]; clearTimeout(give); resolve(url) }
-    }
-    child.stdout!.on('data', read); child.stderr!.on('data', read)
-  })
-}
-/** The code the approval page shows, pasted on the page. */
-export function finishSetupToken(input: string) {
-  if (!pendingToken || pendingToken.done) throw new Error('The sign-in is not waiting anymore; start it again')
-  pendingToken.child.stdin!.write(input.trim() + ENTER)
-}
-export const setupTokenState = () => (pendingToken ? { done: !!pendingToken.done, ok: !!pendingToken.ok, error: pendingToken.error } : undefined)
-
 /** Claude Code's words when it can't sign in, in a run's output. */
 export const authFailed = (text: string) => /Failed to authenticate|OAuth session expired|Invalid API key|Please run \/login/i.test(text)
 /** A provider that can't be paid: a subscription that ended, no credit or quota left. */
