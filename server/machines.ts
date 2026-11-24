@@ -95,7 +95,8 @@ if (fleet.machine) { void refresh(); setInterval(() => void refresh(), 15_000).u
 // says every 15s, so a machine joining, leaving or finishing a clone, or a change of who may have what, moves it at once.
 
 /** Is `repo` allowed on `machine`: itself, or its whole organization. */
-export const allowedOn = (repo: string, machine: string) => [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(machine))
+export const allowedOn = (repo: string, machine: string) => !config.removeFrom?.[repo]?.includes(machine) // unticked there: off, whatever its organization says (as that machine takes it)
+  && [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]?.includes(machine))
 /** Whether anyone said where `repo` may be (an entry for it or its organization, even an empty one). A setup from before
  *  these choices said nothing: its repositories stay allowed wherever they are checked out, until you pick. */
 const ruled = (repo: string) => [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn && k in config.cloneOn)

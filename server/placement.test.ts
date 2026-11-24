@@ -76,6 +76,19 @@ test('work that waits only for a sign-in names the machine to sign in on, for th
   machines.clear()
 })
 
+test('a repository unticked on a machine stays off it even when its organization is ticked there: the main server says so, instead of waiting on a clone', () => {
+  config.repos = { 'acme/app': '/code/app' }
+  config.cloneOn = { 'acme/*': ['mac'], 'acme/app': [] }
+  config.removeFrom = { 'acme/app': ['mac'] }
+  add('mac', [])
+  assert.deepEqual(route('acme/app').allowed, [])
+  assert.match(whyNowhere('acme/app', 'claude')!, /isn't allowed on any machine/)
+  config.removeFrom = {}
+  assert.deepEqual(route('acme/app').allowed, ['mac'])
+  delete config.removeFrom
+  machines.clear()
+})
+
 test('a setup from before machines were picked: a repository nobody ruled on runs wherever it is checked out', () => {
   config.repos = { 'acme/api': '/code/api', 'bliro/app': '/code/app' }
   config.cloneOn = { 'bliro/app': ['win'] } // only bliro/app was ruled on

@@ -561,8 +561,8 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
   const coverage = p ? Math.round((p.known / Math.max(1, p.folders)) * 100) : 0
 
   const status = clone === 'cloning' ? <span className="inline-flex items-center gap-1.5 text-run-text"><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine</span>
-    : clone === 'not-here' ? 'Not on this machine' : clone?.startsWith('kept:') ? <span className="text-wait-text">Unticked here, {clone}</span> : clone ? <span className="text-fail-text">{clone}</span> : undefined
-  const mapped = clone !== 'not-here' && !clone?.startsWith('kept:')
+    : clone === 'not-here' ? 'Not on this machine' : clone?.startsWith('kept:') || clone?.startsWith('leaving:') ? <span className="text-wait-text">Unticked here, {clone.replace(/^(kept|leaving): /, '')}</span> : clone ? <span className="text-fail-text">{clone}</span> : undefined
+  const mapped = clone !== 'not-here' && !clone?.startsWith('kept:') && !clone?.startsWith('leaving:')
   const link = 'shrink-0 text-meta font-medium text-accent-text hover:underline disabled:opacity-40'
   return (
     <div className="group px-4 py-3.5">

@@ -164,18 +164,42 @@ export async function cloneRepo(repo: string, at?: string): Promise<{ path: stri
   return { path }
 }
 
+/** The folders a process works in right now (its current directory): Linux reads /proc, anything else asks lsof. */
+async function busyDirs(): Promise<string[]> {
+  const ids = await readdir('/proc').catch(() => undefined)
+  if (ids) return (await Promise.all(ids.filter((x) => /^\d+$/.test(x)).map((x) => readlink(`/proc/${x}/cwd`).catch(() => '')))).filter(Boolean)
+  return run('lsof', ['-d', 'cwd', '-Fn'], { timeout: 20_000, maxBuffer: 16 * 1024 * 1024 }).then((r) => r.stdout.split('\n').filter((l) => l.startsWith('n/')).map((l) => l.slice(1)), () => [])
+}
+
 /**
- * Take a checkout off this machine (it was unticked here), but only when nothing would be lost: no uncommitted
- * changes, no commits that aren't on the remote, and no worktree using it (an agent's run). Undefined when it went;
- * otherwise why it stays.
+ * Take a checkout off this machine (it was unticked here): its worktrees (the agents' runs) and the clone itself.
+ * Nothing that exists only here is lost: a worktree with uncommitted changes gets them committed, and every branch with
+ * commits the remote doesn't have is pushed first, to concierge-saved/<machine>/<branch> (never onto a PR's own branch).
+ * It waits only while a process (an agent) works inside one of them, and when the save can't reach the remote.
+ * Undefined when it went; otherwise why it stays (for now: it is tried again).
  */
-export async function takeOff(path: string): Promise<string | undefined> {
-  const git = (args: string[]) => run('git', ['-C', path, ...args], { timeout: 20_000 }).then((r) => r.stdout.trim())
+export async function takeOff(path: string, machine = fleet.machine ?? 'this-machine'): Promise<string | undefined> {
+  const git = (args: string[], cwd = path) => run('git', ['-C', cwd, ...args], { timeout: 60_000 }).then((r) => r.stdout.trim())
+  const who = ['-c', 'user.email=concierge@localhost', '-c', 'user.name=Concierge']
   try {
-    if (await git(['status', '--porcelain'])) return 'kept: it has uncommitted changes'
-    if (await git(['log', '--branches', '--not', '--remotes', '--oneline', '-1'])) return 'kept: it has commits not pushed'
-    if ((await git(['worktree', 'list', '--porcelain'])).split('\n').filter((l) => l.startsWith('worktree ')).length > 1) return 'kept: a worktree (an agent run) still uses it'
-  } catch (e) { return `kept: ${(e as Error).message.split('\n')[0].slice(0, 120)}` }
+    const trees = (await git(['worktree', 'list', '--porcelain'])).split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9))
+    const busy = await busyDirs()
+    const inUse = trees.find((t) => busy.some((d) => d === t || d.startsWith(t + '/')))
+    if (inUse) return `kept: an agent still works in ${basename(inUse)}; it goes once that run ends`
+    // save what is only here: uncommitted changes as a commit on its branch, then every branch the remote lacks
+    for (const t of trees) {
+      if (!existsSync(t) || !(await git(['status', '--porcelain'], t))) continue
+      await git(['add', '-A'], t)
+      await git([...who, 'commit', '-qm', `wip: saved by Concierge before taking this checkout off ${machine}`, '--no-verify'], t)
+    }
+    const unpushed = (await git(['for-each-ref', '--format=%(refname:short)', 'refs/heads'])).split('\n').filter(Boolean)
+    for (const br of unpushed) {
+      if (!(await git(['log', br, '--not', '--remotes', '--oneline', '-1']))) continue
+      await git(['push', '-q', 'origin', `refs/heads/${br}:refs/heads/concierge-saved/${machine}/${br}`])
+    }
+    // then the worktrees and the clone
+    for (const t of trees.slice(1)) { await git(['worktree', 'remove', '--force', t]).catch(() => {}); await rm(t, { recursive: true, force: true }) }
+  } catch (e) { return `kept: couldn't save its work to the remote first (${(e as Error).message.split('\n')[0].slice(0, 120)})` }
   await rm(path, { recursive: true, force: true })
   scanned = undefined
   return undefined
@@ -199,10 +223,15 @@ export const checkedOut = (repo: string) => !!config.repos[repo] && !(repo in cl
  *  the rules, so settings that just arrived apply at once; a repository nobody ruled on stays where it is checked out. */
 export const notHere = (repo: string) => {
   const s = clones.get(repo)
-  if (s === 'not-here' || s?.startsWith('kept:')) return true
+  if (s === 'not-here' || s?.startsWith('kept:') || s?.startsWith('leaving:')) return true
   return !!fleet.machine && [repo, `${repo.split('/')[0]}/*`].some((k) => !!config.cloneOn?.[k]) && !mayClone(repo)
 }
 let cloningNow = false
+// unticked here: when it was seen first, so the checkout goes only after the grace period (another choice can still keep it)
+const untickedAt = new Map<string, number>()
+export const GRACE_MS = Number(process.env.DECK_UNTICK_GRACE_MS) || 20_000
+let again: NodeJS.Timeout | undefined
+const later = (ms: number) => { clearTimeout(again); again = setTimeout(() => void ensureClones(), ms); again.unref?.() }
 /** Which repositories are missing here, and why (not allowed, or to be cloned): at once, from the folders and the rules. */
 export function markClones() {
   for (const [repo, path] of Object.entries(config.repos)) if (!existsSync(path)) clones.set(repo, mayClone(repo) ? (clones.get(repo) === 'not-here' ? 'cloning' : clones.get(repo) ?? 'cloning') : 'not-here')
@@ -215,7 +244,14 @@ export async function ensureClones() {
   try {
     for (const [repo, path] of Object.entries(config.repos)) {
       if (await stat(path).then(() => true, () => false)) {
-        if (unticked(repo)) { const why = await takeOff(path); clones.set(repo, why ?? 'not-here'); if (!why) console.log(`repos: took ${repo} off this machine`) } else clones.delete(repo)
+        if (!unticked(repo)) { untickedAt.delete(repo); clones.delete(repo); continue }
+        // a grace period first: an untick followed by another choice (its whole organization ticked here) keeps it
+        const since = untickedAt.get(repo) ?? (untickedAt.set(repo, Date.now()), Date.now())
+        if (Date.now() - since < GRACE_MS) { clones.set(repo, `leaving: taken off in ${Math.ceil((GRACE_MS - (Date.now() - since)) / 1000)}s unless it is ticked again`); later(GRACE_MS - (Date.now() - since) + 500); continue }
+        const why = await takeOff(path)
+        clones.set(repo, why ?? 'not-here')
+        if (why) later(60_000) // an agent still works in it, or the save failed: tried again in a minute
+        else { untickedAt.delete(repo); console.log(`repos: took ${repo} off this machine, its worktrees too`) }
         continue
       }
       if (!mayClone(repo)) { clones.set(repo, 'not-here'); continue }

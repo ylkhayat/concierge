@@ -2023,7 +2023,12 @@ app.post('/repos/clone-on', async (c) => {
 const allowClone = (repo: string, machine: string, on: boolean) => {
   const now = new Set(config.cloneOn?.[repo] ?? []), off = new Set(config.removeFrom?.[repo] ?? [])
   if (on) { now.add(machine); off.delete(machine) } else { now.delete(machine); if (!repo.endsWith('/*')) off.add(machine) }
-  saveConfig({ cloneOn: { ...config.cloneOn, [repo]: [...now] }, removeFrom: { ...config.removeFrom, [repo]: [...off] } })
+  const removeFrom = { ...config.removeFrom, [repo]: [...off] }
+  // a whole organization ticked on a machine: the newest choice wins over an older untick of one of its repositories
+  // there (that untick kept the repository off the machine while the main server counted it allowed, and its work
+  // waited on a clone that never came: "still being cloned")
+  if (on && repo.endsWith('/*')) for (const r of Object.keys(removeFrom)) if (r.startsWith(repo.slice(0, -1))) removeFrom[r] = removeFrom[r].filter((m) => m !== machine)
+  saveConfig({ cloneOn: { ...config.cloneOn, [repo]: [...now] }, removeFrom })
 }
 app.post('/setup/clone', async (c) => {
   const { repo } = await c.req.json() as { repo: string }

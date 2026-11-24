@@ -7,7 +7,7 @@ let away = new Set<string>()
 const EVENT = 'concierge:away'
 /** The server's list (setup: away, from the rules); an older server sends only the clone states. */
 export function setAway(list?: string[], clones: Record<string, string> = {}) {
-  away = new Set(list ?? Object.entries(clones).filter(([, v]) => v === 'not-here' || v.startsWith('kept:')).map(([r]) => r))
+  away = new Set(list ?? Object.entries(clones).filter(([, v]) => v === 'not-here' || v.startsWith('kept:') || v.startsWith('leaving:')).map(([r]) => r))
   dispatchEvent(new CustomEvent(EVENT))
 }
 const none = new Set<string>()
