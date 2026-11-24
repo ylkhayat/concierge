@@ -54,7 +54,7 @@ import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
 import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepAccountLogins, keepClaudeAuth, lapsedLogins, onFallbackToken, setupTokenState, startClaudeLogin, startSetupToken, finishSetupToken, stopUsingLogin } from './claudeLogin.ts'
-import { readSecrets, rereadSecrets, saveSecrets, scrub } from './scrub.ts'
+import { readSecrets, rereadSecrets, saveSecrets, scrub, SECRETS_FILE } from './scrub.ts'
 import { applyConnectors, addCustom, customName, ownServers, removeCustom, connect, connectSentry, connections, recheck, finishLogin, loginState, reconnect, removeFix, startLogin, accountConnections } from './connections.ts'
 import { spentText } from './usage.ts'
 import { belongsTo, cleanWorktrees, sweepDue, worktrees } from './worktrees.ts'
@@ -3271,6 +3271,12 @@ serveMachine(() => state.settings.maxJobs, ownUsage, {
   keys: async () => localKeys,
   // whether an account is signed in here, and signing it in from the dashboard (the page relays the code)
   signedIn: async (b: { account?: string }) => signedInHere(b.account),
+  // whether an account works here, and how: its own sign-in, or the account's shared key (Settings → Accounts → Machines)
+  ready: async (b: { account?: string }) => readyHere(b.account ?? 'claude'),
+  // how an account's sign-in is kept here, for Settings → Accounts → Sync & security (never the key: a short hash of it)
+  security: async (b: { account?: string }) => securityHere(b.account ?? 'claude'),
+  // the keys file back to readable only by you (Sync & security's fix)
+  fixSecrets: async () => { const { chmod } = await import('node:fs/promises'); await chmod(SECRETS_FILE, 0o600).catch(() => {}); return true },
   signin: async (b: { account?: string; step?: string; input?: string }) => signinHere(b),
   // the alignment protocol: bring this machine in line with the shared settings, and say what still differs
   align: async () => alignHere(),
@@ -3290,6 +3296,28 @@ const readCan = async () => {
 void readCan(); setInterval(() => void readCan(), 60_000).unref()
 // (started here, after readCan: a lapse or a recovery is told to the control plane at once)
 keepAccountLogins(() => accounts().filter((a) => a.kind === 'claude' && !!a.home), () => { void readCan(); void loginNotice() })
+/** Whether an account works on this machine, and how: its sign-in here, or its shared key (an added Claude account's). */
+async function readyHere(account: string) {
+  const key = onFallbackToken(account) || (!!accountOf(account).keyEverywhere && !!accountToken(account))
+  const login = accountOf(account).keyEverywhere ? false : await signedInHere(account).catch(() => false)
+  return { login, key, who: identityOf(account) }
+}
+/**
+ * How an account's sign-in is kept on this machine: which key it has (a short hash, so machines are compared without the
+ * key leaving any of them), whether the file that holds the key and this machine's login file are readable only by you,
+ * and whether this machine has the main machine's settings (so it follows the account's setting).
+ */
+async function securityHere(account: string) {
+  const a = accountOf(account)
+  const mode = async (f: string) => stat(f).then((s) => (s.mode & 0o777).toString(8), () => undefined)
+  const token = a.kind === 'claude' && a.home ? accountToken(account) : undefined
+  return {
+    keyHash: token ? createHash('sha256').update(token).digest('hex').slice(0, 12) : undefined,
+    keyEverywhere: !!a.keyEverywhere,
+    secretsMode: await mode(SECRETS_FILE),
+    loginMode: a.kind === 'claude' ? await mode(join(a.home ?? join(homedir(), '.claude'), '.credentials.json')) : undefined,
+  }
+}
 /** Is this account signed in on this machine (its own session)? */
 async function signedInHere(account = 'claude') {
   const a = accounts().find((x) => x.id === account)
@@ -3436,6 +3464,53 @@ async function connectorsHere(account = 'claude'): Promise<Record<string, string
   return Object.fromEntries(list.map((x) => [x.name, x.status]))
 }
 // where each of an account's connectors works: this machine and every other one (Settings → Connections)
+/**
+ * Where an account works (Settings → Accounts → its Machines): each machine, ready or not and how. ready: signed in
+ * there, or on the account's shared key; not: signed out, signed in as another login (it takes none of the work), or
+ * no answer (offline, or an older version). With the account's key, if it has one, and whether every machine uses it.
+ */
+type MachineReady = { name: string; state: 'signed-in' | 'key' | 'signed-out' | 'other-login' | 'no-answer'; who?: string }
+app.get('/accounts/:id/machines', async (c) => {
+  const a = accounts().find((x) => x.id === c.req.param('id'))
+  if (!a) return c.json({ error: 'No such account' }, 404)
+  const [here, there] = await Promise.all([readyHere(a.id), machines.size ? ask<Awaited<ReturnType<typeof readyHere>>>('ready', { account: a.id }) : Promise.resolve([] as [string, Awaited<ReturnType<typeof readyHere>> | undefined][])])
+  const stateOf = (r?: Awaited<ReturnType<typeof readyHere>>): MachineReady['state'] =>
+    !r ? 'no-answer' : r.key ? 'key' : !r.login ? 'signed-out' : a.login && r.who && r.who !== a.login ? 'other-login' : 'signed-in'
+  const list: MachineReady[] = [[fleet.machine ?? 'This machine', here] as const, ...there].map(([name, r]) => ({ name, state: stateOf(r), ...(r?.who && { who: loginText(r.who) }) }))
+  return c.json({
+    machines: list, login: a.login ? loginText(a.login) : undefined,
+    // the shared key: only an added Claude account has one of its own (the first account's is Settings → Machines' Claude token)
+    key: a.kind === 'claude' && a.home ? { set: accountTokenAt(a.id), everywhere: !!a.keyEverywhere } : undefined,
+  })
+})
+/**
+ * Sync & security for an account, every machine asked: does each have the same key as this one (synced), is the key's
+ * file and the login file private there, and does each follow the account's one-key setting. ok: nothing to fix.
+ */
+app.get('/accounts/:id/security', async (c) => {
+  const a = accounts().find((x) => x.id === c.req.param('id'))
+  if (!a) return c.json({ error: 'No such account' }, 404)
+  type Sec = Awaited<ReturnType<typeof securityHere>>
+  const [here, there] = await Promise.all([securityHere(a.id), machines.size ? ask<Sec>('security', { account: a.id }) : Promise.resolve([] as [string, Sec | undefined][])])
+  const priv = (m?: string) => !m || m === '600' || m === '400' // no file: nothing to keep private
+  const rows = ([[fleet.machine ?? 'This machine', here] as const, ...there] as [string, Sec | undefined][]).map(([name, s]) => {
+    if (!s) return { name, answered: false, problems: ["didn't answer (offline or updating)"] }
+    const problems: string[] = []
+    if (here.keyHash && s.keyHash !== here.keyHash) problems.push(s.keyHash ? 'has a different key: its copy of the settings is behind' : "doesn't have the key yet: its copy of the settings is behind")
+    if (s.keyEverywhere !== here.keyEverywhere) problems.push("doesn't follow the one-key setting yet: its copy of the settings is behind")
+    if (!priv(s.secretsMode)) problems.push(`the keys file can be read by others there (permissions ${s.secretsMode})`)
+    if (!priv(s.loginMode)) problems.push(`its sign-in file can be read by others there (permissions ${s.loginMode})`)
+    return { name, answered: true, hasKey: !!s.keyHash, problems }
+  })
+  return c.json({ checkedAt: new Date().toISOString(), hasKey: !!here.keyHash, keyEverywhere: here.keyEverywhere, machines: rows, ok: rows.every((r) => r.answered && !r.problems.length) })
+})
+/** Make the keys file private again on this machine and every other (Sync & security's fix). */
+app.post('/accounts/:id/security/fix', async (c) => {
+  const fix = async () => { const { chmod } = await import('node:fs/promises'); await chmod(SECRETS_FILE, 0o600).catch(() => {}) }
+  await fix()
+  if (machines.size) await ask('fixSecrets', {})
+  return c.json({ ok: true })
+})
 app.get('/connections/where', async (c) => {
   const account = c.req.query('account') ?? 'claude'
   if (!machines.size) return c.json({ machines: [] })

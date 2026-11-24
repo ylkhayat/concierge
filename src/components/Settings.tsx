@@ -20,7 +20,8 @@ import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { ago, clock, weekday } from '../time.ts'
 import { ClaudeAccount, Connections, Skeleton } from './Connections.tsx'
 import { MachinesSettings } from './MachinesSettings.tsx'
-import { FallbackToken } from './FallbackToken.tsx'
+import { AccountMachinesFor, notReadyOn, useAccountMachines } from './AccountMachines.tsx'
+import { AccountSecurity } from './AccountSecurity.tsx'
 import type { Mode, OrgSkill } from '../../server/orgSkills.ts'
 
 export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
@@ -826,6 +827,10 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
   const [v, setV] = useState<ProvidersView>()
   const [signing, setSigning] = useState<{ id: string; kind: Kind; url: string; code?: string }>()
   const [paste, setPaste] = useState('')
+  const [notReady, setNotReady] = useState<Record<string, string[]>>({}) // each account's machines it doesn't work on (AccountMachines)
+  // one account's own page (Settings → Accounts → an account), and which part of it
+  const [open, setOpen] = useState<string>()
+  const [sub, setSub] = useState<'overview' | 'models' | 'machines' | 'security'>('overview')
   const [adding, setAdding] = useState<{ kind: Kind; label: string; host: string }>()
   // "does it answer?": one tiny question through the path a run takes, and what came back, shown under the account
   const [tested, setTested] = useState<Record<string, { busy?: boolean; ok?: boolean; text?: string; error?: string; ms?: number }>>({})
@@ -856,6 +861,67 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
   const remove = (a: AccountView) => fetch(`/api/accounts/${encodeURIComponent(a.id)}`, { method: 'DELETE' }).then((r) => r.json())
     .then((r) => { if (r.error) throw new Error(r.error); setV(r); toast(`${a.label} removed`) }).catch((e: Error) => toast(e.message, 'error'))
   const byId = new Map(v.accounts.map((a) => [a.id, a]))
+  const openA = !compact && open ? byId.get(open) : undefined
+  if (openA) {
+    const a = openA, keyed = !!a.fallbackToken?.everywhere
+    const SUBS = [
+      { id: 'overview' as const, label: 'Overview' },
+      { id: 'models' as const, label: 'Models' },
+      ...(a.kind === 'claude' || a.kind === 'openai' ? [{ id: 'machines' as const, label: 'Machines' }, { id: 'security' as const, label: 'Sync & security' }] : []),
+    ]
+    const at = SUBS.some((x) => x.id === sub) ? sub : 'overview'
+    return (
+      <div className="space-y-3">
+        <button onClick={() => setOpen(undefined)} className="inline-flex items-center gap-1 text-meta font-medium text-fg-3 hover:text-fg-1"><ArrowLeft className="size-3.5" />All accounts</button>
+        <header className="card flex items-start gap-3 px-4 py-3.5">
+          <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-body font-semibold text-fg-1">{a.label}</h3><StatusPill a={a} notReadyOn={notReady[a.id]} /></div>
+            <p className="truncate text-meta text-fg-3">{accountLine(a)}</p>
+            {a.id === 'claude' && <div className="mt-0.5"><ClaudeAccount toast={toast} /></div>}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button onClick={() => test(a)} disabled={tested[a.id]?.busy} className={`${quiet} px-2`} title="Test: ask it one tiny question, the way a run would, and show what comes back" aria-label={`Test ${a.label}`}>{tested[a.id]?.busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}Test</button>
+            {!a.builtIn && <button onClick={() => { void remove(a); setOpen(undefined) }} className={`${quiet} px-2 hover:text-fail-text`} title="Remove this account"><Trash2 className="size-3.5" />Remove</button>}
+          </div>
+        </header>
+        {tested[a.id] && !tested[a.id].busy && (
+          <p className={`rounded-lg px-2.5 py-1.5 text-meta ring-1 [overflow-wrap:anywhere] ${tested[a.id].ok ? 'bg-ok/10 text-ok-text ring-ok/20' : 'bg-fail/10 text-fail-text ring-fail/20'}`}>
+            {tested[a.id].ok ? `It answers (${((tested[a.id].ms ?? 0) / 1000).toFixed(1)}s): “${tested[a.id].text}”` : `It doesn't answer: ${tested[a.id].error}`}
+          </p>
+        )}
+        <Tabs size="sm" label="Account section" value={at} onChange={(x) => setSub(x)} options={SUBS} />
+        {at === 'overview' && (
+          <div className="card space-y-2.5 px-4 py-3.5 text-meta text-fg-3">
+            {a.who?.samePlanAs && <p className="rounded-lg bg-wait/7 px-2.5 py-1.5 text-wait-text ring-1 ring-wait/20">Same claude.ai login as {a.who.samePlanAs}: runs on either spend one plan.</p>}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <AccountConnections a={a} first={byId.get('claude')} onMore={onConnections} />
+              <Spent s={a.today} />
+              <label className="ml-auto flex items-center gap-1.5">Daily budget
+                <span className="flex items-center rounded-md ring-1 ring-line focus-within:ring-accent/50"><span className="pl-1.5 text-fg-4">$</span>
+                  <input type="number" min={0} step={1} defaultValue={v.budgets[a.id] ?? ''} placeholder="none" aria-label={`${a.label} daily budget in dollars`}
+                         onBlur={(e) => { const n = e.target.value === '' ? null : Number(e.target.value); if (n !== (v.budgets[a.id] ?? null)) void set({ budgets: { [a.id]: n } }, n == null ? `${a.label}: no budget` : `${a.label}: $${n} a day`) }}
+                         className="w-14 bg-transparent px-1 py-0.5 text-right tabular-nums text-fg-1 outline-none placeholder:text-fg-4" /></span>
+              </label>
+            </div>
+          </div>
+        )}
+        {at === 'models' && (
+          <div className="card px-4 py-3.5">
+            {a.kind !== 'llama' ? <AccountModels a={a} set={set} startOpen />
+              : a.llama?.up ? <LlamaModels a={a} set={set} />
+              : <p className="text-meta text-fg-3">Its Ollama isn&apos;t running: its models show once it is.</p>}
+          </div>
+        )}
+        {at === 'machines' && (
+          <div className="card px-4 py-3.5">
+            <AccountMachinesFor account={a.id} label={a.label} toast={toast} onNotReady={(ms) => setNotReady((x) => ({ ...x, [a.id]: ms }))} />
+          </div>
+        )}
+        {at === 'security' && <AccountSecurity account={a.id} kind={a.kind} keyed={keyed} />}
+      </div>
+    )
+  }
   return (
     <>
       {/* compact (onboarding): the accounts alone, to sign in; the routing and limits wait in Settings */}
@@ -918,16 +984,16 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
       </>}
 
       <section className="space-y-2">
-        {!compact && <header className="px-0.5"><h3 className="text-small font-semibold text-fg-1">Accounts</h3><p className="text-meta text-fg-3">Each signs in on its own. Claude and Llama run through Claude Code, OpenAI through Codex, Copilot through its CLI.</p></header>}
-        <div className={`grid ${compact ? 'gap-2' : 'gap-3 md:grid-cols-2'}`}>
-        {v.accounts.map((a) => (
+        {!compact && <header className="px-0.5"><h3 className="text-small font-semibold text-fg-1">Accounts</h3><p className="text-meta text-fg-3">Open one for its models, the machines it works on, and how its sign-in is kept and synced.</p></header>}
+        <div className={`grid ${compact ? 'gap-2' : 'gap-2'}`}>
+        {v.accounts.map((a) => !compact ? <AccountRow key={a.id} a={a} onOpen={() => { setOpen(a.id); setSub('overview') }} onNotReady={(ms) => setNotReady((x) => ({ ...x, [a.id]: ms }))} /> : (
           <div key={a.id} className={`card flex flex-col ${compact ? 'px-3.5 py-3' : 'px-4 py-3.5'}`}>
             <div className={`flex gap-3 ${compact ? 'items-center' : 'items-start'}`}>
               <span className={`${compact ? '' : 'mt-0.5'} flex size-8 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-body font-semibold text-fg-1">{a.label}</span>
-                  {(!compact || !signedOut(a)) && <StatusPill a={a} />}
+                  {(!compact || !signedOut(a)) && <StatusPill a={a} notReadyOn={notReady[a.id]} />}
                 </div>
                 <div className="truncate text-meta text-fg-3" title={a.kind === 'claude' ? whoText(a) : undefined}>
                   {compact && signedOut(a) ? SIGN_IN_HINT[a.kind]
@@ -940,7 +1006,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 {/* onboarding signs the built-in Claude in here too; Settings keeps its claude.ai/token switch (ClaudeAccount) */}
-                {(a.kind === 'openai' || (a.kind === 'claude' && (!a.builtIn || (compact && signedOut(a))))) && signing?.id !== a.id && (signedOut(a)
+                {compact && (a.kind === 'openai' || (a.kind === 'claude' && (!a.builtIn || signedOut(a)))) && signing?.id !== a.id && (signedOut(a)
                   ? <button onClick={() => signIn(a)} className={primary}>Sign in</button>
                   : <button onClick={() => signIn(a)} className={`${quiet} px-2`} title="Sign in again" aria-label={`Sign ${a.label} in again`}><RotateCcw className="size-3.5" /></button>)}
                 {!compact && <button onClick={() => test(a)} disabled={tested[a.id]?.busy} className={`${quiet} px-2`} title="Test: ask it one tiny question, the way a run would, and show what comes back" aria-label={`Test ${a.label}`}>{tested[a.id]?.busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}</button>}
@@ -952,7 +1018,6 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
                 {tested[a.id].ok ? `It answers (${((tested[a.id].ms ?? 0) / 1000).toFixed(1)}s): “${tested[a.id].text}”` : `It doesn't answer: ${tested[a.id].error}`}
               </p>
             )}
-            {!compact && a.fallbackToken && <FallbackToken a={a} onChange={setV} toast={toast} />}
             {a.who?.samePlanAs && <p className="mt-2 rounded-lg bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">Same claude.ai login as {a.who.samePlanAs}: runs on either spend one plan.</p>}
             {signing?.id === a.id && (signing.code
               ? <p className="mt-2 text-small">Open <a href={signing.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">{signing.url.replace('https://', '')}</a> and enter <b className="font-mono">{signing.code}</b></p>
@@ -1085,9 +1150,37 @@ const Spent = ({ s }: { s?: Spend }) => !s?.runs ? <span className="text-fg-4">N
 )
 
 /** Whether an account takes work now, in one or two words; the full reason on hover. */
-function StatusPill({ a }: { a: AccountView }) {
-  const why = blocked(a)
-  const label = !why ? 'Ready' : /not signed in/.test(why) ? 'Signed out' : /not running/.test(why) ? 'Offline'
+/** Who an account is, in one line: its login and plan, or how it runs. */
+function accountLine(a: AccountView): string {
+  return a.kind === 'claude' ? whoText(a)
+    : a.kind === 'openai' ? (a.openai === 'none' ? 'Not signed in' : `${a.openai === 'chatgpt' ? 'ChatGPT plan' : 'API key, billed per token'} · agents ${a.models.large ?? 'its default'}, quick calls ${a.models.small}`)
+    : a.kind === 'copilot' ? (a.available ? `Your GitHub Copilot plan, through its CLI · model ${a.models.large ?? 'auto'} (auto: Copilot picks)` : `Can't run now: ${a.why ?? 'checking its CLI'}`)
+    : `${a.host ?? 'This machine'} · ${a.llama?.models.length ?? 0} model${a.llama?.models.length === 1 ? '' : 's'} · agents ${a.models.large ?? 'its default'}, quick calls ${a.models.small}`
+}
+
+/** An account in the list: who it is, and whether it is ready on every machine; opens its page. */
+function AccountRow({ a, onOpen, onNotReady }: { a: AccountView; onOpen: () => void; onNotReady: (ms: string[]) => void }) {
+  const perMachine = a.kind === 'claude' || a.kind === 'openai'
+  const [m] = useAccountMachines(perMachine ? a.id : '')
+  const off = perMachine ? notReadyOn(m) : []
+  const key = off.join(',')
+  useEffect(() => { if (m) onNotReady(off) }, [key, !!m])
+  return (
+    <button onClick={onOpen} className="card flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover">
+      <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2"><span className="truncate text-body font-semibold text-fg-1">{a.label}</span><StatusPill a={a} notReadyOn={off} /></span>
+        <span className="block truncate text-meta text-fg-3">{accountLine(a)}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-fg-4" />
+    </button>
+  )
+}
+
+function StatusPill({ a, notReadyOn }: { a: AccountView; notReadyOn?: string[] }) {
+  // ready means ready on every machine: one that can't run it says so first
+  const why = notReadyOn?.length ? `Not signed in on ${notReadyOn.join(' and ')}: its work there waits` : blocked(a)
+  const label = notReadyOn?.length ? `Not ready on ${notReadyOn.join(', ')}` : !why ? 'Ready' : /not signed in/.test(why) ? 'Signed out' : /not running/.test(why) ? 'Offline'
     : /downloading/.test(why) ? 'Downloading' : /missing/.test(why) ? 'Model missing' : /budget/.test(why) ? 'Over budget' : /CLI/.test(why) ? 'Not ready'
     : why.replace(/^(plan window spent|at its limit) until /, 'Paused until ')
   return <span title={why || 'Can take work'} className={`inline-flex items-center gap-1 rounded-full px-2 py-px text-micro font-medium ring-1 ring-inset ${why ? 'bg-wait/10 text-wait-text ring-wait/20' : 'bg-ok/10 text-ok-text ring-ok/20'}`}>
@@ -2251,8 +2344,8 @@ const MODEL_KINDS: { slot: 'large' | 'planner' | 'reading' | 'small'; label: str
  * An account's Models, folded: each kind of work inherits until you pick one of the models this account offers (read
  * from the tool where it can list them). Nothing is assumed about which tool the account is.
  */
-function AccountModels({ a, set }: { a: AccountView; set: (b: object, m: string) => void }) {
-  const [open, setOpen] = useState(false)
+function AccountModels({ a, set, startOpen }: { a: AccountView; set: (b: object, m: string) => void; startOpen?: boolean }) {
+  const [open, setOpen] = useState(!!startOpen)
   const q = useApi<{ models: { id: string; label: string }[]; picked: Record<string, string> }>(open ? `/accounts/${encodeURIComponent(a.id)}/models` : undefined)
   const picked = q.data?.picked ?? {}
   const kinds = MODEL_KINDS.filter((k) => !k.claudeOnly || a.kind === 'claude')
@@ -2262,7 +2355,7 @@ function AccountModels({ a, set }: { a: AccountView; set: (b: object, m: string)
   }
   const shown = Object.values(picked).filter(Boolean).length
   return (
-    <details className="group/am mt-2" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+    <details className="group/am mt-2" open={startOpen} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="flex cursor-pointer list-none items-center gap-1 text-meta font-medium text-fg-3 hover:text-fg-1">
         <ChevronRight className="size-3.5 transition-transform group-open/am:rotate-90" />Models<span className="font-normal text-fg-4">{shown ? `· ${shown} picked` : '· all inherited'}</span>
       </summary>
