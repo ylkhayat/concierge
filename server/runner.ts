@@ -13,7 +13,7 @@ import { issueNote, issueOf, shipIssuesPrompt } from './issues.ts'
 import { execCommand, furthest, goalSettings, handGoalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
 import { defaultBranch } from './github.ts'
 import { fill } from './config.ts'
-import { capturePrompt, hasSet, shotsDir, VISUALS_DIR } from './visuals.ts'
+import { baselineId, capturePrompt, hasSet, setupPrompt, shotsDir, slugOf, VISUALS_DIR } from './visuals.ts'
 import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend } from './store.ts'
 import { authFailed, cantPay, checkClaudeAuth } from './claudeLogin.ts'
 import { planNote } from './router.ts'
@@ -617,6 +617,9 @@ export function pump() {
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
         && available(providerFor('review', p.repo)) && hereHas(p.repo) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
     ]),
+    // a repository's Storybook set up (Design): on a machine with its checkout, like a run of its tickets
+    ...Object.entries(state.visualsSetup ?? {}).filter(([repo, t]) => t.state === 'queued' && !children.has(`setup:${repo}`) && available(t.provider ?? providerFor('exec', repo)))
+      .map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: (on?: string) => startSetup(repo, on), place: { repo, provider: t.provider ?? providerFor('exec', repo), prefer: t.machine } })),
     ...Object.values(state.execs).filter((r) => r.state === 'queued' && !r.planning && canRun(r, 'exec', r.repo) && waited(r)).map((r) => ({ prio: 0, at: r.queuedAt, go: (on?: string) => startExec(r, on), exec: r })),
     ...Object.entries(state.base).filter(([repo, t]) => t.state === 'queued' && available(providerFor('review', repo)) && hereHas(repo)).map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: () => startBase(repo) })),
   ].sort((a, b) => a.prio - b.prio || a.at.localeCompare(b.at))
@@ -848,6 +851,64 @@ function startVisuals(pr: Pr, on?: string) {
     onError: (err) => {
       Object.assign(t, { state: 'failed', error: err.message, endedAt: new Date().toISOString() })
       note(key, { at: t.endedAt!, kind: 'error', text: `It didn't start: ${err.message}` })
+      save(); bus.emit('change'); pump()
+    },
+  })
+}
+
+/** Set a repository's Storybook up and take its first shot (setupPrompt); your words reach a running one at once. */
+export function enqueueSetup(repo: string, said?: string): 'queued' | 'told' | 'busy' | 'no' {
+  if (!config.repos[repo]) return 'no'
+  const all = (state.visualsSetup ??= {}), t = all[repo], key = `setup:${repo}`
+  if (t?.state === 'running') {
+    if (!said) return 'busy'
+    return tell(key, said, () => { enqueueSetup(repo, said) }) === 'idle' ? 'busy' : 'told'
+  }
+  if (t?.state === 'queued') return 'busy'
+  all[repo] = { state: 'queued', headSha: '', queuedAt: new Date().toISOString(), ...(said && { said }), ...(t?.sessionId && { sessionId: t.sessionId }), ...(t?.machine && { machine: t.machine }) }
+  save(); bus.emit('change'); pump()
+  return 'queued'
+}
+export function cancelSetup(repo: string) {
+  const t = state.visualsSetup?.[repo]
+  if (t?.state === 'queued') { t.state = 'cancelled'; save(); bus.emit('change'); return }
+  children.get(`setup:${repo}`)?.kill('SIGTERM')
+}
+function startSetup(repo: string, on?: string) {
+  const t = state.visualsSetup![repo], key = `setup:${repo}`, now = new Date().toISOString(), where = on ?? fleet.machine
+  const again = !!t.sessionId && !!t.said && t.machine === where
+  const sid = again ? t.sessionId! : randomUUID()
+  Object.assign(t, { state: 'running', startedAt: now, endedAt: undefined, error: undefined, costUsd: undefined, summary: undefined, sessionId: sid, machine: where, provider: t.provider ?? providerFor('exec', repo) })
+  note(key, { at: now, kind: 'section', text: `Storybook for ${repo}` })
+  if (t.said) note(key, { at: now, kind: 'you', text: t.said })
+  if (on) note(key, { at: now, kind: 'event', text: `Runs on ${on}.` })
+  save(); bus.emit('change')
+  const dir = join(VISUALS_DIR, slugOf(baselineId(repo)))
+  runAgent({
+    key, label: `Storybook ${repo}`, cwd: config.repos[repo], on, provider: t.provider,
+    onSession: (id) => { if (t.sessionId !== id) { t.sessionId = id; save() } },
+    args: [
+      '-p', again ? `${t.said}\n\nGo on with the Storybook and its first shot with that in mind.` : setupPrompt({ repo, dir, said: t.said }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
+      '--output-format', 'stream-json', '--verbose', '--allowedTools', ...config.exec.allowedTools, 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Skill',
+      '--add-dir', VISUALS_DIR, '--max-budget-usd', '25',
+    ],
+    onResult: (m) => {
+      t.costUsd = m.total_cost_usd ?? 0
+      const text = String(m.result ?? '').trim()
+      if (m.is_error) t.error = short(text || m.subtype, 400); else if (text) t.summary = text.slice(0, 2000)
+      const pr = text.match(/^PR (https:\/\/\S+)/m)?.[1]
+      if (pr) t.prUrl = pr
+    },
+    onEnd: (e) => {
+      t.endedAt = new Date().toISOString()
+      addSpend(t.costUsd ?? 0, t.provider)
+      delete t.said
+      t.state = e.cancelled ? 'cancelled' : t.error ? 'failed' : 'done'
+      note(key, { at: t.endedAt, kind: t.state === 'failed' ? 'error' : 'event', text: t.state === 'done' ? `Storybook set up${t.prUrl ? `: ${t.prUrl}` : ''}, and its first shot taken.` : t.state === 'cancelled' ? 'You stopped it.' : `It didn't finish: ${t.error}` })
+      save(); bus.emit('change'); bus.emit('visuals', repo); pump()
+    },
+    onError: (err) => {
+      Object.assign(t, { state: 'failed', error: err.message, endedAt: new Date().toISOString() })
       save(); bus.emit('change'); pump()
     },
   })

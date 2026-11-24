@@ -94,7 +94,7 @@ export function App() {
   const [query, setQueryState] = useState(() => param('q') ?? '')
   const setQuery = (q: string) => { setQueryState(q); setParam('q', q) }
   const [refreshing, setRefreshing] = useState(false)
-  const { me, prs: allPrs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : mode === 'design' ? (selected && !selected.startsWith('ticket:') ? `visuals:${selected}` : undefined) : feedKey ?? selected)
+  const { me, prs: allPrs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : mode === 'design' ? (!selected || selected.startsWith('ticket:') ? undefined : selected.startsWith('repo:') ? `setup:${selected.slice(5)}` : `visuals:${selected}`) : feedKey ?? selected)
   const now = useNow()
   const [theme, setTheme] = useTheme()
   const role = useRole()

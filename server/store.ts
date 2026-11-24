@@ -242,6 +242,7 @@ type State = {
   settings: Settings
   spend: Record<string, number> // YYYY-MM-DD → USD spent by agent runs that day
   base: Record<string, BaseTask> // "owner/repo" → the codebase-map job
+  visualsSetup?: Record<string, VisualsTask & { prUrl?: string }> // "owner/repo" → its Storybook set up and first shot (Design)
   execs: Record<string, ExecRun>
   batches: Record<string, import('./exec.ts').Batch>
   stackDirections?: Record<string, import('./stackDirection.ts').Direction> // the direction each stack follows (stackDirection.ts)

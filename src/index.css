@@ -54,6 +54,10 @@ html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 @keyframes arm { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @keyframes arm-label { from { opacity: 0; transform: translateY(6px); } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+/* Design's lenses: the next one slides in from the side it sits on (--lens-from: -1 left, 1 right), out of a soft blur */
+@keyframes lens-in { from { opacity: 0; transform: translateX(calc(var(--lens-from, 1) * 14px)); filter: blur(3px); } }
+/* an annotation lands: its outline draws in, its number pops */
+@keyframes mark-in { from { opacity: 0; transform: scale(1.06); } }
 @media (prefers-reduced-motion: reduce) {
   *, ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; transition: none !important; }
 }

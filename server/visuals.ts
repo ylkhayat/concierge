@@ -81,9 +81,24 @@ export type Impact = { changed: Part[]; affected: Affected[] }
  * One capture: a changed component in focus, or an affected one (or a whole screen) for context; what the agent says
  * about it, and its before and after images (file names in its folder).
  */
-export type Shot = { name: string; note?: string; before?: string; after?: string; width?: number; lens?: 'changed' | 'affected'; part?: string; viewport?: string }
+// a mark: where a changed component sits on the image, in percent of its width and height, for the numbered outline
+export type Mark = { x: number; y: number; w: number; h: number; part?: string; label?: string; side?: 'before' | 'after' }
+export type Shot = { name: string; note?: string; before?: string; after?: string; width?: number; lens?: 'changed' | 'affected'; part?: string; viewport?: string; marks?: Mark[] }
 export type Manifest = { head: string; base?: string; at: string; source: 'storybook' | 'app'; summary?: string; impact?: Impact; shots: Shot[] }
 export type VisualSet = Manifest & { sha: string }
+
+const pct = (n: unknown) => Math.min(100, Math.max(0, Number(n) || 0))
+/** A shot's marks, kept to boxes inside the image (they come from an agent). */
+export function marksOf(raw: unknown): Mark[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out = raw.flatMap((m) => {
+    const o = m as Partial<Mark>
+    const x = pct(o.x), y = pct(o.y), w = Math.min(pct(o.w), 100 - x), h = Math.min(pct(o.h), 100 - y)
+    if (w < 0.5 || h < 0.5) return []
+    return [{ x, y, w, h, ...(o.part && { part: String(o.part).slice(0, 80) }), ...(o.label && { label: String(o.label).slice(0, 160) }), ...((o.side === 'before' || o.side === 'after') && { side: o.side }) }]
+  }).slice(0, 12)
+  return out.length ? out : undefined
+}
 
 const PATH = /^[\w@()[\]./ -]{1,240}$/
 const part = (x: unknown): Part | undefined => {
@@ -121,7 +136,7 @@ export async function setsOf(prId: string): Promise<VisualSet[]> {
     if (!m || !Array.isArray(m.shots)) continue
     const shots: Shot[] = m.shots.filter((s) => s && typeof s.name === 'string').slice(0, 60).map((s) => ({
       name: String(s.name).slice(0, 120), note: s.note ? String(s.note).slice(0, 400) : undefined, before: safeFile(s.before), after: safeFile(s.after), width: Number(s.width) || undefined,
-      lens: s.lens === 'changed' || s.lens === 'affected' ? s.lens : undefined, part: s.part ? String(s.part).slice(0, 80) : undefined, viewport: s.viewport ? String(s.viewport).slice(0, 20) : undefined,
+      lens: s.lens === 'changed' || s.lens === 'affected' ? s.lens : undefined, part: s.part ? String(s.part).slice(0, 80) : undefined, viewport: s.viewport ? String(s.viewport).slice(0, 20) : undefined, marks: marksOf(s.marks),
     }))
     out.push({ ...m, sha, source: m.source === 'storybook' ? 'storybook' : 'app', summary: m.summary ? String(m.summary).slice(0, 2000) : undefined, impact: impactOf(m.impact), shots })
   }
@@ -135,6 +150,29 @@ export async function imagePath(prId: string, sha: string, file: string): Promis
   return (await stat(p).then((s) => s.isFile(), () => false)) ? p : undefined
 }
 export const hasSet = (prId: string, sha: string) => existsSync(join(shotsDir(prId, sha), 'manifest.json'))
+
+// --- a repository's baseline: its Storybook set up, and the first shot of every component -----------------------------
+/** The id a repository's baseline is kept under, beside its PRs' captures (visuals/repo-<owner>-<repo>/<sha>). */
+export const baselineId = (repo: string) => `repo:${repo}`
+
+/**
+ * Set a repository's Storybook up (as a PR, through the Storybook skills) and capture its first shot: every story it
+ * wrote, at phone and laptop, the repository's baseline in Design. For a repository whose captures came from the
+ * running app: once it has stories, every PR is captured from them, component by component.
+ */
+export function setupPrompt(p: { repo: string; dir: string; said?: string }): string {
+  return `Give ${p.repo} a Storybook, as a pull request, and take its first shot.${p.said ? `\n\nWhat I asked for: ${p.said}` : ''}
+
+1. Work in a new worktree on a branch \`storybook/setup\` off the up-to-date default branch (git worktree add, never your checkout's own branch).
+2. Set Storybook up the way the storybook-architecture skill says: one per UI package (composed at the root when there are several), the layers, the shared decorators for every provider, one named viewport set, data mocked at the network, the a11y addon and the test runner.
+3. Write stories the way the storybook-stories skill says: every component the app's screens are built from, primitives first, each as its state matrix composed from its parts' stories, and one screen story per app with mocked data. Many components: cover every component of the main screens, and list the rest in the PR.
+4. Write the docs the way the design-docs skill says: the foundations pages generated from the tokens, and a page for each primitive.
+5. Prove it as the skills say (storybook build and the test runner pass for each package). Commit (conventional commits), push, and open the PR: title "Storybook: the design system, in stories"; its body says what each layer holds, how to add a story, and what is covered and what isn't yet.
+6. The first shot: screenshot every story you wrote (#storybook-root of its iframe page, with Playwright) at the phone and laptop viewports, into ${p.dir}/<the full sha of your last commit>/ (make it): after-<story-id>-<viewport>.png (letters, digits, dots and dashes only; there is no before: this is the baseline), and manifest.json:
+{"head":"<that sha>","at":"<now, ISO>","source":"storybook","summary":"<what the design system holds, in two or three sentences>","impact":{"changed":[{"name":"<Component>","file":"<path>","kind":"component"|"layout"|"screen"}],"affected":[]},"shots":[{"name":"<Component> · <story>","lens":"changed","part":"<Component>","viewport":"<viewport name>","width":<viewport width>,"note":"<the state it shows>","after":"after-<story-id>-<viewport>.png"}]}
+At most 80 shots: each component's default story at both viewports first, then its other states at laptop.
+End with the PR's address on its own line: PR <url>.`
+}
 
 // --- what the agent is asked ------------------------------------------------------------------------------------------
 export function capturePrompt(p: { pr: { id: string; number: number; title: string; base: string; head: string; headSha: string }; out: string; files: string[]; said?: string; again?: boolean }): string {
@@ -153,6 +191,7 @@ First, the impact (read the after worktree's code, not guesses):
 Then capture through both lenses:
 - Changed, in focus: each changed component alone, its whole frame and nothing around it: its story, or on the running app the element itself (Playwright locator screenshot with 16px of padding), before and after, in each state the change touches.
 - Affected, for context: the layouts and screens that show a changed component, whole, so its fit in the page shows (the most used first); affected components only when the change alters them visibly.
+- Marks: on every affected shot, mark where each changed component sits (Playwright boundingBox of its element, as percent of the screenshot's width and height, on the side it is on); on a changed shot, mark the parts inside it that the change alters most, when there are some. Each mark names its part and says in a few words what changed there.
 
 How:
 - The repository has Storybook (a .storybook folder, or @storybook in a package.json): capture the stories of the components it changes, each state the change touches. Build Storybook in each worktree and screenshot each story's iframe page (#storybook-root) with Playwright, at the viewports the story lists in parameters.capture.viewports, else the repo's viewport set's phone and laptop sizes (its .storybook/preview, named as the repo names them). Changed components without stories: write their state matrix with the storybook-stories skill in the after worktree only, never committed, and say in the summary which stories the PR should add.
@@ -163,6 +202,6 @@ ${p.said ? `\nWhat I asked for: ${p.said}\n` : ''}
 Save into ${p.out} (make it): the images as PNG, named like before-<name>-<viewport>.png and after-<name>-<viewport>.png (letters, digits, dots and dashes only), and manifest.json with the impact and one shot per capture and viewport:
 {"head":"${p.pr.headSha}","base":"<the base commit you used>","at":"<now, ISO>","source":"storybook" or "app","summary":"<two or three sentences: what changed visually>",
  "impact":{"changed":[{"name":"<Component>","file":"<path in the repo>","kind":"component"|"layout"|"screen"}],"affected":[{"name":"<Component>","file":"<path>","kind":"…","via":["<changed name>"],"depth":1}]},
- "shots":[{"name":"<Component or screen> · <state>","lens":"changed"|"affected","part":"<its name in the impact>","viewport":"<viewport name>","width":<viewport width>,"note":"<what to look at here>","before":"before-<name>-<viewport>.png","after":"after-<name>-<viewport>.png"}]}
+ "shots":[{"name":"<Component or screen> · <state>","lens":"changed"|"affected","part":"<its name in the impact>","viewport":"<viewport name>","width":<viewport width>,"note":"<what to look at here>","before":"before-<name>-<viewport>.png","after":"after-<name>-<viewport>.png","marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<changed name>","label":"<what changed there>","side":"after"}]}]}
 At most 30 shots: every changed component in focus first, then the affected layouts and screens that matter most. End with the summary in one short paragraph.`
 }

@@ -1,10 +1,10 @@
 // Design: what the pull requests look like, before and after, without opening them. Built like Plans: the list on the
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
-import { ArrowUp, ChevronRight, Crosshair, ExternalLink, Images, LoaderCircle, Palette, Square, Camera, Tag } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowUp, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutTemplate, LoaderCircle, Palette, Square, Camera, Tag, Wand } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
-import type { Kind, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
+import type { Kind, Mark, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'
 import { api, enc } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
@@ -21,10 +21,12 @@ export type VisualsPr = {
   mode: VisualsMode; override: Override; ui?: UiCheck; wanted: boolean; task?: VisualsTask; tickets: string[]
 }
 type ListPr = VisualsPr & { latest?: { sha: string; at: string; summary?: string; count: number; thumb?: string } }
-type List = { joined: boolean; prs: ListPr[]; tickets: { id: string; title: string; labels: string[]; url: string; prs: string[] }[] }
+type RepoRow = { repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; baseline?: { sha: string; at: string; count: number; thumb?: string }; fromApp: boolean }
+type List = { joined: boolean; repos: RepoRow[]; prs: ListPr[]; tickets: { id: string; title: string; labels: string[]; url: string; prs: string[] }[] }
 type Full = VisualsPr & { sets: VisualSet[] }
 
 /** A screenshot's address (served per PR, commit and file name). */
+const baselineKey = (repo: string) => `repo:${repo}`
 export const shotUrl = (pr: string, sha: string, f: string) => `/api/visuals/image?pr=${encodeURIComponent(pr)}&sha=${sha}&f=${encodeURIComponent(f)}`
 const busy = (t?: VisualsTask) => t?.state === 'queued' || t?.state === 'running'
 const modeWord: Record<VisualsMode, string> = { off: 'off', auto: 'when it changes what people see', always: 'always' }
@@ -48,6 +50,7 @@ export function DesignWorkspace({ selected, onSelect, feed, toast }: { selected?
   const prs = list.data?.prs ?? [], tickets = list.data?.tickets ?? []
   const current = selected ?? prs[0]?.id
   const ticket = current?.startsWith('ticket:') ? tickets.find((t) => `ticket:${t.id}` === current) : undefined
+  const repos = list.data?.repos ?? []
   return (
     <div className="flex h-full min-h-0">
       <nav aria-label="Design" className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex">
@@ -69,6 +72,18 @@ export function DesignWorkspace({ selected, onSelect, feed, toast }: { selected?
             </button>
           )
         })}
+        {repos.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Baselines</p>}
+        {repos.map((r) => (
+          <button key={r.repo} onClick={() => onSelect(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel' : 'hover:bg-hover'}`}>
+            <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
+              {r.baseline?.thumb ? <img src={shotUrl(baselineKey(r.repo), r.baseline.sha, r.baseline.thumb)} alt="" loading="lazy" className="size-full object-cover object-top" /> : <LayoutTemplate className="size-4 text-fg-4" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1 text-small font-medium text-fg-1">{busy(r.task) && <LoaderCircle className="size-3 shrink-0 animate-spin text-run" />}<span className="truncate">{r.repo.split('/')[1]}</span></span>
+              <span className={`block truncate text-micro ${r.baseline ? 'text-fg-3' : 'text-wait-text'}`}>{r.baseline ? `${r.baseline.count} components in stories` : busy(r.task) ? 'Setting its Storybook up…' : 'No Storybook yet'}</span>
+            </span>
+          </button>
+        ))}
         {tickets.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Tickets</p>}
         {tickets.map((t) => (
           <button key={t.id} onClick={() => onSelect(`ticket:${t.id}`)} className={`rounded-lg px-2.5 py-1.5 text-left ${current === `ticket:${t.id}` ? 'sel' : 'hover:bg-hover'}`}>
@@ -78,7 +93,8 @@ export function DesignWorkspace({ selected, onSelect, feed, toast }: { selected?
         ))}
       </nav>
       <div className="min-w-0 flex-1">
-        {ticket ? <TicketVisuals t={ticket} prs={prs} onSelect={onSelect} />
+        {current?.startsWith('repo:') ? <Baseline key={current} repo={current.slice(5)} feed={feed} toast={toast} />
+          : ticket ? <TicketVisuals t={ticket} prs={prs} onSelect={onSelect} />
           : current && !current.startsWith('ticket:') ? <VisualsView key={current} id={current} feed={feed} toast={toast} />
           : <Empty />}
       </div>
@@ -92,6 +108,64 @@ function Empty() {
       <Palette className="size-6 text-accent-text" />
       <p className="text-body font-medium text-fg-1">What your pull requests look like, before and after</p>
       <p className="max-w-md text-small text-fg-3">Turn visuals on for a repository (Settings → Repositories), and each PR that changes what people see gets its screens captured: from its Storybook stories, else from the running app.</p>
+    </div>
+  )
+}
+
+/**
+ * A repository's baseline: its Storybook set up (as a PR, by an agent through the Storybook skills) and the first shot
+ * of every component, read through the same lenses. Before that, the way to set it up; the conversation beside it.
+ */
+function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast: Toast }) {
+  const path = `/visuals/repos/${repo}`
+  const [ticking, setTicking] = useState(false)
+  const q = useApi<{ repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; sets: VisualSet[] }>(path, { refetchInterval: ticking ? 3000 : 30_000 })
+  const b = q.data, t = b?.task
+  useEffect(() => setTicking(busy(t)), [t?.state])
+  const post = (body: object, msg?: string) => api(path, body).then(() => { void refresh(path); void refresh('/visuals'); if (msg) toast(msg) }, (e: Error) => toast(e.message, 'error'))
+  if (!b) return <div className="p-4"><Skeleton rows={6} /></div>
+  const set = b.sets[0]
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-5xl space-y-3 p-4">
+          <header className="card px-4 py-3.5">
+            <div className="flex flex-wrap items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-meta text-fg-3">{repo} · baseline</p>
+                <h2 className="text-title font-semibold text-fg-1">{set ? 'Every component, as it looks today' : 'No Storybook yet'}</h2>
+                <p className={`mt-0.5 text-meta ${t?.state === 'failed' ? 'text-wait-text' : busy(t) ? 'text-run-text' : 'text-fg-3'}`}>
+                  {t?.state === 'running' ? `Setting its Storybook up${t.machine ? ` on ${t.machine}` : ''}: layers, stories, docs, then the first shot…`
+                    : t?.state === 'queued' ? 'Waiting for a machine with its checkout'
+                    : t?.state === 'failed' ? `It didn't finish: ${t.error ?? 'it failed'}`
+                    : set ? `${set.shots.length} shots, ${new Date(set.at).toLocaleString()}`
+                    : 'Its PRs are captured from the running app, screen by screen. With stories, each component is captured on its own, in each of its states.'}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
+                {busy(t)
+                  ? <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
+                  : <button onClick={() => post({ setup: true }, set ? 'Taking the baseline again' : 'Setting its Storybook up')} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Wand className="size-3.5" />{set ? 'Shoot again' : 'Set up Storybook'}</button>}
+              </div>
+            </div>
+          </header>
+          {set ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} /> : !busy(t) && (
+            <div className="card space-y-2 px-4 py-4 text-small text-fg-2">
+              <p className="font-medium text-fg-1">What Set up Storybook does, as one pull request</p>
+              <ol className="list-decimal space-y-1 pl-5 text-fg-3">
+                <li>Storybook per UI package, in layers: foundations, primitives, components, patterns, screens.</li>
+                <li>Shared decorators for every provider, one named viewport set, data mocked at the network.</li>
+                <li>Each component's stories as its full state matrix; one screen story per app.</li>
+                <li>Design docs: foundations from the tokens, a page per primitive.</li>
+                <li>The first shot: every story at phone and laptop, here.</li>
+              </ol>
+              <p className="text-meta text-fg-4">Say in the conversation what to start with, or what to leave out.</p>
+            </div>
+          )}
+        </div>
+      </div>
+      <Conversation id={baselineKey(repo)} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast} />
     </div>
   )
 }
@@ -159,6 +233,13 @@ export function VisualsView({ id, feed, toast }: { id: string; feed: Activity[];
             <Tabs size="sm" label="Capture" value={set!.sha} onChange={(x) => setSha(x)}
                   options={p.sets.slice(0, 6).map((x) => ({ id: x.sha, label: `${x.sha.slice(0, 7)}${x.sha === p.headSha ? ' · latest' : ''}`, title: new Date(x.at).toLocaleString() }))} />
           )}
+          {set?.source === 'app' && (
+            <a href={`#${encodeURIComponent(baselineKey(p.repo))}`} className="card flex items-center gap-3 px-4 py-3 text-small transition-colors hover:bg-hover">
+              <Wand className="size-4 shrink-0 text-accent-text" />
+              <span className="min-w-0 flex-1 text-fg-2"><b className="font-medium text-fg-1">Captured from the running app.</b> Give {p.repo.split('/')[1]} a Storybook and every component is captured on its own, in each state, from then on.</span>
+              <span className="shrink-0 font-medium text-accent-text">Set it up</span>
+            </a>
+          )}
           {set ? <Impact key={set.sha} pr={p.id} set={set} /> : (
             <div className="card flex flex-col items-center gap-2 px-4 py-10 text-center">
               <Images className="size-6 text-fg-4" />
@@ -172,18 +253,81 @@ export function VisualsView({ id, feed, toast }: { id: string; feed: Activity[];
   )
 }
 
-/** One capture's before and after, side by side (one alone when it is new or gone), each opening full size. */
-function ShotPair({ pr, sha, shot, compact }: { pr: string; sha: string; shot: Shot; compact?: boolean }) {
+/** The marks layer: shown or not, for this browser (the eye in a capture's lens bar). */
+const MARKS_KEY = 'design:marks'
+function useMarks(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => { try { return localStorage.getItem(MARKS_KEY) !== 'off' } catch { return true } })
+  return [on, (v) => { setOn(v); try { localStorage.setItem(MARKS_KEY, v ? 'on' : 'off') } catch { /* private window */ } }]
+}
+
+/**
+ * An image with its annotations: each changed part outlined in the accent, numbered, its words on hover, the focused
+ * one lit and the others quiet. A mark is a way in: clicking it focuses that changed component.
+ */
+function Marked({ src, alt, marks, numbers, focus, onPart, compact }: {
+  src: string; alt: string; marks: Mark[]; numbers: Map<string, number>; focus?: string; onPart?: (part: string) => void; compact?: boolean
+}) {
+  return (
+    <span className="relative block">
+      <img src={src} alt={alt} loading="lazy" className={`block w-full ${compact ? 'max-h-72 object-contain object-left-top' : ''}`} />
+      {marks.map((m, i) => {
+        const n = m.part ? numbers.get(m.part) : undefined, lit = !focus || focus === m.part
+        return (
+          <button key={i} type="button" onClick={(e) => { e.preventDefault(); if (m.part) onPart?.(m.part) }} title={[m.part, m.label].filter(Boolean).join(': ')}
+                  style={{ left: `${m.x}%`, top: `${m.y}%`, width: `${m.w}%`, height: `${m.h}%`, animationDelay: `${i * 60}ms` }}
+                  className={`group/mark absolute animate-[mark-in_320ms_var(--ease-spring)_both] rounded-ctl ring-2 transition-[box-shadow,background-color,opacity] duration-200 ${lit ? 'bg-accent/8 ring-accent shadow-[0_0_0_4px_var(--accent-soft)]' : 'opacity-40 ring-accent/50'} hover:bg-accent/14 hover:opacity-100`}>
+            <span className="absolute -left-2.5 -top-2.5 flex size-5 items-center justify-center rounded-full bg-accent text-micro font-semibold text-on-accent shadow-e1 ring-2 ring-surface-1">{n ?? i + 1}</span>
+            {m.label && <span className="pointer-events-none absolute left-0 top-full z-10 mt-1.5 hidden w-max max-w-56 rounded-ctl bg-surface-2 px-2 py-1 text-left text-micro text-fg-1 shadow-e2 ring-1 ring-line group-hover/mark:block"><b className="font-semibold">{m.part}</b>{m.part ? ' · ' : ''}{m.label}</span>}
+          </button>
+        )
+      })}
+    </span>
+  )
+}
+
+/** One capture's before and after, side by side (one alone when it is new or gone), each opening full size, its marks over it. */
+function ShotPair({ pr, sha, shot, compact, marks = true, numbers = new Map(), focus, onPart }: {
+  pr: string; sha: string; shot: Shot; compact?: boolean; marks?: boolean; numbers?: Map<string, number>; focus?: string; onPart?: (part: string) => void
+}) {
   return (
     <div className={`grid gap-px bg-line ${shot.before && shot.after ? 'sm:grid-cols-2' : ''}`}>
       {(['before', 'after'] as const).map((side) => shot[side] ? (
         <figure key={side} className="bg-surface-1">
-          <figcaption className="px-3 pt-2 label text-fg-4">{side === 'before' ? 'Before' : shot.before ? 'After' : 'New'}{shot.viewport ? ` · ${shot.viewport}` : ''}</figcaption>
-          <a href={shotUrl(pr, sha, shot[side]!)} target="_blank" rel="noreferrer" title="Open full size">
-            <img src={shotUrl(pr, sha, shot[side]!)} alt={`${shot.name}, ${side}`} loading="lazy" className={`block w-full p-2 ${compact ? 'max-h-72 object-contain' : ''}`} />
-          </a>
+          <figcaption className="flex items-center gap-2 px-3 pt-2 label text-fg-4">{side === 'before' ? 'Before' : shot.before ? 'After' : 'New'}{shot.viewport ? <span className="font-normal normal-case">{shot.viewport}{shot.width ? ` · ${shot.width}px` : ''}</span> : null}
+            <a href={shotUrl(pr, sha, shot[side]!)} target="_blank" rel="noreferrer" title="Open full size" className="ml-auto text-fg-4 hover:text-fg-1"><ExternalLink className="size-3" /></a>
+          </figcaption>
+          <div className="p-2">
+            <Marked src={shotUrl(pr, sha, shot[side]!)} alt={`${shot.name}, ${side}`} compact={compact} numbers={numbers} focus={focus} onPart={onPart}
+                    marks={marks ? (shot.marks ?? []).filter((m) => (m.side ?? 'after') === side) : []} />
+          </div>
         </figure>
       ) : null)}
+    </div>
+  )
+}
+
+/**
+ * The lens switch: one accent pill that glides to the lens you pick (the rail's own motion), each lens with its count.
+ * Keys ← and → move between them.
+ */
+function LensSwitch<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; count?: number; icon: typeof Crosshair }[] }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [pill, setPill] = useState<{ left: number; width: number }>()
+  useLayoutEffect(() => {
+    const el = box.current?.querySelector<HTMLElement>(`[data-lens="${value}"]`)
+    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth })
+  }, [value, options.length])
+  const move = (d: number) => { const i = options.findIndex((o) => o.id === value); const n = options[(i + d + options.length) % options.length]; if (n) onChange(n.id) }
+  return (
+    <div ref={box} role="tablist" aria-label="Lens" onKeyDown={(e) => { if (e.key === 'ArrowRight') move(1); if (e.key === 'ArrowLeft') move(-1) }}
+         className="relative inline-flex rounded-panel bg-fill/70 p-1 ring-1 ring-line">
+      <span aria-hidden className="sel pointer-events-none absolute inset-y-1 rounded-ctl shadow-e1 transition-[left,width,opacity] duration-300 ease-[var(--ease-spring)]" style={{ left: pill?.left, width: pill?.width, opacity: pill ? 1 : 0 }} />
+      {options.map((o) => (
+        <button key={o.id} data-lens={o.id} role="tab" aria-selected={value === o.id} tabIndex={value === o.id ? 0 : -1} onClick={() => onChange(o.id)}
+                className={`relative z-10 inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-small font-medium transition-colors duration-200 ${value === o.id ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}>
+          <o.icon className="size-3.5" />{o.label}{o.count !== undefined && <span className={`tabular-nums text-micro ${value === o.id ? 'text-accent-text/80' : 'text-fg-4'}`}>{o.count}</span>}
+        </button>
+      ))}
     </div>
   )
 }
@@ -217,21 +361,34 @@ const away = (d: number) => (d <= 1 ? 'uses it directly' : `${d} imports away`)
 function Impact({ pr, set }: { pr: string; set: VisualSet }) {
   const im = set.impact
   const lensed = !!im || set.shots.some((x) => x.lens)
-  const [lens, setLens] = useState<'changed' | 'affected' | 'all'>(lensed ? 'changed' : 'all')
+  type Lens = 'changed' | 'affected' | 'all'
+  const ORDER: Lens[] = ['changed', 'affected', 'all']
+  const [lens, setLensNow] = useState<Lens>(lensed ? 'changed' : 'all')
+  const [from, setFrom] = useState(1) // the side the next lens slides in from
+  const setLens = (l: Lens) => { setFrom(ORDER.indexOf(l) >= ORDER.indexOf(lens) ? 1 : -1); setLensNow(l) }
   const [focus, setFocus] = useState<string>()
+  const [marks, setMarks] = useMarks()
   const changed = im?.changed ?? [...new Set(set.shots.filter((x) => x.lens === 'changed' && x.part).map((x) => x.part!))].map((name) => ({ name, file: '', kind: 'component' as Kind }))
   const affected = im?.affected ?? []
   const shotsOf = (name: string, l: 'changed' | 'affected') => set.shots.filter((x) => x.part === name && (x.lens ?? 'affected') === l)
   const usedIn = (name: string) => affected.filter((a) => a.via.includes(name))
   const shown = focus ? usedIn(focus) : affected
+  // every changed component keeps one number, on every image and in every list: the same 3 is the same component
+  const numbers = new Map(changed.map((c, i) => [c.name, i + 1]))
+  const toPart = (part: string) => { setFocus(part); if (lens === 'changed') setLens('affected') }
+  const marked = set.shots.some((x) => x.marks?.length)
   return (
     <div className="space-y-3">
       {set.summary && <div className="card px-4 py-3 text-small text-fg-2"><Md text={set.summary} /></div>}
       <div className="flex flex-wrap items-center gap-2">
-        <Tabs size="sm" label="Lens" value={lens} onChange={(x) => setLens(x)}
-              options={[...(lensed ? [{ id: 'changed' as const, label: `Changed · ${changed.length}` }, { id: 'affected' as const, label: `Affected · ${affected.length}` }] : []), { id: 'all' as const, label: `All captures · ${set.shots.length}` }]} />
+        <LensSwitch value={lens} onChange={setLens}
+                    options={[...(lensed ? [{ id: 'changed' as const, label: 'Changed', count: changed.length, icon: Crosshair }, { id: 'affected' as const, label: 'Affected', count: affected.length, icon: LayoutTemplate }] : []), { id: 'all' as const, label: 'All', count: set.shots.length, icon: Images }]} />
+        {marked && <button onClick={() => setMarks(!marks)} aria-pressed={marks} title={marks ? 'Hide the annotations' : 'Show where each change sits'}
+                           className={`inline-flex items-center gap-1.5 rounded-ctl px-2 py-1 text-meta font-medium transition-colors ${marks ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}>{marks ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}Marks</button>}
         <span className="ml-auto text-meta text-fg-4">from {set.source === 'storybook' ? 'its Storybook stories' : 'the running app'} · {new Date(set.at).toLocaleString()}</span>
       </div>
+      {/* each lens slides in from its side; the key restarts the motion on every switch */}
+      <div key={lens} style={{ '--lens-from': from } as CSSProperties} className="animate-[lens-in_280ms_var(--ease-snappy)_both]">
 
       {lens === 'changed' && (
         <div className="grid gap-3 xl:grid-cols-2">
@@ -241,7 +398,7 @@ function Impact({ pr, set }: { pr: string; set: VisualSet }) {
             return (
               <section key={c.name} className="card overflow-hidden">
                 <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
-                  <Crosshair className="size-3.5 text-accent-text" />
+                  <span className="flex size-5 items-center justify-center rounded-full bg-accent text-micro font-semibold text-on-accent">{numbers.get(c.name)}</span>
                   <h3 className="text-small font-semibold text-fg-1">{c.name}</h3>
                   <KindChip kind={c.kind} />
                   {users.length > 0 && <button onClick={() => { setFocus(c.name); setLens('affected') }} className="ml-auto text-meta font-medium text-accent-text hover:underline">Used in {users.length}</button>}
@@ -250,7 +407,7 @@ function Impact({ pr, set }: { pr: string; set: VisualSet }) {
                 {shots.length ? shots.map((x) => (
                   <div key={`${x.name}:${x.viewport ?? ''}`}>
                     {(x.note || shots.length > 1) && <p className="px-4 pt-2 text-meta text-fg-3"><span className="font-medium text-fg-2">{x.name}</span>{x.note ? ` · ${x.note}` : ''}</p>}
-                    <ShotPair pr={pr} sha={set.sha} shot={x} compact />
+                    <ShotPair pr={pr} sha={set.sha} shot={x} compact marks={marks} numbers={numbers} onPart={toPart} />
                   </div>
                 )) : <p className="px-4 py-3 text-meta text-fg-3">Not captured on its own: see where it shows under Affected.</p>}
               </section>
@@ -266,7 +423,7 @@ function Impact({ pr, set }: { pr: string; set: VisualSet }) {
             <button onClick={() => setFocus(undefined)} aria-pressed={!focus} className={`rounded-full px-2 py-0.5 text-meta ring-1 ${!focus ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line hover:text-fg-1'}`}>Any change</button>
             {changed.map((c) => (
               <button key={c.name} onClick={() => setFocus(focus === c.name ? undefined : c.name)} aria-pressed={focus === c.name}
-                      className={`rounded-full px-2 py-0.5 text-meta ring-1 ${focus === c.name ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line hover:text-fg-1'}`}>{c.name}<span className="ml-1 text-fg-4">{usedIn(c.name).length}</span></button>
+                      className={`inline-flex items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-2 text-meta ring-1 transition-colors ${focus === c.name ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line hover:text-fg-1'}`}><span className={`flex size-4 items-center justify-center rounded-full text-micro font-semibold ${focus === c.name ? 'bg-accent text-on-accent' : 'bg-fill text-fg-2'}`}>{numbers.get(c.name)}</span>{c.name}<span className="text-fg-4">{usedIn(c.name).length}</span></button>
             ))}
           </div>
           {!shown.length && <p className="card px-4 py-3 text-small text-fg-3">{focus ? `Nothing else uses ${focus}.` : 'The changes stay inside the changed components: nothing else uses them.'}</p>}
@@ -284,14 +441,14 @@ function Impact({ pr, set }: { pr: string; set: VisualSet }) {
                         <ChevronRight className="size-3.5 text-fg-4 transition-transform group-open/aff:rotate-90" />
                         <span className="text-small font-medium text-fg-1">{a.name}</span>
                         <span className="text-meta text-fg-3">{away(a.depth)}</span>
-                        <span className="flex flex-wrap gap-1">{a.via.map((v) => <span key={v} className={`rounded-full px-1.5 py-px text-micro ring-1 ${v === focus ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line'}`}>{v}</span>)}</span>
+                        <span className="flex flex-wrap gap-1">{a.via.map((v) => <span key={v} className={`inline-flex items-center gap-1 rounded-full py-px pl-0.5 pr-1.5 text-micro ring-1 ${v === focus ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line'}`}><span className={`flex size-3.5 items-center justify-center rounded-full font-semibold ${v === focus ? 'bg-accent text-on-accent' : 'bg-fill text-fg-2'}`}>{numbers.get(v)}</span>{v}</span>)}</span>
                         <span className="ml-auto flex items-center gap-1 text-micro text-fg-4">{shots.length ? <><Images className="size-3" />{shots.length}</> : 'not captured'}</span>
                         <span className="w-full truncate font-mono text-micro text-fg-4" title={a.file}>{a.file}</span>
                       </summary>
                       {shots.map((x) => (
                         <div key={`${x.name}:${x.viewport ?? ''}`} className="border-t border-line">
                           {x.note && <p className="px-4 pt-2 text-meta text-fg-3">{x.note}</p>}
-                          <ShotPair pr={pr} sha={set.sha} shot={x} />
+                          <ShotPair pr={pr} sha={set.sha} shot={x} marks={marks} numbers={numbers} focus={focus} onPart={setFocus} />
                         </div>
                       ))}
                       {!shots.length && <p className="border-t border-line px-4 py-2.5 text-meta text-fg-3">Not captured. Ask for it in the conversation: “capture {a.name}”.</p>}
@@ -305,6 +462,7 @@ function Impact({ pr, set }: { pr: string; set: VisualSet }) {
       )}
 
       {lens === 'all' && <Gallery pr={pr} set={set} />}
+      </div>
     </div>
   )
 }

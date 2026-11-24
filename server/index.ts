@@ -16,7 +16,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { live, stale } from './live.ts'
-import { DESIGN_LABEL, imagePath, modeOf, setsOf, uiChange, VISUALS_MODES, wanted, type VisualsMode } from './visuals.ts'
+import { baselineId, DESIGN_LABEL, imagePath, modeOf, setsOf, uiChange, VISUALS_MODES, wanted, type VisualsMode } from './visuals.ts'
 import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
@@ -49,7 +49,7 @@ import { accountToken, accountTokenAt, applyShared, local as localKeys, SHARED_K
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { cancelVisuals, enqueueVisuals } from './runner.ts'
+import { cancelSetup, cancelVisuals, enqueueSetup, enqueueVisuals } from './runner.ts'
 import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { git } from './atlas.ts'
@@ -2482,7 +2482,15 @@ app.get('/visuals', async (c) => {
   const list = await Promise.all(prs.map(visualsView))
   const tickets = execBoard.tickets.filter((t) => (t.labels ?? []).some((l) => DESIGN_LABEL.test(l.trim())) || list.some((v) => v.tickets.includes(t.id)))
     .map((t) => ({ id: t.id, title: t.title, labels: t.labels ?? [], url: t.url, prs: list.filter((v) => v.tickets.includes(t.id)).map((v) => v.id) }))
-  return c.json({ joined: designJoined(), prs: list.map(({ sets, ...v }) => ({ ...v, latest: sets[0] && { sha: sets[0].sha, at: sets[0].at, summary: sets[0].summary, count: sets[0].shots.length, thumb: sets[0].shots.find((s) => s.after)?.after } })), tickets })
+  // the repositories Design looks at: their baseline (the first shot of every component, once their Storybook is set
+  // up) and whether their captures still come from the running app (no stories yet: Set up Storybook)
+  const repoIds = [...new Set([...Object.keys(config.visuals?.repos ?? {}).filter((r) => modeOf(r) !== 'off'), ...Object.keys(config.repos).filter((r) => modeOf(r) !== 'off'), ...list.map((v) => v.repo), ...Object.keys(state.visualsSetup ?? {})])].filter((r) => config.repos[r])
+  const repoList = await Promise.all(repoIds.map(async (r) => {
+    const base = await setsOf(baselineId(r)), its = list.filter((v) => v.repo === r)
+    return { repo: r, mode: modeOf(r), task: state.visualsSetup?.[r], baseline: base[0] && { sha: base[0].sha, at: base[0].at, count: base[0].shots.length, thumb: base[0].shots.find((x) => x.after)?.after },
+      fromApp: !base.length && its.some((v) => v.sets[0]?.source === 'app') }
+  }))
+  return c.json({ joined: designJoined(), repos: repoList, prs: list.map(({ sets, ...v }) => ({ ...v, latest: sets[0] && { sha: sets[0].sha, at: sets[0].at, summary: sets[0].summary, count: sets[0].shots.length, thumb: sets[0].shots.find((s) => s.after)?.after } })), tickets })
 })
 app.get('/prs/:id/visuals', async (c) => {
   const p = state.prs[decodeURIComponent(c.req.param('id'))]
@@ -2507,6 +2515,24 @@ app.post('/prs/:id/visuals', async (c) => {
   stale('/visuals')
   return c.json({ ...(await visualsView(p)), how })
 })
+// a repository's baseline: its Storybook set up as a PR, and the first shot of every component (setupPrompt)
+app.get('/visuals/repos/:owner/:name', async (c) => {
+  const repo = `${c.req.param('owner')}/${c.req.param('name')}`
+  if (!config.repos[repo]) return c.json({ error: 'Not a watched repository' }, 404)
+  return c.json({ repo, mode: modeOf(repo), task: state.visualsSetup?.[repo], sets: await setsOf(baselineId(repo)) })
+})
+app.post('/visuals/repos/:owner/:name', async (c) => {
+  const repo = `${c.req.param('owner')}/${c.req.param('name')}`
+  if (!config.repos[repo]) return c.json({ error: 'Not a watched repository' }, 404)
+  const b = await c.req.json() as { setup?: boolean; say?: string; cancel?: boolean }
+  if (b.cancel) cancelSetup(repo)
+  const said = typeof b.say === 'string' ? b.say.trim().slice(0, 4000) : ''
+  const how = b.setup || said ? enqueueSetup(repo, said || undefined) : undefined
+  if (how === 'no') return c.json({ error: `${repo} has no checkout set up` }, 400)
+  stale('/visuals')
+  return c.json({ repo, task: state.visualsSetup?.[repo], how })
+})
+app.get('/visuals/setup/:owner/:name/activity', async (c) => c.json(await loadActivity(`setup:${c.req.param('owner')}/${c.req.param('name')}`)))
 app.get('/visuals/:id/activity', async (c) => c.json(await loadActivity(`visuals:${decodeURIComponent(c.req.param('id'))}`)))
 // one screenshot, by PR, commit and file name (nothing else under the visuals folder is reachable)
 app.get('/visuals/image', async (c) => {

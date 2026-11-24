@@ -94,3 +94,28 @@ test('the capture maps the impact first, then shoots changed components in focus
   assert.match(p, /First, the impact/); assert.match(p, /up to three imports away/); assert.match(p, /Changed, in focus/); assert.match(p, /Affected, for context/)
   assert.match(p, /locator screenshot/); assert.match(p, /"lens":"changed"\|"affected"/); assert.match(p, /"impact":\{"changed"/)
 })
+
+test('annotations are kept to boxes inside the image, a dozen at most, each naming its part', async () => {
+  const { marksOf } = await import('./visuals.ts')
+  const m = marksOf([
+    { x: 10, y: 20, w: 30, h: 10, part: 'LevelChip', label: 'chips instead of text', side: 'after' },
+    { x: 90, y: 95, w: 40, h: 40, part: 'Rail' }, // runs off the edge: cut to the image
+    { x: 50, y: 50, w: 0, h: 10 }, // nothing to outline
+    { x: 'a', y: null, w: 5, h: 5, side: 'sideways' },
+  ])!
+  assert.deepEqual(m[0], { x: 10, y: 20, w: 30, h: 10, part: 'LevelChip', label: 'chips instead of text', side: 'after' })
+  assert.deepEqual(m[1], { x: 90, y: 95, w: 10, h: 5, part: 'Rail' })
+  assert.deepEqual(m[2], { x: 0, y: 0, w: 5, h: 5 }) // the side it named isn't one: dropped
+  assert.equal(m.length, 3)
+  assert.equal(marksOf('nope'), undefined)
+  assert.equal(marksOf(Array.from({ length: 30 }, () => ({ x: 1, y: 1, w: 5, h: 5 })))!.length, 12)
+})
+
+test('setting a Storybook up goes through the three skills, as a PR, and ends with the first shot of every story', async () => {
+  const { setupPrompt, baselineId, slugOf } = await import('./visuals.ts')
+  const p = setupPrompt({ repo: 'ylkhayat/elbuffeh', dir: '/s/visuals/repo-ylkhayat-elbuffeh', said: 'start with rumanna' })
+  for (const skill of ['storybook-architecture', 'storybook-stories', 'design-docs']) assert.match(p, new RegExp(`${skill} skill`))
+  assert.match(p, /storybook\/setup/); assert.match(p, /open the PR/); assert.match(p, /there is no before: this is the baseline/)
+  assert.match(p, /start with rumanna/); assert.match(p, /PR <url>/)
+  assert.equal(slugOf(baselineId('ylkhayat/elbuffeh')), 'repo-ylkhayat-elbuffeh')
+})
