@@ -49,14 +49,19 @@ export function toTicket(it: SearchItem, repo: string, key: string, prs: { repo:
   }
 }
 
-/** Your open issues in the watched repos, one search for all of them. */
+/**
+ * Your open issues in the watched repos, one search for all of them. `own`: the repositories you own yourself, where an
+ * issue nobody is assigned to is yours too (a plan's issues, your own notes), so those come along as well.
+ */
 export async function myIssues(
   repos: string[], taken: (k: string) => boolean, prs: Parameters<typeof toTicket>[3],
-  search: (q: string) => Promise<{ items: SearchItem[] }>,
+  search: (q: string) => Promise<{ items: SearchItem[] }>, own: string[] = [],
 ): Promise<Ticket[]> {
   if (!repos.length) return []
   const q = `is:issue is:open assignee:@me ${repos.map((r) => `repo:${r}`).join(' ')}`
-  const { items } = await search(q)
+  const mine = own.filter((r) => repos.includes(r))
+  const [a, b] = await Promise.all([search(q), mine.length ? search(`is:issue is:open no:assignee ${mine.map((r) => `repo:${r}`).join(' ')}`) : { items: [] as SearchItem[] }])
+  const items = [...a.items, ...b.items.filter((x) => !a.items.some((y) => y.html_url === x.html_url))]
   return items.filter((it) => !it.pull_request).flatMap((it) => {
     const repo = it.repository_url.split('/repos/')[1]
     return repo && repos.includes(repo) ? [toTicket(it, repo, keyFor(repo, taken), prs)] : []

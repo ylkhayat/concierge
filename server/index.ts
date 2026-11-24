@@ -1411,7 +1411,9 @@ async function pollTickets() {
     // and your GitHub issues in the repos you watch: for work not tracked in Linear
     const taken = new Set([...Object.keys(config.exec.repoByPrefix), ...linear.map((t) => t.id.split('-')[0])])
     const prs = Object.values(state.prs).map((p) => ({ repo: p.repo, number: p.number, url: p.url, title: p.title, body: p.body, head: p.head }))
-    const issues = await myIssues(Object.keys(config.repos), (k) => taken.has(k), prs, (q) => gh(`/search/issues?q=${encodeURIComponent(q)}&per_page=100`))
+    const login = (await getMe().catch(() => undefined))?.login?.toLowerCase()
+    const own = Object.keys(config.repos).filter((r) => !!login && r.split('/')[0].toLowerCase() === login) // your own repositories: their unassigned issues are yours
+    const issues = await myIssues(Object.keys(config.repos), (k) => taken.has(k), prs, (q) => gh(`/search/issues?q=${encodeURIComponent(q)}&per_page=100`), own)
       .catch((e: Error) => { console.error('github issues:', e.message); return execBoard.tickets.filter((t) => t.source === 'github') })
     const tickets = [...linear, ...issues]
     // PR health for tickets in review: red CI or open threads mean "tend"

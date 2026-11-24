@@ -18,3 +18,13 @@ test('issues become tickets under a repo key, linked to the PRs that close them'
 test('a key a Linear team has is not reused', () => {
   assert.equal(keyFor('me/aircore', (k) => k === 'AIRC'), 'AIRA')
 })
+
+test("in a repository you own, an issue nobody is assigned to is yours too; elsewhere only your assigned ones", async () => {
+  const asked: string[] = []
+  const got = await myIssues(['me/elbuffeh', 'acme/api'], () => false, [], async (q) => {
+    asked.push(q)
+    return q.includes('no:assignee') ? { items: [item(20, 'me/elbuffeh'), item(12, 'me/elbuffeh')] } : { items: [item(12, 'me/elbuffeh'), item(3, 'acme/api')] }
+  }, ['me/elbuffeh'])
+  assert.deepEqual(got.map((t) => t.url).sort(), ['https://github.com/acme/api/issues/3', 'https://github.com/me/elbuffeh/issues/12', 'https://github.com/me/elbuffeh/issues/20'])
+  assert.ok(asked.some((q) => q.includes('no:assignee') && q.includes('repo:me/elbuffeh') && !q.includes('acme/api')))
+})

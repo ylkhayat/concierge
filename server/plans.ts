@@ -22,7 +22,7 @@ import { impact } from '../src/planDiff.ts'
 import { config } from './config.ts'
 import { coverage, obligations } from './readiness.ts'
 import { complianceFor, orgs, planOrg, type Org } from './orgs.ts'
-import { ghSend } from './github.ts'
+import { getMe, ghSend } from './github.ts'
 export * from './planOps.ts'
 
 const all = () => (state.plans ??= {})
@@ -340,6 +340,7 @@ async function createOnGithub(p: Plan, o: Org) {
         const r = await ghSend<{ number: number; html_url: string }>('POST', `/repos/${repo}/milestones`, { title: n.title.slice(0, 250), description: [n.description, extra].filter(Boolean).join('\n\n').slice(0, 2000) || undefined, ...(n.target && { due_on: new Date(n.target).toISOString() }) })
         n.created = { id: String(r.number), url: r.html_url }; save()
       }
+      const me = (await getMe().catch(() => undefined))?.login // assigned to you: Ship lists them as your tickets
       const goal = p.nodes.find((n) => n.kind === 'goal')
       if (goal && !goal.created) await milestone(goal, p.brief)
       const milestoneOf = (n: PlanNode): number | undefined => { let x: PlanNode | undefined = n; for (let i = 0; x && i < 50; i++) { x = p.nodes.find((y) => y.id === x!.parent); if (x?.kind === 'milestone' && x.created) return Number(x.created.id) } return goal?.created ? Number(goal.created.id) : undefined }
@@ -347,7 +348,7 @@ async function createOnGithub(p: Plan, o: Org) {
         if (n.created || n.kind === 'goal') continue
         if (n.kind === 'milestone') { await milestone(n); continue }
         const body = [n.refine ? `**Needs refinement:** ${n.refine}` : '', n.description, n.estimate ? `Estimate: ${n.estimate} points` : ''].filter(Boolean).join('\n\n')
-        const r = await ghSend<{ id: number; number: number; html_url: string }>('POST', `/repos/${repo}/issues`, { title: n.title.slice(0, 250), ...(body && { body }), ...(milestoneOf(n) && { milestone: milestoneOf(n) }) })
+        const r = await ghSend<{ id: number; number: number; html_url: string }>('POST', `/repos/${repo}/issues`, { title: n.title.slice(0, 250), ...(body && { body }), ...(milestoneOf(n) && { milestone: milestoneOf(n) }), ...(me && { assignees: [me] }) })
         n.created = { id: String(r.id), identifier: `#${r.number}`, url: r.html_url }; save()
         // under its epic (or the ticket it splits): GitHub's sub-issues
         const up = p.nodes.find((y) => y.id === n.parent)
