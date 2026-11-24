@@ -1508,9 +1508,15 @@ app.post('/exec/plan', async (c) => {
 })
 // run the picked tickets: as the plan you confirmed (`stacks`), or planned now
 app.post('/exec', async (c) => {
-  const { ids, stacks, note: given, prep } = await c.req.json() as { ids?: unknown; stacks?: unknown; note?: unknown; prep?: Prep }
+  const { ids, stacks, note: given, prep, mode } = await c.req.json() as { ids?: unknown; stacks?: unknown; note?: unknown; prep?: Prep; mode?: unknown }
   const picked = pickedTickets(ids), note = noteOf(given)
   if ('error' in picked) return c.json({ error: picked.error }, picked.code)
+  // Ship as one PR: no plan to make, every picked ticket side by side, then one PR of those that got done
+  if (mode === 'one-pr') {
+    if (new Set(picked.map((t) => t.repo)).size > 1) return c.json({ error: 'One PR is one repository: pick tickets of one repository' }, 400)
+    const ids1 = picked.map((t) => t.id)
+    return c.json({ stacks: [ids1], why: '', runs: startBatch([ids1], note, undefined, 'one-pr'), merge: (config.mergeOnGreen ?? []).includes(picked[0].repo) })
+  }
   let plan: { stacks: string[][]; why: string; prep?: Prep }
   if (stacks !== undefined) {
     if (!Array.isArray(stacks) || !stacks.every((s) => Array.isArray(s) && s.every((x) => typeof x === 'string')) || !valid(stacks as string[][], picked)) return c.json({ error: 'That plan does not cover each picked ticket once, one repo per stack' }, 400)

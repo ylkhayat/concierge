@@ -7,7 +7,7 @@ import { appColor } from '../appColor.ts'
 import { Bookmark, History, Moon,
   AlertTriangle, Archive, ChevronDown, MessageSquareWarning, Plus, CircleCheck, Inbox, Search, X, CircleDashed, CircleDot, Hourglass, Layers, LoaderCircle, MessageCircleQuestion, Play, Signal, SignalHigh,
   SignalLow, SignalMedium, Wrench, type LucideIcon,
-  Users,
+  Users, GitMerge,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, prefetchFeed, type TicketView } from '../lib.ts'
@@ -372,8 +372,8 @@ export function StackEditor({ shape, onShape, planned, picked, repoOf, oneRepo, 
  * Run what you ticked. Several are planned first and the plan is shown before anything starts: tickets that build
  * on each other stack, the rest run side by side. Run it as planned, as one stack, or all in parallel.
  */
-export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missing?: string[]; tickets: TicketView[]; picked: string[]; onPick: (ids: string[]) => void; onRun: (stacks?: string[][], note?: string, prep?: Prep) => Promise<unknown> }) {
-  const [busy, setBusy] = useState<'plan' | 'run'>()
+export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missing?: string[]; tickets: TicketView[]; picked: string[]; onPick: (ids: string[]) => void; onRun: (stacks?: string[][], note?: string, prep?: Prep, mode?: 'one-pr') => Promise<unknown> }) {
+  const [busy, setBusy] = useState<'plan' | 'run' | 'one'>()
   const [plan, setPlan] = useState<{ for: string; stacks: string[][]; why: string; prep?: Prep; error?: string }>()
   const [note, setNote] = useState('') // your direction for these tickets: shapes the plan, and each run gets it
   // the stacks as you shape them, from the plan's: which PRs are submitted together (each ticket is built on its own anyway)
@@ -386,6 +386,8 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
   const repoOf = (id: string) => tickets.find((t) => t.id === id)?.repo
   const oneRepo = new Set(picked.map(repoOf)).size === 1
   const run = (stacks?: string[][]) => { setBusy('run'); onRun(stacks, note.trim() || undefined, prepOn ? shown?.prep : undefined).then(() => { setPlan(undefined); setNote('') }).finally(() => setBusy(undefined)) }
+  // Ship as one PR: built side by side, agents deciding on their own, then one PR (merged on green where you allow it)
+  const shipOne = () => { setBusy('one'); onRun(undefined, note.trim() || undefined, undefined, 'one-pr').then(() => { setPlan(undefined); setNote('') }).finally(() => setBusy(undefined)) }
   const makePlan = () => {
     setBusy('plan')
     api('/exec/plan', { ids: picked, note: note.trim() || undefined }).then((r: { stacks: string[][]; why: string; prep?: Prep }) => setPlan({ for: key, ...r }), (e: Error) => setPlan({ for: key, stacks: [], why: '', error: e.message }))
@@ -412,6 +414,12 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
                 : <button onClick={makePlan} disabled={!!busy} className={primaryCls}>{busy === 'plan' ? <><LoaderCircle className="size-4 animate-spin" />Planning…</> : <><Layers className="size-4" />Plan {picked.length} tickets</>}</button>}
             <button onClick={() => { onPick([]); setPlan(undefined) }} className="rounded-xl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
           </div>
+          {picked.length > 1 && (
+            <button onClick={shipOne} disabled={!!busy || !oneRepo} title={oneRepo ? 'Build them side by side, each agent deciding on its own (no questions), then combine the ones that got done into one pull request: merged once its checks pass if its repository allows (Settings → Repositories)' : 'One PR is one repository: pick tickets of one repository'}
+                    className={`mt-2 flex w-full items-center justify-center gap-1.5 ${quiet} disabled:opacity-40`}>
+              {busy === 'one' ? <LoaderCircle className="size-3.5 animate-spin" /> : <GitMerge className="size-3.5" />}Ship {picked.length} as one PR
+            </button>
+          )}
           {picked.length > 1 && !shown && <p className="mt-1.5 text-center text-meta text-fg-3">See which build on each other before anything runs.</p>}
         </div>
   )
