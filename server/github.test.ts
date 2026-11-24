@@ -35,3 +35,10 @@ test('readBy: a finished push that left nothing marks what it read', () => {
   assert.equal(readBy(j({ kind: 'revise' })), undefined) // a revise brings them into crit: yours to go through
   assert.equal(readBy(j({ state: 'failed' })), undefined)
 })
+
+test('a sign-off under an AI attribution line ("🤖 _Drafted by Claude Code_") does not wait on you', async () => {
+  const { waitsOnYou } = await import('./github.ts')
+  const body = '🤖 _Drafted by Claude Code_\n\nVerified at `abc1234`. The new test passes and the change matches develop.'
+  assert.equal(waitsOnYou({ author: { login: 'reviewer' }, body }, 'me'), false)
+  assert.equal(waitsOnYou({ author: { login: 'reviewer' }, body: '🤖 _Drafted by Claude Code_\n\nWhy does this skip the cache?' }, 'me'), true)
+})
