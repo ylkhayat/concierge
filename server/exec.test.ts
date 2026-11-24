@@ -163,3 +163,17 @@ test('Ship as one PR: one agent works the tickets together, never asks, and merg
   // its lines read as every run's do
   assert.deepEqual(outcomesIn('ELBU-3 ship/elbu-3-elbu-4 abc1234 shipped\nELBU-4 failed: needs a paid API\nPR https://x/1 merged'), { 'ELBU-3': { outcome: 'shipped', branch: 'ship/elbu-3-elbu-4', sha: 'abc1234' }, 'ELBU-4': { outcome: 'failed', reason: 'needs a paid API' } })
 })
+
+test('tickets shipped as one PR stay one group once it is up, even after one of them runs again alone', () => {
+  const one = { repo: 'ylkhayat/elbuffeh', number: 40 }
+  const tickets = [
+    { id: 'ELBU-3', prs: [one], run: { id: 'r2', ids: ['ELBU-3'] } }, // re-run alone after the PR
+    { id: 'ELBU-4', prs: [one], run: { id: 'r1', ids: ['ELBU-3', 'ELBU-4', 'ELBU-5'] } },
+    { id: 'ELBU-5', prs: [one], run: { id: 'r1', ids: ['ELBU-3', 'ELBU-4', 'ELBU-5'] } },
+    { id: 'ELBU-6', prs: [], run: undefined },
+  ]
+  const s = ticketStacks(tickets, () => undefined)
+  assert.deepEqual(s.get('ELBU-3'), { key: 'pr:ylkhayat/elbuffeh#40', ids: ['ELBU-3', 'ELBU-4', 'ELBU-5'] })
+  assert.deepEqual(s.get('ELBU-5')?.ids, ['ELBU-3', 'ELBU-4', 'ELBU-5'])
+  assert.equal(s.get('ELBU-6'), undefined)
+})

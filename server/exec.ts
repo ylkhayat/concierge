@@ -179,7 +179,15 @@ export function ticketStacks(tickets: { id: string; prs: { repo: string; number:
     const ids = [...new Set(s?.map((x) => owner.get(`${p.repo}#${x.number}`)).filter((x) => x !== undefined))]
     if (s && ids.length > 1) { out.set(t.id, { key: `${p.repo}#${s[0].number}`, ids }); break }
   }
-  // a run's tickets, less the ones a GitHub stack already holds
+  // one PR for several tickets (Ship as one PR): they stay one group once it is up, whatever runs come after (a reply
+  // re-runs one of them alone, and the run that grouped them is no longer their latest)
+  const byPr = new Map<string, string[]>()
+  for (const t of tickets) for (const p of t.prs) { const k = `${p.repo}#${p.number}`; byPr.set(k, [...new Set([...(byPr.get(k) ?? []), t.id])]) }
+  for (const [k, ids] of byPr) {
+    const free = ids.filter((id) => !out.has(id))
+    if (free.length > 1) for (const id of free) out.set(id, { key: `pr:${k}`, ids: free })
+  }
+  // a run's tickets, less the ones a GitHub stack or a shared PR already holds
   const here = new Set(tickets.map((t) => t.id))
   for (const t of tickets) {
     if (out.has(t.id) || !t.run) continue
