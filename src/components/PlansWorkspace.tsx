@@ -131,6 +131,22 @@ const Dep = ({ label, onRemove }: { label: string; onRemove: () => void }) => (
 
 // --- where the plan stands: brief, shape, slice, fit, Linear -----------------------------------------------------------
 type Stage = { id: string; label: string; done: boolean; ask?: string; hint: string }
+/** The brief as you wrote it, as a card: its paragraphs spaced, six lines of it until you ask for all. */
+function Brief({ text }: { text?: string }) {
+  const [all, setAll] = useState(false)
+  const paras = (text ?? '').split(/\n\s*\n|\n/).map((x) => x.trim()).filter(Boolean)
+  return (
+    <section className="card px-3.5 py-3">
+      <p className="label mb-1.5 text-fg-4">Brief</p>
+      {!paras.length ? <p className="text-small text-fg-3">No brief yet: tell it below what the project is for.</p> : <>
+        {/* folded: the first paragraph, six lines at most (a clamp across several paragraphs isn't reliable) */}
+        <div className="space-y-2 text-small leading-relaxed text-fg-2">{(all ? paras : paras.slice(0, 1)).map((x, i) => <p key={i} className={all ? '' : 'line-clamp-6'}>{x}</p>)}</div>
+        {(paras.length > 1 || paras[0].length > 260) && <button onClick={() => setAll(!all)} className="mt-1.5 text-meta font-medium text-accent-text hover:underline">{all ? 'Show less' : 'Show all'}</button>}
+      </>}
+    </section>
+  )
+}
+
 function stagesOf(p: Plan, fits: boolean | undefined, github = false): Stage[] {
   const heads = p.nodes.filter((n) => n.kind === 'epic' || n.kind === 'milestone'), tickets = p.nodes.filter((n) => n.kind === 'ticket')
   const sliced = !!tickets.length && heads.every((h) => tickets.some((t) => t.parent === h.id))
@@ -222,20 +238,14 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore
       {settings}
       <div className="flex min-h-0 flex-1">
         <aside aria-label="The agent's notes" className="hidden w-[clamp(220px,24%,360px)] shrink-0 flex-col gap-4 overflow-y-auto border-r border-line px-4 py-3 xl:flex">
-<details open className="group/brief rounded-xl bg-hover/50 px-3 py-2 text-small">
-            <summary className="cursor-pointer list-none font-medium text-fg-2"><span className="mr-1 inline-block transition-transform group-open/brief:rotate-90">›</span>The brief</summary>
-            <p className="mt-1.5 whitespace-pre-wrap text-fg-2">{p.brief || p.project?.vision || 'No brief yet: tell it below what the project is for.'}</p>
-          </details>
+          <Brief text={p.brief || p.project?.vision} />
           {gapsList}
         </aside>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto">
        <div ref={inner} className="px-[max(0px,calc((100%-860px)/2))]">
         <div className="flex flex-col gap-4 px-4 pt-4 xl:hidden">
-          <details className="group/brief rounded-xl bg-hover/50 px-3 py-2 text-small">
-            <summary className="cursor-pointer list-none font-medium text-fg-2"><span className="mr-1 inline-block transition-transform group-open/brief:rotate-90">›</span>The brief</summary>
-            <p className="mt-1.5 whitespace-pre-wrap text-fg-2">{p.brief || p.project?.vision || 'No brief yet: tell it below what the project is for.'}</p>
-          </details>
+          <Brief text={p.brief || p.project?.vision} />
         </div>
         {/* the conversation, as the Dev chat shows a run's: your words, its replies, each reply's changes to the map
             (straight in the scroller: the feed keeps itself pinned to the newest line) */}
@@ -804,7 +814,7 @@ function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegen
   // how far over, in days (exact: a day over is over), said in weeks once it is more than one
   const late = target ? Math.ceil((f.at - target) / DAY) : undefined
   const over = appetiteEnd ? Math.ceil((f.at - appetiteEnd) / DAY) : undefined
-  const span = (d: number) => (d >= 10 ? `${Math.round(d / 7)} weeks` : `${d} day${d === 1 ? '' : 's'}`)
+  const span = (d: number) => (d >= 10 ? ((w) => `${w} week${w === 1 ? "" : "s"}`)(Math.round(d / 7)) : `${d} day${d === 1 ? '' : 's'}`)
   const bad = (over ?? late ?? 0) > 0, known = over !== undefined || late !== undefined
   const verdict = over !== undefined ? (over > 0 ? `${span(over)} over the ${p.appetite!.weeks}-week appetite` : `Fits the ${p.appetite!.weeks}-week appetite`)
     : late !== undefined ? (late > 0 ? `${span(late)} late` : 'On track') : `About ${Math.ceil(f.weeks)} week${Math.ceil(f.weeks) === 1 ? '' : 's'} of work left`
@@ -845,8 +855,13 @@ function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegen
               options={[{ id: 'overview', label: 'Overview', title: 'Every stream as one line of progress' }, { id: 'streams', label: 'Streams', title: 'Each stream with its tickets along it' }, { id: 'tickets', label: 'Tickets', title: 'Every ticket by name' }]} />
         {stepper(people, (n) => void set({ people: n }), 'People', 'people')}
         <span title="Points one person finishes a week">{stepper(pace, (n) => void set({ pace: n }), 'Pace', 'points a week')}</span>
+        {/* appetite: a stepper like People and Pace, a week a step; below one week it has none */}
         <span className="inline-flex items-center gap-1.5 text-fg-3" title="How much time the work is worth: the plan fits its scope into it">Appetite
-          <Chips label="Appetite" value={p.appetite?.weeks ?? 0} options={[[0, 'None'] as [number, string], ...[...new Set([2, 4, 6, 12, p.appetite?.weeks ?? 2])].sort((a, b) => a - b).map((w, i) => [w, i ? String(w) : `${w} wk`] as [number, string])]} onChange={(w) => void set({ appetite: w || null })} />
+          <span className="inline-flex items-center rounded-ctl bg-fill">
+            <button onClick={() => void set({ appetite: Math.max(0, (p.appetite?.weeks ?? 0) - 1) || null })} disabled={!p.appetite} aria-label="Less time" className="rounded-l-ctl px-2 py-1 text-fg-3 hover:bg-fill-strong hover:text-fg-1 disabled:opacity-40">−</button>
+            <b className="min-w-12 text-center font-semibold tabular-nums text-fg-1">{p.appetite ? `${p.appetite.weeks} wk` : 'None'}</b>
+            <button onClick={() => void set({ appetite: (p.appetite?.weeks ?? 0) + 1 })} aria-label="More time" className="rounded-r-ctl px-2 py-1 text-fg-3 hover:bg-fill-strong hover:text-fg-1">+</button>
+          </span>
         </span>
         <PickPill on={legend} onClick={onLegend} title="What the marks on the map mean">Key</PickPill>
         {tools && <span className="ml-auto">{tools}</span>}
