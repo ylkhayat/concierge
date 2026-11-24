@@ -57,9 +57,40 @@ test('captures read back newest first, each image a plain file of its own folder
 test('the capture asks for before and after, from stories when there are any, into the PR commit\'s own folder', () => {
   const pr = { id: 'ylkhayat/elbuffeh#40', number: 40, title: 'Levels as chips', base: 'main', head: 'elbu-3', headSha: 'bbbbbbbcccc' }
   const p = capturePrompt({ pr, out: '/s/visuals/x/bbbbbbbcccc', files: ['src/components/Course.tsx'], said: 'also at phone width' })
-  assert.match(p, /Storybook/); assert.match(p, /Playwright/); assert.match(p, /before-<screen>-<viewport>\.png and after-<screen>-<viewport>\.png/)
+  assert.match(p, /Storybook/); assert.match(p, /Playwright/); assert.match(p, /before-<name>-<viewport>\.png and after-<name>-<viewport>\.png/)
   assert.match(p, /storybook-stories skill/); assert.match(p, /parameters\.capture\.viewports/); assert.match(p, /phone \(375 wide\) and laptop \(1280 wide\)/)
   assert.match(p, /\/s\/visuals\/x\/bbbbbbbcccc/); assert.match(p, /src\/components\/Course\.tsx/); assert.match(p, /also at phone width/)
   assert.match(p, /Never push/)
   assert.match(capturePrompt({ pr, out: '/o', files: [], said: 'the empty state', again: true }), /^the empty state[\s\S]*Capture again/)
+})
+
+test('what a file is: a route page a screen, a layout or shell a layout, anything else a component', async () => {
+  const { kindOf } = await import('./visuals.ts')
+  assert.equal(kindOf('apps/rumanna/app/(app)/board/page.tsx'), 'screen')
+  assert.equal(kindOf('apps/buffehgi/app/(app)/layout.tsx'), 'layout')
+  assert.equal(kindOf('apps/rumanna/components/layout/AppShell.tsx'), 'layout')
+  assert.equal(kindOf('src/screens/Course.tsx'), 'screen')
+  assert.equal(kindOf('apps/rumanna/components/board/BoardRail.tsx'), 'component')
+})
+
+test('the impact an agent reports is kept to repository paths, and an affected part only with a changed one that reaches it', async () => {
+  const { impactOf } = await import('./visuals.ts')
+  const im = impactOf({
+    changed: [{ name: 'LevelChip', file: 'apps/rumanna/components/LevelChip.tsx' }, { name: 'Evil', file: '../../etc/passwd' }],
+    affected: [
+      { name: 'CourseCard', file: 'apps/rumanna/components/CourseCard.tsx', via: ['LevelChip'], depth: 1 },
+      { name: 'Board', file: 'apps/rumanna/app/(app)/board/page.tsx', via: ['LevelChip', 'Nope'], depth: 9 },
+      { name: 'Orphan', file: 'apps/x/Orphan.tsx', via: ['Nope'] },
+    ],
+  })!
+  assert.deepEqual(im.changed.map((c) => [c.name, c.kind]), [['LevelChip', 'component']]) // the path out of the repo is dropped
+  assert.deepEqual(im.affected.map((a) => [a.name, a.kind, a.via, a.depth]), [['CourseCard', 'component', ['LevelChip'], 1], ['Board', 'screen', ['LevelChip'], 3]])
+  assert.equal(impactOf({ affected: [] }), undefined)
+})
+
+test('the capture maps the impact first, then shoots changed components in focus and affected screens whole', async () => {
+  const { capturePrompt } = await import('./visuals.ts')
+  const p = capturePrompt({ pr: { id: 'a/b#1', number: 1, title: 't', base: 'main', head: 'x', headSha: 'abcdef1234' }, out: '/o', files: [] })
+  assert.match(p, /First, the impact/); assert.match(p, /up to three imports away/); assert.match(p, /Changed, in focus/); assert.match(p, /Affected, for context/)
+  assert.match(p, /locator screenshot/); assert.match(p, /"lens":"changed"\|"affected"/); assert.match(p, /"impact":\{"changed"/)
 })

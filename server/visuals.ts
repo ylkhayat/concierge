@@ -60,10 +60,52 @@ export const VISUALS_DIR = join(STATE_DIR, 'visuals')
 export const slugOf = (prId: string) => prId.replace(/[^\w.-]+/g, '-')
 export const shotsDir = (prId: string, sha: string) => join(VISUALS_DIR, slugOf(prId), sha)
 
-/** One screen: its name, what the agent says about it, and the before and after images (file names in its folder). */
-export type Shot = { name: string; note?: string; before?: string; after?: string; width?: number }
-export type Manifest = { head: string; base?: string; at: string; source: 'storybook' | 'app'; summary?: string; shots: Shot[] }
+// --- the impact: what the PR changes, and where that shows ------------------------------------------------------------
+// A capture is read through two lenses. Changed: each component the PR edits, in focus (alone: its story, or the
+// element itself on the screen). Affected: the components, layouts and screens that use a changed one (up to three
+// imports away), each with the changed ones that flow into it, captured whole for context.
+export type Kind = 'component' | 'layout' | 'screen'
+/** What a file is, by where it lives and how it is named: a route's page is a screen, a layout or shell a layout. */
+export function kindOf(file: string): Kind {
+  const f = file.replace(/\\/g, '/')
+  if (/(^|\/)(layout|template)\.[jt]sx?$|(^|\/)(layouts?|shells?)\/|(Layout|Shell|Frame|Scaffold)\.[jt]sx?$/.test(f)) return 'layout'
+  if (/(^|\/)page\.[jt]sx?$|(^|\/)(pages|screens|views|routes)\/|Screen\.[jt]sx?$|Page\.[jt]sx?$/.test(f)) return 'screen'
+  return 'component'
+}
+/** A changed component: its name and file. An affected one also names the changed ones that reach it, and how far. */
+export type Part = { name: string; file: string; kind: Kind }
+export type Affected = Part & { via: string[]; depth: number }
+export type Impact = { changed: Part[]; affected: Affected[] }
+
+/**
+ * One capture: a changed component in focus, or an affected one (or a whole screen) for context; what the agent says
+ * about it, and its before and after images (file names in its folder).
+ */
+export type Shot = { name: string; note?: string; before?: string; after?: string; width?: number; lens?: 'changed' | 'affected'; part?: string; viewport?: string }
+export type Manifest = { head: string; base?: string; at: string; source: 'storybook' | 'app'; summary?: string; impact?: Impact; shots: Shot[] }
 export type VisualSet = Manifest & { sha: string }
+
+const PATH = /^[\w@()[\]./ -]{1,240}$/
+const part = (x: unknown): Part | undefined => {
+  const o = x as Partial<Part>
+  if (!o || typeof o.file !== 'string' || !PATH.test(o.file) || o.file.includes('..')) return undefined
+  const kind = o.kind === 'layout' || o.kind === 'screen' || o.kind === 'component' ? o.kind : kindOf(o.file)
+  return { name: String(o.name ?? o.file.split('/').pop()!.replace(/\.[jt]sx?$/, '')).slice(0, 80), file: o.file, kind }
+}
+/** A manifest's impact, kept to plain names and paths inside the repository (it comes from an agent). */
+export function impactOf(raw: unknown): Impact | undefined {
+  const r = raw as { changed?: unknown[]; affected?: unknown[] } | undefined
+  if (!r || !Array.isArray(r.changed)) return undefined
+  const changed = r.changed.map(part).filter((x): x is Part => !!x).slice(0, 60)
+  const names = new Set(changed.map((c) => c.name))
+  const affected = (Array.isArray(r.affected) ? r.affected : []).flatMap((x) => {
+    const p = part(x), o = x as { via?: unknown; depth?: unknown }
+    if (!p) return []
+    const via = (Array.isArray(o.via) ? o.via : []).map(String).filter((v) => names.has(v))
+    return via.length ? [{ ...p, via, depth: Math.min(3, Math.max(1, Number(o.depth) || 1)) }] : []
+  }).slice(0, 120)
+  return { changed, affected }
+}
 
 const FILE = /^[\w.-]{1,120}\.png$/
 /** An image's file name from a manifest, kept to a plain name in its own folder (never a path elsewhere). */
@@ -77,8 +119,11 @@ export async function setsOf(prId: string): Promise<VisualSet[]> {
     if (!/^[0-9a-f]{7,40}$/.test(sha)) continue
     const m = await readFile(join(dir, sha, 'manifest.json'), 'utf8').then((t) => JSON.parse(t) as Manifest, () => undefined)
     if (!m || !Array.isArray(m.shots)) continue
-    const shots = m.shots.filter((s) => s && typeof s.name === 'string').slice(0, 60).map((s) => ({ name: String(s.name).slice(0, 120), note: s.note ? String(s.note).slice(0, 400) : undefined, before: safeFile(s.before), after: safeFile(s.after), width: Number(s.width) || undefined }))
-    out.push({ ...m, sha, source: m.source === 'storybook' ? 'storybook' : 'app', summary: m.summary ? String(m.summary).slice(0, 2000) : undefined, shots })
+    const shots: Shot[] = m.shots.filter((s) => s && typeof s.name === 'string').slice(0, 60).map((s) => ({
+      name: String(s.name).slice(0, 120), note: s.note ? String(s.note).slice(0, 400) : undefined, before: safeFile(s.before), after: safeFile(s.after), width: Number(s.width) || undefined,
+      lens: s.lens === 'changed' || s.lens === 'affected' ? s.lens : undefined, part: s.part ? String(s.part).slice(0, 80) : undefined, viewport: s.viewport ? String(s.viewport).slice(0, 20) : undefined,
+    }))
+    out.push({ ...m, sha, source: m.source === 'storybook' ? 'storybook' : 'app', summary: m.summary ? String(m.summary).slice(0, 2000) : undefined, impact: impactOf(m.impact), shots })
   }
   return out.sort((a, b) => b.at.localeCompare(a.at))
 }
@@ -101,13 +146,23 @@ Capture again with that in mind, the same way as before, into ${p.out} (a new fo
 Where: the PR's branch \`${p.pr.head}\` (commit ${p.pr.headSha.slice(0, 7)}) is the after; its base \`${p.pr.base}\` is the before. Make a worktree of each in a scratch folder of your own (git worktree add, never your checkout's own branch), install what they need, and take them off when you are done.
 ${p.files.length ? `The files it changes that people see: ${p.files.slice(0, 30).join(', ')}.` : 'Find from its diff which screens and components it changes.'}
 
+First, the impact (read the after worktree's code, not guesses):
+- Changed: each component, layout or screen the PR edits (its changed files that render something), by its exported name and file.
+- Affected: every component, layout and screen that imports a changed one, directly or through others, up to three imports away (follow the imports, re-exports and barrel files included), each with which changed ones reach it ("via") and how far ("depth": 1 for a direct import). Kind: "screen" for a route's page, "layout" for a layout, shell or frame, else "component".
+
+Then capture through both lenses:
+- Changed, in focus: each changed component alone, its whole frame and nothing around it: its story, or on the running app the element itself (Playwright locator screenshot with 16px of padding), before and after, in each state the change touches.
+- Affected, for context: the layouts and screens that show a changed component, whole, so its fit in the page shows (the most used first); affected components only when the change alters them visibly.
+
 How:
 - The repository has Storybook (a .storybook folder, or @storybook in a package.json): capture the stories of the components it changes, each state the change touches. Build Storybook in each worktree and screenshot each story's iframe page (#storybook-root) with Playwright, at the viewports the story lists in parameters.capture.viewports, else the repo's viewport set's phone and laptop sizes (its .storybook/preview, named as the repo names them). Changed components without stories: write their state matrix with the storybook-stories skill in the after worktree only, never committed, and say in the summary which stories the PR should add.
 - No Storybook: run the app (its dev server, the way its README or package.json says) and screenshot the screens it changes with Playwright at phone (375 wide) and laptop (1280 wide), logged out unless a seed or test account makes the screen meaningful. A screen that needs data you can't get: say so in its note, never fake it. Say in the summary that stories (the storybook-architecture skill) would make these captures exact.
 - The same screens, the same viewports and the same state before and after. A screen that is new has no before; one that is gone has no after.
 - Never push, commit to the PR, or open anything; this only looks.
 ${p.said ? `\nWhat I asked for: ${p.said}\n` : ''}
-Save into ${p.out} (make it): the images as PNG, named like before-<screen>-<viewport>.png and after-<screen>-<viewport>.png (letters, digits, dots and dashes only), and manifest.json with one shot per screen and viewport:
-{"head":"${p.pr.headSha}","base":"<the base commit you used>","at":"<now, ISO>","source":"storybook" or "app","summary":"<two or three sentences: what changed visually>","shots":[{"name":"<screen or story> · <viewport>","note":"<what to look at here>","width":<viewport width>,"before":"before-<screen>-<viewport>.png","after":"after-<screen>-<viewport>.png"}]}
-At most 24 shots: the screens that matter most, at their viewports. End with the summary in one short paragraph.`
+Save into ${p.out} (make it): the images as PNG, named like before-<name>-<viewport>.png and after-<name>-<viewport>.png (letters, digits, dots and dashes only), and manifest.json with the impact and one shot per capture and viewport:
+{"head":"${p.pr.headSha}","base":"<the base commit you used>","at":"<now, ISO>","source":"storybook" or "app","summary":"<two or three sentences: what changed visually>",
+ "impact":{"changed":[{"name":"<Component>","file":"<path in the repo>","kind":"component"|"layout"|"screen"}],"affected":[{"name":"<Component>","file":"<path>","kind":"…","via":["<changed name>"],"depth":1}]},
+ "shots":[{"name":"<Component or screen> · <state>","lens":"changed"|"affected","part":"<its name in the impact>","viewport":"<viewport name>","width":<viewport width>,"note":"<what to look at here>","before":"before-<name>-<viewport>.png","after":"after-<name>-<viewport>.png"}]}
+At most 30 shots: every changed component in focus first, then the affected layouts and screens that matter most. End with the summary in one short paragraph.`
 }

@@ -1,10 +1,10 @@
 // Design: what the pull requests look like, before and after, without opening them. Built like Plans: the list on the
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
-import { ArrowUp, ExternalLink, Images, LoaderCircle, Palette, Square, Camera, Tag } from 'lucide-react'
+import { ArrowUp, ChevronRight, Crosshair, ExternalLink, Images, LoaderCircle, Palette, Square, Camera, Tag } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
-import type { VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
+import type { Kind, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'
 import { api, enc } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
@@ -159,7 +159,7 @@ export function VisualsView({ id, feed, toast }: { id: string; feed: Activity[];
             <Tabs size="sm" label="Capture" value={set!.sha} onChange={(x) => setSha(x)}
                   options={p.sets.slice(0, 6).map((x) => ({ id: x.sha, label: `${x.sha.slice(0, 7)}${x.sha === p.headSha ? ' · latest' : ''}`, title: new Date(x.at).toLocaleString() }))} />
           )}
-          {set ? <Gallery pr={p.id} set={set} /> : (
+          {set ? <Impact key={set.sha} pr={p.id} set={set} /> : (
             <div className="card flex flex-col items-center gap-2 px-4 py-10 text-center">
               <Images className="size-6 text-fg-4" />
               <p className="text-small text-fg-3">{busy(p.task) ? 'Its screens show here as soon as they are captured.' : 'No screens yet. Capture now, or say below what to capture.'}</p>
@@ -172,30 +172,139 @@ export function VisualsView({ id, feed, toast }: { id: string; feed: Activity[];
   )
 }
 
-/** A capture: what changed in words, then each screen before and after, side by side (one alone when it is new or gone). */
+/** One capture's before and after, side by side (one alone when it is new or gone), each opening full size. */
+function ShotPair({ pr, sha, shot, compact }: { pr: string; sha: string; shot: Shot; compact?: boolean }) {
+  return (
+    <div className={`grid gap-px bg-line ${shot.before && shot.after ? 'sm:grid-cols-2' : ''}`}>
+      {(['before', 'after'] as const).map((side) => shot[side] ? (
+        <figure key={side} className="bg-surface-1">
+          <figcaption className="px-3 pt-2 label text-fg-4">{side === 'before' ? 'Before' : shot.before ? 'After' : 'New'}{shot.viewport ? ` · ${shot.viewport}` : ''}</figcaption>
+          <a href={shotUrl(pr, sha, shot[side]!)} target="_blank" rel="noreferrer" title="Open full size">
+            <img src={shotUrl(pr, sha, shot[side]!)} alt={`${shot.name}, ${side}`} loading="lazy" className={`block w-full p-2 ${compact ? 'max-h-72 object-contain' : ''}`} />
+          </a>
+        </figure>
+      ) : null)}
+    </div>
+  )
+}
+
+/** Every capture as it came, one after the other: the whole set, for a capture made before the lenses. */
 function Gallery({ pr, set }: { pr: string; set: VisualSet }) {
   return (
     <div className="space-y-3">
-      {set.summary && <div className="card px-4 py-3 text-small text-fg-2"><Md text={set.summary} /></div>}
-      <p className="px-0.5 text-meta text-fg-4">{set.shots.length} screen{set.shots.length === 1 ? '' : 's'} · from {set.source === 'storybook' ? 'its Storybook stories' : 'the running app'} · {new Date(set.at).toLocaleString()}</p>
       {set.shots.map((s) => (
-        <section key={s.name} className="card overflow-hidden">
+        <section key={`${s.name}:${s.viewport ?? ''}`} className="card overflow-hidden">
           <header className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-2">
             <h3 className="text-small font-semibold text-fg-1">{s.name}</h3>
             {s.note && <p className="min-w-0 flex-1 text-meta text-fg-3">{s.note}</p>}
           </header>
-          <div className={`grid gap-px bg-line ${s.before && s.after ? 'md:grid-cols-2' : ''}`}>
-            {(['before', 'after'] as const).map((side) => s[side] ? (
-              <figure key={side} className="bg-surface-1">
-                <figcaption className="px-3 pt-2 label text-fg-4">{side === 'before' ? 'Before' : s.before ? 'After' : 'New'}</figcaption>
-                <a href={shotUrl(pr, set.sha, s[side]!)} target="_blank" rel="noreferrer" title="Open full size">
-                  <img src={shotUrl(pr, set.sha, s[side]!)} alt={`${s.name}, ${side}`} loading="lazy" className="block w-full p-2" />
-                </a>
-              </figure>
-            ) : null)}
-          </div>
+          <ShotPair pr={pr} sha={set.sha} shot={s} />
         </section>
       ))}
+    </div>
+  )
+}
+
+const KIND_LABEL: Record<Kind, string> = { component: 'Component', layout: 'Layout', screen: 'Screen' }
+const KindChip = ({ kind }: { kind: Kind }) => <span className="rounded-full bg-fill px-1.5 py-px text-micro font-medium text-fg-2">{KIND_LABEL[kind]}</span>
+const away = (d: number) => (d <= 1 ? 'uses it directly' : `${d} imports away`)
+
+/**
+ * A capture through two lenses. Changed: each component the PR edits, in focus. Affected: where those changes show,
+ * the components, layouts and screens that use them, each with the changed ones that reach it. A changed component
+ * focuses the affected lens on itself.
+ */
+function Impact({ pr, set }: { pr: string; set: VisualSet }) {
+  const im = set.impact
+  const lensed = !!im || set.shots.some((x) => x.lens)
+  const [lens, setLens] = useState<'changed' | 'affected' | 'all'>(lensed ? 'changed' : 'all')
+  const [focus, setFocus] = useState<string>()
+  const changed = im?.changed ?? [...new Set(set.shots.filter((x) => x.lens === 'changed' && x.part).map((x) => x.part!))].map((name) => ({ name, file: '', kind: 'component' as Kind }))
+  const affected = im?.affected ?? []
+  const shotsOf = (name: string, l: 'changed' | 'affected') => set.shots.filter((x) => x.part === name && (x.lens ?? 'affected') === l)
+  const usedIn = (name: string) => affected.filter((a) => a.via.includes(name))
+  const shown = focus ? usedIn(focus) : affected
+  return (
+    <div className="space-y-3">
+      {set.summary && <div className="card px-4 py-3 text-small text-fg-2"><Md text={set.summary} /></div>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Tabs size="sm" label="Lens" value={lens} onChange={(x) => setLens(x)}
+              options={[...(lensed ? [{ id: 'changed' as const, label: `Changed · ${changed.length}` }, { id: 'affected' as const, label: `Affected · ${affected.length}` }] : []), { id: 'all' as const, label: `All captures · ${set.shots.length}` }]} />
+        <span className="ml-auto text-meta text-fg-4">from {set.source === 'storybook' ? 'its Storybook stories' : 'the running app'} · {new Date(set.at).toLocaleString()}</span>
+      </div>
+
+      {lens === 'changed' && (
+        <div className="grid gap-3 xl:grid-cols-2">
+          {!changed.length && <p className="card px-4 py-3 text-small text-fg-3">The capture named no changed component. Ask in the conversation to capture them in focus.</p>}
+          {changed.map((c) => {
+            const shots = shotsOf(c.name, 'changed'), users = usedIn(c.name)
+            return (
+              <section key={c.name} className="card overflow-hidden">
+                <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+                  <Crosshair className="size-3.5 text-accent-text" />
+                  <h3 className="text-small font-semibold text-fg-1">{c.name}</h3>
+                  <KindChip kind={c.kind} />
+                  {users.length > 0 && <button onClick={() => { setFocus(c.name); setLens('affected') }} className="ml-auto text-meta font-medium text-accent-text hover:underline">Used in {users.length}</button>}
+                  {c.file && <p className="w-full truncate font-mono text-micro text-fg-4" title={c.file}>{c.file}</p>}
+                </header>
+                {shots.length ? shots.map((x) => (
+                  <div key={`${x.name}:${x.viewport ?? ''}`}>
+                    {(x.note || shots.length > 1) && <p className="px-4 pt-2 text-meta text-fg-3"><span className="font-medium text-fg-2">{x.name}</span>{x.note ? ` · ${x.note}` : ''}</p>}
+                    <ShotPair pr={pr} sha={set.sha} shot={x} compact />
+                  </div>
+                )) : <p className="px-4 py-3 text-meta text-fg-3">Not captured on its own: see where it shows under Affected.</p>}
+              </section>
+            )
+          })}
+        </div>
+      )}
+
+      {lens === 'affected' && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-1.5" aria-label="Focus on a changed component">
+            <span className="text-meta text-fg-3">Reached by</span>
+            <button onClick={() => setFocus(undefined)} aria-pressed={!focus} className={`rounded-full px-2 py-0.5 text-meta ring-1 ${!focus ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line hover:text-fg-1'}`}>Any change</button>
+            {changed.map((c) => (
+              <button key={c.name} onClick={() => setFocus(focus === c.name ? undefined : c.name)} aria-pressed={focus === c.name}
+                      className={`rounded-full px-2 py-0.5 text-meta ring-1 ${focus === c.name ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line hover:text-fg-1'}`}>{c.name}<span className="ml-1 text-fg-4">{usedIn(c.name).length}</span></button>
+            ))}
+          </div>
+          {!shown.length && <p className="card px-4 py-3 text-small text-fg-3">{focus ? `Nothing else uses ${focus}.` : 'The changes stay inside the changed components: nothing else uses them.'}</p>}
+          {(['layout', 'screen', 'component'] as Kind[]).map((k) => {
+            const rows = shown.filter((a) => a.kind === k).sort((a, b) => a.depth - b.depth || a.name.localeCompare(b.name))
+            if (!rows.length) return null
+            return (
+              <section key={k} className="space-y-2">
+                <h3 className="label px-0.5 text-fg-4">{KIND_LABEL[k]}s · {rows.length}</h3>
+                {rows.map((a) => {
+                  const shots = shotsOf(a.name, 'affected')
+                  return (
+                    <details key={a.file} className="card group/aff overflow-hidden" open={shots.length > 0 && rows.length <= 3}>
+                      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-4 py-2.5 hover:bg-hover">
+                        <ChevronRight className="size-3.5 text-fg-4 transition-transform group-open/aff:rotate-90" />
+                        <span className="text-small font-medium text-fg-1">{a.name}</span>
+                        <span className="text-meta text-fg-3">{away(a.depth)}</span>
+                        <span className="flex flex-wrap gap-1">{a.via.map((v) => <span key={v} className={`rounded-full px-1.5 py-px text-micro ring-1 ${v === focus ? 'bg-accent/10 text-accent-text ring-accent/30' : 'text-fg-3 ring-line'}`}>{v}</span>)}</span>
+                        <span className="ml-auto flex items-center gap-1 text-micro text-fg-4">{shots.length ? <><Images className="size-3" />{shots.length}</> : 'not captured'}</span>
+                        <span className="w-full truncate font-mono text-micro text-fg-4" title={a.file}>{a.file}</span>
+                      </summary>
+                      {shots.map((x) => (
+                        <div key={`${x.name}:${x.viewport ?? ''}`} className="border-t border-line">
+                          {x.note && <p className="px-4 pt-2 text-meta text-fg-3">{x.note}</p>}
+                          <ShotPair pr={pr} sha={set.sha} shot={x} />
+                        </div>
+                      ))}
+                      {!shots.length && <p className="border-t border-line px-4 py-2.5 text-meta text-fg-3">Not captured. Ask for it in the conversation: “capture {a.name}”.</p>}
+                    </details>
+                  )
+                })}
+              </section>
+            )
+          })}
+        </div>
+      )}
+
+      {lens === 'all' && <Gallery pr={pr} set={set} />}
     </div>
   )
 }
@@ -233,7 +342,8 @@ export function VisualsGlance({ id, children }: { id: string; children: (strip: 
   const q = useApi<Full>(`/prs/${enc(id)}/visuals`, { refetchInterval: 60_000 })
   const set = q.data?.sets[0]
   if (!set) return null
-  const shown = set.shots.filter((s) => s.after ?? s.before).slice(0, 4)
+  // the changed components in focus first: what the PR is about, before where it shows
+  const shown = [...set.shots.filter((s) => s.lens === 'changed'), ...set.shots.filter((s) => s.lens !== 'changed')].filter((s) => s.after ?? s.before).slice(0, 4)
   const onOpen = () => { location.assign(`/design#${encodeURIComponent(id)}`) }
   return <>{children(
     <div className="space-y-2">
