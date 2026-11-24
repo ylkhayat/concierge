@@ -744,7 +744,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
         <StageBar stages={stages} onStep={step} />
         {p.creating ? <span className="inline-flex items-center gap-1.5 text-small text-run"><LoaderCircle className="size-3.5 animate-spin" />Creating {made}/{p.nodes.length}…</span>
           : made === p.nodes.length && made > 0 ? (gh && !p.ghProject
-            ? <button onClick={() => void api(`${path}/project`, {}).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))} disabled={p.busy}
+            ? <button onClick={() => void api(`${path}/github-project`, {}).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))} disabled={p.busy}
                       className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40"><Flag className="size-3.5" />Add to a GitHub project</button>
             : p.ghProject ? <a href={p.ghProject.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-small font-medium text-ok hover:underline"><Check className="size-4" />In its GitHub project<ExternalLink className="size-3" /></a>
             : <span className="inline-flex items-center gap-1 text-small font-medium text-ok"><Check className="size-4" />{gh ? 'On GitHub' : 'In Linear'}</span>)
