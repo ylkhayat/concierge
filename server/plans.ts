@@ -22,7 +22,7 @@ import { impact } from '../src/planDiff.ts'
 import { config } from './config.ts'
 import { coverage, obligations } from './readiness.ts'
 import { complianceFor, orgs, planOrg, type Org } from './orgs.ts'
-import { getMe, ghSend } from './github.ts'
+import { getMe, gh, ghSend, graphql } from './github.ts'
 export * from './planOps.ts'
 
 const all = () => (state.plans ??= {})
@@ -329,6 +329,46 @@ export async function create(id: string) {
  * The plan as GitHub issues, for an organization that manages its work there: the goal (and each milestone) a GitHub
  * milestone, each epic and ticket an issue in the organization's first watched repository, a ticket a sub-issue of its epic, and its estimate and what it still needs said in its body.
  */
+/**
+ * The plan's issues in a GitHub Project (the board GitHub shows on the repository's Projects tab): one made for it,
+ * named after its goal and owned where the repository is (you, or the organization), linked to the repository, and
+ * each epic and ticket added once. A sign-in without GitHub's project permission can't: said in words.
+ */
+async function intoProject(p: Plan, repo: string, title: string) {
+  const [owner, name] = repo.split('/')
+  try {
+    if (!p.ghProject) {
+      const r = await graphql<{ repository: { id: string; owner: { id: string } } }>('query($o: String!, $n: String!) { repository(owner: $o, name: $n) { id owner { id } } }', { o: owner, n: name })
+      const made = await graphql<{ createProjectV2: { projectV2: { id: string; url: string } } }>('mutation($i: CreateProjectV2Input!) { createProjectV2(input: $i) { projectV2 { id url } } }',
+        { i: { ownerId: r.repository.owner.id, title: title.slice(0, 120), repositoryId: r.repository.id } })
+      p.ghProject = { ...made.createProjectV2.projectV2, added: [] }; save()
+    }
+    for (const n of p.nodes) {
+      if ((n.kind !== 'epic' && n.kind !== 'ticket') || !n.created?.identifier?.startsWith('#') || p.ghProject.added.includes(n.id)) continue
+      // made before its GitHub id was kept: asked for it by its number
+      if (!n.created.node) { n.created.node = (await gh<{ node_id: string }>(`/repos/${repo}/issues/${n.created.identifier.slice(1)}`)).node_id; save() }
+      await graphql('mutation($i: AddProjectV2ItemByIdInput!) { addProjectV2ItemById(input: $i) { item { id } } }', { i: { projectId: p.ghProject.id, contentId: n.created.node } })
+      p.ghProject.added.push(n.id); save()
+    }
+  } catch (e) {
+    const m = (e as Error).message
+    throw new Error(/scope|permission|not accessible|resource not accessible/i.test(m)
+      ? `The issues are made, but GitHub didn't let Concierge make the project: its GitHub sign-in needs the "project" permission. Sign in again (the new sign-in asks for it), then Add to a GitHub project`
+      : `The issues are made, but not the project: ${m}`)
+  }
+}
+
+/** Issues made before projects (or before the permission): put them in one now. */
+export async function addToProject(id: string) {
+  const p = planOf(id); if (!p) throw new Error('No such plan')
+  const org = await planOrg(p), o = (await orgs().catch(() => [] as Org[])).find((x) => x.owner === org)
+  if (o?.tracker !== 'github' || !o.repos[0]) throw new Error('This plan is not on GitHub')
+  if (p.creating || p.busy) throw new Error('Wait for it to finish')
+  Object.assign(p, { creating: true, error: undefined }); save()
+  void intoProject(p, o.repos[0], p.nodes.find((n) => n.kind === 'goal')?.title ?? p.title).catch((e: Error) => { p.error = e.message.slice(0, 300) }).finally(() => { p.creating = false; save() })
+  return p
+}
+
 async function createOnGithub(p: Plan, o: Org) {
   const repo = o.repos[0] // ponytail: the organization's first watched repository; a pick per plan when an organization's work spans several
   if (!repo) throw new Error(`${o.owner} has no repository here to put the issues in: add one in Settings → Workspaces`)
@@ -348,14 +388,15 @@ async function createOnGithub(p: Plan, o: Org) {
         if (n.created || n.kind === 'goal') continue
         if (n.kind === 'milestone') { await milestone(n); continue }
         const body = [n.refine ? `**Needs refinement:** ${n.refine}` : '', n.description, n.estimate ? `Estimate: ${n.estimate} points` : ''].filter(Boolean).join('\n\n')
-        const r = await ghSend<{ id: number; number: number; html_url: string }>('POST', `/repos/${repo}/issues`, { title: n.title.slice(0, 250), ...(body && { body }), ...(milestoneOf(n) && { milestone: milestoneOf(n) }), ...(me && { assignees: [me] }) })
-        n.created = { id: String(r.id), identifier: `#${r.number}`, url: r.html_url }; save()
+        const r = await ghSend<{ id: number; node_id: string; number: number; html_url: string }>('POST', `/repos/${repo}/issues`, { title: n.title.slice(0, 250), ...(body && { body }), ...(milestoneOf(n) && { milestone: milestoneOf(n) }), ...(me && { assignees: [me] }) })
+        n.created = { id: String(r.id), identifier: `#${r.number}`, url: r.html_url, node: r.node_id }; save()
         // under its epic (or the ticket it splits): GitHub's sub-issues
         const up = p.nodes.find((y) => y.id === n.parent)
         if (up && (up.kind === 'epic' || up.kind === 'ticket') && up.created?.identifier) {
           await ghSend('POST', `/repos/${repo}/issues/${up.created.identifier.slice(1)}/sub_issues`, { sub_issue_id: r.id }).catch((e: Error) => console.warn(`plan ${p.id}: sub-issue ${r.number} under ${up.created!.identifier}: ${e.message}`))
         }
       }
+      await intoProject(p, repo, goal?.title ?? p.title)
     } catch (e) { p.error = (e as Error).message.slice(0, 300) }
     p.creating = false; save()
   })()

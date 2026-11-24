@@ -8,7 +8,7 @@ export type PlanNode = {
   priority?: 1 | 2 | 3 | 4 // Linear's: urgent, high, medium, low
   estimate?: number // points
   by?: 'agent' | 'you' // who made it or last changed it
-  created?: { id: string; identifier?: string; url: string } // made in Linear (a goal: a project; a milestone: a project milestone)
+  created?: { id: string; identifier?: string; url: string; node?: string } // made in Linear (a goal: a project; a milestone: a project milestone), or on GitHub (node: the issue's id there, for its project)
   state?: { name: string; type: string } // in Linear: its workflow state (type: backlog, unstarted, started, completed, canceled)
   assignee?: string
   target?: string // a milestone's target date
@@ -37,6 +37,7 @@ export type Plan = {
   busy?: boolean; live?: string // the reply as it streams
   creating?: boolean; error?: string; sessionId?: string; costUsd: number; at: string
   related?: string[] // the links made in Linear ("from>to")
+  ghProject?: { id: string; url: string; added: string[] } // on GitHub: the project its issues are in, and which nodes are added
   // an existing Linear project the plan contributes to: its vision and timeline, and whether you lead it (then the
   // plan may rewrite its vision; otherwise it only adds tickets)
   project?: { id: string; name: string; url: string; lead: boolean; leadName?: string; vision: string; startDate?: string; targetDate?: string; members: number; syncedAt: string }

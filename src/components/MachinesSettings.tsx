@@ -252,7 +252,7 @@ function SharedKeys() {
 }
 
 /** GitHub's sign-in beside its token: a code to enter on github.com, then the token it gets is kept like a pasted one. */
-function GithubSignIn({ onDone }: { onDone: (text: string, bad?: boolean) => void }) {
+export function GithubSignIn({ onDone }: { onDone: (text: string, bad?: boolean) => void }) {
   const [code, setCode] = useState<{ code: string; url: string }>()
   useEffect(() => {
     if (!code) return

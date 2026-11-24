@@ -1,6 +1,7 @@
 // Plans, the product manager's workspace: a brief, broken down with an agent while you watch. The chat on the left; on
 // the right one map of the project (PlanStream): where it stands, what is done, going on, still to refine, and the
 // angles not explored yet, faint, one click from the planner. Not another Linear: the tickets themselves live there.
+import { GithubSignIn } from './MachinesSettings.tsx'
 import { ArrowRight, ArrowUp, Check, CheckCircle2, Zap, ExternalLink, Flag, GitBranch, LoaderCircle, Plus, RefreshCw, Redo2, Send, Sparkles, Target, Trash2, Undo2, X } from 'lucide-react'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Kind, Op, Plan, PlanNode } from '../../server/plans.ts'
@@ -252,7 +253,11 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore
         {feed.length > 0 && <ActivityFeed feed={feed} live={!!p.busy} toast={toast} pin={false} after={(a) => a.turn && <TurnChanges id={p.id} turn={a.turn} onSelect={onSelect} onReplay={onReplay} />} />}
         <div className="flex flex-col gap-4 px-4 pb-4">
           {p.busy && <p className="flex items-center gap-2 text-small text-accent-text"><Sparkles className="size-4 animate-pulse" />Drafting on the board…</p>}
-          {p.error && <p className="rounded-xl bg-fail/10 px-3 py-2 text-small text-fail">{p.error}</p>}
+          {p.error && <div className="flex flex-wrap items-center gap-2 rounded-xl bg-fail/10 px-3 py-2 text-small text-fail">
+            <span className="min-w-0 flex-1">{p.error}</span>
+            {/* GitHub refused for want of its project permission: sign in again right here, the new sign-in asks for it */}
+            {/"project" permission/.test(p.error) && <GithubSignIn onDone={(m, bad) => toast(bad ? m : `${m}. Now Add to a GitHub project`, bad ? 'error' : 'ok')} />}
+          </div>}
           <div className="xl:hidden">
           {asks.length > 0 && (
             <div className="space-y-2.5 rounded-2xl bg-surface-1 p-3 shadow-e1 ring-1 ring-accent/20">
@@ -738,7 +743,11 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
         <History p={p} onBack={back} />
         <StageBar stages={stages} onStep={step} />
         {p.creating ? <span className="inline-flex items-center gap-1.5 text-small text-run"><LoaderCircle className="size-3.5 animate-spin" />Creating {made}/{p.nodes.length}…</span>
-          : made === p.nodes.length && made > 0 ? <span className="inline-flex items-center gap-1 text-small font-medium text-ok"><Check className="size-4" />{gh ? 'On GitHub' : 'In Linear'}</span>
+          : made === p.nodes.length && made > 0 ? (gh && !p.ghProject
+            ? <button onClick={() => void api(`${path}/project`, {}).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))} disabled={p.busy}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40"><Flag className="size-3.5" />Add to a GitHub project</button>
+            : p.ghProject ? <a href={p.ghProject.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-small font-medium text-ok hover:underline"><Check className="size-4" />In its GitHub project<ExternalLink className="size-3" /></a>
+            : <span className="inline-flex items-center gap-1 text-small font-medium text-ok"><Check className="size-4" />{gh ? 'On GitHub' : 'In Linear'}</span>)
           : <button disabled={!items.length || p.busy} title={gh ? `As issues in ${checks.data?.repo ?? 'its repository'}` : !p.team && !p.project ? 'Pick the Linear team first' : undefined}
                     onClick={() => (gh || p.team ? arm('create', create) : (setTeamsOn(true), setCfg('team')))}
                     className="relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40">
