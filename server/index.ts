@@ -580,7 +580,9 @@ app.use('*', (c, next) => withRole(c.req.header('x-concierge-role'), next))
 const HERE_ONLY = /^\/api\/(update$|claude-auth\/|azure\/login$|github\/login$|connections\/login|accounts\/[^/]+\/(login|adopt-login)$|setup\/(clone|validate|skills)$|worktrees\/clean$|debug\/|(prs|exec)\/[^/]+\/resume-terminal$)/
 // what only the main server knows whole (every machine, how full each is, the joins, where they differ): a follower
 // shows the main server's, so Settings → Machines lists the whole fleet on any machine's localhost
-const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment|repos\/held)$/
+// (an account's machines and its sync check ask every machine, which only the main one knows; a key being made lives in the
+// main one's memory, where its clicks went)
+const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment|repos\/held|accounts\/[^/]+\/(machines|security|token\/state))$/
 app.use('*', async (c, next) => {
   if (fleet.mayWrite() || (c.req.method === 'GET' ? !FLEET_VIEW.test(c.req.path) : HERE_ONLY.test(c.req.path))) return next()
   const main = (await replicaPeers()).find((p) => p.active)
