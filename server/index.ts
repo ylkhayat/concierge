@@ -1,4 +1,5 @@
 // first: the keys every machine shares go into the environment before any module reads it
+import { markNotWaiting } from './judge.ts'
 import { reviewStack, type StackItem } from './stackSteps.ts'
 import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.ts'
 import './sharedEnv.ts'
@@ -3014,7 +3015,8 @@ app.post('/prs/:id/crit-restart', async (c) => {
 app.post('/prs/:id/read', async (c) => {
   const p = pr(c.req.param('id'))
   if (!p) return c.json({ error: 'unknown PR' }, 404)
-  p.readAt = new Date().toISOString(); logged(p.id, 'Marked what waited on you as needing no answer')
+  // these comments, by id, need no answer (a new one there counts again); the time still covers review bodies
+  markNotWaiting(p.waitingIds ?? []); p.readAt = new Date().toISOString(); logged(p.id, 'Marked what waited on you as needing no answer')
   save(); await refreshOne(p.id).catch((e) => console.error('refresh', p.id, e.message)); bus.emit('change')
   return c.json({ ok: true })
 })

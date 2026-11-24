@@ -1049,6 +1049,8 @@ function start(pr: Pr, on?: string) {
         if (job.summary) pr.lastSaid = { summary: job.summary, at: new Date().toISOString(), kind: job.kind }
         // its own word that nothing is left (an empty deck-next block), kept apart: next is trimmed later for other reasons
         job.leftNothing = job.next?.source === 'agent' && !job.next.steps.length
+        // it saw what waited and found nothing to do: those comments, by id, aren't offered for another Fix on their own
+        if (job.leftNothing && pr.mine) pr.settledIds = [...(pr.waitingIds ?? [])]
       }
     },
     onEnd: (e) => {

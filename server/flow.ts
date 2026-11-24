@@ -44,6 +44,7 @@ export type FlowIn = {
   pushedSince?: boolean // theirs: the author pushed after your last review
   askedAgain?: boolean // theirs: they asked for your review again after it
   job?: Pick<Job, 'kind' | 'state' | 'headSha' | 'reviewDone' | 'roundAt'> & { asks: boolean }
+  settled?: boolean // every comment waiting on you was seen by a run that found nothing to do (no new one since)
   crit?: { live: boolean; finishes: number; known: boolean; findings?: number; open?: number; blocking?: number } // known: there is a crit session to open or restart; findings: the AI review's comments, open: unresolved
   op?: { label: string; state: 'running' | 'done' | 'failed'; result?: string } // the latest tool run
 }
@@ -79,6 +80,7 @@ export function flowInOf(p: Pr, crit: Pick<Crit, 'live' | 'finishes' | 'port' | 
     reviewed: !!mineR && (mineR.commitId === p.headSha || !p.requested),
     myVerdict: mineR?.state, pushedSince: !!mineR && mineR.commitId !== p.headSha, askedAgain: !!mineR && mineR.commitId !== p.headSha && !!p.requested,
     job: p.job && { ...p.job, asks: pendingOf(p.job.next) > 0 },
+    settled: !!p.waitingIds?.length && p.waitingIds.every((id) => p.settledIds?.includes(id)),
     crit: crit && { live: crit.live, finishes: crit.finishes, known: !!crit.port && !!crit.sessionKey, findings: crit.aiComments, open: crit.unresolved, blocking: crit.blocking },
     op,
   }
@@ -124,6 +126,9 @@ function mine(f: FlowIn): Flow {
     }
     return { state: 'waiting', step: 4, why: 'Nothing waits on you. Reviewers have the next move.', also: [] }
   }
+  // the run already saw every one of these and found nothing to do: no Fix again for the same comments (it looped),
+  // the choice is yours: they need no answer, or say what you want done
+  if (f.settled) return { state: 'answered', step: 4, why: `Nothing new since the last run: it saw ${n(f.awaiting, 'comment')} waiting and found nothing to do. If ${f.awaiting === 1 ? 'it needs' : 'they need'} no answer, say so; else tell the agent what you want.`, next: 'read', also: ['fix'] }
   // threads wait on you: has a revise round run since they arrived? (rounds from before rounds were stamped: same head)
   const prepared = !!j?.reviewDone && (f.feedbackAt ? !!j.roundAt && j.roundAt >= f.feedbackAt : j.headSha === f.headSha || isFollowUp(j.kind))
   const waits = `${n(f.awaiting, 'comment')} ${f.awaiting === 1 ? 'waits' : 'wait'} on you`

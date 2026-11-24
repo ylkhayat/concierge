@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { config, save, state, type Pr, type StackRef } from './store.ts'
+import { judge, settled, verdictOf } from './judge.ts'
 
 let token = process.env.GITHUB_TOKEN ?? ''
 /** The shared GitHub token changed (sharedEnv.ts): use it from the next call. */
@@ -145,9 +146,9 @@ type MineNode = {
   createdAt: string; updatedAt: string; baseRefName: string; headRefName: string; headRefOid: string
   additions: number; deletions: number; changedFiles: number; reviewDecision: string | null
   author: { login: string; avatarUrl: string }; repository: { nameWithOwner: string }
-  reviewThreads: { nodes: { isResolved: boolean; first: { nodes: { author: { login: string } | null }[] }; comments: { nodes: { author: { login: string } | null; body: string; createdAt?: string }[] } }[] }
+  reviewThreads: { nodes: { isResolved: boolean; first: { nodes: { author: { login: string } | null }[] }; comments: { nodes: { id?: string; author: { login: string } | null; body: string; createdAt?: string }[] } }[] }
   reviews: { nodes: { databaseId: number; state: string; submittedAt?: string; body?: string; author: { __typename?: string; login: string } | null }[] }
-  comments: { nodes: { author: { __typename: string; login: string } | null; body: string; createdAt?: string }[] }
+  comments: { nodes: { id?: string; author: { __typename: string; login: string } | null; body: string; createdAt?: string }[] }
   reviewRequests: { nodes: { requestedReviewer: { login?: string } | null }[] }
 }
 
@@ -183,10 +184,10 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
 
 const MINE_FIELDS = `number title body bodyHTML url isDraft createdAt updatedAt baseRefName headRefName headRefOid
   additions deletions changedFiles reviewDecision author{login avatarUrl} repository{nameWithOwner}
-  reviewThreads(first:100){nodes{isResolved first: comments(first:1){nodes{author{login}}} comments(last:1){nodes{author{login} body createdAt}}}}
+  reviewThreads(first:100){nodes{isResolved first: comments(first:1){nodes{author{login}}} comments(last:1){nodes{id author{login} body createdAt}}}}
   reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}
   reviews(last:30){nodes{databaseId state submittedAt body author{__typename login}}}
-  comments(last:20){nodes{author{__typename login} body createdAt}}`
+  comments(last:20){nodes{id author{__typename login} body createdAt}}`
 let mineFullAt = 0
 // your PRs to read in full on the next sync whatever their updatedAt: replying in a review thread doesn't move it,
 // so after the agent pushes or replies the thread counts would otherwise stay stale until the 10-minute full read
@@ -226,16 +227,21 @@ async function pollMine(): Promise<string[]> {
     // one you answered, or one they signed off on, waits on the reviewer to resolve
     // PR-level comments since your last one count the same way (a question on the PR, not on a line); bots don't
     const talk = n.comments.nodes, mineAt = talk.map((c) => c.author?.login).lastIndexOf(n.author.login)
-    const said = talk.slice(mineAt + 1).filter((c) => c.author?.__typename !== 'Bot' && !/\[bot\]$/i.test(c.author?.login ?? '') && waitsOnYou(c, n.author.login))
+    const human = (c: { author: { login: string; __typename?: string } | null }) => !!c.author && c.author.__typename !== 'Bot' && !/\[bot\]$/i.test(c.author.login)
+    // what someone else said last, on each open thread and on the PR since your last word there: judged by meaning,
+    // once each (judge.ts), before anything is counted from it
+    const lastWords = [...open_.map((t) => t.comments.nodes[0]), ...talk.slice(mineAt + 1)].filter((c) => c && c.id && human(c) && c.author!.login !== n.author.login)
+    await judge(lastWords.map((c) => ({ id: c!.id!, body: c!.body ?? '' })))
+    const said = talk.slice(mineAt + 1).filter((c) => human(c) && waitsOnYou(c, n.author.login))
     const reviewed = bodyReviews(n.reviews.nodes, mineAt >= 0 ? talk[mineAt].createdAt ?? '' : '', n.author.login)
     // what the agent already read: a push of yours that started after it and ended with nothing left to do (it found
     // nothing to answer: a status note, "holding approval until…"). Only what came after that waits on you
-    const seen = [readBy(prev?.job), prev?.readAt].reduce<string | undefined>((a, b) => (b && (!a || b > a) ? b : a), undefined), fresh = (at?: string) => !seen || !at || at > seen
+    const seen = prev?.readAt, fresh = (at?: string) => !seen || !at || at > seen // review bodies only: comments go by verdict and id
     // a thread waits on you while its last word is someone else's: an answer would be the last word there, so a run
     // that read past it (and answered other threads) doesn't settle it. Only PR-level comments and review bodies, which
     // have no place to answer in, count as read once a run went past them
-    const awaiting = open_.filter((t) => waitsOnYou(t.comments.nodes[0], n.author.login)).length
-      + said.filter((c) => fresh(c.createdAt)).length + reviewed.filter((r) => fresh(r.submittedAt ?? undefined)).length
+    const waitingOn = [...open_.map((t) => t.comments.nodes[0]).filter((c) => waitsOnYou(c, n.author.login)), ...said]
+    const awaiting = waitingOn.length + reviewed.filter((r) => fresh(r.submittedAt ?? undefined)).length
     const was = prev?.awaiting ?? prev?.unresolved ?? 0
     if (prev && awaiting > was) moreFeedback.push(id)
     // feedback newer than the last revise round: stamped when threads start (or grow) waiting on you
@@ -248,6 +254,7 @@ async function pollMine(): Promise<string[]> {
       createdAt: n.createdAt, updatedAt: n.updatedAt, firstSeenAt: prev?.firstSeenAt ?? new Date().toISOString(),
       requested: false, closed: false, dismissed: prev?.dismissed ?? false,
       mine: true, unresolved, awaiting, feedbackAt, reviewDecision: n.reviewDecision,
+      waitingIds: waitingOn.map((c) => c?.id).filter((x): x is string => !!x),
     })
     const commenters = [...new Set([...open_.map((t) => t.comments.nodes[0]?.author?.login), ...said.map((c) => c.author?.login)].filter((l): l is string => !!l && l !== n.author.login))]
     if (prev && prev.headSha !== n.headRefOid) dropStaleNext(state.prs[id])
@@ -323,27 +330,17 @@ export function bodyReviews(reviews: MineNode['reviews']['nodes'], lastComment: 
     && r.author?.__typename !== 'Bot' && !/\[bot\]$/i.test(r.author?.login ?? '') && !!r.body?.trim() && waitsOnYou(r, me))
 }
 
-/**
- * When a finished push or fix round read everything waiting and, by its own checklist, left nothing to do: its start.
- * (A fix round with work left says so: "Push the 2 fix commits", "Post the 3 drafted replies".)
- */
-export function readBy(j: Pr['job']): string | undefined {
-  return (j?.kind === 'publish' || j?.kind === 'reply') && j.state === 'done' && j.leftNothing ? j.queuedAt : undefined
-}
 
-export function waitsOnYou(last: { author: { login: string } | null; body?: string } | undefined, me: string): boolean {
-  if (!last || last.author?.login === me) return false
-  // the AI attribution line, in any form (the badge, "🤖 _Drafted by Claude Code_", "_Generated by Claude Code_"), is not
-  // what was said: "Verified …" under it is still a sign-off
-  const text = (last.body ?? '').replace(/\[!\[Generated by[^\]]*\]\([^)]*\)\]\([^)]*\)/gi, '')
-    .replace(/^\s*(?:🤖\s*)?_?(?:drafted|generated|written) (?:by|with) claude(?: code)?_?\s*$/gim, '').trim().slice(0, 400)
-  if (/^!\[(fixed|already fixed|won't fix|withdrawn)\]/i.test(text)) return false
-  const lead = text.replace(/^[^a-z0-9👍✅]+/i, '')
-  if (/^(lgtm|looks good|thanks|thank you|resolved|done|👍|✅)\b/i.test(lead)) return false
-  // an acknowledgement that asks for nothing more: no question, no new finding (a severity badge or "**[MEDIUM]")
-  const asks = text.includes('?') || /\*\*\[(high|medium|low|nit)\b|!\[(high|medium|low|blocking|needs your call)\]/i.test(text)
-  if (!asks && /^(confirmed|agreed|verified|makes sense|sounds good|fair enough|works for me|fine by me|ok(ay)?,|got it)\b/i.test(lead)) return false
-  return true
+/**
+ * Does someone's comment wait on you? Facts, not phrases: yours or nobody's, no; the review skills' own verdict badges
+ * (![fixed], ![won't fix]: a fixed protocol), no; marked as needing no answer, no; else its verdict by meaning (judge.ts),
+ * and a comment not judged (yet, or the judging failed) waits: nothing is hidden by a guess.
+ */
+export function waitsOnYou(last: { id?: string; author: { login: string } | null; body?: string } | undefined, me: string): boolean {
+  if (!last || !last.author || last.author.login === me) return false
+  if (/(^|\n)\s*!\[(fixed|already fixed|won't fix|withdrawn)\]/i.test(last.body ?? '')) return false
+  if (last.id && settled(last.id)) return false
+  return !last.id || verdictOf(last.id) !== false
 }
 
 /** What happened to a PR from outside since the last sync: someone else's push, comments waiting on you, a new verdict. */

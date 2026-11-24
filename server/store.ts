@@ -184,6 +184,8 @@ export type Pr = {
   readAt?: string // you said nothing of what waited needs an answer (Nothing to answer): only what comes after counts
   seenReviews?: string[] // review ids already reported, so each new review shows once in Activity
   heardAt?: string // the newest comment by someone else already reported in Activity (newer ones show, once each)
+  waitingIds?: string[] // the comments waiting on you now, by id (judge.ts)
+  settledIds?: string[] // the waiting comments a run saw and found nothing to do about: Fix isn't offered again for them alone
   reviewers?: string[] // who opened the open threads (or asked for changes): who to ask for a re-review
   verdicts?: { who: string; state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'REQUESTED' }[] // yours: each reviewer's latest word, or a request still open
   reviewDecision?: string | null // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED (mine only)
@@ -251,6 +253,8 @@ type State = {
   usage?: import('./usage.ts').Usage // the Claude plan's windows, as the agents last reported them
   skillAdvice?: { improve: Record<string, import('./skills.ts').Improvement>; suggest?: { suggestions: unknown[]; costUsd: number; from: number; at: string; days: number } } // the last proposals, kept until asked again
   briefs?: Record<string, { key: string; text: string; at: string }> // the Desk's written brief per topic, with the facts it was written from
+  judged?: Record<string, boolean> // per comment id: does it ask anything of the PR's author (judge.ts), judged once
+  notWaiting?: string[] // comment ids you marked as needing no answer
   standupNotes?: Record<string, import('./standup.ts').Notes> // your own lines for a day's standup, by day
   standups?: Record<string, Written> // written standups, by "<day>|<teams>": what the model made of the facts, and from which
   // tickets that left your Linear list (handed over, closed) but are still named here (a run, a standup, a PR title):

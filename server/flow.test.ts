@@ -23,6 +23,8 @@ test('your PR: one state per situation, first rule wins', () => {
     ['feedback newer than the round', { awaiting: 2, feedbackAt: '2026-10-19T11:00:00Z', job: job('revise') }, 'feedback:run'],
     ['prepared, crit up', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('revise'), crit: { live: true, finishes: 0, known: true } }, 'in-crit:crit'],
     ['prepared, crit down', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('revise'), crit: { live: false, finishes: 0, known: true } }, 'needs-fix:fix'],
+    ['a run already saw every waiting comment and found nothing to do: no Fix again', { awaiting: 3, feedbackAt: '2026-10-19T09:00:00Z', job: job('publish'), settled: true }, 'answered:read'],
+    ['…until a new comment arrives', { awaiting: 3, feedbackAt: '2026-10-19T09:00:00Z', job: job('publish'), settled: false }, 'needs-fix:fix'],
     ['a push that sent nothing', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('publish') }, 'needs-fix:fix'],
     ['fix round done', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('reply') }, 'fixed:publish'],
     ['finished in crit', { awaiting: 2, feedbackAt: '2026-10-19T09:00:00Z', job: job('revise'), crit: { live: true, finishes: 1, known: true } }, 'fixed:publish'],

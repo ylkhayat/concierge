@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // its own state folder: what the store opens and writes must never reach the real one
 process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), 'rd-github-'))
-const { dropStaleNext, bodyReviews, readBy } = await import('./github.ts')
+const { dropStaleNext, bodyReviews } = await import('./github.ts')
 import type { Pr } from './store.ts'
 
 test('a review that is only text waits on you until you answer or they review again', () => {
@@ -27,18 +27,3 @@ test("a run's next steps go once the PR moves on after it, not for the run's own
   assert.deepEqual([later.job.next.steps, later.job.next.actions, later.job.next.for], [[], [], 'h'])
 })
 
-test('readBy: a finished push that left nothing marks what it read', () => {
-  const j = (x: object) => ({ kind: 'publish', state: 'done', queuedAt: '2026-11-11T10:23:00Z', leftNothing: true, ...x }) as Pr['job']
-  assert.equal(readBy(j({})), '2026-11-11T10:23:00Z')
-  assert.equal(readBy(j({ leftNothing: false })), undefined) // it named work left
-  assert.equal(readBy(j({ kind: 'reply' })), '2026-11-11T10:23:00Z') // a fix round that found nothing to fix or answer
-  assert.equal(readBy(j({ kind: 'revise' })), undefined) // a revise brings them into crit: yours to go through
-  assert.equal(readBy(j({ state: 'failed' })), undefined)
-})
-
-test('a sign-off under an AI attribution line ("🤖 _Drafted by Claude Code_") does not wait on you', async () => {
-  const { waitsOnYou } = await import('./github.ts')
-  const body = '🤖 _Drafted by Claude Code_\n\nVerified at `abc1234`. The new test passes and the change matches develop.'
-  assert.equal(waitsOnYou({ author: { login: 'reviewer' }, body }, 'me'), false)
-  assert.equal(waitsOnYou({ author: { login: 'reviewer' }, body: '🤖 _Drafted by Claude Code_\n\nWhy does this skip the cache?' }, 'me'), true)
-})
