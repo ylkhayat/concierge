@@ -12,9 +12,9 @@ import { claudeToken, claudeTokenOff } from './sharedEnv.ts'
 export type ClaudeAuth = { loggedIn: boolean; method?: string; email?: string; org?: string; plan?: string; usingLogin: boolean } // org, plan: the claude.ai organization and its tier (pro, max…)
 
 /** How the agents' Claude Code is signed in right now (asked with the token out of the way when the login is in use). */
-export async function claudeAuth(home?: string): Promise<ClaudeAuth> {
+export async function claudeAuth(home?: string, loginOnly = false): Promise<ClaudeAuth> {
   const env = { ...process.env }
-  if (state.claudeLogin || home) delete env.CLAUDE_CODE_OAUTH_TOKEN
+  if (state.claudeLogin || home || loginOnly) delete env.CLAUDE_CODE_OAUTH_TOKEN // loginOnly: is the login itself there, whatever is in use
   if (home) env.CLAUDE_CONFIG_DIR = home // another account: its own folder, its own login
   const out = await run('claude', ['auth', 'status'], { timeout: 30_000, cwd: '/tmp', env }).then((r) => r.stdout, (e) => String(e.stdout ?? ''))
   try {
@@ -86,10 +86,20 @@ export function keepClaudeAuth() {
 let checking: Promise<void> | undefined
 /** Check now, once at a time: also when an agent's run says its sign-in failed, so the next one doesn't wait half an hour. */
 export const checkClaudeAuth = () => (checking ??= (async () => {
-  if (!state.claudeLogin) return
+  const works = (a: ClaudeAuth) => a.loggedIn && a.method !== 'oauth_token'
+  // it fell back once: the login is tried again each time, and taken back the moment it answers (one bad answer, a
+  // refresh caught halfway, must not leave the agents on someone else's token for good)
+  if (!state.claudeLogin) {
+    if (!state.claudeLoginLapsed) return
+    if (works(await claudeAuth(undefined, true))) { console.log('claude: the claude.ai login works again; agents are back on it'); useLogin(true); state.claudeLoginLapsed = undefined; save() }
+    return
+  }
   useLogin(true)
-  const a = await claudeAuth()
-  if (!a.loggedIn || a.method === 'oauth_token') { console.warn('claude: the claude.ai login stopped working; agents fall back to the token'); useLogin(false); state.claudeLoginLapsed = new Date().toISOString(); save() }
+  if (works(await claudeAuth())) return
+  // once more a minute later before falling back: a check can land while the login refreshes itself
+  await new Promise((r) => setTimeout(r, 60_000))
+  if (works(await claudeAuth())) return
+  console.warn('claude: the claude.ai login stopped working; agents fall back to the token'); useLogin(false); state.claudeLoginLapsed = new Date().toISOString(); save()
 })().finally(() => { checking = undefined }))
 /** Claude Code's words when it can't sign in, in a run's output. */
 export const authFailed = (text: string) => /Failed to authenticate|OAuth session expired|Invalid API key|Please run \/login/i.test(text)
