@@ -13,6 +13,8 @@ import { join } from 'node:path'
 import { PassThrough, type Readable, type Writable } from 'node:stream'
 import { config, state } from './store.ts'
 import { orgSkills } from './orgSkills.ts'
+import { onFallbackToken } from './claudeLogin.ts'
+import { accountToken } from './sharedEnv.ts'
 
 export type Kind = 'claude' | 'openai' | 'llama' | 'copilot'
 /** An account's id. The first three are their kinds (one of each, as before accounts existed); more can be added. */
@@ -181,7 +183,13 @@ export const ollamaOf = (p: ProviderId) => accountOf(p).host?.replace(/\/$/, '')
 const skillsDir = await agentSkills()
 export function envOf(p: ProviderId, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const a = accountOf(p)
-  if (a.kind === 'claude' && a.home) { const env: NodeJS.ProcessEnv = { ...base, CLAUDE_CONFIG_DIR: a.home }; delete env.CLAUDE_CODE_OAUTH_TOKEN; return env }
+  if (a.kind === 'claude' && a.home) {
+    const env: NodeJS.ProcessEnv = { ...base, CLAUDE_CONFIG_DIR: a.home }
+    delete env.CLAUDE_CODE_OAUTH_TOKEN // its own login, never the first account's token
+    // its login stopped working on this machine: its own fallback token, so its work goes on (claudeLogin.ts)
+    if (onFallbackToken(p)) env.CLAUDE_CODE_OAUTH_TOKEN = accountToken(p)
+    return env
+  }
   if (a.kind === 'openai' && a.home) return { ...base, CODEX_HOME: a.home }
   // Copilot finds the person's skills where Claude keeps them, so a skill that loads another one works there too
   if (a.kind === 'copilot') return { ...base, COPILOT_SKILLS_DIRS: [base.COPILOT_SKILLS_DIRS, skillsDir].filter(Boolean).join(',') }

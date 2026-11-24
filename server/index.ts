@@ -44,7 +44,7 @@ import { selfPatch } from './scope.ts'
 import { behind, latestHeads, overdue, readLatest, runningHere, type Running } from './versions.ts'
 import { capped, machines, serve as serveMachine, slotsHere, token as machineToken, rotateToken, ask, matrix, heldWhy, onCameBack, hosted, statsHere, type Stats } from './machines.ts'
 import { updateStatus } from './updateStatus.ts'
-import { applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey } from './sharedEnv.ts'
+import { accountToken, accountTokenAt, applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey } from './sharedEnv.ts'
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
@@ -53,7 +53,7 @@ import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadS
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
-import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepClaudeAuth, startClaudeLogin, stopUsingLogin } from './claudeLogin.ts'
+import { claudeAuth, checkClaudeAuth, claudeLoginState, finishClaudeLogin, keepAccountLogins, keepClaudeAuth, lapsedLogins, onFallbackToken, setupTokenState, startClaudeLogin, startSetupToken, finishSetupToken, stopUsingLogin } from './claudeLogin.ts'
 import { readSecrets, rereadSecrets, saveSecrets, scrub } from './scrub.ts'
 import { applyConnectors, addCustom, customName, ownServers, removeCustom, connect, connectSentry, connections, recheck, finishLogin, loginState, reconnect, removeFix, startLogin, accountConnections } from './connections.ts'
 import { spentText } from './usage.ts'
@@ -90,7 +90,7 @@ import { directionOf, setDirection } from './stackDirection.ts'
 import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
 
-export type Queued = { why: string; until?: number } // why queued work hasn't started, and when it should (queuedWhy)
+export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
 /** An error in a few words, with what is under Node's bare "fetch failed" (ENOTFOUND: no DNS, a timeout, a reset). */
 const whyFailed = (e: unknown) => {
@@ -1619,6 +1619,24 @@ app.post('/claude-auth/login', async (c) => { try { return c.json({ url: await s
 app.post('/claude-auth/finish', async (c) => { const { input } = await c.req.json<{ input?: string }>(); try { finishClaudeLogin(String(input ?? '')); return c.json({ ok: true }) } catch (e) { return c.json({ error: (e as Error).message }, 400) } })
 app.post('/claude-auth/token', (c) => { stopUsingLogin(); return c.json({ ok: true }) })
 keepClaudeAuth()
+// the accounts you added: their login on this machine, checked every 2 minutes (keepAccountLogins, beside readCan);
+// lapsed, their runs go on their fallback token, and this machine says which (its status) so the control plane shows it
+/**
+ * One notice for every machine where an added Claude account's login stopped working: raised the moment a machine says
+ * so, with where to sign it in again (the ticket that waits on it has the button too). Gone once each is signed in.
+ */
+async function loginNotice() {
+  if (fleet.elsewhere()) return
+  const where = new Map<string, string[]>() // account → machines
+  const add = (m: string, ids: string[] = []) => { for (const id of ids) where.set(id, [...(where.get(id) ?? []), m]) }
+  add(fleet.machine ?? 'this machine', lapsedLogins())
+  for (const m of machines.values()) add(m.name, m.status?.lapsed)
+  // only the accounts that have work (picked for some, in the order, or a repository's): an idle one is no news
+  const used = new Set([...Object.values(config.providers?.use ?? {}), ...(config.providers?.fallback ?? []), ...Object.values(config.repoAccounts ?? {})].filter(Boolean) as string[])
+  const lines = [...where].filter(([id]) => used.has(id)).map(([id, ms]) => `${accountOf(id).label} isn't signed in on ${ms.join(' and ')}: ${accountToken(id) ? 'its runs there use its fallback token, without its claude.ai connectors' : 'that machine takes none of its work (add a fallback token so it never stops)'}`)
+  condition('login-lapsed', 'Claude accounts', lines.length ? `${lines.join('; ')}. Sign in again: Settings → Accounts → the account → Sign in on the machine.` : undefined)
+}
+setInterval(() => void loginNotice(), 60_000).unref()
 // every account's folder has its links on this machine too (they are made where the account was added, and don't travel)
 for (const a of accounts()) if (a.home && (a.kind === 'claude' || a.kind === 'openai')) void prepareHome(a.home, a.kind).catch((e) => console.warn(`accounts: ${a.label}: ${(e as Error).message}`))
 // the organization's skills: mirrored for every machine, offered to every run (orgSkills.ts)
@@ -2182,6 +2200,8 @@ const providersView = async () => ({
     available: available(a.id), why: whyNot(a.id)?.why, limitedUntil: limitedUntil(a.id), plan: a.kind === 'claude' ? planSpent(a.id) : undefined,
     who: who && { ...who, ...(twinOf(a.id) && { samePlanAs: accountOf(twinOf(a.id)!.id).label }) },
     signedIn: a.kind === 'claude' ? who!.signedIn : a.kind === 'openai' ? openaiAuth(a.id) !== 'none' : undefined,
+    // an added Claude account's own setup token: since when it is set (never the value), and whether runs here use it now
+    fallbackToken: a.kind === 'claude' && a.home ? { set: accountTokenAt(a.id), inUse: onFallbackToken(a.id) } : undefined,
     openai: a.kind === 'openai' ? openaiAuth(a.id) : undefined,
     llama: a.kind === 'llama' ? { ...await ollamaState(a.id), pulling: llamaPulling(a.id) } : undefined,
     today: state.spendBy?.[today()]?.[a.id],
@@ -2327,6 +2347,35 @@ app.post('/accounts/:id/login', async (c) => {
   if (!a || a.kind === 'llama') return c.json({ error: 'Nothing to sign in to' }, 400)
   try { return c.json(a.kind === 'openai' ? await startOpenaiLogin(a.id) : { url: await startClaudeLogin(a.home) }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })
+
+// an added Claude account's fallback token (claudeLogin.ts): pasted, or made here in the browser (claude setup-token)
+function keepAccountToken(id: string, v: string | null) {
+  const all = { ...(readSecrets().accountTokens ?? {}) }
+  if (v) all[id] = { value: v, at: new Date().toISOString() }; else delete all[id]
+  saveSecrets({ accountTokens: all })
+  applyShared(true)
+  console.log(`accounts: ${accountOf(id).label}'s fallback token ${v ? 'set' : 'removed'}`)
+}
+const addedClaude = (id: string) => accounts().find((a) => a.id === id && a.kind === 'claude' && !!a.home)
+app.post('/accounts/:id/token', async (c) => {
+  const id = c.req.param('id')
+  if (!addedClaude(id)) return c.json({ error: 'Only a Claude account you added has its own fallback token' }, 400)
+  const { value } = await c.req.json() as { value?: string | null }
+  const v = typeof value === 'string' ? value.trim() : null
+  if (v !== null && !/^sk-ant-oat[\w-]{20,}$/.test(v)) return c.json({ error: 'That isn\'t a claude setup-token token (it starts with sk-ant-oat)' }, 400)
+  keepAccountToken(id, v)
+  return c.json(await providersView())
+})
+app.post('/accounts/:id/token/start', async (c) => {
+  const id = c.req.param('id')
+  if (!addedClaude(id)) return c.json({ error: 'Only a Claude account you added has its own fallback token' }, 400)
+  try { return c.json({ url: await startSetupToken((t) => keepAccountToken(id, t)) }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
+})
+app.post('/accounts/:id/token/finish', async (c) => {
+  const { input } = await c.req.json<{ input?: string }>()
+  try { finishSetupToken(String(input ?? '')); return c.json({ ok: true }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
+})
+app.get('/accounts/:id/token/state', (c) => c.json(setupTokenState() ?? null))
 
 app.get('/prs', (c) => { const away = scopeOf(c) === 'self' ? awayHere() : undefined; return c.json(away ? views().filter((p) => !away.has(p.repo)) : views()) })
 app.get('/prs/:id/activity', async (c) => c.json(await loadActivity(decodeURIComponent(c.req.param('id')))))
@@ -3225,10 +3274,12 @@ let canHere: string[] = []
 const readCan = async () => {
   if (!fleet.elsewhere()) return // only a worker is asked
   const out: string[] = []
-  for (const a of accounts()) if (await signedInHere(a.id).catch(() => false)) out.push(a.id)
+  for (const a of accounts()) if (onFallbackToken(a.id) || await signedInHere(a.id).catch(() => false)) out.push(a.id)
   canHere = out
 }
 void readCan(); setInterval(() => void readCan(), 60_000).unref()
+// (started here, after readCan: a lapse or a recovery is told to the control plane at once)
+keepAccountLogins(() => accounts().filter((a) => a.kind === 'claude' && !!a.home), () => { void readCan(); void loginNotice() })
 /** Is this account signed in on this machine (its own session)? */
 async function signedInHere(account = 'claude') {
   const a = accounts().find((x) => x.id === account)
@@ -3246,7 +3297,7 @@ async function signedInHere(account = 'claude') {
 // offline machine is aligned when it is back.
 export type AlignReport = {
   version?: string; repos: Record<string, string>; checkedOut: string[]; missingSkills: string[]; brokenLinks: string[]
-  accounts: { id: string; signedIn: boolean; who?: string }[]
+  accounts: { id: string; signedIn: boolean; who?: string; fallback?: boolean }[] // fallback: not signed in, its runs on its fallback token
 }
 async function alignHere(): Promise<AlignReport> {
   await ensureClones().catch((e: Error) => console.warn('align: clones:', e.message))
@@ -3256,7 +3307,7 @@ async function alignHere(): Promise<AlignReport> {
   return {
     version: process.env.DECK_VERSION, repos: clones, checkedOut: Object.keys(config.repos).filter((r) => !(r in clones)),
     missingSkills: needed.filter((x) => !x.found).map((x) => x.name), brokenLinks: (await brokenSkillLinks()).map((l) => l.name),
-    accounts: await Promise.all(accounts().map(async (a) => ({ id: a.id, signedIn: await signedInHere(a.id).catch(() => false), who: identityOf(a.id) }))),
+    accounts: await Promise.all(accounts().map(async (a) => ({ id: a.id, signedIn: await signedInHere(a.id).catch(() => false), who: identityOf(a.id), fallback: onFallbackToken(a.id) }))),
   }
 }
 type AlignItem = { machine: string; what: string; state: 'fixing' | 'needs-you'; fix?: string }
@@ -3282,7 +3333,7 @@ async function alignAll(only?: string) {
     for (const a of r.accounts) {
       if (!used.has(a.id)) continue
       const acc = accountOf(a.id)
-      if (!a.signedIn) items.push({ machine: m, what: `${acc.label} isn't signed in`, state: 'needs-you', fix: `Settings → Accounts → ${acc.label} → Sign in on ${m}` })
+      if (!a.signedIn) items.push({ machine: m, what: a.fallback ? `${acc.label} isn't signed in: its runs there use its fallback token, without its claude.ai connectors` : `${acc.label} isn't signed in`, state: 'needs-you', fix: `Settings → Accounts → ${acc.label} → Sign in on ${m}` })
       else if (acc.login && a.who && a.who !== acc.login) items.push({ machine: m, what: `${acc.label} is signed in as ${loginText(a.who)}, not ${loginText(acc.login)}`, state: 'needs-you', fix: `Sign it in again there, or make that login the account's (Settings → Accounts)` })
     }
   }

@@ -5,6 +5,7 @@ import { ArrowRight, Sparkles } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { Overlay } from '../../server/explain.ts'
 import { api, type PrView, type TicketView } from '../lib.ts'
+import { SignInHere } from '../components/MachineSignIn.tsx'
 import { ciLabel, ciTone } from '../components/PrStack.tsx'
 import { useApi, explainPath, keepSame } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
@@ -141,6 +142,8 @@ export function TicketOverview({ t, why, onPr, onOpen, onStack }: {
         <Fact k="Agent" tone={t.queued ? 'idle' : t.busy ? 'wait' : run?.state === 'failed' ? 'fail' : run?.state === 'done' ? 'ok' : 'idle'}>
           {t.queued ? `Queued: ${t.queued.why}` : t.busy ? `Working${run?.phase ? `: ${run.phase}` : ''}` : run ? `${run.label ?? 'Ship'} ${run.state}${run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''}` : 'No run yet'}
         </Fact>
+        {/* the one sign-in it waits for, made here (a <p> can't hold it: beside it, under its words) */}
+        {t.queued?.signIn && <div className="pl-[6.625rem]"><SignInHere machine={t.queued.signIn.machine} account={t.queued.signIn.account} /></div>}
         {t.waitsOn && <Fact k="Stack" tone="wait">Ready; submitted once {t.waitsOn} {t.waitsOn.includes(',') ? 'are' : 'is'} too</Fact>}
         <Fact k="Linear" tone={t.agentWaiting ? 'wait' : 'idle'}>{t.agentWaiting ? 'The agent asked on the ticket' : said ? `${said.by} commented last` : 'No comments'}</Fact>
       </Panel>

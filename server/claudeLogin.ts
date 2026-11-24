@@ -7,7 +7,7 @@ import { save, state } from './store.ts'
 
 const run = promisify(execFile)
 // the model-only token (the shared one, else this machine's): the fallback when the full login isn't there or stops working
-import { claudeToken, claudeTokenOff } from './sharedEnv.ts'
+import { accountToken, claudeToken, claudeTokenOff } from './sharedEnv.ts'
 
 export type ClaudeAuth = { loggedIn: boolean; method?: string; email?: string; org?: string; plan?: string; usingLogin: boolean } // org, plan: the claude.ai organization and its tier (pro, max…)
 
@@ -85,7 +85,8 @@ export function keepClaudeAuth() {
 }
 let checking: Promise<void> | undefined
 /** Check now, once at a time: also when an agent's run says its sign-in failed, so the next one doesn't wait half an hour. */
-export const checkClaudeAuth = () => (checking ??= (async () => {
+export const checkClaudeAuth = () => { void checkAccountLogins(added(), heard); return checkDefault() }
+const checkDefault = () => (checking ??= (async () => {
   const works = (a: ClaudeAuth) => a.loggedIn && a.method !== 'oauth_token'
   // it fell back once: the login is tried again each time, and taken back the moment it answers (one bad answer, a
   // refresh caught halfway, must not leave the agents on someone else's token for good)
@@ -101,6 +102,85 @@ export const checkClaudeAuth = () => (checking ??= (async () => {
   if (works(await claudeAuth())) return
   console.warn('claude: the claude.ai login stopped working; agents fall back to the token'); useLogin(false); state.claudeLoginLapsed = new Date().toISOString(); save()
 })().finally(() => { checking = undefined }))
+// --- the accounts you added (each its own folder): their login on this machine, and their fallback token ------------
+// A login can stop working on one machine (its refresh refused: Claude Code then empties the sign-in), and an added
+// account has no shared token to fall back on, so that machine took none of its work until someone signed in there by
+// hand. Now each is checked every 2 minutes: two failed checks in a row and its runs here go on the account's own setup
+// token (Settings → Accounts), if it has one, and the machine says so (its status: lapsed), so the control plane shows a
+// notice with a Sign in button. The login is checked on: the moment it answers again, the runs are back on it.
+const lapsedHere = new Set<string>(), strikes = new Map<string, number>()
+/** The added accounts whose login stopped working on this machine. */
+export const lapsedLogins = () => [...lapsedHere]
+/** Whether an added account's runs here go on its fallback token now. */
+export const onFallbackToken = (id: string) => lapsedHere.has(id) && !!accountToken(id)
+type Added = { id: string; label: string; home?: string }
+let accountChecking: Promise<void> | undefined
+/** Check each added Claude account's login here, once at a time; `changed` hears which ones lapsed or came back. */
+export const checkAccountLogins = (list: Added[], changed?: (id: string, lapsed: boolean) => void) => (accountChecking ??= (async () => {
+  for (const a of list) {
+    if (!a.home) continue
+    const ok = await claudeAuth(a.home).then((x) => x.loggedIn, () => false)
+    if (ok) {
+      strikes.delete(a.id)
+      if (lapsedHere.delete(a.id)) { console.log(`claude: ${a.label}'s claude.ai login works again here; its runs are back on it`); changed?.(a.id, false) }
+      continue
+    }
+    // one failed check can be a refresh caught halfway: the second, two minutes later, decides
+    const n = (strikes.get(a.id) ?? 0) + 1
+    strikes.set(a.id, n)
+    if (n >= 2 && !lapsedHere.has(a.id)) {
+      lapsedHere.add(a.id)
+      console.warn(`claude: ${a.label} isn't signed in here (its claude.ai login stopped working); ${accountToken(a.id) ? 'its runs use its fallback token' : 'it has no fallback token, so this machine takes none of its work'} until it is signed in again`)
+      changed?.(a.id, true)
+    }
+  }
+})().finally(() => { accountChecking = undefined }))
+let added: () => Added[] = () => [], heard: ((id: string, lapsed: boolean) => void) | undefined
+/** Check the added accounts every 2 minutes (and when a run says its sign-in failed: checkClaudeAuth). */
+export function keepAccountLogins(list: () => Added[], changed: (id: string, lapsed: boolean) => void) {
+  added = list; heard = changed
+  void checkAccountLogins(added(), heard)
+  setInterval(() => void checkAccountLogins(added(), heard), 2 * 60_000).unref()
+}
+/** For a test: the accounts lapsed here. */
+export const setLapsedForTest = (ids: string[]) => { lapsedHere.clear(); for (const id of ids) lapsedHere.add(id) }
+
+// --- an account's fallback token, made in the browser: `claude setup-token` (a year-long, model-only token) ------------
+let pendingToken: { child: ReturnType<typeof spawn>; out: string; done?: boolean; ok?: boolean; error?: string } | undefined
+/** Start making a setup token for an added account; `keep` gets it once you approved. Returns the address to approve. */
+export function startSetupToken(keep: (token: string) => Promise<void> | void): Promise<string> {
+  pendingToken?.child.kill()
+  const env: NodeJS.ProcessEnv = { ...process.env, COLUMNS: '1000' } // wide: the token comes back on one line
+  delete env.CLAUDE_CODE_OAUTH_TOKEN
+  const child = spawn('script', ['-qfec', 'stty cols 1000 2>/dev/null; claude setup-token', '/dev/null'], { cwd: '/tmp', env, stdio: ['pipe', 'pipe', 'pipe'] })
+  const p: NonNullable<typeof pendingToken> = { child, out: '' }
+  pendingToken = p
+  const stop = setTimeout(() => child.kill(), 10 * 60_000)
+  child.on('close', async () => {
+    clearTimeout(stop)
+    const token = p.out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').match(/sk-ant-oat[\w-]{20,}/)?.[0]
+    if (token) { try { await keep(token); p.ok = true } catch (e) { p.error = (e as Error).message } }
+    else p.error = 'No token came back: start it again'
+    p.done = true
+  })
+  return new Promise((resolve, reject) => {
+    const give = setTimeout(() => reject(new Error('No sign-in address came back')), 30_000)
+    let url: string | undefined
+    const read = (c: Buffer) => {
+      p.out = (p.out + c).slice(-20_000)
+      const m = p.out.match(/https:\/\/\S*(?:claude\.(?:ai|com)|anthropic\.com)\S*oauth\S*/)
+      if (m && !url) { url = m[0].split(/[\u0007\u001b]/)[0]; clearTimeout(give); resolve(url) }
+    }
+    child.stdout!.on('data', read); child.stderr!.on('data', read)
+  })
+}
+/** The code the approval page shows, pasted on the page. */
+export function finishSetupToken(input: string) {
+  if (!pendingToken || pendingToken.done) throw new Error('The sign-in is not waiting anymore; start it again')
+  pendingToken.child.stdin!.write(input.trim() + '\n')
+}
+export const setupTokenState = () => (pendingToken ? { done: !!pendingToken.done, ok: !!pendingToken.ok, error: pendingToken.error } : undefined)
+
 /** Claude Code's words when it can't sign in, in a run's output. */
 export const authFailed = (text: string) => /Failed to authenticate|OAuth session expired|Invalid API key|Please run \/login/i.test(text)
 /** A provider that can't be paid: a subscription that ended, no credit or quota left. */

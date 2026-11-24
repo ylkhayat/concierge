@@ -10,7 +10,7 @@ import { test } from 'node:test'
 process.env.XDG_STATE_HOME = mkdtempSync(join(tmpdir(), 'rd-placement-'))
 process.env.CONCIERGE_FLEET = new URL('./testdata/fleet-test.mjs', import.meta.url).pathname
 process.env.DECK_NAME = 'main'; process.env.HOLDER = 'main'
-const { machines, place, route, loginOk, whyNowhere, heldWhy } = await import('./machines.ts')
+const { machines, place, route, loginOk, whyNowhere, heldWhy, signInFor } = await import('./machines.ts')
 const { config, state } = await import('./store.ts')
 const { setIdentity } = await import('./providers.ts')
 
@@ -59,6 +59,20 @@ test('an account is one login: a machine signed in as someone else under its nam
   setIdentity('claude', 'login:me@home.com|?') // this machine too: it doesn't run it either
   assert.equal(loginOk(undefined, 'claude'), false)
   delete config.accounts
+  machines.clear()
+})
+
+test('work that waits only for a sign-in names the machine to sign in on, for the button beside it', () => {
+  config.repos = { 'acme/api': '/code/api' }
+  config.cloneOn = { 'acme/api': ['mac'] } // only on mac, where the account isn't signed in
+  add('mac', ['acme/api'], { can: ['claude'] })
+  assert.match(whyNowhere('acme/api', 'person')!, /where person isn't signed in|isn't signed in/)
+  assert.deepEqual(signInFor('acme/api', 'person'), { machine: 'mac', account: 'person' })
+  add('mac', ['acme/api'], { can: ['claude', 'person'] }) // signed in there now (or on its fallback token)
+  assert.equal(whyNowhere('acme/api', 'person'), undefined)
+  assert.equal(signInFor('acme/api', 'person'), undefined)
+  config.cloneOn = { 'acme/api': [] } // allowed nowhere: a sign-in wouldn't help
+  assert.equal(signInFor('acme/api', 'person'), undefined)
   machines.clear()
 })
 

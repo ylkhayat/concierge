@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { Connection } from '../../server/connections.ts'
 import { api } from '../lib.ts'
 import { ConnectCard } from './ConnectCard.tsx'
+import { SignInSteps, useMachineSignIn } from './MachineSignIn.tsx'
 import { Tabs } from './Tabs.tsx'
 
 type Toast = (m: string, tone?: 'ok' | 'error') => void
@@ -115,24 +116,9 @@ function useWhere(account: string) {
  * each other's), made from here for any machine. Everything else (claude.ai connectors, keys) then works everywhere.
  */
 function SignedInOn({ a, w, onDone }: { a: AccountRow; w?: Where; onDone: () => void }) {
-  const [flow, setFlow] = useState<{ machine: string; url?: string; code?: string; input: string; error?: string; waiting?: boolean }>()
+  const signIn = useMachineSignIn(a.id, onDone)
+  const flow = signIn.flow, start = signIn.start
   if (a.kind === 'llama' || !w?.signedIn || w.machines.length < 2) return null
-  const start = (machine: string) => {
-    setFlow({ machine, input: '' })
-    api(`/machines/${encodeURIComponent(machine)}/signin`, { account: a.id, step: 'start' }).then(
-      (r: { url: string; code?: string }) => setFlow({ machine, url: r.url, code: r.code, input: '', waiting: !!r.code }), (e: Error) => setFlow({ machine, input: '', error: e.message }))
-  }
-  const finish = () => {
-    if (!flow) return
-    const f = flow
-    setFlow({ ...f, waiting: true })
-    api(`/machines/${encodeURIComponent(f.machine)}/signin`, { account: a.id, step: 'finish', input: f.input }).then(() => poll(f.machine), (e: Error) => setFlow({ ...f, error: e.message, waiting: false }))
-  }
-  const poll = (machine: string, tries = 0): void => void api(`/machines/${encodeURIComponent(machine)}/signin`, { account: a.id, step: 'state' }).then((r: { signedIn: boolean; state: { done: boolean } | null }) => {
-    if (r.signedIn) { setFlow(undefined); onDone(); return }
-    if (tries < 30 && !r.state?.done) setTimeout(() => poll(machine, tries + 1), 2000)
-    else setFlow((f) => f && { ...f, waiting: false, error: 'Not signed in yet: try again' })
-  }, () => {})
   const silent = (m: string) => w.signedIn![m] === null || !!w.silent?.includes(m)
   const off = (m: string) => !!w.off?.includes(m)
   const missing = w.machines.filter((m) => w.signedIn![m] === false || off(m))
@@ -160,21 +146,7 @@ function SignedInOn({ a, w, onDone }: { a: AccountRow; w?: Where; onDone: () => 
       ))}
       {!missing.length && !quiet.length && <p className="mt-1 text-meta text-fg-3">Every machine is signed in: connectors added on claude.ai for this account work everywhere.</p>}
       {!!quiet.length && <p className="mt-1 text-meta text-fg-3">{quiet.join(', ')} didn&apos;t answer: offline, or still updating to this version. Its markers fill in once it does.</p>}
-      {flow && (
-        <div className="mt-2 space-y-2 border-t border-line pt-2 text-small">
-          {flow.error ? <p className="text-fail-text">{flow.error}</p>
-            : !flow.url ? <p className="text-fg-3">Starting the sign-in on {flow.machine}…</p>
-            : <>
-                <p className="text-fg-2">1. <a href={flow.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">Open the sign-in page</a> and approve{flow.code ? <> with the code <code className="rounded bg-fill px-1 font-mono">{flow.code}</code></> : ''}.</p>
-                {!flow.code && <div className="flex gap-1.5">
-                  <input value={flow.input} onChange={(e) => setFlow({ ...flow, input: e.target.value })} placeholder="2. Paste the code it shows" className="min-w-0 flex-1 rounded-md bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
-                  <button onClick={finish} disabled={!flow.input.trim() || flow.waiting} className={btn}>{flow.waiting ? <LoaderCircle className="size-3.5 animate-spin" /> : null}Finish</button>
-                </div>}
-                {flow.code && <button onClick={() => poll(flow.machine)} className={btn}>I approved it</button>}
-              </>}
-          <button onClick={() => setFlow(undefined)} className="text-meta text-fg-4 hover:text-fg-1">Cancel</button>
-        </div>
-      )}
+      <SignInSteps s={signIn} />
     </div>
   )
 }

@@ -31,7 +31,7 @@ import { fleet } from './fleet.ts'
 import { mine, readLines } from './perMachine.ts'
 import { scrub } from './scrub.ts'
 import { busyUnder, newRun, watch as watchBackground } from './background.ts'
-import { draining, heldWhy, machines, place, route, slotsHere, token, whyNowhere } from './machines.ts'
+import { draining, heldWhy, machines, place, route, slotsHere, signInFor, token, whyNowhere } from './machines.ts'
 import { remoteAgent } from './worker.ts'
 import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
@@ -559,9 +559,10 @@ export function waitReason(): string | undefined {
  * then the PR below it in its stack, a retry it waits out, and then whatever holds every run (waitReason). `until`:
  * when it should start, when that is known.
  */
-export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: string }, work: Work, below?: string, repo?: string): { why: string; until?: number } {
+export function queuedWhy(t: Parameters<typeof waitingOn>[0] & { notBefore?: string }, work: Work, below?: string, repo?: string): { why: string; until?: number; signIn?: { machine: string; account: string } } {
   const acct = waitingOn(t, work, repo)
-  if (acct) return { why: `${acct.label} can't take it now: ${acct.why}`, until: acct.until }
+  // signIn: a sign-in on one machine is all it waits for, made from the line itself (the page's Sign in button)
+  if (acct) return { why: `${acct.label} can't take it now: ${acct.why}`, until: acct.until, ...('signIn' in acct && acct.signIn && { signIn: acct.signIn }) }
   if (below) return { why: `it starts after ${below}, below it in its stack` }
   if (t.notBefore && t.notBefore > new Date().toISOString()) return { why: (t as { gathering?: boolean }).gathering ? 'it waits a moment for more of your messages' : 'it tries again shortly', until: Date.parse(t.notBefore) }
   const since = draining()
@@ -932,8 +933,9 @@ const canRun = (_t: Parameters<typeof fresh>[0], work: Work, repo?: string) => a
 /** What queued work waits for, when it can't start: the account the order picks, why, and until when. */
 export function waitingOn(t: Parameters<typeof fresh>[0], work: Work, repo?: string) {
   // several machines: none that may have the repository can take it (machines.ts whyNowhere)
-  const nowhere = repo ? whyNowhere(repo, t.provider ?? providerFor(work, repo)) : undefined
-  if (nowhere) return { label: 'Machines', why: nowhere, until: undefined }
+  const acct = t.provider ?? providerFor(work, repo)
+  const nowhere = repo ? whyNowhere(repo, acct) : undefined
+  if (nowhere) return { label: 'Machines', why: nowhere, until: undefined, signIn: signInFor(repo!, acct) }
   if (canRun(t, work, repo)) return undefined
   const p = providerFor(work, repo), w = whyNot(p)
   return { label: accountOf(p).label, why: w?.why ?? 'busy', until: w?.until }

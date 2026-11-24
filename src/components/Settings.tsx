@@ -20,6 +20,7 @@ import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { ago, clock, weekday } from '../time.ts'
 import { ClaudeAccount, Connections, Skeleton } from './Connections.tsx'
 import { MachinesSettings } from './MachinesSettings.tsx'
+import { FallbackToken } from './FallbackToken.tsx'
 import type { Mode, OrgSkill } from '../../server/orgSkills.ts'
 
 export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
@@ -761,6 +762,7 @@ export type AccountView = {
   // in as the same login
   who?: { email?: string; org?: string; tier?: string; byToken: boolean; tokenSet?: string; tokenFrom?: string; samePlanAs?: string }
   openai?: 'chatgpt' | 'api-key' | 'none'; llama?: { up: boolean; models: string[]; pulling?: string[] }; today?: Spend
+  fallbackToken?: { set?: string; inUse: boolean } // an added Claude account's own setup token (FallbackToken.tsx)
 }
 export type ProvidersView = {
   use: Partial<Record<string, string>>; fallback: string[]; budgets: Record<string, number>; tiers?: Record<string, string | null>
@@ -950,6 +952,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
                 {tested[a.id].ok ? `It answers (${((tested[a.id].ms ?? 0) / 1000).toFixed(1)}s): “${tested[a.id].text}”` : `It doesn't answer: ${tested[a.id].error}`}
               </p>
             )}
+            {!compact && a.fallbackToken && <FallbackToken a={a} onChange={setV} toast={toast} />}
             {a.who?.samePlanAs && <p className="mt-2 rounded-lg bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">Same claude.ai login as {a.who.samePlanAs}: runs on either spend one plan.</p>}
             {signing?.id === a.id && (signing.code
               ? <p className="mt-2 text-small">Open <a href={signing.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">{signing.url.replace('https://', '')}</a> and enter <b className="font-mono">{signing.code}</b></p>

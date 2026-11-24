@@ -24,6 +24,7 @@ export type WorkerStatus = { name: string; role?: string; slots: number; running
   who?: Record<string, string> // each account's login there (providers.ts identityOf): one account is one login on every machine
   crit?: { key: string; port?: number }[] // the crit sessions running there, so the page finds a review's crit on the machine that ran it
   takes?: string[] // what it runs beyond Ship runs: 'review' (fences someone else's PR, reports its crit). Older versions say nothing
+  lapsed?: string[] // the added Claude accounts whose login stopped working there (claudeLogin.ts): a notice, and a Sign in button
 } // cpu, usedMb: what its agents use; can: the accounts it can run
 
 /** The token both machines share: made by the first that needs it, in a folder the sync carries to the other. */

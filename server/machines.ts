@@ -19,6 +19,7 @@ import { state } from './store.ts'
 import { accountOf, accounts, identityOf, loginText, spawnAgent, type ProviderId } from './providers.ts'
 import { UNTRUSTED_ARGS, untrustedEnv } from './untrusted.ts'
 import { critElsewhere, liveCrit } from './crit.ts'
+import { lapsedLogins } from './claudeLogin.ts'
 import { fleetMachines } from './perMachine.ts'
 import { call, serveWorker, tokenIn, type WorkerStatus } from './worker.ts'
 import { runningHere, type Running } from './versions.ts'
@@ -146,6 +147,20 @@ export function whyNowhere(repo: string, account: string): string | undefined {
 }
 
 /**
+ * Where to sign `account` in so `repo`'s work can go somewhere: the first machine of its route that isn't signed in
+ * (whyNowhere said "isn't signed in"), for the button beside that line. Undefined when that isn't what holds it.
+ */
+export function signInFor(repo: string, account: string): { machine: string; account: string } | undefined {
+  if (!fleet.machine) return undefined
+  const r = route(repo)
+  if (r.why || !r.order.length) return undefined
+  const can = (m: string) => { const c = machines.get(m)?.status?.can; return !c || c.includes(account) }
+  if (r.order.some((m) => m === fleet.machine || can(m))) return undefined
+  const online = r.order.find((m) => machines.get(m)?.status)
+  return { machine: online ?? r.order[0], account }
+}
+
+/**
  * Where a run goes. With a repository, the first machine in its route (the matrix) that has room; the machine it ran on
  * before (its worktree and session are there) first, if that one has room and is in the route. Without one, the
  * machine with the most room. Each only where its account is signed in as that account's login. `here` is how many
@@ -228,7 +243,7 @@ export function serve(cap: () => number, own: () => Promise<{ cpu: number; mb: n
       const freeMb = Math.round(freemem() / 1048576)
       return { name: fleet.machine!, role: process.env.DECK_ROLE, slots: fleet.elsewhere() && freeMb >= LOW_MB && !draining() ? slotsHere(cap()) : 0, running: served?.hosted.size ?? 0, freeMb,
         cores: availableParallelism(), mb: Math.round(totalmem() / 1048576), cpu: usage.cpu, usedMb: usage.mb, can: can(), repos: Object.keys(config.repos).filter((r) => !(r in cloneState())), // checked out here (what isn't is in cloneState)
-        who: Object.fromEntries(accounts().flatMap((a) => { const w = identityOf(a.id); return w ? [[a.id, w]] : [] })), crit: liveCrit(), takes: ['review'] }
+        who: Object.fromEntries(accounts().flatMap((a) => { const w = identityOf(a.id); return w ? [[a.id, w]] : [] })), crit: liveCrit(), takes: ['review'], lapsed: lapsedLogins() }
     },
     busy: busyUnder,
     logs: () => recentLines().map(scrub),

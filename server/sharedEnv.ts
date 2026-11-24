@@ -14,12 +14,20 @@ export type Shared = Partial<Record<SharedKey, { value: string; at: string; from
 const FILE = join(CONFIG_DIR, 'secrets.json')
 /** What this machine's own environment (.env) had at start: the fallback, and how the page tells the two apart. */
 export const local: Partial<Record<SharedKey, string>> = Object.fromEntries(SHARED_KEYS.filter((k) => process.env[k]).map((k) => [k, process.env[k]!]))
-let seen = -1, shared: Shared = {}, loginOn = false
+// each Claude account you added: its own setup token (claude setup-token, a year long), what its runs use on a machine
+// where its claude.ai login stopped working (claudeLogin.ts), so its work never stops on a lapsed login
+export type AccountTokens = Record<string, { value: string; at: string }>
+let seen = -1, shared: Shared = {}, tokens: AccountTokens = {}, loginOn = false
 /** Agents use the full claude.ai login (claudeLogin.ts): the Claude token stays out of the environment. */
 export const claudeTokenOff = (on: boolean) => { loginOn = on }
 export const sharedNow = () => shared
 /** The Claude token to use when agents run on a token (claudeLogin.ts): the shared one, else this machine's. */
 export const claudeToken = () => shared.CLAUDE_CODE_OAUTH_TOKEN?.value ?? local.CLAUDE_CODE_OAUTH_TOKEN
+/** An added Claude account's fallback token, and since when it is set (never shown back, only whether). */
+export const accountToken = (id: string) => tokens[id]?.value
+export const accountTokenAt = (id: string) => tokens[id]?.at
+/** For a test: the fallback tokens as if read from the file. */
+export const setAccountTokensForTest = (t: AccountTokens) => { tokens = t }
 
 /** Read the shared keys if the file changed, and put them in this process's environment. Returns the keys that changed. */
 export function applyShared(force = false): SharedKey[] {
@@ -27,7 +35,8 @@ export function applyShared(force = false): SharedKey[] {
     const m = statSync(FILE).mtimeMs
     if (m === seen && !force) return []
     seen = m
-    shared = (JSON.parse(readFileSync(FILE, 'utf8')) as { shared?: Shared }).shared ?? {}
+    const j = JSON.parse(readFileSync(FILE, 'utf8')) as { shared?: Shared; accountTokens?: AccountTokens }
+    shared = j.shared ?? {}; tokens = j.accountTokens ?? {}
   } catch { return [] }
   const changed: SharedKey[] = []
   for (const k of SHARED_KEYS) {
