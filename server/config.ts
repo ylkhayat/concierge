@@ -27,6 +27,8 @@ export type Config = {
   explainBudgetUsd: number // per explain run, passed as --max-budget-usd
   repoAccounts?: Record<string, string> // "owner/repo" → the one account its work runs on (none: the order in Accounts)
   mergeOnGreen?: string[] // repositories whose Ship as one PR runs merge their PR themselves once its checks pass (your own projects)
+  // Design's visuals (visuals.ts): per workspace (organization) and per repository, a repository's own first; none: off
+  visuals?: { orgs?: Record<string, import('./visuals.ts').VisualsMode>; repos?: Record<string, import('./visuals.ts').VisualsMode> }
   replyCaps?: Partial<Record<'answer' | 'edit' | 'change', number>> // most one reply run may spend, per route (replyRoute.ts)
   terminal: 'Terminal' | 'iTerm'
   // who does the work: a provider per kind of work, the order to fall back in when one is over its budget or limit,

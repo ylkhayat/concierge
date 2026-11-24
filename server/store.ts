@@ -74,6 +74,23 @@ export type Job = {
   refused?: string[] // what was refused, "Bash: git diff …": the denials with what they tried
 }
 
+/** A capture of a PR's screens, before and after (visuals.ts): one at a time per PR, beside its review and explanation. */
+export type VisualsTask = {
+  state: JobState
+  headSha: string // the commit it captures
+  queuedAt: string
+  startedAt?: string
+  endedAt?: string
+  said?: string // what you asked for, when you asked (the conversation): the agent's session goes on with it
+  auto?: boolean // started by itself (a new commit on a PR that changes what people see)
+  sessionId?: string // the agent's own session, continued by what you say next
+  provider?: string
+  machine?: string // where it ran: its worktrees and session are there
+  costUsd?: number
+  error?: string
+  summary?: string // its final words: what changed visually
+}
+
 export type ExplainTask = {
   state: JobState
   headSha: string
@@ -178,6 +195,9 @@ export type Pr = {
   firstSeenAt: string
   requested: boolean // currently in review-requested:@me
   mine?: boolean // authored by you: the revise side
+  visuals?: VisualsTask // its latest capture (Design)
+  ui?: import('./visuals.ts').UiCheck // whether it changes what people see, for its head (visuals.ts uiChange)
+  visualsOverride?: import('./visuals.ts').VisualsOverride // your choice for this PR, over its repository's
   unresolved?: number // unresolved review threads (mine only)
   awaiting?: number // of those, the ones whose last comment is not yours: waiting on you
   feedbackAt?: string // when threads last started (or grew) waiting on you: a round older than this hasn't seen them

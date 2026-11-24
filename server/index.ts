@@ -16,6 +16,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { live, stale } from './live.ts'
+import { DESIGN_LABEL, imagePath, modeOf, setsOf, uiChange, VISUALS_MODES, wanted, type VisualsMode } from './visuals.ts'
 import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
@@ -48,6 +49,7 @@ import { accountToken, accountTokenAt, applyShared, local as localKeys, SHARED_K
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
+import { cancelVisuals, enqueueVisuals } from './runner.ts'
 import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { git } from './atlas.ts'
@@ -1972,7 +1974,7 @@ const setupView = async (light = false) => ({
   reviewIn: reviewIn(), critInstalled: critInstalled(), workDir: WORK_DIR, clones: cloneState(), away: Object.keys(config.repos).filter(notHere), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
   // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
-  config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, mergeOnGreen: config.mergeOnGreen ?? [], review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, orgs: config.orgs ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
+  config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, mergeOnGreen: config.mergeOnGreen ?? [], visuals: config.visuals ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, orgs: config.orgs ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // the fleet extension is loaded (fleet/compose.fleet.yml sets it): onboarding then signs Tailscale in after GitHub
   fleet: !!process.env.CONCIERGE_FLEET,
@@ -2067,7 +2069,7 @@ app.post('/access', async (c) => {
   return c.json({ logins: allowedLogins(), you })
 })
 app.post('/config', async (c) => {
-  const b = await c.req.json() as { mergeOnGreen?: string[]; reviewIn?: 'crit' | 'concierge'; repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; orgCompliance?: { owner: string; compliance: Compliance | null }; skills?: Record<string, string>; skillSource?: string; skillSources?: string[] }
+  const b = await c.req.json() as { visuals?: { orgs?: Record<string, string>; repos?: Record<string, string> }; mergeOnGreen?: string[]; reviewIn?: 'crit' | 'concierge'; repos?: Record<string, string>; repoAccounts?: Record<string, string>; review?: string; revise?: string; stack?: string; workspaces?: Workspace[]; linearDesktop?: boolean; terminal?: string; explainBudgetUsd?: number; exec?: Partial<typeof config.exec>; compliance?: Compliance; orgCompliance?: { owner: string; compliance: Compliance | null }; skills?: Record<string, string>; skillSource?: string; skillSources?: string[] }
   const errors: string[] = []
   if (b.repos) {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
@@ -2117,6 +2119,11 @@ app.post('/config', async (c) => {
     ...(b.repos && { repos: Object.fromEntries(Object.entries(b.repos).map(([r, p]) => { const rel = relative(WORK_DIR, repoPath(p)); return [r, /^[\w-][\w.-]*$/.test(rel) ? rel : p] })) }),
     ...(b.repoAccounts && { repoAccounts: b.repoAccounts }),
     ...(Array.isArray(b.mergeOnGreen) && { mergeOnGreen: b.mergeOnGreen.filter((r) => typeof r === 'string' && r in config.repos) }),
+    // Design's visuals: off, auto or always, per workspace and per repository (visuals.ts); anything else is dropped
+    ...(b.visuals && typeof b.visuals === 'object' && { visuals: {
+      orgs: Object.fromEntries(Object.entries(b.visuals.orgs ?? {}).filter(([o, m]) => /^[\w.-]+$/.test(o) && VISUALS_MODES.includes(m as VisualsMode))) as Record<string, VisualsMode>,
+      repos: Object.fromEntries(Object.entries(b.visuals.repos ?? {}).filter(([r, m]) => r in config.repos && VISUALS_MODES.includes(m as VisualsMode))) as Record<string, VisualsMode>,
+    } }),
     ...(b.reviewIn && { reviewIn: b.reviewIn }),
     ...(b.terminal && { terminal: b.terminal as 'Terminal' | 'iTerm' }),
     ...(b.workspaces && { workspaces: [...new Set(b.workspaces)] }),
@@ -2412,6 +2419,100 @@ app.post('/accounts/:id/token', async (c) => {
   if (v !== null && !/^sk-ant-oat[\w-]{20,}$/.test(v)) return c.json({ error: 'That isn\'t a claude setup-token token (it starts with sk-ant-oat)' }, 400)
   keepAccountToken(id, v)
   return c.json(await providersView())
+})
+
+// --- Design: visuals (visuals.ts) --------------------------------------------------------------------------------------
+const designJoined = () => roles().joined.includes('design')
+/** A PR's visuals as the page needs them: its setting and why, whether it changes what people see, its capture now and before. */
+async function visualsView(p: Pr) {
+  const mode = modeOf(p.repo), sets = await setsOf(p.id)
+  return {
+    id: p.id, repo: p.repo, number: p.number, title: p.title, url: p.url, author: p.author.login, mine: !!p.mine, draft: p.draft, headSha: p.headSha,
+    mode, override: p.visualsOverride, ui: p.ui, wanted: wanted(mode, p.visualsOverride, p.ui), task: p.visuals,
+    tickets: ticketsOf(p).map((t) => t.id), sets,
+  }
+}
+/** The PR's changed files, from GitHub (three pages at most): what decides whether it changes what people see. */
+async function changedFiles(p: Pr): Promise<string[]> {
+  const out: string[] = []
+  for (let page = 1; page <= 3; page++) {
+    const got = await gh<{ filename: string }[]>(`/repos/${p.repo}/pulls/${p.number}/files?per_page=100&page=${page}`).catch(() => [] as { filename: string }[])
+    out.push(...got.map((f) => f.filename))
+    if (got.length < 100) break
+  }
+  return out
+}
+/** Whether a PR changes what people see, read again only for a new commit. */
+async function checkUi(p: Pr) {
+  if (p.ui?.head === p.headSha) return p.ui
+  const labels = ticketsOf(p).flatMap((t) => t.labels ?? [])
+  p.ui = uiChange(await changedFiles(p), labels, p.headSha)
+  save()
+  return p.ui
+}
+/**
+ * Every 2 minutes, once you joined Design: the open PRs of repositories with visuals on (and the ones you turned on
+ * yourself) are checked for a new commit; one that changes what people see, and is yours, gets its screens captured
+ * once per commit. Someone else's PR waits for Capture now: running another person's code is your call.
+ */
+let visualsBusy = false
+async function visualsTick() {
+  if (visualsBusy || fleet.elsewhere() || !designJoined()) return
+  visualsBusy = true
+  try {
+    for (const p of Object.values(state.prs)) {
+      if (p.closed || !config.repos[p.repo] || p.visualsOverride === 'off') continue
+      const mode = modeOf(p.repo)
+      if (mode === 'off' && p.visualsOverride !== 'on') continue
+      const ui = await checkUi(p).catch(() => undefined)
+      if (!p.mine || p.draft || !wanted(mode, p.visualsOverride, ui)) continue
+      const t = p.visuals
+      if (t?.headSha === p.headSha && t.state !== 'cancelled') continue // this commit is captured, being captured, or failed once
+      enqueueVisuals(p, { auto: true })
+    }
+  } finally { visualsBusy = false; stale('/visuals') }
+}
+setInterval(() => void visualsTick(), 120_000).unref()
+setTimeout(() => void visualsTick(), 15_000).unref()
+bus.on('visuals', () => stale('/visuals'))
+
+/** Design's list: the PRs that change what people see (or that you turned on) and the tickets marked design. */
+app.get('/visuals', async (c) => {
+  const prs = Object.values(state.prs).filter((p) => !p.closed && config.repos[p.repo] && (p.ui?.is || p.visualsOverride === 'on' || modeOf(p.repo) === 'always' || p.visuals))
+  const list = await Promise.all(prs.map(visualsView))
+  const tickets = execBoard.tickets.filter((t) => (t.labels ?? []).some((l) => DESIGN_LABEL.test(l.trim())) || list.some((v) => v.tickets.includes(t.id)))
+    .map((t) => ({ id: t.id, title: t.title, labels: t.labels ?? [], url: t.url, prs: list.filter((v) => v.tickets.includes(t.id)).map((v) => v.id) }))
+  return c.json({ joined: designJoined(), prs: list.map(({ sets, ...v }) => ({ ...v, latest: sets[0] && { sha: sets[0].sha, at: sets[0].at, summary: sets[0].summary, count: sets[0].shots.length, thumb: sets[0].shots.find((s) => s.after)?.after } })), tickets })
+})
+app.get('/prs/:id/visuals', async (c) => {
+  const p = state.prs[decodeURIComponent(c.req.param('id'))]
+  if (!p) return c.json({ error: 'No such PR' }, 404)
+  if (!p.ui && config.repos[p.repo]) await checkUi(p).catch(() => undefined)
+  return c.json(await visualsView(p))
+})
+// capture now, say something about the screens (the conversation), stop it, or turn this PR on or off
+app.post('/prs/:id/visuals', async (c) => {
+  const p = state.prs[decodeURIComponent(c.req.param('id'))]
+  if (!p) return c.json({ error: 'No such PR' }, 404)
+  const b = await c.req.json() as { say?: string; capture?: boolean; cancel?: boolean; override?: 'on' | 'off' | null }
+  if (b.override !== undefined) { if (b.override === 'on' || b.override === 'off') p.visualsOverride = b.override; else delete p.visualsOverride; save() }
+  if (b.cancel) cancelVisuals(p)
+  const said = typeof b.say === 'string' ? b.say.trim().slice(0, 4000) : ''
+  let how: string | undefined
+  if (said || b.capture) {
+    if (!config.repos[p.repo]) return c.json({ error: `${p.repo} has no checkout here` }, 400)
+    how = enqueueVisuals(p, { said: said || undefined })
+    if (how === 'no') return c.json({ error: 'It can\'t be captured: the PR is closed or its repository isn\'t set up' }, 400)
+  }
+  stale('/visuals')
+  return c.json({ ...(await visualsView(p)), how })
+})
+app.get('/visuals/:id/activity', async (c) => c.json(await loadActivity(`visuals:${decodeURIComponent(c.req.param('id'))}`)))
+// one screenshot, by PR, commit and file name (nothing else under the visuals folder is reachable)
+app.get('/visuals/image', async (c) => {
+  const path = await imagePath(c.req.query('pr') ?? '', c.req.query('sha') ?? '', c.req.query('f') ?? '')
+  if (!path) return c.body(null, 404)
+  return new Response(await readFile(path), { headers: { 'content-type': 'image/png', 'cache-control': 'private, max-age=31536000, immutable' } })
 })
 
 app.get('/prs', (c) => { const away = scopeOf(c) === 'self' ? awayHere() : undefined; return c.json(away ? views().filter((p) => !away.has(p.repo)) : views()) })

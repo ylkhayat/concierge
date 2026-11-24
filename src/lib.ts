@@ -156,8 +156,9 @@ export function useFeedLoading(key: string) {
 /** Into the cache as the newest; the oldest goes past 30, so a long day doesn't keep every feed it ever read. */
 function cacheFeed(id: string, f: Activity[]) { feedCache.delete(id); feedCache.set(id, f); if (feedCache.size > 30) feedCache.delete(feedCache.keys().next().value!) }
 // "ticket:<id>" is a ticket's whole timeline, "exec:<run>" one run's feed; anything else is a PR's
+// "visuals:<pr>" is the conversation about a PR's screens (Design)
 const feedUrl = (key: string) => key.startsWith('ticket:') ? `/exec/tickets/${key.slice(7)}/activity`
-  : key.startsWith('exec:') ? `/exec/${key.slice(5)}/activity` : `/prs/${enc(key)}/activity`
+  : key.startsWith('exec:') ? `/exec/${key.slice(5)}/activity` : key.startsWith('visuals:') ? `/visuals/${enc(key.slice(8))}/activity` : `/prs/${enc(key)}/activity`
 const prefetching = new Set<string>()
 /** An item's feed into the cache before it opens (a pointer resting on its row), so it opens whole instead of blank
  * for the time the fetch takes. Opening still fetches it fresh. */

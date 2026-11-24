@@ -13,6 +13,7 @@ import { issueNote, issueOf, shipIssuesPrompt } from './issues.ts'
 import { execCommand, furthest, goalSettings, handGoalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
 import { defaultBranch } from './github.ts'
 import { fill } from './config.ts'
+import { capturePrompt, hasSet, shotsDir, VISUALS_DIR } from './visuals.ts'
 import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend } from './store.ts'
 import { authFailed, cantPay, checkClaudeAuth } from './claudeLogin.ts'
 import { planNote } from './router.ts'
@@ -608,6 +609,10 @@ export function pump() {
       // a planned review waits while the one below it in its stack is still queued or running
       ...(p.job?.state === 'queued' && !children.has(p.id) && !waitsBelow(p) && canRun(p.job, p.mine ? 'revise' : 'review', p.repo) && waited(p.job) ? [{ prio: 0, at: p.job.queuedAt, go: (on?: string) => start(p, on),
         place: { repo: p.repo, provider: p.job.provider ?? providerFor(p.mine ? 'revise' : 'review', p.repo), prefer: p.job.machine, review: true } }] : []),
+      // a capture of its screens (visuals.ts): after the reviews, on a machine that has the checkout (its session is
+      // where it ran before); someone else's PR runs fenced, as a review of it does
+      ...(p.visuals?.state === 'queued' && !children.has(`visuals:${p.id}`) && available(p.visuals.provider ?? providerFor('review', p.repo)) ? [{ prio: 1, at: p.visuals.queuedAt, go: (on?: string) => startVisuals(p, on),
+        place: { repo: p.repo, provider: p.visuals.provider ?? providerFor('review', p.repo), prefer: p.visuals.machine, review: !p.mine } }] : []),
       // an explanation waits while one below it in the stack is still being written: it reads theirs
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
         && available(providerFor('review', p.repo)) && hereHas(p.repo) ? [{ prio: 0, at: p.explain.queuedAt, go: () => startExplain(p) }] : []),
@@ -769,6 +774,85 @@ const WAIT_MS = 40 * 60_000 // a turn that ended on background work waits this l
  * Claude may first answer a stale background-task notification with an empty 0-turn result, then start a fresh turn
  * for our prompt: only a result with turns counts, and any new turn after a result cancels the pending stop.
  */
+// --- visuals: a PR's screens, before and after (visuals.ts) ------------------------------------------------------------
+const visualsKey = (pr: Pr) => `visuals:${pr.id}`
+/**
+ * Capture a PR's screens: now (Capture now), on its own (a new commit on a PR that changes what people see), or because
+ * you said something about them, which goes on in the agent's own session. While one runs, your words reach it at once.
+ */
+export function enqueueVisuals(pr: Pr, o: { said?: string; auto?: boolean } = {}): 'queued' | 'told' | 'busy' | 'no' {
+  if (!config.repos[pr.repo] || pr.closed) return 'no'
+  const t = pr.visuals, key = visualsKey(pr)
+  if (t?.state === 'running') {
+    if (!o.said) return 'busy'
+    const how = tell(key, o.said, () => { enqueueVisuals(pr, { said: o.said }) })
+    if (how === 'idle') { enqueueAgain(pr, o); return 'queued' }
+    return 'told'
+  }
+  if (t?.state === 'queued') {
+    if (o.said) { t.said = [t.said, o.said].filter(Boolean).join('\n\n'); note(key, { at: new Date().toISOString(), kind: 'you', text: o.said }); save(); bus.emit('change') }
+    return o.said ? 'told' : 'busy'
+  }
+  enqueueAgain(pr, o)
+  return 'queued'
+}
+function enqueueAgain(pr: Pr, o: { said?: string; auto?: boolean }) {
+  const prev = pr.visuals
+  pr.visuals = { state: 'queued', headSha: pr.headSha, queuedAt: new Date().toISOString(), ...(o.said && { said: o.said }), ...(o.auto && { auto: true }),
+    ...(prev?.sessionId && { sessionId: prev.sessionId }), ...(prev?.machine && { machine: prev.machine }), ...(prev?.provider && { provider: prev.provider }) }
+  save(); bus.emit('change'); pump()
+}
+/** Stop a capture that is queued or running. */
+export function cancelVisuals(pr: Pr) {
+  const t = pr.visuals
+  if (!t) return
+  if (t.state === 'queued') { t.state = 'cancelled'; t.endedAt = new Date().toISOString(); save(); bus.emit('change'); return }
+  children.get(visualsKey(pr))?.kill('SIGTERM')
+}
+
+function startVisuals(pr: Pr, on?: string) {
+  const t = pr.visuals!, key = visualsKey(pr), now = new Date().toISOString()
+  const where = on ?? fleet.machine
+  // your words go on in the agent's own session, where it ran before; anywhere else it starts over with them
+  const again = !!t.sessionId && !!t.said && (!t.machine || t.machine === where)
+  const sid = again ? t.sessionId! : randomUUID()
+  Object.assign(t, { state: 'running', startedAt: now, endedAt: undefined, error: undefined, costUsd: undefined, summary: undefined, headSha: pr.headSha, sessionId: sid, machine: where, provider: t.provider ?? providerFor('review', pr.repo) })
+  note(key, { at: now, kind: 'section', text: t.auto ? `Visuals · new commit ${pr.headSha.slice(0, 7)}` : `Visuals · ${pr.headSha.slice(0, 7)}` })
+  if (t.said) note(key, { at: now, kind: 'you', text: t.said })
+  if (on) note(key, { at: now, kind: 'event', text: `Runs on ${on}.` })
+  save(); bus.emit('change')
+  const out = shotsDir(pr.id, pr.headSha)
+  runAgent({
+    key, label: `Visuals #${pr.number}`, cwd: config.repos[pr.repo], on, provider: t.provider, untrusted: !pr.mine,
+    onSession: (id) => { if (t.sessionId !== id) { t.sessionId = id; save() } },
+    args: [
+      '-p', capturePrompt({ pr, out, files: pr.ui?.files ?? [], said: t.said, again }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
+      '--output-format', 'stream-json', '--verbose', '--allowedTools', 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
+      '--add-dir', VISUALS_DIR, '--max-budget-usd', '4',
+    ],
+    onResult: (m) => {
+      t.costUsd = m.total_cost_usd ?? 0
+      const text = String(m.result ?? '').trim()
+      if (m.is_error) t.error = short(text || m.subtype, 400); else if (text) t.summary = text.slice(0, 2000)
+    },
+    onEnd: (e) => {
+      t.endedAt = new Date().toISOString()
+      addSpend(t.costUsd ?? 0, t.provider)
+      delete t.said // heard: the next words start a turn of their own
+      // ran here without saving its images: it didn't capture (another machine's come over by themselves, replica.ts)
+      if (!e.cancelled && !t.error && where === fleet.machine && !hasSet(pr.id, t.headSha)) t.error = 'It ended without saving its screenshots'
+      t.state = e.cancelled ? 'cancelled' : t.error ? 'failed' : 'done'
+      note(key, { at: t.endedAt, kind: t.state === 'failed' ? 'error' : 'event', text: t.state === 'done' ? `Captured${t.costUsd ? ` ($${t.costUsd.toFixed(2)})` : ''}.` : t.state === 'cancelled' ? 'You stopped it.' : `It didn't capture: ${t.error}` })
+      save(); bus.emit('change'); bus.emit('visuals', pr.id); pump()
+    },
+    onError: (err) => {
+      Object.assign(t, { state: 'failed', error: err.message, endedAt: new Date().toISOString() })
+      note(key, { at: t.endedAt!, kind: 'error', text: `It didn't start: ${err.message}` })
+      save(); bus.emit('change'); pump()
+    },
+  })
+}
+
 export function runAgent(o: {
   key: string; label: string; args: string[]; cwd: string
   on?: string // another machine runs it (machines.ts): its worker gets the same arguments

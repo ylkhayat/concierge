@@ -1,4 +1,4 @@
-import { ClipboardList, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap } from 'lucide-react'
+import { ClipboardList, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap, Palette as Swatch } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
@@ -6,6 +6,7 @@ import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
 import { Standup } from './components/Standup.tsx'
 import { SkillsWorkspace } from './components/SkillsWorkspace.tsx'
 import { PlansWorkspace } from './components/PlansWorkspace.tsx'
+import { DesignWorkspace } from './components/DesignWorkspace.tsx'
 import { Today } from './components/Today.tsx'
 import { Palette } from './components/Palette.tsx'
 import { Toaster, toast as sonner } from 'sonner'
@@ -47,12 +48,12 @@ import { ago, api, critUrl, enc, isTyping, param, setParam, useDeck, useNow, use
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
 
-type Mode = 'review' | 'exec' | 'read' | 'focus' | 'standup' | 'skills' | 'plans'
+type Mode = 'review' | 'exec' | 'read' | 'focus' | 'standup' | 'skills' | 'plans' | 'design'
 // a phone opening the app (no PR in the link) starts on Focus: what needs you, one card at a time
 const phone = () => matchMedia('(max-width: 767px)').matches
 const modeOf = (): Mode => {
   const p = location.pathname
-  return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans'
+  return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans' : p.startsWith('/design') ? 'design'
     // opened with nothing in the link: Review (on a phone, Focus: what needs you, one card at a time)
     : p === '/' && !location.hash && phone() ? 'focus' : 'review'
 }
@@ -79,7 +80,7 @@ const firstMode = (): Mode => {
 if (location.pathname.startsWith('/exec')) history.replaceState(history.state, '', `/ship${location.pathname.slice(5)}${location.search}${location.hash}`)
 // the Desk is gone: its old links open Review
 if (location.pathname.startsWith('/desk')) history.replaceState(history.state, '', `/review${location.search}${location.hash}`)
-const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans' }
+const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans', design: '/design' }
 // the list's own rules (Focus and Read group by them)
 const RULES: Rules = { waiting, ticketGroup: (t) => groupOf(t).id }
 
@@ -93,7 +94,7 @@ export function App() {
   const [query, setQueryState] = useState(() => param('q') ?? '')
   const setQuery = (q: string) => { setQueryState(q); setParam('q', q) }
   const [refreshing, setRefreshing] = useState(false)
-  const { me, prs: allPrs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : feedKey ?? selected)
+  const { me, prs: allPrs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : mode === 'design' ? (selected && !selected.startsWith('ticket:') ? `visuals:${selected}` : undefined) : feedKey ?? selected)
   const now = useNow()
   const [theme, setTheme] = useTheme()
   const role = useRole()
@@ -233,7 +234,7 @@ export function App() {
   useEffect(() => { document.documentElement.dataset.mode = codebaseRepo ? 'codebase' : mode }, [mode, codebaseRepo])
   useEffect(() => {
     const n = mode === 'exec' ? execWaiting : needsYou
-    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans' }[mode]} · Concierge`
+    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans', design: 'Design' }[mode]} · Concierge`
   }, [needsYou, execWaiting, mode])
 
   // g then r / e / s / c: to a workspace. g alone (no second key within a moment) still opens the PR on GitHub
@@ -367,7 +368,7 @@ export function App() {
       <Head>Views</Head>
       {/* the workspaces; one accent pill slides to the active one (railPill) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
-      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
+      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear'], ['design', Swatch, 'Design', 0, 'What the pull requests look like, before and after, without opening them']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || m === 'design' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
         const on = mode === m && !(m === 'review' && codebaseRepo)
         return (
           <button key={m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}`} aria-current={on}
@@ -526,7 +527,7 @@ export function App() {
                           onRead={(id) => { history.pushState(null, '', `/read${location.search}#${enc(id)}`); setModeState('read'); setSelected(id) }} />
               : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}
           </main>
-        ) : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'read' ? (
+        ) : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace selected={selected} onSelect={select} feed={feed} toast={toast} /> : mode === 'read' ? (
           <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             {prs ? <Read prs={focusedPrs ?? prs} tickets={scoped} rules={RULES} selected={selected} onSelect={select} toast={toast} />
               : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}

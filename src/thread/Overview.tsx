@@ -10,8 +10,14 @@ import { ciLabel, ciTone } from '../components/PrStack.tsx'
 import { useApi, explainPath, keepSame } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 import { Md } from '../components/Md.tsx'
+import { VisualsGlance } from '../components/DesignWorkspace.tsx'
 
 const enc = encodeURIComponent
+/** The PR's latest screens from Design, when it has any: a glance, and the way to the whole of it. */
+function VisualsPanel({ id }: { id: string }) {
+  const open = () => { location.assign(`/design#${encodeURIComponent(id)}`) }
+  return <VisualsGlance id={id}>{(strip) => <Panel title="What it looks like" aside={<button onClick={open} className={more}>Open in Design<ArrowRight className="size-3.5" /></button>}>{strip}</Panel>}</VisualsGlance>
+}
 const Panel = ({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) => (
   <section className="card">
     <div className="flex items-center gap-2 border-b border-line px-3.5 py-2"><h3 className="min-w-0 flex-1 truncate text-small font-semibold text-fg-1">{title}</h3>{aside}</div>
@@ -57,6 +63,8 @@ export function Overview({ pr, prs, onSelect, onOpen, toast }: {
         <Fact k="Into" tone="idle"><span className="block truncate font-mono text-meta" title={pr.base}>{pr.base}</span></Fact>
       </Panel>
 
+      {/* Design's screens of it, after its change (nothing when none were captured) */}
+      <VisualsPanel id={pr.id} />
       <Panel title="In one minute" aside={b && <span className={`rounded-full px-1.5 text-micro font-semibold ${b.risk === 'high' ? 'bg-fail/12 text-fail-text' : b.risk === 'medium' ? 'bg-wait/14 text-wait-text' : 'bg-ok/12 text-ok-text'}`}>{b.risk} risk</span>}>
         {b ? <>
           <p className="text-body font-semibold leading-snug tracking-tight text-fg-1">{b.headline}</p>

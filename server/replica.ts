@@ -75,7 +75,9 @@ const CODE = process.env.DECK_CODE || process.env.CODE_DIR
 const ROOTS: Root[] = [
   { id: 'state', dir: STATE_DIR, walk: ['logs', 'explain', 'domain', 'drafts', 'devlogs', 'atlas', 'crit', 'evals', 'review-records', 'review-pr-records', 'review-pr', 'revise', 'norms.json', 'events.jsonl',
     // your organization's skills, as every machine shares them (orgSkills.ts): a machine claude.ai never synced them to runs them from here
-    'org-skills'] },
+    'org-skills',
+    // Design's screenshots, per PR and commit (visuals.ts): captured on the machine that has the checkout, shown anywhere
+    'visuals'] },
   { id: 'config', dir: CONFIG_DIR, walk: [''] },
   // Claude files a session under its working directory with every other character a dash: Concierge's agents all work
   // under the clones folder, the same path on every machine. Your own sessions elsewhere stay where they are

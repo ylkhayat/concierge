@@ -25,6 +25,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # pnpm (corepack is gone from Node 25+) and the Claude Code CLI
 RUN npm install -g "pnpm@${PNPM_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_VERSION}" "@github/copilot@${COPILOT_VERSION}" && npm cache clean --force
 
+# Design's visuals (server/visuals.ts): a headless Chromium and its system libraries, for the agents' Playwright
+# screenshots of a PR's screens. Shared by every repository (PLAYWRIGHT_BROWSERS_PATH), and writable: a repository on
+# another Playwright version installs its own browser build beside this one
+ARG PLAYWRIGHT_VERSION=1.62.1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
+  && chmod -R a+rwX /opt/ms-playwright && rm -rf /var/lib/apt/lists/* /root/.npm
+
 # uv for Python repos (`uv sync` in a worktree); the Python it fetches lives where compose's UV_PYTHON_INSTALL_DIR says
 COPY --from=uv /uv /uvx /usr/local/bin/
 

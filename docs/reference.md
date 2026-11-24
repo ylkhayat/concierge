@@ -64,7 +64,8 @@ laptop), is a separate private extension cloned into `fleet/`; ask for access if
 ## What the agents do on their own, and what they don't
 
 - **Review and revise never publish by themselves.** Posting a review, approving, replying and pushing all wait for your click; until then the work sits in crit and in a worktree.
-- **They never merge** and never edit your main checkout. Each run gets its own worktree.
+- **They never merge**, except Ship as one PR in a repository where you allow it (Settings → Repositories: "Let Ship as one PR merge its pull request once the checks pass", for your own projects). They never edit your main checkout. Each run gets its own worktree.
+- **Design captures screens only where you turn it on.** Once you join the Design role, PRs that change what people see (their files, or a ticket labelled design) get their screens captured before and after: from the repository's Storybook stories, else the running app through Playwright. Off for every repository until you set Visuals to Auto or Always (Settings → Repositories, per workspace or per repository), or turn it on for one PR. Only your own PRs are captured on their own; someone else's waits for Capture now, since it runs their code. A capture never pushes or comments, and costs at most $4.
 - **Headless runs can only use the tools in the allowlist** (`agent.allowedTools`, `exec.allowedTools`, Settings). A denied tool is listed on the run, so you can add it or not.
 - **Spend is capped.** A fresh install stops starting runs at $20 a day; change it in Settings → Usage. The Today view shows the average cost per review and per ticket.
 - **A Ship run keeps going until it's done.** Each one carries a goal, the way Claude Code's `/goal` works: after every turn a small model checks that every ticket has its outcome line (`shipped`, `ready`, `refined` or `failed`) and nothing it started still runs, or that it's waiting on a decision of yours. Otherwise the run is sent back with what is missing, instead of stopping halfway. A review or revise has a goal too: not to finish, but to reach you (crit up with its findings or replies, and next steps for you). Runs on Claude accounts only.
@@ -143,6 +144,7 @@ Explain runs use a lean Claude session with no plugins, skills, hooks or MCP ser
 | `~/.local/state/concierge/state.json` | Tracked PRs, jobs, settings, daily spend |
 | `~/.local/state/concierge/logs/` | Each agent run's stream, replayed in the Activity tab |
 | `~/.local/state/concierge/atlas/`, `explain/` | The Explain caches |
+| `~/.local/state/concierge/visuals/` | Design's screenshots, per PR and commit, with each capture's `manifest.json` |
 | `~/.local/state/concierge/server.log` | Server log (`concierge logs`) |
 
 Set `XDG_CONFIG_HOME` and `XDG_STATE_HOME` to move them.

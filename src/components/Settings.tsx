@@ -376,6 +376,10 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   // which account each repository is kept to (none: the order in Accounts)
   const pins = setup?.config.repoAccounts ?? {}
   const greens = setup?.config.mergeOnGreen ?? [] // repositories whose Ship as one PR runs merge their PR on green
+  // Design's visuals (screens before and after): per workspace, and per repository over it; none set: off
+  const vis = setup?.config.visuals ?? {}
+  const VIS = [{ value: 'off', label: 'Off' }, { value: 'auto', label: 'Auto' }, { value: 'always', label: 'Always' }] as const
+  const saveVis = (next: { orgs?: Record<string, string>; repos?: Record<string, string> }, msg: string) => void saveConfig({ visuals: { orgs: { ...vis.orgs, ...next.orgs }, repos: { ...vis.repos, ...next.repos } } }, msg)
   const [accts, setAccts] = useState<{ id: string; label: string }[]>([])
   useEffect(() => { api('/usage/accounts').then((a: { id: string; label: string }[]) => setAccts(a.map(({ id, label }) => ({ id, label })))).catch(() => {}) }, [])
   const [bases, setBases] = useState<BaseInfo[]>([])
@@ -413,6 +417,9 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
       {owners.map((owner) => { const o = orgsQ.data?.find((x) => x.owner === owner), mine = Object.entries(repos).filter(([r]) => r.split('/')[0] === owner), org = setup?.cloneOn?.[`${owner}/*`] ?? []; return (
         <section key={owner} className="space-y-2">
           <WorkspaceHead owner={owner} personal={!!o?.personal} count={mine.length} onRemoved={changed} toast={toast}>
+            {/* Design: capture its PRs' screens, before and after (auto: the ones that change what people see) */}
+            <Pick label={`Visuals for ${owner}'s repositories`} value={vis.orgs?.[owner] ?? 'off'} options={[...VIS]}
+                  onChange={(m) => saveVis({ orgs: { [owner]: m } }, `${owner}: visuals ${m === 'auto' ? 'for PRs that change what people see' : m}`)} />
             {(setup?.machines?.length ?? 0) > 1 && (
               <Pick multi label={`Machines that may clone ${owner}'s repositories`} value={org} className="ml-auto"
                     options={setup!.machines.map((m) => ({ value: m, label: m === setup?.machine ? <>{called(m)} <span className="font-normal opacity-60">this one</span></> : called(m) }))}
@@ -434,6 +441,12 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
                    onChange={(e) => void saveConfig({ mergeOnGreen: e.target.checked ? [...greens, repo] : greens.filter((r) => r !== repo) }, e.target.checked ? `${repo}: Ship as one PR merges once checks pass` : `${repo}: you merge its PRs yourself`)} />
             Let Ship as one PR merge its pull request once the checks pass <span className="text-fg-4">(your own projects)</span>
           </label>
+          <div className="flex flex-wrap items-center gap-2 px-4 pb-2 text-meta text-fg-3" title="Design: its PRs' screens, before and after, captured by an agent from its Storybook stories or the running app. Auto: only PRs that change what people see.">
+            Visuals <span className="text-fg-4">(Design)</span>
+            <Pick label={`Visuals for ${repo}`} value={vis.repos?.[repo] ?? 'workspace'}
+                  options={[{ value: 'workspace', label: `As ${owner} (${vis.orgs?.[owner] ?? 'off'})` }, ...VIS]}
+                  onChange={(m) => { const repos = { ...vis.repos }; if (m === 'workspace') delete repos[repo]; else repos[repo] = m; void saveConfig({ visuals: { orgs: vis.orgs ?? {}, repos } }, m === 'workspace' ? `${repo}: visuals as ${owner}` : `${repo}: visuals ${m}`) }} />
+          </div>
               </Fragment>
             ))}
             <OwnerRepos owner={owner} watched={Object.keys(repos)} onAdd={(r) => addRepo(r, '')} />
