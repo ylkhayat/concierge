@@ -304,7 +304,7 @@ export function finishLogin(name: string, redirect: string, account = 'claude') 
   const l = logins.get(`${account}|${name}`)
   if (!l || l.done) throw new Error('That login is not waiting anymore; start it again')
   if (!/^https?:\/\/localhost[:/]/.test(redirect.trim())) throw new Error('Paste the address the browser landed on (it starts with http://localhost)')
-  l.child.stdin!.write(redirect.trim() + '\n')
+  l.child.stdin!.write(redirect.trim() + '\r') // Enter is \r: a full-screen CLI takes \n as one more typed character
 }
 
 export const loginState = (name: string, account = 'claude') => { const l = logins.get(`${account}|${name}`); return l ? { done: !!l.done, ok: !!l.ok } : undefined }

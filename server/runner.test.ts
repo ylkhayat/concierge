@@ -151,3 +151,9 @@ test("queued work says why it hasn't started: the PR below it in its stack, a re
   assert.match(r.why, /tries again shortly/); assert.equal(r.until, Date.parse(later))
   assert.ok(queuedWhy(t, 'review').why.length > 0)
 })
+
+test("a sign-in's output: a refused code is read through its colours and cursor moves", async () => {
+  const { refusedIn } = await import('./claudeLogin.ts')
+  assert.equal(refusedIn('\x1b[2K\x1b[1G\x1b[31mOAuth error: Request failed with status code 400\x1b[39m\x1b[1C Press Enter to retry.'), 'OAuth error: Request failed with status code 400')
+  assert.equal(refusedIn('Paste code here if prompted > ****'), undefined)
+})

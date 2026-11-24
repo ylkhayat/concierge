@@ -60,15 +60,25 @@ export function startClaudeLogin(home?: string): Promise<string> {
       p.out = (p.out + c).slice(-20_000)
       const m = p.out.match(/https:\/\/\S*(?:claude\.(?:ai|com)|anthropic\.com)\S*oauth\S*/)
       if (m && !p.url) { p.url = m[0].split(/[\u0007\u001b]/)[0]; clearTimeout(give); resolve(p.url) }
+      // over, either way, once the code was sent: close it so the check above runs now (a full-screen CLI can wait for a
+      // key press after it says so, and a refused code waits for a retry)
+      if (p.url && !p.done && (refusedIn(p.out) || /Login successful|Logged in as|successfully logged in/i.test(plain(p.out)))) setTimeout(() => child.kill(), 1500)
     }
     child.stdout!.on('data', read); child.stderr!.on('data', read)
   })
 }
 
+// Enter, as a terminal sends it: Claude Code's sign-ins are full-screen (raw mode), where \n is one more typed character
+// and the pasted code sat in its box unsent until the sign-in timed out (a terminal's line mode takes \r as well)
+const ENTER = '\r'
+/** Where a sign-in's output says it is over, colours and cursor moves taken out: signed in, or refused (and why). */
+const plain = (s: string) => s.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ' ')
+export const refusedIn = (out: string) => plain(out).match(/OAuth error[^\n]*?(?=Press Enter|$)/)?.[0].trim()
+
 /** From another device: paste the code or address the sign-in page shows. */
 export function finishClaudeLogin(input: string) {
   if (!pending || pending.done) throw new Error('The sign-in is not waiting anymore; start it again')
-  pending.child.stdin!.write(input.trim() + '\n')
+  pending.child.stdin!.write(input.trim() + ENTER)
 }
 export const claudeLoginState = () => (pending ? { done: !!pending.done, ok: !!pending.ok } : undefined)
 
@@ -158,13 +168,24 @@ export function startSetupToken(keep: (token: string) => Promise<void> | void): 
   const p: NonNullable<typeof pendingToken> = { child, out: '' }
   pendingToken = p
   const stop = setTimeout(() => child.kill(), 10 * 60_000)
-  child.on('close', async () => {
-    clearTimeout(stop)
-    const token = p.out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').match(/sk-ant-oat[\w-]{20,}/)?.[0]
-    if (token) { try { await keep(token); p.ok = true } catch (e) { p.error = (e as Error).message } }
-    else p.error = 'No token came back: start it again'
+  // the key is read the moment it shows (the CLI then waits for a key press, so it never closes by itself), and a
+  // refused code ends it at once with the reason instead of a minute of waiting
+  let settled = false
+  const settle = async (token?: string, error?: string) => {
+    if (settled) return
+    settled = true; clearTimeout(stop)
+    if (token) { try { await keep(token); p.ok = true } catch (e) { p.error = (e as Error).message } } else p.error = error ?? 'No key came back: start it again'
     p.done = true
-  })
+    child.kill()
+  }
+  const watch = () => {
+    const token = plain(p.out).match(/sk-ant-oat[\w-]{20,}/)?.[0]
+    if (token) return void settle(token)
+    const refused = refusedIn(p.out)
+    if (refused) void settle(undefined, `Claude refused the code (${refused.replace(/^OAuth error:\s*/, '')}): start it again and paste the newest code`)
+  }
+  child.stdout!.on('data', watch); child.stderr!.on('data', watch)
+  child.on('close', () => void settle())
   return new Promise((resolve, reject) => {
     const give = setTimeout(() => reject(new Error('No sign-in address came back')), 30_000)
     let url: string | undefined
@@ -179,7 +200,7 @@ export function startSetupToken(keep: (token: string) => Promise<void> | void): 
 /** The code the approval page shows, pasted on the page. */
 export function finishSetupToken(input: string) {
   if (!pendingToken || pendingToken.done) throw new Error('The sign-in is not waiting anymore; start it again')
-  pendingToken.child.stdin!.write(input.trim() + '\n')
+  pendingToken.child.stdin!.write(input.trim() + ENTER)
 }
 export const setupTokenState = () => (pendingToken ? { done: !!pendingToken.done, ok: !!pendingToken.ok, error: pendingToken.error } : undefined)
 
