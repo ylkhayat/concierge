@@ -2075,6 +2075,9 @@ app.post('/config', async (c) => {
     if (!Object.keys(b.repos).length) errors.push('Pick at least one repository')
     for (const [repo, path] of Object.entries(b.repos)) {
       if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) errors.push(`${repo}: not an owner/repo name`)
+      // only what is new or moved is checked, and only where it may be checked out: a repository kept off this machine
+      // has no folder here by design (adding another one failed on it)
+      else if ((config.repos[repo] && repoPath(path) === config.repos[repo]) || notHere(repo)) continue
       else { const v = await validate(repo, path); if (!v.ok) errors.push(`${repo}: ${v.error}`) }
     }
   }
