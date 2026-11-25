@@ -1883,6 +1883,12 @@ app.post('/bank/remove', async (c) => {
   await bankNow()
   return c.json(bankView())
 })
+app.post('/connections/scope', async (c) => {
+  const { name, owners } = await c.req.json<{ name: string; owners: string[] }>()
+  const { [name]: _, ...rest } = userConfig().connections?.scope ?? {}
+  saveConfig({ connections: { ...userConfig().connections, scope: owners.length ? { ...rest, [name]: owners } : rest } })
+  return c.json({ ok: true })
+})
 app.post('/bank', async (c) => {
   const { only } = await c.req.json<{ only?: boolean }>()
   saveConfig({ connections: { ...userConfig().connections, bankOnly: !!only } })

@@ -21,7 +21,7 @@ import { missingOn } from './connections.ts'
 import { markUsed, skillsIn, skillsNote } from './orgSkills.ts'
 import { normsNote } from './norms.ts'
 import { CLAUDE_HOME, agentHomesReady } from './agentHome.ts'
-import { bankArgs } from './bank.ts'
+import { bankArgs, fencedArgs } from './bank.ts'
 import { cloneState, reviewIn } from './setup.ts'
 import { noCrit, NO_CRIT_REVISE, ownReviewKey } from './crit.ts'
 import { directionNote } from './stackDirection.ts'
@@ -830,7 +830,7 @@ async function startVisuals(pr: Pr, on?: string) {
   save(); bus.emit('change')
   const out = shotsDir(pr.id, pr.headSha)
   runAgent({
-    key, label: `Visuals #${pr.number}`, cwd: config.repos[pr.repo], on, provider: t.provider, untrusted: !pr.mine,
+    key, label: `Visuals #${pr.number}`, cwd: config.repos[pr.repo], repo: pr.repo, on, provider: t.provider, untrusted: !pr.mine,
     onSession: (id) => { if (t.sessionId !== id) { t.sessionId = id; save() } },
     args: [
       '-p', capturePrompt({ pr, out, files: pr.ui?.files ?? [], said: t.said, again, how: method }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
@@ -892,7 +892,7 @@ async function startSetup(repo: string, on?: string) {
   save(); bus.emit('change')
   const dir = join(VISUALS_DIR, slugOf(baselineId(repo)))
   runAgent({
-    key, label: `Storybook ${repo}`, cwd: config.repos[repo], on, provider: t.provider,
+    key, label: `Storybook ${repo}`, cwd: config.repos[repo], repo, on, provider: t.provider,
     onSession: (id) => { if (t.sessionId !== id) { t.sessionId = id; save() } },
     args: [
       '-p', t.board ? boardPrompt({ repo, dir, last, said: t.said, how: map }) : again ? `${t.said}\n\nGo on with the Storybook and its map with that in mind.` : setupPrompt({ repo, dir, said: t.said, how: setup, map }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
@@ -931,6 +931,7 @@ export function runAgent(o: {
   onResult: (r: any) => void // the run's result event (cost, denials, its final words)
   onEnd: (e: Ended) => void // the process is gone, and the server isn't going down
   onError: (e: Error) => void
+  repo?: string // the repository it works in: its workspace decides which connections it may use (bank.ts fencedArgs)
   untrusted?: boolean // it reads work by someone else (their PR): its secrets kept to what it needs, and its tools fenced (untrusted.ts)
 }) {
   newRun(o.key) // what ended in the background before is history; what still runs stays in view
@@ -943,7 +944,7 @@ export function runAgent(o: {
     : spawnAgent(provider, o.untrusted ? [...args, ...UNTRUSTED_ARGS] : args, { cwd: o.cwd, stdin, ...(o.untrusted && { env: untrustedEnv() }) })
   // its part of the connection bank (bank.ts): every run, on whichever account. Not a review of someone else's PR,
   // which is kept away from your keys
-  const banked = (args: string[]) => (o.untrusted ? args : [...args, ...bankArgs(provider)])
+  const banked = (args: string[]) => [...(o.untrusted ? args : [...args, ...bankArgs(provider)]), ...(isClaudeCode(provider) ? fencedArgs(o.repo) : [])]
   let child
   if (isClaudeCode(provider)) { // Claude Code, on a Claude account or on Ollama
     const at = o.args.indexOf('-p'), prompt = o.args[at + 1]
@@ -1166,7 +1167,7 @@ function start(pr: Pr, on?: string) {
   bus.emit('started', pr.id, job)
 
   const go = () => runAgent({
-    key: pr.id, label: `${LABEL[job.kind]} #${pr.number}`, cwd, provider: job.provider, on,
+    key: pr.id, label: `${LABEL[job.kind]} #${pr.number}`, cwd, repo: pr.repo, provider: job.provider, on,
     onSession: (id) => { if (job.sessionId !== id) { job.sessionId = id; save() } },
     args: [
       ...(job.continuing ? ['-p', continuePrompt(asked), '--resume', job.sessionId]
@@ -1519,7 +1520,7 @@ function startExec(run: ExecRun, on?: string) {
   run.machine = on ?? fleet.machine
   if (on) note(key, { at: new Date().toISOString(), kind: 'event', text: `Runs on ${on}.` })
   runAgent({
-    key, label: `${run.label ?? 'Ship'} ${run.ids.join(' → ')}`, cwd: config.repos[run.repo], on,
+    key, label: `${run.label ?? 'Ship'} ${run.ids.join(' → ')}`, cwd: config.repos[run.repo], repo: run.repo, on,
     provider: run.provider, onSession: (id) => { if (run.sessionId !== id) { run.sessionId = id; save() } },
     args: [
       ...(run.continuing ? ['-p', continuePrompt(asked), '--resume', run.sessionId]

@@ -234,6 +234,18 @@ function Services({ toast }: { toast: Toast }) {
   const [custom, setCustom] = useState<string[]>([])
   useEffect(() => { api('/connections').then(setList, () => setList([])); api('/connections/custom').then(setCustom, () => {}) }, [])
   const [w, again] = useWhere('claude')
+  // which workspaces may use each connection (none ticked: all of them)
+  const [scope, setScope] = useState<Record<string, string[]>>({})
+  const [owners, setOwners] = useState<string[]>([])
+  useEffect(() => {
+    api('/setup?light=1').then((d: { config: { connections?: { scope?: Record<string, string[]> } } }) => setScope(d.config.connections?.scope ?? {}), () => {})
+    api('/orgs').then((o: { owner: string }[]) => setOwners(o.map((x) => x.owner)), () => {})
+  }, [])
+  const keep = (name: string, owner: string) => {
+    const was = scope[name] ?? [], next = was.includes(owner) ? was.filter((x) => x !== owner) : [...was, owner]
+    setScope({ ...scope, [name]: next })
+    api('/connections/scope', { name, owners: next }).then(() => toast(next.length ? `${nameOf(name).name}: only ${next.join(', ')}` : `${nameOf(name).name}: every workspace`), (e: Error) => toast(e.message, 'error'))
+  }
   const drop = (name: string) => api('/connections/custom', { name, remove: true }).then((l: Connection[]) => { setList(l); setCustom((c) => c.filter((x) => x !== name)); toast(`${name} removed`) }, (e: Error) => toast(e.message, 'error'))
   if (!list) return <Skeleton rows={7} />
   return (
@@ -242,7 +254,7 @@ function Services({ toast }: { toast: Toast }) {
       <ConnectCard toast={toast} />
       <Muting items={list} toneOf={(c) => (c.status === 'connected' || c.coveredBy ? 'ok' : c.status === 'needs-auth' ? 'warn' : 'bad')} row={(c, hide) => (
           <ConnectorRow key={c.name} raw={c.name} hide={hide}
-            extra={<>{custom.includes(c.name) && <button onClick={() => void drop(c.name)} className="text-meta text-fg-4 hover:text-fail-text">Remove</button>}<OnMachines w={w} name={c.name} /></>}
+            extra={<>{custom.includes(c.name) && <button onClick={() => void drop(c.name)} className="text-meta text-fg-4 hover:text-fail-text">Remove</button>}<OnMachines w={w} name={c.name} />{owners.length > 1 && <UsedBy owners={owners} on={scope[c.name] ?? []} onToggle={(o) => keep(c.name, o)} />}</>}
             tone={c.status === 'connected' || c.coveredBy ? 'ok' : c.status === 'needs-auth' ? 'warn' : 'bad'}
             status={c.coveredBy ? `Via ${nameOf(c.coveredBy).name}` : c.status === 'connected' ? 'Connected' : c.status === 'needs-auth' ? 'Needs sign-in' : 'Failed'}
             action={c.status === 'needs-auth' && !c.coveredBy && (c.name.startsWith('claude.ai ')
@@ -251,6 +263,19 @@ function Services({ toast }: { toast: Toast }) {
         )} />
       <AddConnector />
     </div>
+  )
+}
+
+/** Which workspaces' runs may use a connection: none ticked, every one; ticked, only those (the rest are refused its tools). */
+function UsedBy({ owners, on, onToggle }: { owners: string[]; on: string[]; onToggle: (owner: string) => void }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1" title="Workspaces whose runs may use it. None ticked: every workspace">
+      <span className="text-meta text-fg-4">{on.length ? 'Only' : 'All'}</span>
+      {owners.map((o) => (
+        <button key={o} onClick={() => onToggle(o)} aria-pressed={on.includes(o)}
+                className={`rounded-full px-2 py-0.5 font-mono text-micro transition-colors ${on.includes(o) ? 'bg-accent/15 text-accent-text' : 'bg-fill text-fg-4 hover:text-fg-2'}`}>{o}</button>
+      ))}
+    </span>
   )
 }
 

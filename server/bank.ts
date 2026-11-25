@@ -85,6 +85,18 @@ export async function writeBank(accounts: ProviderId[]) {
   }
 }
 
+/**
+ * A connection kept to some workspaces (Settings → Connections) is refused to a run anywhere else: by its tools' prefix
+ * (`claude.ai Gmail` → mcp__claude_ai_Gmail), so it holds for a connector the account's sign-in brings as well as the bank's.
+ */
+// ponytail: Claude Code only (its --disallowedTools); Codex and Copilot runs aren't fenced yet
+export function fencedArgs(repo?: string): string[] {
+  const owner = repo?.split('/')[0]
+  const out = Object.entries(config.connections?.scope ?? {}).filter(([, owners]) => owners.length && !(owner && owners.includes(owner)))
+    .map(([name]) => `mcp__${name.replace(/[^A-Za-z0-9_-]/g, '_')}`)
+  return out.length ? ['--disallowedTools', ...out] : []
+}
+
 /** Claude Code's flags that hand a run its part of the bank ('' for none): the other tools' forms are made from these (providers.ts). */
 export function bankArgs(p: ProviderId): string[] {
   const { set, servers } = pick(p)

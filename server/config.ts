@@ -33,7 +33,7 @@ export type Config = {
   terminal: 'Terminal' | 'iTerm'
   // who does the work: a provider per kind of work, the order to fall back in when one is over its budget or limit,
   // a daily budget each, and the models OpenAI and Llama run (providers.ts)
-  connections?: { bankOnly?: boolean } // bankOnly: every run gets exactly the connection bank, nothing of the account's own (bank.ts)
+  connections?: { bankOnly?: boolean; scope?: Record<string, string[]> } // scope: a connection's name → the workspaces (GitHub owners) whose runs may use it; none listed, every one (bank.ts fencedArgs). bankOnly: every run gets exactly the connection bank, nothing of the account's own (bank.ts)
   providers?: {
     use?: Partial<Record<import('./providers.ts').Work, string>>
     fallback?: string[]
