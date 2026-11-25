@@ -63,7 +63,7 @@ function route(a: Pt, b: Pt, gapY: number | undefined): Pt[] {
 /** A card as a short user story, written on its first click (server: /prs/:id/story) and kept. */
 const told = new Map<string, string>()
 function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'intent'; c: Card }) {
-  const key = `${prId}:${board}:${c.id}`
+  const key = `v2:${prId}:${board}:${c.id}`
   const [text, setText] = useState(told.get(key)), [failed, setFailed] = useState(false)
   useEffect(() => {
     setText(told.get(key)); setFailed(false)

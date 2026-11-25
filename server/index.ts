@@ -2972,9 +2972,9 @@ app.post('/prs/:id/story', async (c) => {
   const o = p && loadOverlay(p)
   if (!p || !o) return c.json({ error: 'not explained yet' }, 404)
   const { board, card } = await c.req.json<{ board: 'understanding' | 'intent'; card: { id: string; title: string; line?: string; before?: string; why?: string } }>()
-  const key = `${p.id}@${o.headSha}:${board}:${card.id}`
+  const key = `v2:${p.id}@${o.headSha}:${board}:${card.id}` // v2: one sentence
   if (!stories.has(key)) stories.set(key, callClaude<{ story: string }>(JSON.stringify({ pr: o.business, story: o.tour?.story && { push: o.tour.story.push, solution: o.tour.story.solution }, card }), tmpdir(), undefined, () => {}, STORY_SCHEMA, 0.1,
-    `You add context to one card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}. Write it as a short user story, 2-3 sentences, plain words, no code names: "As <who meets it>, when <the situation>, <what happens now because of this card>, so that <why it matters>." Then, only if it helps, one sentence of what was true before. Use only what the input says.`,
+    `You add context to one card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}. Write ONE sentence of at most 30 words, plain words, no code names, about this card only (not the rest of the PR): "As <who meets it>, when <the situation>, <what happens now>, so that <why it matters>." Use only what the input says.`,
     'haiku', p.repo).then((r) => { addSpend(r.cost, r.provider, r.tokens); return r.result.story }).catch((e) => { stories.delete(key); throw e }))
   try { return c.json({ story: await stories.get(key)! }) } catch (e) { return c.json({ error: (e as Error).message.split('\n')[0] }, 502) }
 })
