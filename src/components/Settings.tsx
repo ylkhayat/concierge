@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, ArrowRight, ChevronRight, BookOpen, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
+  ArrowLeft, ArrowRight, ChevronDown, ChevronRight, BookOpen, GitMerge, Images, UserRound, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
   CheckCheck, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
 import { ReviewIn } from './ReviewIn.tsx'
@@ -378,7 +378,6 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   const greens = setup?.config.mergeOnGreen ?? [] // repositories whose Ship as one PR runs merge their PR on green
   // Design's visuals (screens before and after): per workspace, and per repository over it; none set: off
   const vis = setup?.config.visuals ?? {}
-  const VIS = [{ value: 'off', label: 'Off' }, { value: 'auto', label: 'Auto' }, { value: 'always', label: 'Always' }] as const
   const saveVis = (next: { orgs?: Record<string, string>; repos?: Record<string, string> }, msg: string) => void saveConfig({ visuals: { orgs: { ...vis.orgs, ...next.orgs }, repos: { ...vis.repos, ...next.repos } } }, msg)
   const [accts, setAccts] = useState<{ id: string; label: string }[]>([])
   useEffect(() => { api('/usage/accounts').then((a: { id: string; label: string }[]) => setAccts(a.map(({ id, label }) => ({ id, label })))).catch(() => {}) }, [])
@@ -414,40 +413,34 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   return (
     <>
       <p className="px-0.5 text-small text-fg-3">Your workspaces are the organizations Concierge works with, and in each the repositories it watches: reviews, your PRs, plans, compliance and Ship act on these, never on every organization your GitHub account belongs to. Each machine keeps the repositories in its own working directory ({setup?.workDir ? home(setup.workDir) : 'its CODE_DIR'} here), and clones only the ones you allow on it.</p>
-      {owners.map((owner) => { const o = orgsQ.data?.find((x) => x.owner === owner), mine = Object.entries(repos).filter(([r]) => r.split('/')[0] === owner), org = setup?.cloneOn?.[`${owner}/*`] ?? []; return (
-        <section key={owner} className="space-y-2">
-          <WorkspaceHead owner={owner} personal={!!o?.personal} count={mine.length} onRemoved={changed} toast={toast}>
-            {/* Design: capture its PRs' screens, before and after (auto: the ones that change what people see) */}
-            <Pick label={`Visuals for ${owner}'s repositories`} value={vis.orgs?.[owner] ?? 'off'} options={[...VIS]}
-                  onChange={(m) => saveVis({ orgs: { [owner]: m } }, `${owner}: visuals ${m === 'auto' ? 'for PRs that change what people see' : m}`)} />
+      {owners.map((owner) => { const o = orgsQ.data?.find((x) => x.owner === owner), mine = Object.entries(repos).filter(([r]) => r.split('/')[0] === owner), org = setup?.cloneOn?.[`${owner}/*`] ?? [], orgVis = (vis.orgs?.[owner] ?? 'off') as VisMode; return (
+        <section key={owner} className="card overflow-hidden">
+          <WorkspaceHead owner={owner} personal={!!o?.personal} count={mine.length} onRemoved={changed} toast={toast} />
+          {/* what every repository here gets unless it says otherwise */}
+          <div className="border-b border-line bg-fill/30 px-4 py-1">
             {(setup?.machines?.length ?? 0) > 1 && (
-              <Pick multi label={`Machines that may clone ${owner}'s repositories`} value={org} className="ml-auto"
-                    options={setup!.machines.map((m) => ({ value: m, label: m === setup?.machine ? <>{called(m)} <span className="font-normal opacity-60">this one</span></> : called(m) }))}
-                    onChange={(_, m, on) => api('/repos/clone-on', { repo: `${owner}/*`, machine: m, on }).then(() => { toast(on ? `${owner}'s repositories may be cloned on ${m}` : `${owner} is no longer allowed on ${m} as a whole`); return reload() }, (e: Error) => toast(e.message, 'error'))} />
+              <Setting label="Clone on" hint="Every repository here may be checked out on the machines ticked; a repository can add more of its own">
+                <Checks label={`Machines that may clone ${owner}'s repositories`} value={org}
+                        options={setup!.machines.map((m) => ({ value: m, label: called(m), sub: m === setup?.machine ? 'this one' : undefined }))}
+                        onToggle={(m, on) => api('/repos/clone-on', { repo: `${owner}/*`, machine: m, on }).then(() => { toast(on ? `${owner}'s repositories may be cloned on ${called(m)}` : `${owner} is no longer allowed on ${called(m)} as a whole`); return reload() }, (e: Error) => toast(e.message, 'error'))} />
+              </Setting>
             )}
-          </WorkspaceHead>
-          <div className="divide-y divide-line overflow-hidden card">
-            {mine.length === 0 && <p className="px-4 py-3 text-small text-fg-3">No repositories watched in {owner} yet: add them from its list below.</p>}
+            <Setting label="Visuals" hint="Design: its PRs' screens, before and after. Auto captures the PRs that change what people see">
+              <Tabs size="sm" label={`Visuals for ${owner}'s repositories`} value={orgVis} options={VIS_TABS}
+                    onChange={(m) => saveVis({ orgs: { [owner]: m } }, `${owner}: visuals ${m === 'auto' ? 'for PRs that change what people see' : m}`)} />
+            </Setting>
+          </div>
+          <div className="divide-y divide-line">
+            {mine.length === 0 && <p className="px-4 py-3 text-small text-fg-3">No repositories watched in {owner} yet: add them below.</p>}
             {mine.map(([repo, path]) => (
-              <Fragment key={repo}>
-          <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
+              <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
                         machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org} removed={setup?.removeFrom?.[repo] ?? []} here={Object.entries(setup?.checkedOut ?? {}).filter(([, rs]) => rs.includes(repo)).map(([m]) => m)}
                         route={setup?.placement?.find((r) => r.repo === repo)}
-                        onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${m}` : `${repo} stays off ${m}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
-                        accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }} />
-          {/* your own projects: Ship as one PR may merge its PR itself once the checks pass (never set for a team's repository) */}
-          <label className="flex cursor-pointer items-center gap-2 px-4 py-2 text-meta text-fg-3 hover:bg-hover/50" title="For your own projects: Ship as one PR merges its pull request itself once its checks pass. Leave it off for any repository others review.">
-            <input type="checkbox" checked={greens.includes(repo)} className="accent-current"
-                   onChange={(e) => void saveConfig({ mergeOnGreen: e.target.checked ? [...greens, repo] : greens.filter((r) => r !== repo) }, e.target.checked ? `${repo}: Ship as one PR merges once checks pass` : `${repo}: you merge its PRs yourself`)} />
-            Let Ship as one PR merge its pull request once the checks pass <span className="text-fg-4">(your own projects)</span>
-          </label>
-          <div className="flex flex-wrap items-center gap-2 px-4 pb-2 text-meta text-fg-3" title="Design: its PRs' screens, before and after, captured by an agent from its Storybook stories or the running app. Auto: only PRs that change what people see.">
-            Visuals <span className="text-fg-4">(Design)</span>
-            <Pick label={`Visuals for ${repo}`} value={vis.repos?.[repo] ?? 'workspace'}
-                  options={[{ value: 'workspace', label: `As ${owner} (${vis.orgs?.[owner] ?? 'off'})` }, ...VIS]}
-                  onChange={(m) => { const repos = { ...vis.repos }; if (m === 'workspace') delete repos[repo]; else repos[repo] = m; void saveConfig({ visuals: { orgs: vis.orgs ?? {}, repos } }, m === 'workspace' ? `${repo}: visuals as ${owner}` : `${repo}: visuals ${m}`) }} />
-          </div>
-              </Fragment>
+                        onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${called(m)}` : `${repo} stays off ${called(m)}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
+                        accounts={accts} pin={pins[repo]} onPin={(a) => { const next = { ...pins }; if (a) next[repo] = a; else delete next[repo]; void saveConfig({ repoAccounts: next }, a ? `${repo} runs only on ${accts.find((x) => x.id === a)?.label ?? a}` : `${repo} follows the account order`) }}
+                        merge={greens.includes(repo)} onMerge={(on) => void saveConfig({ mergeOnGreen: on ? [...greens, repo] : greens.filter((r) => r !== repo) }, on ? `${repo}: Ship as one PR merges once checks pass` : `${repo}: you merge its PRs yourself`)}
+                        visuals={(vis.repos?.[repo] as VisMode | undefined) ?? 'workspace'} orgVisuals={orgVis}
+                        onVisuals={(m) => { const next = { ...vis.repos }; if (m === 'workspace') delete next[repo]; else next[repo] = m; void saveConfig({ visuals: { orgs: vis.orgs ?? {}, repos: next } }, m === 'workspace' ? `${repo}: visuals as ${owner}` : `${repo}: visuals ${m}`) }} />
             ))}
             <OwnerRepos owner={owner} watched={Object.keys(repos)} onAdd={(r) => addRepo(r, '')} />
           </div>
@@ -484,16 +477,15 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
 }
 
 /** A workspace's heading: its name, how many repositories it watches, who may clone them, and taking it away. */
-function WorkspaceHead({ owner, personal, count, onRemoved, toast, children }: { owner: string; personal: boolean; count: number; onRemoved: () => unknown; toast: Toast; children?: ReactNode }) {
+function WorkspaceHead({ owner, personal, count, onRemoved, toast }: { owner: string; personal: boolean; count: number; onRemoved: () => unknown; toast: Toast }) {
   const { armed, arm } = useArm()
   const remove = () => api('/workspaces', { owner, on: false }).then(() => { toast(count ? `${owner} is no longer a workspace: its ${count} repositor${count === 1 ? 'y is' : 'ies are'} no longer watched` : `${owner} is no longer a workspace`); return onRemoved() }, (e: Error) => toast(e.message, 'error'))
   return (
-    <header className="flex flex-wrap items-center gap-2 px-0.5">
-      <h3 className="font-mono text-small font-semibold text-fg-1">{owner}</h3>
-      {personal && <span className="rounded-full bg-fill px-1.5 py-px text-micro font-medium text-fg-3">you</span>}
+    <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+      <h3 className="font-mono text-body font-semibold text-fg-1">{owner}</h3>
+      {personal && <span className="rounded-md bg-fill px-1.5 py-px text-micro font-medium text-fg-3">you</span>}
       <span className="text-meta text-fg-3">{count} repositor{count === 1 ? 'y' : 'ies'} watched</span>
       <span className="ml-auto flex items-center gap-2">
-        {children}
         <button onClick={() => arm('remove', remove)} className="relative overflow-hidden rounded-lg px-2 py-1 text-meta font-medium text-fg-3 hover:bg-fail/10 hover:text-fail-text">
           {armed === 'remove' ? <><ArmLabel>{count ? `Confirm: stop watching ${count}` : 'Confirm'}</ArmLabel><ArmBar on="plain" /></> : 'Remove workspace'}
         </button>
@@ -555,12 +547,67 @@ function AddWorkspace({ onAdded, toast }: { onAdded: () => unknown; toast: Toast
   )
 }
 
-function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow, route }: {
+type VisMode = 'off' | 'auto' | 'always'
+const VIS_TABS: { id: VisMode; label: string }[] = [{ id: 'off', label: 'Off' }, { id: 'auto', label: 'Auto' }, { id: 'always', label: 'Always' }]
+
+/** One setting of a list: its name on the left, its control beside it, a line on what it does under the control. */
+function Setting({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-x-6 gap-y-1 py-2.5 sm:grid-cols-[8.5rem_1fr] sm:items-start">
+      <span className="pt-1 text-small font-medium text-fg-2">{label}</span>
+      <div className="min-w-0 space-y-1">{children}{hint && <p className="text-meta text-fg-4">{hint}</p>}</div>
+    </div>
+  )
+}
+
+/** Any of several: each option a checkbox you can see is one, so it never reads as a single choice. */
+function Checks<T extends string>({ label, value, options, onToggle }: { label: string; value: T[]; options: { value: T; label: ReactNode; sub?: string; locked?: string }[]; onToggle: (v: T, on: boolean) => void }) {
+  return (
+    <div role="group" aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1.5">
+      {options.map((o) => {
+        const on = value.includes(o.value)
+        return (
+          <label key={o.value} title={o.locked} className={`inline-flex items-center gap-2 text-small ${o.locked ? 'text-fg-3' : 'cursor-pointer text-fg-1'}`}>
+            <input type="checkbox" checked={on} disabled={!!o.locked} onChange={(e) => onToggle(o.value, e.target.checked)} className="peer sr-only" />
+            <span aria-hidden className={`flex size-4 shrink-0 items-center justify-center rounded-[5px] ring-1 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent ${on ? 'bg-accent text-on-accent ring-accent' : 'bg-surface-1 ring-line-strong'}`}>{on && <Check className="size-3" strokeWidth={3} />}</span>
+            {o.label}{o.sub && <span className="text-meta text-fg-4">{o.sub}</span>}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+/** One of many: a dropdown, for a choice with more options than fit a segmented control. */
+function Select<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  return (
+    <span className="relative inline-flex">
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)} className="field appearance-none py-1 pl-2.5 pr-8 text-small">
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <ChevronDown aria-hidden className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-fg-3" />
+    </span>
+  )
+}
+
+/** A fact about a repository on its closed row: read, never clicked. */
+const Fact = ({ icon: Icon, children, tone = 'text-fg-3', title }: { icon: LucideIcon; children: ReactNode; tone?: string; title?: string }) => (
+  <span title={title} className={`inline-flex items-center gap-1 text-meta ${tone}`}><Icon className="size-3 shrink-0" />{children}</span>
+)
+
+/**
+ * A watched repository: one line closed (its name, where it lives, and the few facts that matter at a glance), its
+ * settings when opened, each with the control its kind of choice takes: checkboxes for any of several, a dropdown for
+ * one of many, a segmented control for one of a few, a switch for on or off. One that needs you opens by itself.
+ */
+function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow, route, merge, onMerge, visuals, orgVisuals, onVisuals }: {
   route?: { order: string[]; why?: string } // where its work runs, best first (the placement matrix: machines.ts route)
   clone?: string // not on this machine yet: 'cloning', 'not-here' (not allowed on it), or why the clone failed
   machines?: string[]; machine?: string; allowed?: string[]; byOrg?: string[]; removed?: string[]; here?: string[]; onAllow?: (machine: string, on: boolean) => void // several machines: where it may be cloned
   repo: string; path: string; meta?: BaseInfo['meta']; task?: NonNullable<Health['base']>[string]; toast: Toast; onRemove: () => void
   accounts: { id: string; label: string }[]; pin?: string; onPin: (account?: string) => void
+  merge: boolean; onMerge: (on: boolean) => void // Ship as one PR merges its PR once green (your own projects)
+  visuals: VisMode | 'workspace'; orgVisuals: VisMode; onVisuals: (m: VisMode | 'workspace') => void // Design's visuals, over its workspace's
 }) {
   const called = useMachineName()
   const [plan, setPlan] = useState<Plan | { error: string }>()
@@ -572,68 +619,91 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
   const p = plan && !('error' in plan) ? plan : undefined
   const pct = task?.total ? Math.round(((task.done ?? 0) / task.total) * 100) : 0
   const coverage = p ? Math.round((p.known / Math.max(1, p.folders)) * 100) : 0
+  // what needs you: a clone that failed, or nowhere its work can run; such a row opens by itself
+  const trouble = (clone && clone !== 'cloning' && clone !== 'not-here' && !clone.startsWith('kept:') && !clone.startsWith('leaving:')) || (machines.length > 1 && route && !route.order.length)
+  const [open, setOpen] = useState(!!trouble)
 
   const status = clone === 'cloning' ? <span className="inline-flex items-center gap-1.5 text-run-text"><LoaderCircle className="size-3 animate-spin" />Cloning onto this machine</span>
     : clone === 'not-here' ? 'Not on this machine' : clone?.startsWith('kept:') || clone?.startsWith('leaving:') ? <span className="text-wait-text">Unticked here, {clone.replace(/^(kept|leaving): /, '')}</span> : clone ? <span className="text-fail-text">{clone}</span> : undefined
   const mapped = clone !== 'not-here' && !clone?.startsWith('kept:') && !clone?.startsWith('leaving:')
   const link = 'shrink-0 text-meta font-medium text-accent-text hover:underline disabled:opacity-40'
+  const ticked = machines.filter((m) => !removed.includes(m) && (allowed.includes(m) || byOrg.includes(m) || here.includes(m)))
+  const visNow = visuals === 'workspace' ? orgVisuals : visuals
+  const acct = pin ? accounts.find((a) => a.id === pin)?.label ?? pin : undefined
+  const mapText = busy ? `Mapping · ${pct}%` : p ? (p.toMap === 0 ? 'Mapped' : p.mapped ? `${p.toMap} folders to map` : 'Not mapped') : undefined
   return (
-    <div className="group px-4 py-3.5">
-      <div className="flex items-center gap-3">
+    <div className={open ? 'bg-fill/20' : ''}>
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover">
+        <ChevronRight className={`size-4 shrink-0 text-fg-4 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-fill text-fg-3"><FolderGit2 className="size-4" /></span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-body font-semibold">{repo}</div>
-          <div className="flex min-w-0 items-center gap-1.5 text-meta text-fg-3"><span className="truncate font-mono" title={path}>{home(path)}</span>{status && <><span className="text-fg-4">·</span><span className="truncate">{status}</span></>}</div>
-        </div>
-        <button onClick={() => arm('remove', onRemove)} title={armed ? 'Click again to stop watching (its codebase map is kept)' : 'Stop watching'} aria-label={`Stop watching ${repo}`}
-                className={`relative isolate flex items-center gap-1 overflow-hidden rounded-lg p-1.5 text-small font-medium transition-all hover:bg-fail/10 hover:text-fail-text focus:opacity-100 group-hover:opacity-100 ${armed ? 'text-fail-text opacity-100' : 'text-fg-4 opacity-0'}`}>
-          <Trash2 className="size-4" />{armed && <><ArmLabel>Confirm: stop watching</ArmLabel><ArmBar on="plain" /></>}
-        </button>
-      </div>
-      {/* where it lives, what it runs on, its map: one row each, lined up */}
-      <div className="ml-11 mt-2.5 space-y-2">
-        {machines.length > 1 && onAllow && (
-          <Field label="Machines" hint="Where it may be checked out: a new machine holds none until ticked; unticking takes the checkout off once nothing would be lost">
-            <Pick multi label={`Machines that may clone ${repo}`} value={machines.filter((m) => !removed.includes(m) && (allowed.includes(m) || byOrg.includes(m) || here.includes(m)))}
-                  options={machines.map((m) => ({ value: m, label: m === machine ? <>{called(m)} <span className="font-normal opacity-60">this one</span></> : called(m) }))}
-                  onChange={(_, m, on) => onAllow(m, on)} />
-          </Field>
-        )}
-        {machines.length > 1 && route && (
-          <Field label="Runs on" hint="Where its reviews, revisions and tickets run: the main server when it may have it, then the machine you work on, then the others; each once it has the checkout">
-            {route.order.length
-              ? <span className="flex flex-wrap items-center gap-1.5 text-small">
-                  <span className="rounded-full bg-accent/10 px-2 py-0.5 font-medium text-accent-text ring-1 ring-accent/20">{route.order[0]}</span>
-                  {route.order.length > 1 && <span className="text-meta text-fg-3">then {route.order.slice(1).join(', ')} when it's full or offline</span>}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-body font-semibold text-fg-1">{repo.split('/')[1]}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-meta text-fg-3"><span className="truncate font-mono" title={path}>{home(path)}</span>{status && <><span className="text-fg-4">·</span><span className="truncate">{status}</span></>}</span>
+        </span>
+        {/* the facts that matter at a glance, quiet: what it runs on, its account, Design, its map */}
+        <span className="hidden shrink-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 md:flex">
+          {machines.length > 1 && route && (route.order.length ? <Fact icon={Server} title={`Runs on ${route.order.join(', then ')}`}>{called(route.order[0])}</Fact> : <Fact icon={CircleAlert} tone="text-wait-text">Can't run now</Fact>)}
+          {acct && <Fact icon={UserRound} title="Kept to this account">{acct}</Fact>}
+          {visNow !== 'off' && <Fact icon={Images} tone="text-accent-text" title="Design's visuals">Visuals {visNow}</Fact>}
+          {merge && <Fact icon={GitMerge} title="Ship as one PR merges once checks pass">Merges itself</Fact>}
+          {mapped && mapText && <Fact icon={MapIcon} tone={busy ? 'text-run-text' : p?.toMap === 0 ? 'text-fg-3' : 'text-wait-text'}>{mapText}</Fact>}
+        </span>
+      </button>
+      {open && (
+        <div className="animate-[rise-in_220ms_var(--ease-snappy)_both] border-t border-line px-4 pb-3 pl-[4.25rem] pt-1">
+          {machines.length > 1 && onAllow && (
+            <Setting label="Machines" hint="Where it may be checked out. A new machine holds none until ticked; unticking takes the checkout off, saving what is only there first">
+              <Checks label={`Machines that may clone ${repo}`} value={ticked}
+                      options={machines.map((m) => ({ value: m, label: called(m), sub: [m === machine ? 'this one' : '', byOrg.includes(m) && !allowed.includes(m) ? 'from the workspace' : ''].filter(Boolean).join(' · ') || undefined }))}
+                      onToggle={(m, on) => onAllow(m, on)} />
+            </Setting>
+          )}
+          {machines.length > 1 && route && (
+            <Setting label="Runs on" hint="Its reviews, revisions and tickets: the main server when it may have it, then the machine you work on, then the others">
+              {route.order.length
+                ? <p className="pt-1 text-small text-fg-1"><b className="font-semibold">{called(route.order[0])}</b>{route.order.length > 1 && <span className="text-fg-3">, then {route.order.slice(1).map((m) => called(m)).join(', ')} when it's full or offline</span>}</p>
+                : <p className="pt-1 text-small text-wait-text">Nowhere now: {route.why}</p>}
+            </Setting>
+          )}
+          {accounts.length > 1 && (
+            <Setting label="Account" hint="Kept to one account: every run here uses only it, and waits at its limit instead of moving to another">
+              <Select label={`The account ${repo} runs on`} value={pin ?? ''} onChange={(v) => onPin(v || undefined)}
+                      options={[{ value: '', label: 'Any: follows the order in Accounts' }, ...accounts.map((a) => ({ value: a.id, label: a.label }))]} />
+            </Setting>
+          )}
+          <Setting label="Visuals" hint="Design: its PRs' screens, before and after. Auto captures the PRs that change what people see">
+            <Tabs size="sm" label={`Visuals for ${repo}`} value={visuals} onChange={onVisuals}
+                  options={[{ id: 'workspace' as const, label: `As workspace · ${orgVisuals}` }, ...VIS_TABS]} />
+          </Setting>
+          <Setting label="Ship as one PR" hint="For your own projects: it merges its pull request itself once the checks pass. Leave off where others review">
+            <span className="flex items-center gap-2.5 pt-0.5"><Toggle on={merge} onChange={onMerge} label={`Let Ship as one PR merge in ${repo}`} /><span className="text-small text-fg-2">{merge ? 'Merges itself when green' : 'You merge'}</span></span>
+          </Setting>
+          {mapped && (
+            <Setting label="Map" hint="Its codebase map, made from this machine's checkout: what Explain and the agents read first">
+              <div className="flex items-center gap-3 pt-1">
+                <span className="flex h-1 w-24 shrink-0 overflow-hidden rounded-full bg-fill-strong">
+                  <span className={`h-full rounded-full transition-all duration-700 ease-[var(--ease-snappy)] ${busy ? 'bg-accent' : coverage === 100 ? 'bg-ok' : 'bg-accent/50'}`} style={{ width: `${busy ? Math.max(3, pct) : coverage}%` }} />
                 </span>
-              : <span className="text-small text-wait-text">Nowhere now: {route.why}</span>}
-          </Field>
-        )}
-        {accounts.length > 1 && (
-          <Field label="Account" hint="Kept to one account: every run on this repository uses only it, and waits when it is at its limit instead of moving to another">
-            <Pick label={`The account ${repo} runs on`} value={pin ?? ''} options={[{ value: '', label: 'Any', hint: 'Follows the order in Accounts' }, ...accounts.map((a) => ({ value: a.id, label: a.label }))]}
-                  onChange={(v) => onPin(v || undefined)} />
-          </Field>
-        )}
-        {mapped && (
-          <Field label="Map" hint="Its codebase map, made from this machine's checkout: what Explain and the agents read first">
-            <div className="flex items-center gap-3">
-              <span className="flex h-1 w-24 shrink-0 overflow-hidden rounded-full bg-fill-strong">
-                <span className={`h-full rounded-full transition-all duration-700 ease-[var(--ease-snappy)] ${busy ? 'bg-accent' : coverage === 100 ? 'bg-ok' : 'bg-accent/50'}`} style={{ width: `${busy ? Math.max(3, pct) : coverage}%` }} />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-small text-fg-2">
-                {busy ? `${task?.under ? `Mapping ${task.under}` : 'Mapping'} · ${task?.step ?? 'queued'}`
-                  : task?.state === 'failed' ? <span className="text-fail-text">{task.error}</span>
-                  : p ? (p.toMap === 0 ? `Up to date · ${p.folders} folders on ${p.branch}${meta ? ` · ${hours(meta.mappedAt)}` : ''}`
-                    : p.mapped ? (p.complete ? `${p.toMap} folders changed on ${p.branch}` : `${p.known} of ${p.folders} folders`) : `Not mapped · ${p.folders} folders on ${p.branch}`)
-                  : plan ? <span className="text-fail-text">{(plan as { error: string }).error}</span> : <span className="text-fg-3">Checking…</span>}
-              </span>
-              {busy ? <button onClick={() => act('cancel')} className={`${link} !text-fg-3 hover:!text-fail-text`}>Stop</button>
-                : p && p.toMap > 0 ? <button onClick={() => act('start')} className={link}>{p.mapped ? (p.complete ? 'Update' : 'Finish') : 'Map it'} · ~${p.estimateUsd.toFixed(2)}</button> : null}
-            </div>
-          </Field>
-        )}
-      </div>
+                <span className="min-w-0 flex-1 truncate text-small text-fg-2">
+                  {busy ? `${task?.under ? `Mapping ${task.under}` : 'Mapping'} · ${task?.step ?? 'queued'}`
+                    : task?.state === 'failed' ? <span className="text-fail-text">{task.error}</span>
+                    : p ? (p.toMap === 0 ? `Up to date · ${p.folders} folders on ${p.branch}${meta ? ` · ${hours(meta.mappedAt)}` : ''}`
+                      : p.mapped ? (p.complete ? `${p.toMap} folders changed on ${p.branch}` : `${p.known} of ${p.folders} folders`) : `Not mapped · ${p.folders} folders on ${p.branch}`)
+                    : plan ? <span className="text-fail-text">{(plan as { error: string }).error}</span> : <span className="text-fg-3">Checking…</span>}
+                </span>
+                {busy ? <button onClick={() => act('cancel')} className={`${link} !text-fg-3 hover:!text-fail-text`}>Stop</button>
+                  : p && p.toMap > 0 ? <button onClick={() => act('start')} className={link}>{p.mapped ? (p.complete ? 'Update' : 'Finish') : 'Map it'} · ~${p.estimateUsd.toFixed(2)}</button> : null}
+              </div>
+            </Setting>
+          )}
+          <div className="flex justify-end pt-1">
+            <button onClick={() => arm('remove', onRemove)} title="Its codebase map is kept" aria-label={`Stop watching ${repo}`}
+                    className="relative isolate inline-flex items-center gap-1.5 overflow-hidden rounded-lg px-2 py-1 text-meta font-medium text-fg-3 transition-colors hover:bg-fail/10 hover:text-fail-text">
+              <Trash2 className="size-3.5" />{armed === 'remove' ? <><ArmLabel>Confirm: stop watching</ArmLabel><ArmBar on="plain" /></> : 'Stop watching'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
