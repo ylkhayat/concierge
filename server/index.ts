@@ -2555,12 +2555,16 @@ app.get('/visuals/setup/:owner/:name/activity', async (c) => c.json(await loadAc
 app.get('/visuals/:id/activity', async (c) => c.json(await loadActivity(`visuals:${decodeURIComponent(c.req.param('id'))}`)))
 // a baseline's built Storybook, file by file, for the board's live screens (visuals.ts storybookFile: baselines only)
 const SB_TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', json: 'application/json', map: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', ico: 'image/x-icon', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm' }
+const SW_SCOPE = `(function(){var c=navigator.serviceWorker;if(!c)return;var r=c.register.bind(c),base=location.pathname.replace(/[^/]*$/,'');c.register=function(u,o){try{if(/mockServiceWorker\\.js$/.test(new URL(u,location.href).pathname))o=Object.assign({},o,{scope:base})}catch(e){}return r(u,o)}})()`
 app.get('/visuals/sb/:slug/:sha/*', async (c) => {
   const { slug, sha } = c.req.param(), rest = decodeURIComponent(c.req.path.split(`/visuals/sb/${slug}/${sha}/`)[1] ?? '')
   const path = await storybookFile(slug, sha, rest)
   if (!path) return c.body(null, 404)
   const ext = path.split('.').pop()!.toLowerCase(), html = ext === 'html'
-  return new Response(await readFile(path), { headers: {
+  // a build made for its own server registers MSW's worker at the site's root ('/mockServiceWorker.js'): served there
+  // below, and registered here for this Storybook's folder only, so it mocks its pages and never sees Concierge's
+  const body = html ? (await readFile(path, 'utf8')).replace(/<head[^>]*>/i, (h) => `${h}<script>${SW_SCOPE}</script>`) : await readFile(path)
+  return new Response(body, { headers: {
     'content-type': SB_TYPES[ext] ?? 'application/octet-stream',
     // a build never changes under its commit; the pages themselves are looked at again
     'cache-control': html ? 'private, no-cache' : 'private, max-age=31536000, immutable',
@@ -3783,6 +3787,14 @@ if (setting('PASSWORD')) root.use('/*', basicAuth({ username: setting('USER') ??
 const squeeze = compress()
 root.use('/*', (c, next) => (c.req.path.endsWith('/events') ? next() : squeeze(c, next)))
 root.route('/', app)
+// MSW's worker for a built Storybook that asks for it at the site's root (see /visuals/sb): the one beside the page that
+// asks, found by its address; its scope is that page's folder (the page registers it so), never Concierge's own pages
+root.get('/mockServiceWorker.js', async (c) => {
+  const from = /\/api\/visuals\/sb\/([^/]+)\/([0-9a-f]{7,40})\/([^/]+)\//.exec(c.req.header('referer') ?? '')
+  const path = from && await storybookFile(from[1], from[2], `${from[3]}/mockServiceWorker.js`)
+  if (!path) return c.body(null, 404)
+  return new Response(await readFile(path), { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': `/api/visuals/sb/${from![1]}/${from![2]}/${from![3]}/` } })
+})
 if (process.env.NODE_ENV === 'production') {
   const dist = new URL('../dist', import.meta.url).pathname
   // hashed file names: a browser keeps them for good and only index.html is asked for again
