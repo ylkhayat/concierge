@@ -291,5 +291,5 @@ export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: s
     ] },
     { id: 'answers', label: 'Quick answers', hint: 'what a reviewer asks first', icon: STORY_ICONS.answers, skip: true, cards: (s?.questions ?? []).slice(0, 4).map((x, i) => ({ id: `q:${i}`, title: x.q, line: x.a })) },
   ]
-  return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col"><LaneBoard lanes={lanes} links={[['problem', 'approach'], ['approach', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
+  return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col"><LaneBoard prId={prId} board="intent" lanes={lanes} links={[['problem', 'approach'], ['approach', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
 }

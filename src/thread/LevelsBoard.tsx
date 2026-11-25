@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { DIMS, linksAt, visibleAt, type Dim, type Levels } from '../../server/levels.ts'
 import { edgeTypes } from '../components/Explain.tsx'
 import { Tabs } from '../components/Tabs.tsx'
+import { api, enc } from '../lib.ts'
 
 /** A card on a board: a change said in words. strong: the one the lane is about; faded: set aside. */
 export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[] }
@@ -59,7 +60,29 @@ function route(a: Pt, b: Pt, gapY: number | undefined): Pt[] {
 }
 
 /** Lanes stacked down the board, cards left to right in each; a click opens a card's whole story on the side. */
-export function LaneBoard({ lanes, links, top, children }: { lanes: Lane[]; links: [string, string][]; top?: React.ReactNode; children?: React.ReactNode }) {
+/** A card as a short user story, written on its first click (server: /prs/:id/story) and kept. */
+const told = new Map<string, string>()
+function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'intent'; c: Card }) {
+  const key = `${prId}:${board}:${c.id}`
+  const [text, setText] = useState(told.get(key)), [failed, setFailed] = useState(false)
+  useEffect(() => {
+    setText(told.get(key)); setFailed(false)
+    if (told.has(key)) return
+    let live = true
+    api(`/prs/${enc(prId)}/story`, { board, card: { id: c.id, title: c.title, line: c.line, before: c.before, why: c.why } })
+      .then((r: { story: string }) => { told.set(key, r.story); if (live) setText(r.story) }, () => { if (live) setFailed(true) })
+    return () => { live = false }
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (failed) return null
+  return (
+    <div className="rounded-ctl bg-fill px-2.5 py-2">
+      <p className="label text-fg-4">In context</p>
+      {text ? <p className="mt-0.5 text-small leading-relaxed text-fg-1">{text}</p> : <p className="mt-1 space-y-1"><span className="block h-3 w-full animate-pulse rounded bg-fill-strong" /><span className="block h-3 w-4/5 animate-pulse rounded bg-fill-strong" /></p>}
+    </div>
+  )
+}
+
+export function LaneBoard({ prId, board, lanes, links, top, children }: { prId: string; board: 'understanding' | 'intent'; lanes: Lane[]; links: [string, string][]; top?: React.ReactNode; children?: React.ReactNode }) {
   const [on, setOn] = useState<string>()
   const drawn = lanes.filter((l) => l.cards.length)
   const { nodes, edges } = useMemo(() => {
@@ -120,6 +143,7 @@ export function LaneBoard({ lanes, links, top, children }: { lanes: Lane[]; link
           <p className="flex items-center gap-2 border-b border-line px-3 py-2 text-small font-semibold text-fg-1"><span className="min-w-0 flex-1">{said(sel.title)}</span>
             <button onClick={() => setOn(undefined)} aria-label="Close" className="text-fg-4 hover:text-fg-1"><X className="size-3.5" /></button></p>
           <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-2.5">
+            <Story prId={prId} board={board} c={sel} />
             {sel.before && <div><p className="label text-fg-4">Before</p><p className="text-small leading-snug text-fg-3">{said(sel.before)}</p></div>}
             {sel.line && <div><p className="label text-accent-text">{sel.before ? 'Now' : 'What'}</p><p className="text-small leading-snug text-fg-1">{said(sel.line)}</p></div>}
             {sel.why && <div><p className="label text-fg-4">Why</p><p className="text-small leading-snug text-fg-2">{said(sel.why)}</p></div>}
@@ -177,5 +201,5 @@ export function LevelsBoard({ prId, levels }: { prId: string; levels: Levels }) 
   }, [levels, level])
   const unchanged = lanes.filter((l) => !l.cards.length).map((l) => l.label)
   const top = unchanged.length ? <p className="px-1 text-meta text-fg-3"><span className="text-fg-4">Unchanged:</span> {unchanged.join(' · ')}</p> : undefined
-  return <LaneBoard lanes={lanes} links={links} top={top}><Meter level={level} set={set} /></LaneBoard>
+  return <LaneBoard prId={prId} board="understanding" lanes={lanes} links={links} top={top}><Meter level={level} set={set} /></LaneBoard>
 }

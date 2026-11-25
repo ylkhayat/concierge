@@ -2962,6 +2962,23 @@ app.post('/prs/:id/explain-follow', async (c) => {
   save(); bus.emit('change')
   return c.json({ ok: true })
 })
+// a card on the Understanding or Intent board, said as a short user story (who, when, what now, so that), on its first
+// click: from the PR's explanation, by the small model, kept by PR head and card
+// ponytail: kept in memory only, written again after a restart (a cent or so each)
+const stories = new Map<string, Promise<string>>()
+const STORY_SCHEMA = { type: 'object', additionalProperties: false, required: ['story'], properties: { story: { type: 'string' } } }
+app.post('/prs/:id/story', async (c) => {
+  const p = pr(c.req.param('id'))
+  const o = p && loadOverlay(p)
+  if (!p || !o) return c.json({ error: 'not explained yet' }, 404)
+  const { board, card } = await c.req.json<{ board: 'understanding' | 'intent'; card: { id: string; title: string; line?: string; before?: string; why?: string } }>()
+  const key = `${p.id}@${o.headSha}:${board}:${card.id}`
+  if (!stories.has(key)) stories.set(key, callClaude<{ story: string }>(JSON.stringify({ pr: o.business, story: o.tour?.story && { push: o.tour.story.push, solution: o.tour.story.solution }, card }), tmpdir(), undefined, () => {}, STORY_SCHEMA, 0.1,
+    `You add context to one card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}. Write it as a short user story, 2-3 sentences, plain words, no code names: "As <who meets it>, when <the situation>, <what happens now because of this card>, so that <why it matters>." Then, only if it helps, one sentence of what was true before. Use only what the input says.`,
+    'haiku', p.repo).then((r) => { addSpend(r.cost, r.provider, r.tokens); return r.result.story }).catch((e) => { stories.delete(key); throw e }))
+  try { return c.json({ story: await stories.get(key)! }) } catch (e) { return c.json({ error: (e as Error).message.split('\n')[0] }, 502) }
+})
+
 app.post('/prs/:id/explain', async (c) => {
   const p = pr(c.req.param('id'))
   if (!p) return c.json({ error: 'unknown PR' }, 404)
