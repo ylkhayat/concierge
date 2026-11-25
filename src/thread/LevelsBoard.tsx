@@ -1,76 +1,65 @@
-// The Understanding and Intent boards, drawn the same way: lanes across the board (Understanding: the dimension a change
-// is to; Intent: why → what was decided → before and now → what to watch), the map's cards in them, wired by cause.
+// The Understanding and Intent boards, drawn like the Explain tab: its boxes, in lanes across the board (Understanding:
+// the dimension a change is to; Intent: why → what was decided → before and now → what to watch), wired by cause.
 // Understanding has a meter: the PR at one of five depths (server/levels.ts), from its purpose to each file; it opens at 3.
 // A lane the PR leaves alone stays as a thin band saying so: knowing what didn't change is half of feeling safe.
-import { Background, BackgroundVariant, Handle, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react'
+// Every link is routed here, in the board's own coordinates (out of a box, along the gaps between boxes and lanes, into
+// the next): it never depends on where the browser measured a box, so it sits right at any window size and zoom.
+import { Background, BackgroundVariant, MarkerType, ReactFlow, useReactFlow, type Edge, type Node } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { X } from 'lucide-react'
+import { Check, Cloud, Cpu, Database, Lightbulb, ListChecks, MessageCircleQuestion, Radio, ShieldAlert, TriangleAlert, UserRound, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { DIMS, linksAt, visibleAt, type Dim, type Levels } from '../../server/levels.ts'
+import { edgeTypes, nodeTypes, type Card as Box } from '../components/Explain.tsx'
 
 /** A card on a board: a change said in words. strong: the one the lane is about; faded: set aside. */
 export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[] }
-export type Lane = { id: string; label: string; hint: string; hue: number; cards: Card[]; skip?: boolean } // skip: an empty lane isn't drawn
+export type Lane = { id: string; label: string; hint: string; icon: LucideIcon; cards: Card[]; skip?: boolean } // skip: an empty lane isn't drawn
 
-const W = 270, H = 104, GAP = 20, PAD = 14, HEAD = 30, THIN = 34
+const W = 236, H = 100, GAP = 28, PAD = 20, HEAD = 46, THIN = 46, LANE_GAP = 18 // W, H: the Explain tab's box
 const said = (x?: string) => x?.replace(/`([^`]+)`/g, '$1')
-const laneTint = (hue: number, pct: number) => `color-mix(in oklch, oklch(0.7 0.12 ${hue}) ${pct}%, transparent)`
+type Pt = { x: number; y: number }
 
-const In = () => <Handle type="target" position={Position.Left} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
-const Out = () => <Handle type="source" position={Position.Right} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
-
-type CardData = { c: Card; hue: number; on: boolean; pick: (id: string) => void }
-/** The map's card: a title, a line of what is true now, and what the tone says (new, changed, set aside). */
-function CardNode({ data: { c, hue, on, pick } }: NodeProps<Node<CardData>>) {
-  const strong = c.tone === 'strong'
-  return (
-    <button type="button" onClick={() => pick(c.id)} style={{ width: W, height: H, ...(strong && { backgroundColor: `color-mix(in oklch, oklch(0.7 0.12 ${hue}) 14%, var(--surface-1))` }) }}
-            className={`nodrag flex flex-col rounded-card p-3 text-left transition-shadow ${strong ? '' : 'bg-surface-1'} ${c.tone === 'faded' ? 'opacity-55' : ''} ${on ? 'shadow-[0_0_0_2px_var(--lane),var(--e2)]' : 'shadow-[var(--e1)] ring-1 ring-line hover:ring-line-strong'}`}>
-      <In /><Out />
-      <p className="flex min-w-0 items-center gap-1.5">
-        {c.tone && c.tone !== 'strong' && c.tone !== 'faded' && <span className={`size-1.5 shrink-0 rounded-full ${c.tone === 'ok' ? 'bg-ok' : c.tone === 'wait' ? 'bg-wait' : 'bg-fail'}`} />}
-        <span className={`truncate text-small font-semibold text-fg-1 ${c.tone === 'faded' ? 'line-through decoration-fg-4/50' : ''}`} title={said(c.title)}>{said(c.title)}</span>
-      </p>
-      {c.line && <p className="mt-1 line-clamp-3 text-meta leading-snug text-fg-2">{said(c.line)}</p>}
-      {!!c.more?.length && <p className="mt-auto text-micro tabular-nums text-fg-4">{c.more.length} inside</p>}
-    </button>
-  )
+/** A link's path: out of the source's right side, along the gap beside it, across between the lanes, down the gap before the target, in. */
+function route(a: Pt, b: Pt, gapY: number | undefined): Pt[] {
+  const s = { x: a.x + W, y: a.y + H / 2 }, t = { x: b.x, y: b.y + H / 2 }
+  if (gapY === undefined && t.x > s.x && t.x - s.x <= GAP + 1) return [s, t] // side by side
+  const x1 = s.x + GAP / 2, x2 = t.x - GAP / 2
+  const y = gapY ?? a.y - LANE_GAP / 2 - 4 // the same lane: over its boxes, under its head
+  return [s, { x: x1, y: s.y }, { x: x1, y }, { x: x2, y }, { x: x2, y: t.y }, t]
 }
-/** A lane: a band across the board, its name and what it holds at its head; empty, a thin band saying so. */
-function LaneNode({ data: { lane, width, none } }: NodeProps<Node<{ lane: Lane; width: number; none: boolean }>>) {
-  return (
-    <div style={{ width, height: none ? THIN : HEAD + H + 2 * PAD, backgroundColor: laneTint(lane.hue, none ? 3 : 7), borderColor: laneTint(lane.hue, none ? 14 : 28) }}
-         className={`rounded-card border ${none ? 'border-dashed' : ''}`}>
-      <p className="flex h-[30px] items-center gap-2 px-3">
-        <span className="size-2 rounded-full" style={{ backgroundColor: `oklch(0.7 0.12 ${lane.hue})` }} />
-        <span className="label text-fg-2">{lane.label}</span>
-        <span className="truncate text-micro text-fg-4">{none ? 'unchanged' : lane.hint}</span>
-      </p>
-    </div>
-  )
-}
-const nodeTypes = { card: CardNode, lane: LaneNode }
 
-/** Lanes stacked down the board, cards left to right in each; a click opens a card's whole story on the side. */
+/** Lanes stacked down the board, boxes left to right in each; a click opens a card's whole story on the side. */
 export function LaneBoard({ lanes, links, children }: { lanes: Lane[]; links: [string, string][]; children?: React.ReactNode }) {
   const [on, setOn] = useState<string>()
-  const pick = (id: string) => setOn((o) => (o === id ? undefined : id))
   const { nodes, edges } = useMemo(() => {
-    const width = Math.max(3, ...lanes.map((l) => l.cards.length)) * (W + GAP) - GAP + 2 * PAD
-    const out: Node[] = []
+    const drawn = lanes.filter((l) => !(l.skip && !l.cards.length))
+    const width = Math.max(3, ...drawn.map((l) => l.cards.length)) * (W + GAP) - GAP + 2 * PAD
+    const out: Node[] = [], at = new Map<string, Pt & { lane: number }>(), bands: { top: number; bottom: number }[] = []
     let y = 0
-    for (const lane of lanes.filter((l) => !(l.skip && !l.cards.length))) {
-      const none = !lane.cards.length
-      out.push({ id: `lane:${lane.id}`, type: 'lane', position: { x: 0, y }, data: { lane, width, none }, draggable: false, selectable: false, zIndex: -1 })
-      lane.cards.forEach((c, k) => out.push({ id: c.id, type: 'card', position: { x: PAD + k * (W + GAP), y: y + HEAD + PAD }, data: { c, hue: lane.hue, on: on === c.id, pick }, draggable: false }))
-      y += (none ? THIN : HEAD + H + 2 * PAD) + 12
-    }
+    drawn.forEach((lane, li) => {
+      const none = !lane.cards.length, h = none ? THIN : HEAD + H + PAD
+      const frame: Box = { id: `lane:${lane.id}`, kind: 'system', icon: lane.icon, name: lane.label, summary: none ? 'unchanged' : lane.hint, fixed: true, ...(!none && { mark: 'contains' as const }) }
+      out.push({ id: frame.id, type: 'box', position: { x: 0, y }, data: frame, style: { width, height: h, opacity: none ? 0.5 : 1 }, draggable: false, selectable: false, zIndex: -1 })
+      lane.cards.forEach((c, k) => {
+        const p = { x: PAD + k * (W + GAP), y: y + HEAD }
+        at.set(c.id, { ...p, lane: li })
+        const box: Box = { id: c.id, kind: 'system', icon: lane.icon, name: said(c.title) ?? '', summary: said(c.line), ...(c.tone === 'strong' ? { plain: true } : c.tone !== 'faded' && { mark: c.before ? 'modified' as const : 'added' as const }), ...(c.more?.length && { sub: `${c.more.length} inside` }) }
+        out.push({ id: c.id, type: 'card', position: p, data: box, style: { width: W, height: H }, selected: on === c.id, draggable: false })
+      })
+      bands.push({ top: y, bottom: y + h }); y += h + LANE_GAP
+    })
+    const edges: Edge[] = links.flatMap(([a, b]) => {
+      const p = at.get(a), q = at.get(b)
+      if (!p || !q) return []
+      // between lanes: the gap next to the target's lane, on the side the link comes from
+      const gapY = p.lane === q.lane ? undefined : q.lane > p.lane ? bands[q.lane].top - LANE_GAP / 2 : bands[q.lane].bottom + LANE_GAP / 2
+      return [{ id: `${a}>${b}`, source: a, target: b, type: 'elk', data: { points: route(p, q, gapY) }, animated: true, zIndex: 5,
+        style: { stroke: 'rgb(139 92 246)', strokeWidth: 1.75 }, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'rgb(139 92 246)' } }]
+    })
     // room under the last lane for what floats over the board's foot (the meter)
-    if (children) out.push({ id: 'foot', type: 'lane', position: { x: 0, y: y + 50 }, data: { lane: lanes[0], width: 1, none: true }, style: { opacity: 0 }, draggable: false, selectable: false })
-    const ids = new Set(lanes.flatMap((l) => l.cards.map((c) => c.id)))
-    const edges: Edge[] = links.filter(([a, b]) => ids.has(a) && ids.has(b)).map(([a, b]) => ({ id: `${a}>${b}`, source: a, target: b, type: 'smoothstep', animated: true, zIndex: 1, style: { stroke: 'color-mix(in oklch, var(--lane) 55%, transparent)', strokeWidth: 1.5 } }))
+    if (children) out.push({ id: 'foot', type: 'more', position: { x: 0, y: y + 40 }, data: { id: 'foot', kind: 'more', icon: Check, name: '' }, style: { width: 1, height: 1, opacity: 0 }, draggable: false, selectable: false })
     return { nodes: out, edges }
-  }, [lanes, links, on]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lanes, links, on, children])
   const rf = useReactFlow()
   const shape = lanes.map((l) => `${l.id}:${l.cards.map((c) => c.id).join()}`).join('|')
   useEffect(() => { const t = setTimeout(() => void rf.fitView({ padding: 0.06, maxZoom: 1, duration: 250 }), 30); return () => clearTimeout(t) }, [shape, rf])
@@ -78,8 +67,9 @@ export function LaneBoard({ lanes, links, children }: { lanes: Lane[]; links: [s
   return (
     <div className="flex min-h-0 flex-1 gap-3">
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-card bg-[var(--bg-app)] ring-1 ring-line">
-        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.06, maxZoom: 1 }} minZoom={0.5} maxZoom={1.6}
-                   nodesConnectable={false} elementsSelectable={false} onNodeClick={() => {}} onPaneClick={() => setOn(undefined)} proOptions={{ hideAttribution: true }}>
+        <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: 0.06, maxZoom: 1 }} minZoom={0.5} maxZoom={1.6}
+                   nodesConnectable={false} onNodeClick={(_, n) => { if (!n.id.startsWith('lane:') && n.id !== 'foot') setOn((o) => (o === n.id ? undefined : n.id)) }}
+                   onPaneClick={() => setOn(undefined)} proOptions={{ hideAttribution: true }}>
           <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="var(--line)" />
         </ReactFlow>
         {children}
@@ -100,17 +90,20 @@ export function LaneBoard({ lanes, links, children }: { lanes: Lane[]; links: [s
   )
 }
 
+/** The lanes' icons, for Intent's story (ChangeMap.tsx). */
+export const STORY_ICONS = { why: Lightbulb, decided: ListChecks, change: Radio, watch: TriangleAlert, answers: MessageCircleQuestion }
+
 // --- Understanding: the levels ----------------------------------------------------------------------------------
 
 const STOPS = [['Purpose', 'what it is for'], ['Capabilities', 'what it makes possible'], ['Parts', 'what changed'], ['Mechanics', 'how it works'], ['Code', 'each file']] as const
-const DIM: Record<Dim, { label: string; hint: string; hue: number }> = {
-  behaviour: { label: 'Behaviour', hint: 'what a user or caller notices', hue: 250 },
-  data: { label: 'Data', hint: 'what is stored or sent', hue: 160 },
-  contract: { label: 'Contract', hint: 'APIs and messages between parts', hue: 300 },
-  logic: { label: 'Logic', hint: 'rules and decisions', hue: 210 },
-  wiring: { label: 'Wiring', hint: 'config, dependencies, environments', hue: 60 },
-  security: { label: 'Security', hint: 'access, secrets, privacy', hue: 20 },
-  safety: { label: 'Safety net', hint: 'tests and checks', hue: 120 },
+const DIM: Record<Dim, { label: string; hint: string; icon: LucideIcon }> = {
+  behaviour: { label: 'Behaviour', hint: 'what a user or caller notices', icon: UserRound },
+  data: { label: 'Data', hint: 'what is stored or sent', icon: Database },
+  contract: { label: 'Contract', hint: 'APIs and messages between parts', icon: Radio },
+  logic: { label: 'Logic', hint: 'rules and decisions', icon: Cpu },
+  wiring: { label: 'Wiring', hint: 'config, dependencies, environments', icon: Cloud },
+  security: { label: 'Security', hint: 'access, secrets, privacy', icon: ShieldAlert },
+  safety: { label: 'Safety net', hint: 'tests and checks', icon: Check },
 }
 const remembered = (prId: string) => { try { const v = Number(localStorage.getItem(`levels:${prId}`)); return v >= 1 && v <= 5 ? v : 3 } catch { return 3 } }
 /** A file's card is titled by what it is, never its name: the model's words, else the start of what it does now. */

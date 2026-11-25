@@ -363,9 +363,11 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<Node<Car
           <div className="truncate text-body font-semibold text-fg-1 ">{data.name}</div>
           {data.summary && <div className="truncate text-meta text-fg-3">{data.summary}</div>}
         </div>
-        <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-micro font-medium text-fg-3 ring-1 ring-line-strong dark:bg-zinc-900/80">
-          <Minimize2 className="size-3" />double-click to close
-        </span>
+        {!data.fixed && (
+          <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-micro font-medium text-fg-3 ring-1 ring-line-strong dark:bg-zinc-900/80">
+            <Minimize2 className="size-3" />double-click to close
+          </span>
+        )}
       </div>
     </div>
   )

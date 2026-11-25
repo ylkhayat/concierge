@@ -12,7 +12,7 @@ import type { Diagram } from '../../server/discussions.ts'
 import type { Overlay, Shape, Touched } from '../../server/explain.ts'
 import { api, enc } from '../lib.ts'
 import { stepsOf } from './flowSteps.ts'
-import { LaneBoard, LevelsBoard, type Lane } from './LevelsBoard.tsx'
+import { LaneBoard, LevelsBoard, STORY_ICONS, type Lane } from './LevelsBoard.tsx'
 import { keepSame, useApi } from '../query.ts'
 
 type Explained = { overlay?: Overlay; stale?: boolean; task?: { state: string } }
@@ -271,19 +271,19 @@ export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: s
   // the same board as Understanding: lanes read top to bottom as the story (why → what was decided → before and now
   // → what to watch → quick answers), the map's cards in them
   const lanes: Lane[] = [
-    { id: 'why', label: 'Why', hint: 'what pushed for it', hue: 60, cards: [{ id: 'why', title: s?.ticket ? `Asked in ${s.ticket}` : 'Why it was needed', line: s?.push ?? o.business.why }] },
-    { id: 'decided', label: 'Decided', hint: 'what was done, and what was set aside', hue: 250, cards: [
+    { id: 'why', label: 'Why', hint: 'what pushed for it', icon: STORY_ICONS.why, cards: [{ id: 'why', title: s?.ticket ? `Asked in ${s.ticket}` : 'Why it was needed', line: s?.push ?? o.business.why }] },
+    { id: 'decided', label: 'Decided', hint: 'what was done, and what was set aside', icon: STORY_ICONS.decided, cards: [
       { id: 'decided', title: fork?.chosen.label ?? 'What was decided', line: fork ? fork.chosen.why : s?.solution ?? o.business.what, why: fork ? undefined : s?.solution && o.business.what, tone: 'strong' },
       ...(fork?.setAside ?? []).map((x, i) => ({ id: `aside:${i}`, title: x.label, line: x.why, tone: 'faded' as const })),
     ] },
-    { id: 'change', label: 'Before and now', hint: s ? 'what is different for whoever meets it' : 'who it is for', hue: 160, cards: s
+    { id: 'change', label: 'Before and now', hint: s ? 'what is different for whoever meets it' : 'who it is for', icon: STORY_ICONS.change, cards: s
       ? [{ id: 'before', title: 'Before', line: s.before.caption, more: s.before.shapes.map((x) => x.label) }, { id: 'now', title: 'Now', line: s.after.caption, more: s.after.shapes.map((x) => x.label), tone: 'strong' }]
       : [{ id: 'who', title: 'Who it is for', line: o.business.who }] },
-    { id: 'watch', label: 'To watch', hint: 'its risk, and what is still open', hue: 20, cards: [
+    { id: 'watch', label: 'To watch', hint: 'its risk, and what is still open', icon: STORY_ICONS.watch, cards: [
       { id: 'risk', title: `${o.business.risk[0].toUpperCase()}${o.business.risk.slice(1)} risk`, line: o.business.riskWhy, tone: o.business.risk === 'high' ? 'bad' : o.business.risk === 'medium' ? 'wait' : 'ok' },
       ...(fork?.open ?? []).map((x, i) => ({ id: `open:${i}`, title: 'Still open', line: x, tone: 'wait' as const })),
     ] },
-    { id: 'answers', label: 'Quick answers', hint: 'what a reviewer asks first', hue: 300, skip: true, cards: (s?.questions ?? []).slice(0, 4).map((x, i) => ({ id: `q:${i}`, title: x.q, line: x.a })) },
+    { id: 'answers', label: 'Quick answers', hint: 'what a reviewer asks first', icon: STORY_ICONS.answers, skip: true, cards: (s?.questions ?? []).slice(0, 4).map((x, i) => ({ id: `q:${i}`, title: x.q, line: x.a })) },
   ]
   return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col"><LaneBoard lanes={lanes} links={[['why', 'decided'], ['decided', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
 }
