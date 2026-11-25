@@ -2,6 +2,8 @@
 // Two caches keep work from being redone:
 //   atlas/<repo>/nodes.json     what a folder is, keyed by path and the git tree sha it was written for
 //   explain/<repo>-<n>/<head>   the PR overlay; a new push only re-explains files changed since the last head
+import { tmpdir } from 'node:os'
+import { LEVELS_SCHEMA, LEVELS_SYSTEM, levelsOf, levelsPrompt } from './levels.ts'
 import { method } from './method.ts'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
@@ -55,6 +57,7 @@ export type Overlay = {
   flows: { title: string; scope: string; before?: string; after: string }[]
   tour?: Tour // absent on explanations made before the tour existed
   facts: Facts
+  levels?: import('./levels.ts').Levels // the change at five depths, by dimension (the Understanding board's meter)
 }
 /** A guided reading of the PR: why it exists, then the change in the order that makes sense, then what does not belong. */
 export type Shape = { label: string; tone: 'ok' | 'bad' | 'neutral' }
@@ -390,7 +393,13 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   const base = await mergeBase(repo, pr.base, pr.headSha)
   const prev = opts.fresh ? undefined : loadOverlay(pr)
   // nothing changed: keep it, unless its tour is missing or predates the story slides; then files carry over and the tour is written
-  if (prev && prev.headSha === pr.headSha && prev.baseSha === base && prev.tour?.story) return prev
+  if (prev && prev.headSha === pr.headSha && prev.baseSha === base && prev.tour?.story) {
+    if (prev.levels) return prev
+    // explained before the levels existed: only they are written, from the explanation it has
+    const o = await withLevels(prev, pr, opts.signal, progress)
+    writeJson(join(OVERLAYS(pr), `${pr.headSha}.json`), o)
+    return o
+  }
 
   progress('Mapping the change: tree, diff and import graph')
   let skeleton = loadSkeleton(pr.repo)
@@ -439,9 +448,19 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
     touched: [...kept, ...result.overlay.touched.filter((t) => current.has(t.path))],
     facts,
   }
-  writeJson(join(OVERLAYS(pr), `${pr.headSha}.json`), overlay)
+  const done = await withLevels(overlay, pr, opts.signal, progress)
+  writeJson(join(OVERLAYS(pr), `${pr.headSha}.json`), done)
   writeJson(join(OVERLAYS(pr), 'latest.json'), { head: pr.headSha })
   return overlay
+}
+
+/** The explanation with its five levels (levels.ts); a failure leaves it without them, the old map drawn instead. */
+async function withLevels(o: Overlay, pr: Pr, signal: AbortSignal | undefined, progress: Progress): Promise<Overlay> {
+  progress('Drawing the levels')
+  try {
+    const { result, cost } = await callClaude<Parameters<typeof levelsOf>[0]>(levelsPrompt(o), tmpdir(), signal, progress, LEVELS_SCHEMA, 0.6, LEVELS_SYSTEM, undefined, pr.repo)
+    return { ...o, costUsd: o.costUsd + cost, levels: levelsOf(result, o) }
+  } catch (e) { console.warn(`levels ${pr.repo}#${pr.number}: ${(e as Error).message.split('\n')[0]}`); return o }
 }
 
 export function callClaude<T = Result>(prompt: string, cwd: string, signal: AbortSignal | undefined, progress: Progress, schema: object = SCHEMA, budget = config.explainBudgetUsd ?? 1.5, system = FORMAT, model?: string, repo?: string): Promise<{ result: T; cost: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
