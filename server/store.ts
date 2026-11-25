@@ -414,6 +414,11 @@ for (const r of Object.values(state.execs)) {
 for (const [repo, t] of Object.entries(state.base)) {
   if (t.state === 'running') transition('base', repo, t.queuedAt, t, 'queued', 'restart')
 }
+// Design's runs (a PR's capture, a repository's Storybook and map) don't outlive this process: one caught mid-run by
+// a restart says so, so its page offers it again instead of showing it running forever. A queued one starts as usual
+for (const t of [...Object.values(state.prs).map((p) => p.visuals), ...Object.values(state.visualsSetup ?? {})]) {
+  if (t?.state === 'running') Object.assign(t, { state: 'failed', error: 'A restart interrupted it: start it again (it goes on where it was)', endedAt: new Date().toISOString() })
+}
 
 // saving never holds the thread: calls within 300ms become one write, off the thread (the file is ~1MB, on the Mac's
 // slow file sharing). saveNow() is for shutdown, where waiting is fine.
