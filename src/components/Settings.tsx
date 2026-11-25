@@ -437,6 +437,12 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
                     onChange={(m) => saveVis({ orgs: { [owner]: m } }, `${owner}: visuals ${m === 'auto' ? 'for PRs that change what people see' : m}`)} />
             </Setting>
           </div>
+          {o?.tracker === 'linear' && setup && (
+            <div className="border-b border-line">
+              <p className="px-4 pt-2.5 label text-fg-4">Linear teams</p>
+              <WorkspaceTeams setup={setup} owner={owner} saveConfig={saveConfig} />
+            </div>
+          )}
           <div className="divide-y divide-line">
             {mine.length === 0 && <p className="px-4 py-3 text-small text-fg-3">No repositories watched in {owner} yet: add them below.</p>}
             {mine.map(([repo, path]) => (
@@ -1665,26 +1671,23 @@ const Chip = ({ on, onClick, children, title, mono }: { on: boolean; onClick: ()
  * each team's tickets are worked in (one pill per watched repository), and the tools a run may use. Each change is
  * saved as it is made.
  */
-export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: SaveConfig }) {
-  const x = setup?.config.exec
-  const teamsQ = useApi<{ teams: { id: string; key: string; name: string }[] }>(setup?.linearKey ? '/plans/teams' : undefined, { staleTime: 10 * 60_000 })
-  // a Linear team's tickets are worked in the repositories of the organizations that manage their work in Linear: not
-  // your personal ones (orgs.ts). None marked Linear yet: every repository, as before
-  const orgsQ = useApi<import('../../server/orgs.ts').Org[]>('/orgs', { staleTime: 10 * 60_000 })
-  const [rule, setRule] = useState('')
-  if (!setup || !x) return <Skeleton rows={4} />
-  const all_ = Object.keys(setup.config.repos)
-  const linearOrgs = new Set((orgsQ.data ?? []).filter((o) => o.tracker === 'linear').map((o) => o.owner))
-  const ofLinear = all_.filter((r) => linearOrgs.has(r.split('/')[0]))
-  const repos = ofLinear.length ? ofLinear : all_
+/**
+ * A workspace's Linear teams: the teams whose tickets are worked in its repositories, and the teams not given a
+ * repository yet (each can be given one of this workspace's). Whether Ship shows a team, and where its tickets are
+ * worked, set here, where the workspace is.
+ */
+function WorkspaceTeams({ setup, owner, saveConfig }: { setup: SetupView; owner: string; saveConfig: SaveConfig }) {
+  const x = setup.config.exec
+  const teamsQ = useApi<{ teams: { id: string; key: string; name: string }[] }>(setup.linearKey ? '/plans/teams' : undefined, { staleTime: 10 * 60_000 })
+  const repos = Object.keys(setup.config.repos).filter((r) => r.split('/')[0] === owner)
   const known = teamsQ.data?.teams ?? []
-  const keys = [...new Set([...known.map((t) => t.key), ...x.teams, ...Object.keys(x.repoByPrefix)])].sort()
-  const nameOf = (k: string) => known.find((t) => t.key === k)?.name
-  const save = (patch: Partial<typeof x>, msg: string) => saveConfig({ exec: { ...x, ...patch } }, msg)
   const all = !x.teams.length
+  const keys = [...new Set([...known.map((t) => t.key), ...x.teams, ...Object.keys(x.repoByPrefix)])].sort()
+  // this workspace's: worked in one of its repositories; a team with none yet is offered here too
+  const ours = keys.filter((k) => !x.repoByPrefix[k] || repos.includes(x.repoByPrefix[k]))
+  const save = (patch: Partial<typeof x>, msg: string) => saveConfig({ exec: { ...x, ...patch } }, msg)
   const showTeam = (k: string) => {
     const on = all || x.teams.includes(k)
-    // from "every team", turning one off keeps the others; the last one off again means every team
     const next = all ? keys.filter((t) => t !== k) : on ? x.teams.filter((t) => t !== k) : [...x.teams, k]
     save({ teams: next.length === keys.length ? [] : next }, `${k}: ${on ? 'hidden from Ship' : 'shown in Ship'}`)
   }
@@ -1692,30 +1695,40 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
     const { [k]: _, ...rest } = x.repoByPrefix
     save({ repoByPrefix: r ? { ...rest, [k]: r } : rest }, r ? `${k} tickets are worked in ${r}` : `${k}: no repository`)
   }
+  if (!setup.linearKey) return <p className="px-4 py-3 text-small text-fg-3">Linear isn't connected: paste a Linear API key under Machines → Shared keys.</p>
+  if (teamsQ.isLoading) return <div className="px-4 py-3"><Skeleton rows={2} /></div>
+  if (!ours.length) return <p className="px-4 py-3 text-small text-fg-3">Every Linear team your key sees is worked in another workspace.</p>
+  return (
+    <div className="divide-y divide-line">
+      {ours.map((k) => {
+        const on = all || x.teams.includes(k), repo = x.repoByPrefix[k]
+        return (
+          <div key={k} className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 transition-opacity ${on ? '' : 'opacity-55'}`}>
+            <span className="flex h-7 min-w-11 shrink-0 items-center justify-center rounded-lg bg-fill px-1.5 font-mono text-meta font-semibold text-fg-1">{k}</span>
+            <div className="min-w-0 flex-1 basis-32">
+              <div className="truncate text-small font-medium text-fg-1">{known.find((t) => t.key === k)?.name ?? k}</div>
+              <div className="text-meta text-fg-3">{!on ? 'Hidden from Ship' : repo ? <>Worked in <span className="font-mono">{repo}</span></> : <span className="text-wait-text">Pick its repository here, or leave it to another workspace</span>}</div>
+            </div>
+            {on && repos.length > 0 && <Pick label={`${k}: repository`} value={repo} onChange={(r) => setRepo(k, repo === r ? undefined : r)}
+                  options={repos.map((r) => ({ value: r, mono: true, hint: r, label: r.split('/')[1] ?? r }))} />}
+            <Toggle label={`Show ${k} in Ship`} on={on} onChange={() => showTeam(k)} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: SaveConfig }) {
+  const x = setup?.config.exec
+  const [rule, setRule] = useState('')
+  if (!setup || !x) return <Skeleton rows={4} />
+  const save = (patch: Partial<typeof x>, msg: string) => saveConfig({ exec: { ...x, ...patch } }, msg)
   const addRule = () => { const t = rule.trim(); if (!t || x.allowedTools.includes(t)) return setRule(''); save({ allowedTools: [...x.allowedTools, t] }, `Allowed: ${t}`); setRule('') }
   return (
     <>
-      <Group title="Linear teams" hint={`Whose tickets show in Ship, and the repository each team’s tickets are worked in${ofLinear.length ? ` (${[...linearOrgs].join(', ')}: the organizations that manage their work in Linear)` : ''}. Saved as you click.`}>
-        {!setup.linearKey && <Row icon={CircleAlert} title="Linear isn’t connected" hint="Paste a Linear API key under Machines → Shared keys (Linear → Settings → Security & access → API keys). Ship lists your tickets with it." />}
-        {setup.linearKey && teamsQ.isLoading && <div className="px-4 py-3"><Skeleton rows={2} /></div>}
-        {keys.map((k) => {
-          const on = all || x.teams.includes(k), repo = x.repoByPrefix[k]
-          return (
-            <div key={k} className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5 transition-opacity ${on ? '' : 'opacity-55'}`}>
-              <span className="flex h-7 min-w-11 shrink-0 items-center justify-center rounded-lg bg-fill px-1.5 font-mono text-meta font-semibold text-fg-1">{k}</span>
-              <div className="min-w-0 flex-1 basis-32">
-                <div className="truncate text-small font-medium text-fg-1">{nameOf(k) ?? k}</div>
-                <div className="text-meta text-fg-3">{!on ? 'Hidden from Ship' : repo ? <>Worked in <span className="font-mono">{repo}</span></> : <span className="text-wait-text">Pick its repository</span>}</div>
-              </div>
-              {on && (
-                <Pick label={`${k}: repository`} value={repo} onChange={(r) => setRepo(k, repo === r ? undefined : r)}
-                      options={[...new Set([...repos, ...(repo ? [repo] : [])])].map((r) => ({ value: r, mono: true, hint: r, label: r.split('/')[1] ?? r }))} />
-              )}
-              <Toggle label={`Show ${k} in Ship`} on={on} onChange={() => showTeam(k)} />
-            </div>
-          )
-        })}
-        {setup.linearKey && !keys.length && !teamsQ.isLoading && <p className="px-4 py-3 text-small text-fg-3">No Linear teams found for your key.</p>}
+      <Group title="Linear teams" hint="Each workspace that manages its work in Linear sets its own teams: whose tickets show in Ship, and which of its repositories each is worked in">
+        <Row icon={FolderGit2} title="Set in Workspaces" hint="Settings → Workspaces: each Linear workspace's card lists its teams" />
       </Group>
 
       <Group title="Allowed tools" hint="What a ticket’s run may use without asking. Anything else is refused, and the ticket shows it.">
