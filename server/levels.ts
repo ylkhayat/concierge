@@ -16,7 +16,7 @@ export const LEVELS_SCHEMA = {
       id: { type: 'string' }, parent: { type: 'string' }, level: { type: 'integer', minimum: 1, maximum: 4 }, dim: { type: 'string', enum: [...DIMS] },
       title: { type: 'string' }, before: { type: 'string' }, after: { type: 'string' }, why: { type: 'string' } } } },
     links: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } } },
-    files: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'parent'], properties: { path: { type: 'string' }, parent: { type: 'string' } } } },
+    files: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'parent', 'title'], properties: { path: { type: 'string' }, parent: { type: 'string' }, title: { type: 'string' } } } },
   },
 }
 
@@ -29,7 +29,7 @@ Every node is a change: "before" what was true (omit when the thing is new), "af
 Write short: a title of 2-6 words, after and before one sentence each.
 dim: what the change is to: behaviour (what a user or caller notices), data (what is stored or sent, its shape), contract (APIs, interfaces, messages between parts), logic (rules and decisions), wiring (config, dependencies, environments), security (access, secrets, privacy), safety (tests and checks).
 links: cause → effect between nodes of the same level where one change makes another necessary or visible (e.g. a contract change → a behaviour change). Few, only real ones.
-files: every changed file path given, with the level 4 node it belongs to.
+files: every changed file path given, with the level 4 node it belongs to and a title of 2-5 words saying what it is or does (never its file or class name).
 Ids: short, unique (e.g. p, c1, c1a, c1a1).`
 
 /** The prompt: the explanation, without what the levels don't need. */
@@ -40,15 +40,15 @@ export const levelsPrompt = (o: Overlay) => JSON.stringify({
 })
 
 /** The model's answer made whole: level 5 from the files, every parent real, every file under a level 4 node. */
-export function levelsOf(r: { nodes: LevelNode[]; links: { from: string; to: string }[]; files: { path: string; parent: string }[] }, o: Overlay): Levels {
+export function levelsOf(r: { nodes: LevelNode[]; links: { from: string; to: string }[]; files: { path: string; parent: string; title?: string }[] }, o: Overlay): Levels {
   const ids = new Set(r.nodes.map((n) => n.id))
   const nodes: LevelNode[] = r.nodes.map((n) => ({ ...n, parent: n.parent && ids.has(n.parent) && n.parent !== n.id ? n.parent : undefined }))
   const fours = nodes.filter((n) => n.level === 4)
   for (const t of o.touched) {
-    const under = r.files.find((f) => f.path === t.path)?.parent
+    const f = r.files.find((x) => x.path === t.path), under = f?.parent
     const parent = under && ids.has(under) ? under : fours[0]?.id
     const p = nodes.find((n) => n.id === parent)
-    nodes.push({ id: `f:${t.path}`, parent, level: 5, dim: p?.dim ?? 'logic', title: t.path.split('/').pop()!, before: t.before, after: t.after, why: t.why, path: t.path })
+    nodes.push({ id: `f:${t.path}`, parent, level: 5, dim: p?.dim ?? 'logic', title: f?.title ?? '', before: t.before, after: t.after, why: t.why, path: t.path })
   }
   return { nodes, links: r.links.filter((l) => ids.has(l.from) && ids.has(l.to) && l.from !== l.to).map((l) => [l.from, l.to]) }
 }

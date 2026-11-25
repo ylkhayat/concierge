@@ -6,13 +6,13 @@
 import { Background, BackgroundVariant, Handle, Position, ReactFlow, ReactFlowProvider, type Edge, type Node, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { elk } from '../elk.ts'
-import { ArrowRight, Check, CircleDashed, LoaderCircle, Sparkles, X } from 'lucide-react'
+import { ArrowRight, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { Diagram } from '../../server/discussions.ts'
 import type { Overlay, Shape, Touched } from '../../server/explain.ts'
 import { api, enc } from '../lib.ts'
 import { stepsOf } from './flowSteps.ts'
-import { LevelsBoard } from './LevelsBoard.tsx'
+import { LaneBoard, LevelsBoard, type Lane } from './LevelsBoard.tsx'
 import { keepSame, useApi } from '../query.ts'
 
 type Explained = { overlay?: Overlay; stale?: boolean; task?: { state: string } }
@@ -263,63 +263,27 @@ export function UnderstandingMap({ prId, path, toast }: { prId: string; path?: s
 
 // --- Intent: the story as a flow -------------------------------------------------------------------------------
 
-const Shapes = ({ shapes }: { shapes: Shape[] }) => (
-  <span className="mt-1.5 flex flex-wrap gap-1">
-    {shapes.map((x, i) => <span key={i} className={`rounded-full px-2 py-0.5 text-micro ${x.tone === 'ok' ? 'bg-ok/12 text-ok-text' : x.tone === 'bad' ? 'bg-fail/12 text-fail-text' : 'bg-fill text-fg-2'}`}>{x.label}</span>)}
-  </span>
-)
-const Step = ({ label, children, strong }: { label: string; children: React.ReactNode; strong?: boolean }) => (
-  <div className={`rounded-card px-4 py-3 ${strong ? 'bg-[color-mix(in_oklch,var(--lane)_12%,transparent)] ring-1 ring-[color-mix(in_oklch,var(--lane)_40%,transparent)]' : 'bg-surface-1 ring-1 ring-line'}`}>
-    <p className={`label mb-1 ${strong ? 'text-[var(--lane)]' : 'text-fg-4'}`}>{label}</p>
-    {children}
-  </div>
-)
-
 export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: string; fork?: Extract<Diagram, { kind: 'fork' }>; toast: (m: string, tone?: 'ok' | 'error') => void }) {
   const q = useExplained(prId, path), o = q.data?.overlay, s = o?.tour?.story
   if (q.isLoading) return <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>
   if (q.isError) return <div className="flex h-full items-center justify-center px-6 text-center text-small text-fg-3">This PR isn’t tracked any more (closed, or never opened here), so there is no explanation to draw from.</div>
   if (!o) return <Missing prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} toast={toast} />
-  const Arrow = () => <ArrowRight className="size-4 self-center text-fg-4" aria-hidden />
-  return (
-    // the whole width, in rows that read left to right: why → what was decided; before → now; what to watch, and answers.
-    // Padded inside its scroll, so a card's outline is never cut at the edge
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-1">
-      <div className="grid shrink-0 grid-cols-[1fr_auto_1.3fr] items-stretch gap-2">
-        <Step label="Why it was needed"><p className="text-small leading-relaxed text-fg-1">{s?.push ?? o.business.why}</p></Step>
-        <Arrow />
-        <Step label="What was decided" strong>
-          <p className="text-small font-medium leading-relaxed text-fg-1">{fork?.chosen.label ?? s?.solution ?? o.business.what}</p>
-          {(fork?.chosen.why ?? (fork ? undefined : s?.solution && o.business.what)) && <p className="mt-1 text-meta leading-snug text-fg-2">{fork?.chosen.why ?? o.business.what}</p>}
-          {!!fork?.setAside.length && (
-            <ul className="mt-2 space-y-1 border-t border-line pt-2">
-              {fork.setAside.map((x, i) => <li key={i} className="flex items-start gap-1.5 text-meta"><X className="mt-0.5 size-3 shrink-0 text-fg-4" /><span><span className="text-fg-3 line-through decoration-fg-4/50">{x.label}</span> <span className="text-fg-4">· {x.why}</span></span></li>)}
-            </ul>
-          )}
-        </Step>
-      </div>
-      {s ? (
-        <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-stretch gap-2">
-          <Step label="Before"><p className="text-small leading-snug text-fg-2">{s.before.caption}</p><Shapes shapes={s.before.shapes} /></Step>
-          <Arrow />
-          <Step label="Now" strong><p className="text-small leading-snug text-fg-1">{s.after.caption}</p><Shapes shapes={s.after.shapes} /></Step>
-        </div>
-      ) : <Step label="Who it is for"><p className="text-small text-fg-2">{o.business.who}</p></Step>}
-      {(!!fork?.open.length || o.business.risk !== 'low' || !!s?.questions.length) && (
-        <div className="grid shrink-0 grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            {fork?.open.map((x, i) => <p key={i} className="flex items-center gap-1.5 text-small text-fg-2"><CircleDashed className="size-3.5 shrink-0 text-wait" />Open: {x}</p>)}
-            {o.business.risk !== 'low' ? <p className="flex items-start gap-1.5 text-small text-fg-2"><span className={`mt-1.5 size-2 shrink-0 rounded-full ${o.business.risk === 'high' ? 'bg-fail' : 'bg-wait'}`} />{o.business.risk} risk: {o.business.riskWhy}</p>
-              : <p className="flex items-start gap-1.5 text-small text-fg-3"><span className="mt-1.5 size-2 shrink-0 rounded-full bg-ok" />low risk{o.business.riskWhy ? `: ${o.business.riskWhy}` : ''}</p>}
-          </div>
-          {!!s?.questions.length && (
-            <div className="space-y-0.5">
-              <p className="label text-fg-4">Quick answers</p>
-              {s.questions.slice(0, 4).map((x, i) => <details key={i} className="group rounded-ctl px-2 py-1 hover:bg-hover"><summary className="cursor-pointer list-none text-small font-medium text-fg-1"><Check className="mr-1.5 inline size-3 text-[var(--lane)]" />{x.q}</summary><p className="mt-1 pl-[18px] text-small text-fg-2">{x.a}</p></details>)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+  // the same board as Understanding: lanes read top to bottom as the story (why → what was decided → before and now
+  // → what to watch → quick answers), the map's cards in them
+  const lanes: Lane[] = [
+    { id: 'why', label: 'Why', hint: 'what pushed for it', hue: 60, cards: [{ id: 'why', title: s?.ticket ? `Asked in ${s.ticket}` : 'Why it was needed', line: s?.push ?? o.business.why }] },
+    { id: 'decided', label: 'Decided', hint: 'what was done, and what was set aside', hue: 250, cards: [
+      { id: 'decided', title: fork?.chosen.label ?? 'What was decided', line: fork ? fork.chosen.why : s?.solution ?? o.business.what, why: fork ? undefined : s?.solution && o.business.what, tone: 'strong' },
+      ...(fork?.setAside ?? []).map((x, i) => ({ id: `aside:${i}`, title: x.label, line: x.why, tone: 'faded' as const })),
+    ] },
+    { id: 'change', label: 'Before and now', hint: s ? 'what is different for whoever meets it' : 'who it is for', hue: 160, cards: s
+      ? [{ id: 'before', title: 'Before', line: s.before.caption, more: s.before.shapes.map((x) => x.label) }, { id: 'now', title: 'Now', line: s.after.caption, more: s.after.shapes.map((x) => x.label), tone: 'strong' }]
+      : [{ id: 'who', title: 'Who it is for', line: o.business.who }] },
+    { id: 'watch', label: 'To watch', hint: 'its risk, and what is still open', hue: 20, cards: [
+      { id: 'risk', title: `${o.business.risk[0].toUpperCase()}${o.business.risk.slice(1)} risk`, line: o.business.riskWhy, tone: o.business.risk === 'high' ? 'bad' : o.business.risk === 'medium' ? 'wait' : 'ok' },
+      ...(fork?.open ?? []).map((x, i) => ({ id: `open:${i}`, title: 'Still open', line: x, tone: 'wait' as const })),
+    ] },
+    { id: 'answers', label: 'Quick answers', hint: 'what a reviewer asks first', hue: 300, skip: true, cards: (s?.questions ?? []).slice(0, 4).map((x, i) => ({ id: `q:${i}`, title: x.q, line: x.a })) },
+  ]
+  return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col"><LaneBoard lanes={lanes} links={[['why', 'decided'], ['decided', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
 }
