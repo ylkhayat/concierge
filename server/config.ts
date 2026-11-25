@@ -18,6 +18,7 @@ export type Config = {
   reviewIn?: 'crit' | 'concierge' // where review findings are read and answered: crit, or Concierge itself (no crit needed). Unset: crit when installed
   machineNames?: Record<string, string> // what you call each machine (its id stays DECK_NAME): shown everywhere instead
   cloneOn?: Record<string, string[]>
+  startIn?: Record<string, string> // "owner/repo" → the folder in it its runs start in (a repo that refuses Claude at its root)
   // the machines a repository was unticked on: each takes its checkout off (only when nothing would be lost)
   removeFrom?: Record<string, string[]>
   port: number

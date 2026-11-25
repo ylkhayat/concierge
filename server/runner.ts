@@ -939,6 +939,9 @@ export function runAgent(o: {
   // (tell()). Codex takes its prompt once: words for it wait until it ends
   const provider = o.provider ?? 'claude'
   const m = o.on ? machines.get(o.on) : undefined
+  // a repository whose runs must start in a folder of it (its own hooks refuse the root): that folder, in whichever checkout
+  const sub = o.repo ? config.startIn?.[o.repo] : undefined
+  if (sub) o = { ...o, cwd: join(o.cwd, sub) }
   const start = (args: string[], stdin: boolean) => m
     ? remoteAgent(m.name, m.base, token(), { provider, args, cwd: o.cwd, stdin, label: o.label, untrusted: o.untrusted })
     : spawnAgent(provider, o.untrusted ? [...args, ...UNTRUSTED_ARGS] : args, { cwd: o.cwd, stdin, ...(o.untrusted && { env: untrustedEnv() }) })

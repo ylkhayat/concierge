@@ -446,7 +446,7 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
           <div className="divide-y divide-line">
             {mine.length === 0 && <p className="px-4 py-3 text-small text-fg-3">No repositories watched in {owner} yet: add them below.</p>}
             {mine.map(([repo, path]) => (
-              <RepoCard key={repo} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
+              <RepoCard key={repo} startIn={setup?.config.startIn?.[repo]} repo={repo} path={path} meta={bases.find((b) => b.repo === repo)?.meta} task={health?.base?.[repo]} toast={toast} onRemove={() => remove(repo)} clone={setup?.clones?.[repo]}
                         machines={setup?.machines ?? []} machine={setup?.machine} allowed={setup?.cloneOn?.[repo] ?? []} byOrg={org} removed={setup?.removeFrom?.[repo] ?? []} here={Object.entries(setup?.checkedOut ?? {}).filter(([, rs]) => rs.includes(repo)).map(([m]) => m)}
                         route={setup?.placement?.find((r) => r.repo === repo)}
                         onAllow={(m, on) => api('/repos/clone-on', { repo, machine: m, on }).then(() => { toast(on ? `${repo} may be cloned on ${called(m)}` : `${repo} stays off ${called(m)}`); return reload() }, (e: Error) => toast(e.message, 'error'))}
@@ -613,7 +613,15 @@ const Fact = ({ icon: Icon, children, tone = 'text-fg-3', title }: { icon: Lucid
  * settings when opened, each with the control its kind of choice takes: checkboxes for any of several, a dropdown for
  * one of many, a segmented control for one of a few, a switch for on or off. One that needs you opens by itself.
  */
-function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow, route, merge, onMerge, visuals, orgVisuals, onVisuals }: {
+function StartIn({ repo, value, toast }: { repo: string; value?: string; toast: Toast }) {
+  const [v, setV] = useState(value ?? '')
+  const save = () => { if (v.trim() === (value ?? '')) return; api('/repos/start-in', { repo, folder: v }).then(() => toast(v.trim() ? `${repo}: runs start in ${v.trim()}` : `${repo}: runs start at its root`), (e: Error) => toast(e.message, 'error')) }
+  return <input value={v} onChange={(e) => setV(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }} placeholder="the root"
+                aria-label={`Folder ${repo}'s runs start in`} className="w-48 rounded-ctl bg-fill px-2.5 py-1 font-mono text-small text-fg-1 outline-none focus:ring-1 focus:ring-accent/60" />
+}
+
+function RepoCard({ startIn, repo, path, meta, task, toast, onRemove, accounts, pin, onPin, clone, machines = [], machine, allowed = [], byOrg = [], removed = [], here = [], onAllow, route, merge, onMerge, visuals, orgVisuals, onVisuals }: {
+  startIn?: string // the folder its runs start in
   route?: { order: string[]; why?: string } // where its work runs, best first (the placement matrix: machines.ts route)
   clone?: string // not on this machine yet: 'cloning', 'not-here' (not allowed on it), or why the clone failed
   machines?: string[]; machine?: string; allowed?: string[]; byOrg?: string[]; removed?: string[]; here?: string[]; onAllow?: (machine: string, on: boolean) => void // several machines: where it may be cloned
@@ -687,6 +695,9 @@ function RepoCard({ repo, path, meta, task, toast, onRemove, accounts, pin, onPi
           <Setting label="Visuals" hint="Design: its PRs' screens, before and after. Auto captures the PRs that change what people see">
             <Tabs size="sm" label={`Visuals for ${repo}`} value={visuals} onChange={onVisuals}
                   options={[{ id: 'workspace' as const, label: `As workspace · ${orgVisuals}` }, ...VIS_TABS]} />
+          </Setting>
+          <Setting label="Start in" hint="A folder of the repository its runs start in, for a repository that refuses an agent at its root (e.g. fde). Empty: the root">
+            <StartIn repo={repo} value={startIn} toast={toast} />
           </Setting>
           <Setting label="Ship as one PR" hint="For your own projects: it merges its pull request itself once the checks pass. Leave off where others review">
             <span className="flex items-center gap-2.5 pt-0.5"><Toggle on={merge} onChange={onMerge} label={`Let Ship as one PR merge in ${repo}`} /><span className="text-small text-fg-2">{merge ? 'Merges itself when green' : 'You merge'}</span></span>

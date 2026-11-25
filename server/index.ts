@@ -1883,6 +1883,14 @@ app.post('/bank/remove', async (c) => {
   await bankNow()
   return c.json(bankView())
 })
+app.post('/repos/start-in', async (c) => {
+  const { repo, folder } = await c.req.json<{ repo: string; folder?: string }>()
+  const f = (folder ?? '').trim().replace(/^\/+|\/+$/g, '')
+  if (f.split('/').includes('..')) return c.json({ error: 'A folder inside the repository' }, 400)
+  const { [repo]: _, ...rest } = userConfig().startIn ?? {}
+  saveConfig({ startIn: f ? { ...rest, [repo]: f } : rest })
+  return c.json({ ok: true })
+})
 app.post('/connections/scope', async (c) => {
   const { name, owners } = await c.req.json<{ name: string; owners: string[] }>()
   const { [name]: _, ...rest } = userConfig().connections?.scope ?? {}
@@ -1980,7 +1988,7 @@ const setupView = async (light = false) => ({
   reviewIn: reviewIn(), critInstalled: critInstalled(), workDir: WORK_DIR, clones: cloneState(), away: Object.keys(config.repos).filter(notHere), machine: fleet.machine, machines: fleetMachines(), machineNames: config.machineNames ?? {}, cloneOn: config.cloneOn ?? {}, removeFrom: config.removeFrom ?? {},
   // where each repository is checked out now: this machine's, and each worker's as it reports (machines.ts)
   checkedOut: { ...(fleet.machine && { [fleet.machine]: Object.keys(config.repos).filter((r) => !(r in cloneState())) }), ...Object.fromEntries([...machines.values()].filter((m) => m.status?.repos).map((m) => [m.name, m.status!.repos!])) } as Record<string, string[]>,
-  config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, mergeOnGreen: config.mergeOnGreen ?? [], visuals: config.visuals ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, orgs: config.orgs ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
+  config: { repos: config.repos, repoAccounts: config.repoAccounts ?? {}, mergeOnGreen: config.mergeOnGreen ?? [], startIn: config.startIn ?? {}, visuals: config.visuals ?? {}, review: config.agent.review.command, revise: config.agent.revise.command, stack: config.agent.stack ?? '', workspaces: workspaces(), linearDesktop: !!config.linearDesktop, terminal: config.terminal, compliance: config.compliance ?? {}, orgs: config.orgs ?? {}, explainBudgetUsd: config.explainBudgetUsd, exec: config.exec },
   linearKey: hasKey(), // whether it is set; the key itself never leaves the server
   // the fleet extension is loaded (fleet/compose.fleet.yml sets it): onboarding then signs Tailscale in after GitHub
   fleet: !!process.env.CONCIERGE_FLEET,
