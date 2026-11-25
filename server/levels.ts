@@ -68,7 +68,7 @@ export function linksAt(lv: Levels, level: number): [string, string][] {
 }
 
 // ponytail: the one check, run with `node --experimental-strip-types server/levels.ts`
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv[1]}`) { // never in the browser, which reads this file too
   const lv: Levels = { nodes: [
     { id: 'p', level: 1, dim: 'behaviour', title: 'P', after: '' }, { id: 'c', parent: 'p', level: 2, dim: 'behaviour', title: 'C', after: '' },
     { id: 'a', parent: 'c', level: 3, dim: 'contract', title: 'A', after: '' }, { id: 'b', parent: 'c', level: 3, dim: 'behaviour', title: 'B', after: '' },
