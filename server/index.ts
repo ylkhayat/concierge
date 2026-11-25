@@ -2487,7 +2487,8 @@ app.get('/visuals', async (c) => {
   const repoIds = [...new Set([...Object.keys(config.visuals?.repos ?? {}).filter((r) => modeOf(r) !== 'off'), ...Object.keys(config.repos).filter((r) => modeOf(r) !== 'off'), ...list.map((v) => v.repo), ...Object.keys(state.visualsSetup ?? {})])].filter((r) => config.repos[r])
   const repoList = await Promise.all(repoIds.map(async (r) => {
     const base = await setsOf(baselineId(r)), its = list.filter((v) => v.repo === r)
-    return { repo: r, mode: modeOf(r), task: state.visualsSetup?.[r], baseline: base[0] && { sha: base[0].sha, at: base[0].at, count: base[0].shots.length, thumb: base[0].shots.find((x) => x.after)?.after },
+    return { repo: r, mode: modeOf(r), task: state.visualsSetup?.[r], baseline: base[0] && { sha: base[0].sha, at: base[0].at, count: base[0].shots.length, thumb: (base[0].shots.find((x) => x.domain && (x.thumb ?? x.after)) ?? base[0].shots.find((x) => x.after))?.after,
+        screens: base[0].shots.filter((x) => x.domain).length, domains: new Set(base[0].shots.map((x) => x.domain).filter(Boolean)).size },
       fromApp: !base.length && its.some((v) => v.sets[0]?.source === 'app') }
   }))
   return c.json({ joined: designJoined(), repos: repoList, prs: list.map(({ sets, ...v }) => ({ ...v, latest: sets[0] && { sha: sets[0].sha, at: sets[0].at, summary: sets[0].summary, count: sets[0].shots.length, thumb: sets[0].shots.find((s) => s.after)?.after } })), tickets })
@@ -2524,10 +2525,11 @@ app.get('/visuals/repos/:owner/:name', async (c) => {
 app.post('/visuals/repos/:owner/:name', async (c) => {
   const repo = `${c.req.param('owner')}/${c.req.param('name')}`
   if (!config.repos[repo]) return c.json({ error: 'Not a watched repository' }, 404)
-  const b = await c.req.json() as { setup?: boolean; say?: string; cancel?: boolean }
+  const b = await c.req.json() as { setup?: boolean; board?: boolean; say?: string; cancel?: boolean }
   if (b.cancel) cancelSetup(repo)
   const said = typeof b.say === 'string' ? b.say.trim().slice(0, 4000) : ''
-  const how = b.setup || said ? enqueueSetup(repo, said || undefined) : undefined
+  // board: only the blueprint, for a baseline that has its stories (the session that set them up goes on)
+  const how = b.setup || b.board || said ? enqueueSetup(repo, said || undefined, !!b.board) : undefined
   if (how === 'no') return c.json({ error: `${repo} has no checkout set up` }, 400)
   stale('/visuals')
   return c.json({ repo, task: state.visualsSetup?.[repo], how })

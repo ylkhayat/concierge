@@ -162,3 +162,10 @@ test('a baseline serves its built Storybook, and nothing else: no PR capture, no
   assert.deepEqual([set.shots[0].book, set.shots[0].story, set.shots[0].height], ['rumanna', 'screens-courses--empty', 1400])
   assert.deepEqual([set.shots[1].book, set.shots[1].story, set.shots[1].height], [undefined, undefined, undefined])
 })
+
+test('the board alone, for a baseline set up before it: screens, the built Storybook, marks, the earlier shots kept', async () => {
+  const { boardPrompt } = await import('./visuals.ts')
+  const p = boardPrompt({ repo: 'ylkhayat/elbuffeh', dir: '/d', last: '84ff594', said: 'rumanna first' })
+  assert.match(p, /not its board/); assert.match(p, /storybook build\) into \/d\//); assert.match(p, /the manifest of \/d\/84ff594\/ as it is \(copy its images too\)/)
+  assert.match(p, /"book":"<package name>","story":"<story-id>"/); assert.match(p, /One mark per component instance/); assert.match(p, /rumanna first/)
+})

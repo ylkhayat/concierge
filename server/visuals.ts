@@ -198,6 +198,24 @@ One mark per component instance that shows (Playwright boundingBox of its root e
 End with the PR's address on its own line: PR <url>.`
 }
 
+/**
+ * The board alone, for a baseline that has its Storybook and its components' shots but no blueprint yet (it was set up
+ * before the board, or its screens were left out): the screens as a storyline, the Storybook built beside the baseline,
+ * and every screen shot with every component marked. Into a new folder for the new commit, the earlier shots kept.
+ */
+export function boardPrompt(p: { repo: string; dir: string; last?: string; said?: string }): string {
+  return `The baseline of ${p.repo} has its Storybook and its components' shots, but not its board: the blueprint of the app, every screen in small, a row per domain and a column per step. Add it.${p.said ? `\n\nWhat I asked for: ${p.said}` : ''}
+
+1. Work on the Storybook's branch (\`storybook/setup\`, its PR), in a worktree, up to date.
+2. The screens, as a storyline: for each domain of each app (an area a person would name: its navigation's entries, its route folders), a screen story for each step and state a person goes through there, in order (arriving with nothing, filled, in the middle of the main action, done, when it fails), with mocked data, the way the storybook-stories skill says. Keep the ones that exist; write the missing ones, at least three domains an app and two steps a domain where the app has them. Their tests pass (vitest --project=storybook). Commit (conventional commits) and push to the PR.
+3. Build each package's Storybook (storybook build) into ${p.dir}/<the full sha of your last commit>/storybook/<package name>/ (static files, with its mockServiceWorker.js): the board shows the screens live from it.
+4. Screenshot every screen story at the laptop viewport, the whole page (after-board-<story-id>.png), and the same again small (thumb-board-<story-id>.png, 480px wide: the same page at a device scale factor of 480 / the viewport's width), into ${p.dir}/<that sha>/.
+5. Write ${p.dir}/<that sha>/manifest.json: ${p.last ? `the manifest of ${p.dir}/${p.last}/ as it is (copy its images too), its head and at made yours, ` : 'the manifest as the baseline has it, '}with one more shot per screen:
+{"name":"<Domain> · <step or state>","lens":"affected","domain":"<Domain>","variant":"<step or state, a few words>","viewport":"laptop","width":<width>,"note":"<what a person does here>","after":"after-board-<story-id>.png","thumb":"thumb-board-<story-id>.png","book":"<package name>","story":"<story-id>","height":<page height in px>,"marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<Component, as named in the impact>"}]}
+One mark per component instance that shows (Playwright boundingBox of its root element, as percent of the screenshot; find each root by its role, test id or the element its story renders), nested ones included, 60 at most a screen; every part it names is in the impact's changed list (add the ones that aren't). Several apps: the domain carries the app when two share a name ("Buffehgi · Inbox"). Domains in the order of the app's navigation, a domain's screens in the order a person meets them.
+End with one short paragraph: the domains and how many screens each has.`
+}
+
 // --- what the agent is asked ------------------------------------------------------------------------------------------
 export function capturePrompt(p: { pr: { id: string; number: number; title: string; base: string; head: string; headSha: string }; out: string; files: string[]; said?: string; again?: boolean }): string {
   if (p.again) return `${p.said ?? 'Capture again.'}

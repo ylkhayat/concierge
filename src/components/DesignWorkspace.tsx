@@ -21,7 +21,7 @@ export type VisualsPr = {
   mode: VisualsMode; override: Override; ui?: UiCheck; wanted: boolean; task?: VisualsTask; tickets: string[]
 }
 type ListPr = VisualsPr & { latest?: { sha: string; at: string; summary?: string; count: number; thumb?: string } }
-type RepoRow = { repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; baseline?: { sha: string; at: string; count: number; thumb?: string }; fromApp: boolean }
+type RepoRow = { repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; baseline?: { sha: string; at: string; count: number; thumb?: string; screens?: number; domains?: number }; fromApp: boolean }
 type List = { joined: boolean; repos: RepoRow[]; prs: ListPr[]; tickets: { id: string; title: string; labels: string[]; url: string; prs: string[] }[] }
 type Full = VisualsPr & { sets: VisualSet[] }
 
@@ -72,7 +72,7 @@ export function DesignWorkspace({ selected, onSelect, feed, toast }: { selected?
             </button>
           )
         })}
-        {repos.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Baselines</p>}
+        {repos.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Blueprints</p>}
         {repos.map((r) => (
           <button key={r.repo} onClick={() => onSelect(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel' : 'hover:bg-hover'}`}>
             <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
@@ -80,7 +80,7 @@ export function DesignWorkspace({ selected, onSelect, feed, toast }: { selected?
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1 text-small font-medium text-fg-1">{busy(r.task) && <LoaderCircle className="size-3 shrink-0 animate-spin text-run" />}<span className="truncate">{r.repo.split('/')[1]}</span></span>
-              <span className={`block truncate text-micro ${r.baseline ? 'text-fg-3' : 'text-wait-text'}`}>{r.baseline ? `${r.baseline.count} components in stories` : busy(r.task) ? 'Setting its Storybook up…' : 'No Storybook yet'}</span>
+              <span className={`block truncate text-micro ${r.baseline ? 'text-fg-3' : 'text-wait-text'}`}>{r.baseline?.screens ? `${r.baseline.screens} screens in ${r.baseline.domains} domains` : busy(r.task) ? (r.baseline ? 'Making its blueprint…' : 'Setting its Storybook up…') : r.baseline ? 'Stories, no blueprint yet' : 'No Storybook yet'}</span>
             </span>
           </button>
         ))}
@@ -120,12 +120,19 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   const path = `/visuals/repos/${repo}`
   const [ticking, setTicking] = useState(false)
   const [talk, setTalk] = useState<boolean>()
+  const [view, setView] = useState<'map' | 'components'>('map')
   const q = useApi<{ repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; sets: VisualSet[] }>(path, { refetchInterval: ticking ? 3000 : 30_000 })
   const b = q.data, t = b?.task
   useEffect(() => setTicking(busy(t)), [t?.state])
   const post = (body: object, msg?: string) => api(path, body).then(() => { void refresh(path); void refresh('/visuals'); if (msg) toast(msg) }, (e: Error) => toast(e.message, 'error'))
   if (!b) return <div className="p-4"><Skeleton rows={6} /></div>
   const set = b.sets[0]
+  // the blueprint: the map of the project, its screens by domain and step. It is the baseline; the components' own
+  // shots (each one's stories) are beside it, a tab away
+  const screens = set?.shots.filter((x) => x.domain && (x.after ?? x.before)) ?? []
+  const mapped = screens.length > 0, onMap = mapped && view === 'map'
+  const parts = set?.impact?.changed ?? []
+  const numbers = new Map(parts.map((c, i) => [c.name, i + 1]))
   // the conversation: open while there is nothing to look at yet (or it works), folded away beside a baseline
   const showTalk = talk ?? (!set || busy(t))
   return (
@@ -135,17 +142,19 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
           <header className="card px-4 py-3.5">
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
-                <p className="text-meta text-fg-3">{repo} · baseline</p>
-                <h2 className="text-title font-semibold text-fg-1">{set ? 'Every component, as it looks today' : 'No Storybook yet'}</h2>
+                <p className="text-meta text-fg-3">{repo} · blueprint</p>
+                <h2 className="text-title font-semibold text-fg-1">{mapped ? `The map of ${repo.split('/')[1]}` : set ? 'Its components, not yet its map' : 'No Storybook yet'}</h2>
                 <p className={`mt-0.5 text-meta ${t?.state === 'failed' ? 'text-wait-text' : busy(t) ? 'text-run-text' : 'text-fg-3'}`}>
                   {t?.state === 'running' ? `Setting its Storybook up${t.machine ? ` on ${t.machine}` : ''}: layers, stories, docs, then the first shot…`
                     : t?.state === 'queued' ? 'Waiting for a machine with its checkout'
                     : t?.state === 'failed' ? `It didn't finish: ${t.error ?? 'it failed'}`
-                    : set ? `${set.shots.length} shots, ${new Date(set.at).toLocaleString()}`
+                    : mapped ? `${screens.length} screens in ${new Set(screens.map((x) => x.domain)).size} domains, ${parts.length} components · ${new Date(set!.at).toLocaleString()}`
+                    : set ? `${set.shots.length} shots of ${parts.length} components, ${new Date(set.at).toLocaleString()}`
                     : 'Its PRs are captured from the running app, screen by screen. With stories, each component is captured on its own, in each of its states.'}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {mapped && <Tabs size="sm" label="What to look at" value={view} onChange={setView} options={[{ id: 'map' as const, label: 'Map' }, { id: 'components' as const, label: `Components · ${parts.length}` }]} />}
                 <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
                 {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
                 {busy(t)
@@ -154,7 +163,18 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
               </div>
             </div>
           </header>
-          {set ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} /> : !busy(t) && (
+          {set && !set.shots.some((x) => x.domain) && (
+            <div className="card flex flex-wrap items-center gap-3 px-4 py-3.5">
+              <LayoutGrid className="size-5 shrink-0 text-accent-text" />
+              <div className="min-w-0 flex-1">
+                <p className="text-small font-semibold text-fg-1">{busy(t) ? 'Making the map…' : 'No map yet'}</p>
+                <p className="text-meta text-fg-3">The blueprint is a map of the project: every screen in small and live, a row per domain, a column per step or variation, each component lit wherever it shows. This one has each component's stories, but not its screens. {busy(t) ? 'The map shows here when the run ends.' : 'It was set up before the map existed, or without its screens.'}</p>
+              </div>
+              {!busy(t) && <button onClick={() => post({ board: true }, 'Making the blueprint: the screens, the built Storybook, every component marked')} className="btn-primary btn-sm inline-flex shrink-0 items-center gap-1.5"><LayoutGrid className="size-3.5" />Make the blueprint</button>}
+            </div>
+          )}
+          {onMap ? <Blueprint pr={baselineKey(repo)} set={set!} screens={screens} parts={parts} numbers={numbers} onStates={() => setView('components')} fill />
+            : set ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} noBoard /> : !busy(t) && (
             <div className="card space-y-2 px-4 py-4 text-small text-fg-2">
               <p className="font-medium text-fg-1">What Set up Storybook does, as one pull request</p>
               <ol className="list-decimal space-y-1 pl-5 text-fg-3">
@@ -417,7 +437,7 @@ const Mini = memo(function Mini({ src, live, shot, mode, onHover, onPin }: { src
  * component on the left. Rest on a component, there or on any screen, and the board falls back, leaving it lit wherever
  * it shows, with a card on where it is used. A click keeps it lit.
  */
-function Blueprint({ pr, set, screens, parts, numbers, onStates }: { pr: string; set: VisualSet; screens: Shot[]; parts: Part[]; numbers: Map<string, number>; onStates: () => void }) {
+function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: string; set: VisualSet; screens: Shot[]; parts: Part[]; numbers: Map<string, number>; onStates: () => void; fill?: boolean }) {
   const [hover, setHover] = useState<string>(), [pinned, setPinned] = useState<string>(), [find, setFind] = useState('')
   const [zoom, setZoom] = useState(() => { try { return Number(localStorage.getItem('design:board-zoom')) || 220 } catch { return 220 } })
   // live: the screens as the pages themselves (a baseline with its Storybook built beside it); yours to turn off
@@ -454,7 +474,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates }: { pr: string;
   const part = hot ? parts.find((x) => x.name === hot) : undefined, used = hot ? usage.get(hot) ?? [] : []
   const story = hot ? set.shots.find((x) => x.lens === 'changed' && x.part === hot && x.after) : undefined
   return (
-    <div className="card relative flex overflow-hidden" style={{ height: 'clamp(24rem, calc(100vh / var(--z, 1) - 17.5rem), 64rem)' }}>
+    <div className="card relative flex overflow-hidden" style={{ height: fill ? 'max(24rem, calc(100vh / var(--z, 1) - 11rem))' : 'clamp(24rem, calc(100vh / var(--z, 1) - 17.5rem), 64rem)' }}>
       <aside aria-label="Components" className="flex w-52 shrink-0 flex-col border-r border-line">
         <label className="m-2 flex items-center gap-1.5 rounded-ctl bg-fill px-2 py-1"><Search className="size-3.5 shrink-0 text-fg-4" />
           <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`${names.length} components`} aria-label="Find a component" className="w-full bg-transparent text-small outline-none placeholder:text-fg-4" /></label>
@@ -536,12 +556,12 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates }: { pr: string;
  * the components, layouts and screens that use them, each with the changed ones that reach it. A changed component
  * focuses the affected lens on itself.
  */
-function Impact({ pr, set }: { pr: string; set: VisualSet }) {
+function Impact({ pr, set, noBoard }: { pr: string; set: VisualSet; noBoard?: boolean }) {
   const im = set.impact
   const lensed = !!im || set.shots.some((x) => x.lens)
   type Lens = 'board' | 'changed' | 'affected' | 'all'
   const ORDER: Lens[] = ['board', 'changed', 'affected', 'all']
-  const screens = set.shots.filter((x) => x.domain && (x.after ?? x.before)) // the board: whole screens, by domain and step
+  const screens = noBoard ? [] : set.shots.filter((x) => x.domain && (x.after ?? x.before)) // the board: whole screens, by domain and step (a baseline shows its own, as its page)
   const [lens, setLensNow] = useState<Lens>(screens.length ? 'board' : lensed ? 'changed' : 'all')
   const [from, setFrom] = useState(1) // the side the next lens slides in from
   const setLens = (l: Lens) => { setFrom(ORDER.indexOf(l) >= ORDER.indexOf(lens) ? 1 : -1); setLensNow(l) }
