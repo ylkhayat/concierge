@@ -1,4 +1,5 @@
 // The Understanding and Intent cards, opened: the whole height of the chat, a picture of the change instead of text.
+// Understanding is the solution (what the change is, purpose down to code); Intent is how it was fixed.
 // Understanding: the parts of the system the PR touches (one box each, its changes counted and its new behaviour in a
 // line), wired by how those parts call each other, laid out like Explain's map but flat. Intent: the PR's story as a
 // flow (why it was needed → what was done → before against after), with what was set aside and what is still open.
@@ -270,14 +271,19 @@ export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: s
   if (!o) return <Missing prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} toast={toast} />
   // the same board as Understanding: lanes read top to bottom as the story (why → what was decided → before and now
   // → what to watch → quick answers), the map's cards in them
+  // Intent is how it was fixed (Understanding is the solution itself): the problem, the approach taken over the ones set
+  // aside, what is true once fixed, and what to watch. Read top to bottom, wired problem → approach → result
   const lanes: Lane[] = [
-    { id: 'why', label: 'Why', hint: 'what pushed for it', icon: STORY_ICONS.why, cards: [{ id: 'why', title: s?.ticket ? `Asked in ${s.ticket}` : 'Why it was needed', line: s?.push ?? o.business.why }] },
-    { id: 'decided', label: 'Decided', hint: 'what was done, and what was set aside', icon: STORY_ICONS.decided, cards: [
-      { id: 'decided', title: fork?.chosen.label ?? 'What was decided', line: fork ? fork.chosen.why : s?.solution ?? o.business.what, why: fork ? undefined : s?.solution && o.business.what, tone: 'strong' },
+    { id: 'problem', label: 'Problem', hint: 'what was going wrong, and for whom', icon: STORY_ICONS.why, cards: [
+      { id: 'problem', title: s?.ticket ? `The problem (${s.ticket})` : 'The problem', line: fork?.problem || s?.push || o.business.why },
+      ...(s ? [{ id: 'before', title: 'What people saw', line: s.before.caption, more: s.before.shapes.map((x) => x.label) }] : []),
+    ] },
+    { id: 'approach', label: 'Approach', hint: 'how it is fixed, and what was set aside', icon: STORY_ICONS.decided, cards: [
+      { id: 'approach', title: fork?.chosen.label ?? 'How it is fixed', line: fork ? fork.chosen.why : s?.solution ?? o.business.what, why: fork ? undefined : s?.solution && o.business.what, tone: 'strong' },
       ...(fork?.setAside ?? []).map((x, i) => ({ id: `aside:${i}`, title: x.label, line: x.why, tone: 'faded' as const })),
     ] },
-    { id: 'change', label: 'Before and now', hint: s ? 'what is different for whoever meets it' : 'who it is for', icon: STORY_ICONS.change, cards: s
-      ? [{ id: 'before', title: 'Before', line: s.before.caption, more: s.before.shapes.map((x) => x.label) }, { id: 'now', title: 'Now', line: s.after.caption, more: s.after.shapes.map((x) => x.label), tone: 'strong' }]
+    { id: 'result', label: 'Result', hint: s ? 'what is true once it is fixed' : 'who it is for', icon: STORY_ICONS.change, cards: s
+      ? [{ id: 'now', title: 'Once fixed', line: s.after.caption, more: s.after.shapes.map((x) => x.label), tone: 'strong' }]
       : [{ id: 'who', title: 'Who it is for', line: o.business.who }] },
     { id: 'watch', label: 'To watch', hint: 'its risk, and what is still open', icon: STORY_ICONS.watch, cards: [
       { id: 'risk', title: `${o.business.risk[0].toUpperCase()}${o.business.risk.slice(1)} risk`, line: o.business.riskWhy, tone: o.business.risk === 'high' ? 'bad' : o.business.risk === 'medium' ? 'wait' : 'ok' },
@@ -285,5 +291,5 @@ export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: s
     ] },
     { id: 'answers', label: 'Quick answers', hint: 'what a reviewer asks first', icon: STORY_ICONS.answers, skip: true, cards: (s?.questions ?? []).slice(0, 4).map((x, i) => ({ id: `q:${i}`, title: x.q, line: x.a })) },
   ]
-  return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col"><LaneBoard lanes={lanes} links={[['why', 'decided'], ['decided', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
+  return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col"><LaneBoard lanes={lanes} links={[['problem', 'approach'], ['approach', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
 }
