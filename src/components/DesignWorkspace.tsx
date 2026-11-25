@@ -586,8 +586,8 @@ function Focus({ pr, sha, shot, origin, live, target, onPart, onClose, onStep }:
 
 /**
  * The blueprint of the app: every screen in small, grouped by application, a lane per domain and a column per step of
- * its storyline; every component on the left, by application. Rest on a component (a second on the board, half a
- * second in the list) and the board falls back softly, leaving it lit wherever it shows, with a card on where it is
+ * its storyline; every component on the left, by application. Rest on a component on the board for a second, or point
+ * at it in the list (at once) and the board falls back softly, leaving it lit wherever it shows, with a card on where it is
  * used. Passing over things does nothing. A click on a screen opens it large; a click on a component then glides to it.
  */
 function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: string; set: VisualSet; screens: Shot[]; parts: Part[]; numbers: Map<string, number>; onStates: () => void; fill?: boolean }) {
@@ -663,7 +663,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
                 {!shut && g.names.map((n) => {
                   const on = hot === n, count = usage.get(n)?.length ?? 0
                   return (
-                    <button key={n} onMouseEnter={() => onHover(n, 500)} onFocus={() => onHover(n, 0)} onBlur={() => onHover(undefined, 0)} onClick={() => pick(n)} aria-pressed={pinned === n}
+                    <button key={n} onMouseEnter={() => onHover(n, 0)} onFocus={() => onHover(n, 0)} onBlur={() => onHover(undefined, 0)} onClick={() => pick(n)} aria-pressed={pinned === n}
                             className={`flex w-full items-center gap-2 rounded-[3px] px-2 py-[3px] text-left text-small transition-colors duration-300 ${on ? 'bg-accent/10 text-accent-text' : hot ? 'text-fg-4 hover:text-fg-2' : 'text-fg-2 hover:bg-hover'}`}>
                       <span className={`w-5 shrink-0 text-right tabular-nums text-micro ${on ? 'text-accent-text' : 'text-fg-4'}`}>{numbers.get(n) ?? ''}</span>
                       <span className="min-w-0 flex-1 truncate">{bare(n)}</span>
