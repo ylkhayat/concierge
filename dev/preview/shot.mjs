@@ -18,7 +18,7 @@ await send('Runtime.enable'); await send('Page.enable')
 await send('Page.addScriptToEvaluateOnNewDocument', { source: `try { localStorage.setItem('role', ${JSON.stringify(role)}); for (const [k, v] of Object.entries(${process.env.SHOT_LS ?? '{}'})) localStorage.setItem(k, v); for (const [k, v] of Object.entries(${process.env.SHOT_SS ?? '{}'})) sessionStorage.setItem(k, v) } catch {}` })
 await send('Page.navigate', { url })
 await sleep(Number(wait))
-if (hover) { const [x, y] = hover.split(',').map(Number); await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(900) }
+if (hover) { const [x, y] = hover.split(',').map(Number); await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(Number(process.env.SHOT_HOVER_MS) || 900) }
 // SHOT_DRAG="x1,y1,x2,y2[;x1,y1,x2,y2…]": press, move in steps, release (one drag per group), then wait for the page
 if (process.env.SHOT_DRAG) for (const g of process.env.SHOT_DRAG.split(';')) {
   const [a, b, c, d] = g.split(',').map(Number)

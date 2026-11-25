@@ -73,7 +73,7 @@ const baseline = { head: 'c0ffee1', sha: 'c0ffee1', at: new Date(now - 3600e3).t
   impact: { changed: PARTS, affected: [] },
   shots: [
     ...PARTS.filter((x) => x.name !== 'AppShell').map((x) => ({ name: `${x.name} · Default`, lens: 'changed', part: x.name, viewport: 'laptop', width: 1280, note: 'As most learners see it', after: `part-${x.name}.png` })),
-    ...SCREENS.map((sc) => ({ name: `${sc.domain} · ${sc.variant}`, lens: 'affected', domain: sc.domain, variant: sc.variant, viewport: 'laptop', width: 1280, note: 'What a learner does here', after: `board-${sc.id}.png`, thumb: `board-${sc.id}.png`, book: 'rumanna', story: sc.id, height: 800, marks: sc.boxes.map(([part, x, y, w, h]) => ({ x, y, w, h, part })) })),
+    ...SCREENS.map((sc) => ({ name: `${sc.domain} · ${sc.variant}`, lens: 'affected', domain: sc.domain, variant: sc.variant, viewport: 'laptop', width: 1280, note: 'What a learner does here', after: `board-${sc.id}.png`, thumb: `board-${sc.id}.png`, book: sc.domain === 'Settings' ? 'buffehgi' : 'rumanna', story: sc.id, height: 800, marks: sc.boxes.map(([part, x, y, w, h]) => ({ x, y, w, h, part })) })),
   ] }
 const prSet = { head: 'abc1234', sha: 'abc1234', at: new Date(now - 600e3).toISOString(), source: 'storybook', summary: 'Levels show as chips instead of plain text, on the course card and wherever a rule is explained.',
   impact: { changed: [PARTS.find((x) => x.name === 'LevelChip'), PARTS.find((x) => x.name === 'CourseCard')],

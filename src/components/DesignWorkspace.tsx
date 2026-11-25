@@ -1,14 +1,14 @@
 // Design: what the pull requests look like, before and after, without opening them. Built like Plans: the list on the
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
-import { ArrowUp, Check, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowUp, Check, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
 import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'
 import { api, enc } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
-import { partAt } from '../board.ts'
+import { bare, byApp, focusOn, layout, partAt } from '../board.ts'
 import { ActivityFeed } from './ActivityFeed.tsx'
 import { Skeleton } from './Connections.tsx'
 import { Md } from './Md.tsx'
@@ -435,18 +435,21 @@ const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, wi
 
 /**
  * A screen on the board, small: the page itself when the baseline has its Storybook (`live`: the story's own page,
- * rendered at its real size and scaled down, so it is the app, not a picture of it), else its screenshot. Every
- * component on it is a way in. With a component lit, the page falls back behind a scrim with a window cut for each of
- * its instances.
+ * rendered at its real size and scaled down), else its screenshot. A click opens it large.
  *
  * Built to be many: no element per component (the pointer's place is worked out against the marks), drawn again only
  * when its own state changes (`mode`: idle, dimmed, or the component lit on it), skipped by the browser while off
- * screen. A live page is only there while its screen is near the board's view (its screenshot holds the place before
- * and after), and takes no pointer: the board does.
+ * screen. A live page is only there while its screen is near the board's view. The light comes and goes softly: the
+ * last lit component stays drawn while it fades out.
  */
-const Mini = memo(function Mini({ src, live, shot, mode, onHover, onPin }: { src: string; live?: string; shot: Shot; mode: string; onHover: (part?: string) => void; onPin: (part: string) => void }) {
+const Mini = memo(function Mini({ src, live, shot, mode, step, onHover, onOpen }: {
+  src: string; live?: string; shot: Shot; mode: string; step: number; onHover: (part: string | undefined, ms: number) => void; onOpen: (sh: Shot, from: DOMRect) => void
+}) {
   const marks = shot.marks ?? []
-  const lit = mode !== 'idle' && mode !== 'dim' ? marks.filter((m) => m.part === mode) : []
+  const litPart = mode !== 'idle' && mode !== 'dim' ? mode : undefined
+  const last = useRef<string | undefined>(undefined)
+  if (litPart) last.current = litPart
+  const shown = last.current ? marks.filter((m) => m.part === last.current) : []
   const frame = useRef<HTMLDivElement>(null)
   const [near, setNear] = useState(false), [ready, setReady] = useState(false)
   useEffect(() => {
@@ -462,142 +465,249 @@ const Mini = memo(function Mini({ src, live, shot, mode, onHover, onPin }: { src
     return partAt(marks, ((e.clientX - r.left) / r.width) * 100, ((e.clientY - r.top) / r.height) * 100)
   }
   return (
-    <figure className={`transition-opacity duration-300 ease-[var(--ease-out)] [contain-intrinsic-size:auto_200px] [content-visibility:auto] ${mode === 'dim' ? 'opacity-20' : ''}`}>
-      <div ref={frame} style={live ? { aspectRatio: `${W} / ${H}` } : undefined} className={`relative cursor-pointer overflow-hidden rounded-ctl bg-surface-1 shadow-e1 ring-1 ${lit.length ? 'ring-accent/50' : 'ring-line'}`}
-           onMouseMove={(e) => onHover(at(e))} onMouseLeave={() => onHover(undefined)} onClick={(e) => { const part = at(e); if (part) onPin(part) }}>
+    <figure className={`transition-opacity duration-500 ease-[var(--ease-out)] [contain-intrinsic-size:auto_160px] [content-visibility:auto] ${mode === 'dim' ? 'opacity-30' : ''}`}>
+      <div ref={frame} style={live ? { aspectRatio: `${W} / ${H}` } : undefined} title={shot.note}
+           className={`group/mini relative cursor-zoom-in overflow-hidden rounded-[3px] bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.18)] ring-1 transition-[box-shadow,transform] duration-300 ease-[var(--ease-out)] hover:-translate-y-px ${litPart ? 'ring-accent/60' : 'ring-line-strong hover:ring-fg-4'}`}
+           onMouseMove={(e) => onHover(at(e), 1000)} onMouseLeave={() => onHover(undefined, 0)} onClick={(e) => onOpen(shot, e.currentTarget.getBoundingClientRect())}>
         <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className={`select-none ${live ? 'absolute inset-0 size-full object-cover object-top' : 'block w-full'}`} />
         {live && near && (
           <iframe src={live} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
                   style={{ width: W, height: H, transform: `scale(calc(var(--cell) / ${W}))`, transformOrigin: '0 0' }}
-                  className={`pointer-events-none absolute left-0 top-0 border-0 bg-surface-1 transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`} />
+                  className={`pointer-events-none absolute left-0 top-0 border-0 bg-surface-1 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
         )}
-        {lit.length > 0 && (
-          <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 size-full animate-[fade-in_200ms_var(--ease-out)_both]">
-            <mask id={mask}><rect width="100" height="100" fill="white" />{lit.map((m, i) => <rect key={i} x={m.x} y={m.y} width={m.w} height={m.h} fill="black" />)}</mask>
-            <rect width="100" height="100" mask={`url(#${mask})`} style={{ fill: 'color-mix(in oklch, var(--surface-1) 48%, transparent)' }} />
-          </svg>
-        )}
-        {lit.map((m, i) => <span key={i} aria-hidden style={boxOf(m)} className="pointer-events-none absolute animate-[fade-in_200ms_var(--ease-out)_both] rounded-[2px] shadow-[0_0_0_3px_var(--accent-soft)] ring-[1.5px] ring-accent" />)}
+        <div aria-hidden className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ease-[var(--ease-out)] ${litPart ? 'opacity-100' : 'opacity-0'}`}>
+          {shown.length > 0 && <>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full">
+              <mask id={mask}><rect width="100" height="100" fill="white" />{shown.map((m, i) => <rect key={i} x={m.x} y={m.y} width={m.w} height={m.h} fill="black" />)}</mask>
+              <rect width="100" height="100" mask={`url(#${mask})`} style={{ fill: 'color-mix(in oklch, var(--surface-1) 55%, transparent)' }} />
+            </svg>
+            {shown.map((m, i) => <span key={i} style={boxOf(m)} className="absolute rounded-[1px] ring-[1.5px] ring-accent" />)}
+          </>}
+        </div>
       </div>
-      <figcaption className="mt-1.5 truncate text-micro text-fg-3" title={shot.note}>{shot.variant ?? shot.name}</figcaption>
+      <figcaption className="mt-1.5 flex items-baseline gap-1.5 truncate text-micro text-fg-3"><span className="tabular-nums text-fg-4">{step}</span>{shot.variant ?? shot.name}</figcaption>
     </figure>
   )
 })
 
 /**
- * The blueprint of the app: every screen in small, a row per domain, a column per step of its storyline; every
- * component on the left. Rest on a component, there or on any screen, and the board falls back, leaving it lit wherever
- * it shows, with a card on where it is used. A click keeps it lit.
+ * One screen, large: it grows out of the place it sat on the board, and every component on it is a way in. Resting on
+ * one names it; a click (or picking one in the list) glides the view to it. A component that isn't on this screen
+ * takes the view to the first screen that has it.
+ */
+function Focus({ pr, sha, shot, origin, live, target, onPart, onClose, onStep }: {
+  pr: string; sha: string; shot: Shot; origin?: DOMRect; live?: string; target?: string; onPart: (part: string) => void; onClose: () => void; onStep?: (d: number) => void
+}) {
+  const box = useRef<HTMLDivElement>(null), stage = useRef<HTMLDivElement>(null)
+  const [hoverMark, setHoverMark] = useState<Mark>()
+  const marks = shot.marks ?? []
+  const W = shot.width ?? 1280, H = shot.height ?? Math.round(W * 0.625)
+  const aim = target ? marks.filter((m) => m.part === target).sort((a, b) => b.w * b.h - a.w * a.h)[0] : undefined
+  const t = aim ? focusOn(aim) : { s: 1, tx: 0, ty: 0 }
+  // where it grew from: the screen's place on the board, as the start of the opening motion
+  const [from, setFrom] = useState<string>()
+  useLayoutEffect(() => {
+    const b = stage.current?.getBoundingClientRect()
+    if (!origin || !b) return
+    setFrom(`translate(${origin.left - b.left}px, ${origin.top - b.top}px) scale(${origin.width / b.width})`)
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => setFrom(undefined)))
+    return () => cancelAnimationFrame(id)
+  }, [])
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); if (e.key === 'ArrowRight') onStep?.(1); if (e.key === 'ArrowLeft') onStep?.(-1) }
+    addEventListener('keydown', key)
+    return () => removeEventListener('keydown', key)
+  }, [onClose, onStep])
+  const [ready, setReady] = useState(false)
+  const hoverTimer = useRef<number | undefined>(undefined)
+  const over = (m?: Mark) => { clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(() => setHoverMark(m), m ? 350 : 150) }
+  useEffect(() => () => clearTimeout(hoverTimer.current), [])
+  return (
+    <div ref={box} className="absolute inset-0 z-30 flex animate-[fade-in_240ms_var(--ease-out)_both] flex-col bg-surface-1/90 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <header className="flex items-center gap-3 px-5 pb-2 pt-3.5">
+        <span className="min-w-0 flex-1 truncate text-small"><b className="font-semibold text-fg-1">{shot.domain}</b><span className="text-fg-3"> · {shot.variant}</span>{shot.note && <span className="text-fg-4"> · {shot.note}</span>}</span>
+        {aim && <button onClick={() => onPart('')} className="btn-ghost btn-sm inline-flex items-center gap-1.5"><ZoomOut className="size-3.5" />Whole screen</button>}
+        {onStep && <span className="flex gap-1"><button onClick={() => onStep(-1)} aria-label="The step before" className="btn-ghost btn-sm"><ChevronRight className="size-3.5 rotate-180" /></button><button onClick={() => onStep(1)} aria-label="The next step" className="btn-ghost btn-sm"><ChevronRight className="size-3.5" /></button></span>}
+        <button onClick={onClose} aria-label="Back to the board" className="btn-ghost btn-sm inline-flex items-center gap-1.5"><X className="size-3.5" />Board</button>
+      </header>
+      <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-5" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+        <div ref={stage} style={{ aspectRatio: `${W} / ${H}`, transform: from, transformOrigin: '0 0', transition: from ? 'none' : 'transform 420ms var(--ease-out)' }}
+             className="relative max-h-full w-full max-w-[min(100%,calc((100vh/var(--z,1)-14rem)*1.6))] overflow-hidden rounded-[4px] bg-surface-1 shadow-e3 ring-1 ring-line-strong">
+          <div className="absolute inset-0 origin-top-left transition-transform duration-700 ease-[var(--ease-out)]" style={{ transform: `translate(${t.tx}%, ${t.ty}%) scale(${t.s})` }}>
+            <img src={shotUrl(pr, sha, (shot.after ?? shot.before)!)} alt={shot.name} className="absolute inset-0 size-full object-cover object-top" />
+            {live && (
+              <span className="absolute inset-0 overflow-hidden" ref={(el) => { if (el) el.style.setProperty('--fw', String(el.clientWidth)) }}>
+                <iframe src={live} title={shot.name} sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
+                        style={{ width: W, height: H, transform: `scale(calc(var(--fw) / ${W}))`, transformOrigin: '0 0' }}
+                        className={`pointer-events-none absolute left-0 top-0 border-0 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
+              </span>
+            )}
+            {marks.map((m, i) => m.part && (
+              <button key={i} type="button" style={boxOf(m)} onMouseEnter={() => over(m)} onMouseLeave={() => over(undefined)} onClick={() => onPart(m.part!)} aria-label={m.part}
+                      className={`absolute rounded-[1px] transition-[box-shadow,background-color] duration-300 ${m.part === target ? 'shadow-[0_0_0_2px_var(--accent-soft)] ring-[1.5px] ring-accent' : hoverMark === m ? 'bg-accent/6 ring-1 ring-accent/60' : 'ring-0'}`} />
+            ))}
+          </div>
+          {hoverMark && <span className="pointer-events-none absolute left-3 top-3 animate-[fade-in_200ms_var(--ease-out)_both] rounded-[3px] bg-surface-2/95 px-2 py-1 text-micro font-medium text-fg-1 shadow-e2 ring-1 ring-line">{bare(hoverMark.part ?? '')}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The blueprint of the app: every screen in small, grouped by application, a lane per domain and a column per step of
+ * its storyline; every component on the left, by application. Rest on a component (a second on the board, half a
+ * second in the list) and the board falls back softly, leaving it lit wherever it shows, with a card on where it is
+ * used. Passing over things does nothing. A click on a screen opens it large; a click on a component then glides to it.
  */
 function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: string; set: VisualSet; screens: Shot[]; parts: Part[]; numbers: Map<string, number>; onStates: () => void; fill?: boolean }) {
   const [hover, setHover] = useState<string>(), [pinned, setPinned] = useState<string>(), [find, setFind] = useState('')
-  const [zoom, setZoom] = useState(() => { try { return Number(localStorage.getItem('design:board-zoom')) || 220 } catch { return 220 } })
-  // live: the screens as the pages themselves (a baseline with its Storybook built beside it); yours to turn off
+  const [open, setOpen] = useState<{ shot: Shot; from?: DOMRect }>(), [aim, setAim] = useState<string>()
+  const [folded, setFolded] = useState<Set<string>>(new Set())
+  const [zoom, setZoom] = useState(() => { try { return Number(localStorage.getItem('design:board-zoom')) || 180 } catch { return 180 } })
   const canLive = pr.startsWith('repo:') && screens.some((x) => x.book && x.story)
   const [liveOn, setLiveOn] = useState(() => { try { return localStorage.getItem('design:board-live') !== 'off' } catch { return true } })
   const setLive = (on: boolean) => { setLiveOn(on); try { localStorage.setItem('design:board-live', on ? 'on' : 'off') } catch { /* private window */ } }
   const liveOf = (sh: Shot) => (canLive && liveOn && sh.book && sh.story ? `/api/visuals/sb/${pr.replace(/[^\w.-]+/g, '-')}/${set.sha}/${sh.book}/iframe.html?id=${encodeURIComponent(sh.story)}&viewMode=story` : undefined)
   const zoomTo = (z: number) => { const v = Math.min(440, Math.max(120, z)); setZoom(v); try { localStorage.setItem('design:board-zoom', String(v)) } catch { /* private window */ } }
   const hot = hover ?? pinned
-  const pin = useCallback((part: string) => setPinned((x) => (x === part ? undefined : part)), [])
-  // the pointer moves many times a frame: the lit component changes at most once a frame, and only when it differs
-  const next = useRef<{ part?: string; frame?: number }>({})
-  const onHover = useCallback((part?: string) => {
-    next.current.part = part
-    next.current.frame ??= requestAnimationFrame(() => { next.current.frame = undefined; setHover((was) => (was === next.current.part ? was : next.current.part)) })
+
+  // intent: a component lights only once the pointer rests on it (`ms`), and lets go a moment after it leaves; passing
+  // over many in a row lights none
+  const want = useRef<string | undefined>(undefined), timer = useRef<number | undefined>(undefined)
+  const onHover = useCallback((part: string | undefined, ms: number) => {
+    if (part === want.current) return
+    want.current = part
+    clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setHover(part), part ? ms : 220)
   }, [])
-  useEffect(() => () => { if (next.current.frame) cancelAnimationFrame(next.current.frame) }, [])
-  const domains = useMemo(() => [...new Set(screens.map((x) => x.domain!))], [screens])
-  // where each component shows: the screens that mark it
+  useEffect(() => () => clearTimeout(timer.current), [])
+
+  const groups = useMemo(() => layout(screens, parts), [screens, parts])
   const usage = useMemo(() => {
     const by = new Map<string, Shot[]>()
     for (const sh of screens) for (const name of new Set((sh.marks ?? []).map((m) => m.part).filter((x): x is string => !!x))) by.set(name, [...(by.get(name) ?? []), sh])
     return by
   }, [screens])
-  // the components: the ones the capture named, and any a screen marks besides; the most used first
-  const names = useMemo(() => [...new Set([...parts.map((x) => x.name), ...usage.keys()])].sort((a, b) => (usage.get(b)?.length ?? 0) - (usage.get(a)?.length ?? 0) || a.localeCompare(b)), [parts, usage])
-  const shown = names.filter((n) => n.toLowerCase().includes(find.trim().toLowerCase()))
-  const cols = Math.max(1, ...domains.map((d) => screens.filter((x) => x.domain === d).length))
-  // the small image until the screens are large enough to need the whole one
-  const url = (sh: Shot) => shotUrl(pr, set.sha, (zoom <= 300 && sh.thumb) || (sh.after ?? sh.before)!)
-  // which components each screen shows, looked up once: a screen's state on a hover is then one lookup
+  const names = useMemo(() => [...new Set([...parts.map((x) => x.name), ...usage.keys()])], [parts, usage])
+  const lists = useMemo(() => byApp(names.filter((n) => n.toLowerCase().includes(find.trim().toLowerCase())), parts, (n) => usage.get(n)?.length ?? 0), [names, find, parts, usage])
   const has = useMemo(() => new Map(screens.map((sh) => [sh, new Set((sh.marks ?? []).map((m) => m.part))])), [screens])
   const modeOf = (sh: Shot) => (!hot ? 'idle' : has.get(sh)?.has(hot) ? hot : 'dim')
-  const part = hot ? parts.find((x) => x.name === hot) : undefined, used = hot ? usage.get(hot) ?? [] : []
-  const story = hot ? set.shots.find((x) => x.lens === 'changed' && x.part === hot && x.after) : undefined
+  const url = (sh: Shot) => shotUrl(pr, set.sha, (zoom <= 300 && sh.thumb) || (sh.after ?? sh.before)!)
+  const cols = Math.max(1, ...groups.flatMap((g) => g.domains.map((d) => d.screens.length)))
+  const onOpen = useCallback((shot: Shot, from: DOMRect) => { setAim(undefined); setOpen({ shot, from }) }, [])
+
+  // the card on where the lit component is used: it eases in and out, holding the last one while it leaves
+  const card = useRef<string | undefined>(undefined)
+  if (hot) card.current = hot
+  const shownCard = card.current
+  const part = shownCard ? parts.find((x) => x.name === shownCard) : undefined, used = shownCard ? usage.get(shownCard) ?? [] : []
+  const story = shownCard ? set.shots.find((x) => x.lens === 'changed' && x.part === shownCard && x.after) : undefined
+  const domainsOf = (xs: Shot[]) => [...new Set(xs.map((x) => x.domain))]
+
+  // a component picked: on the open screen, glide to it; not on it, open the first screen that has it
+  const pick = (n: string) => {
+    if (!open) return setPinned((x) => (x === n ? undefined : n))
+    if (!n) return setAim(undefined)
+    if (!(open.shot.marks ?? []).some((m) => m.part === n)) { const other = usage.get(n)?.[0]; if (other) setOpen({ shot: other }) }
+    setAim(n); setPinned(n)
+  }
+  const flat = useMemo(() => groups.flatMap((g) => g.domains.flatMap((d) => d.screens)), [groups])
+  const step = (d: number) => setOpen((o) => { if (!o) return o; const i = flat.indexOf(o.shot); const n = flat[(i + d + flat.length) % flat.length]; return { shot: n } })
+
   return (
-    <div className="card relative flex overflow-hidden" style={{ height: fill ? 'max(24rem, calc(100vh / var(--z, 1) - 11rem))' : 'clamp(24rem, calc(100vh / var(--z, 1) - 17.5rem), 64rem)' }}>
-      <aside aria-label="Components" className="flex w-52 shrink-0 flex-col border-r border-line">
-        <label className="m-2 flex items-center gap-1.5 rounded-ctl bg-fill px-2 py-1"><Search className="size-3.5 shrink-0 text-fg-4" />
+    <div className="relative flex overflow-hidden rounded-[6px] bg-surface-1 ring-1 ring-line" style={{ height: fill ? 'max(24rem, calc(100vh / var(--z, 1) - 11rem))' : 'clamp(24rem, calc(100vh / var(--z, 1) - 17.5rem), 64rem)' }}>
+      <aside aria-label="Components" className="flex w-56 shrink-0 flex-col border-r border-line">
+        <label className="m-2 flex items-center gap-1.5 rounded-[4px] bg-fill px-2 py-1"><Search className="size-3.5 shrink-0 text-fg-4" />
           <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`${names.length} components`} aria-label="Find a component" className="w-full bg-transparent text-small outline-none placeholder:text-fg-4" /></label>
-        <ul className="min-h-0 flex-1 overflow-y-auto px-1 pb-1" onMouseLeave={() => onHover(undefined)}>
-          {shown.map((n) => {
-            const on = hot === n, count = usage.get(n)?.length ?? 0
+        <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2" onMouseLeave={() => onHover(undefined, 0)}>
+          {lists.map((g) => {
+            const key = g.app ?? '', shut = folded.has(key)
             return (
-              <li key={n}>
-                <button onMouseEnter={() => onHover(n)} onFocus={() => onHover(n)} onBlur={() => onHover(undefined)} onClick={() => pin(n)} aria-pressed={pinned === n}
-                        className={`flex w-full items-center gap-2 rounded-ctl px-2 py-1 text-left text-small transition-colors duration-150 ${on ? 'sel text-accent-text' : hot ? 'text-fg-4' : 'text-fg-2 hover:bg-hover'}`}>
-                  <span className={`flex size-4 shrink-0 items-center justify-center rounded-full text-micro font-semibold transition-colors ${on ? 'bg-accent text-on-accent' : 'bg-fill text-fg-3'}`}>{numbers.get(n) ?? '·'}</span>
-                  <span className="min-w-0 flex-1 truncate">{n}</span>
-                  {pinned === n ? <Pin className="size-3 shrink-0" /> : <span className={`shrink-0 tabular-nums text-micro ${count ? '' : 'opacity-40'}`}>{count}</span>}
-                </button>
-              </li>
+              <section key={key} className="mb-1">
+                {(lists.length > 1 || g.app) && (
+                  <button onClick={() => setFolded((f) => { const n = new Set(f); if (n.has(key)) n.delete(key); else n.add(key); return n })} aria-expanded={!shut}
+                          className="sticky top-0 z-10 flex w-full items-center gap-1.5 bg-surface-1 px-2 pb-1 pt-2.5 text-left label text-fg-4 hover:text-fg-2">
+                    <ChevronRight className={`size-3 transition-transform duration-200 ${shut ? '' : 'rotate-90'}`} />{g.app ?? 'Shared'}<span className="ml-auto tabular-nums font-normal normal-case">{g.names.length}</span>
+                  </button>
+                )}
+                {!shut && g.names.map((n) => {
+                  const on = hot === n, count = usage.get(n)?.length ?? 0
+                  return (
+                    <button key={n} onMouseEnter={() => onHover(n, 500)} onFocus={() => onHover(n, 0)} onBlur={() => onHover(undefined, 0)} onClick={() => pick(n)} aria-pressed={pinned === n}
+                            className={`flex w-full items-center gap-2 rounded-[3px] px-2 py-[3px] text-left text-small transition-colors duration-300 ${on ? 'bg-accent/10 text-accent-text' : hot ? 'text-fg-4 hover:text-fg-2' : 'text-fg-2 hover:bg-hover'}`}>
+                      <span className={`w-5 shrink-0 text-right tabular-nums text-micro ${on ? 'text-accent-text' : 'text-fg-4'}`}>{numbers.get(n) ?? ''}</span>
+                      <span className="min-w-0 flex-1 truncate">{bare(n)}</span>
+                      {pinned === n ? <Pin className="size-3 shrink-0" /> : <span className={`shrink-0 tabular-nums text-micro ${count ? 'text-fg-4' : 'text-fg-4/50'}`}>{count || '–'}</span>}
+                    </button>
+                  )
+                })}
+              </section>
             )
           })}
-          {!shown.length && <li className="px-2 py-1.5 text-meta text-fg-4">None matches.</li>}
-        </ul>
+          {!lists.length && <p className="px-2 py-1.5 text-meta text-fg-4">None matches.</p>}
+        </div>
       </aside>
 
       <div className="relative min-w-0 flex-1">
-        <div className="absolute right-3 top-2.5 z-20 flex items-center gap-1.5 rounded-ctl bg-surface-2/90 px-2 py-1 shadow-e1 ring-1 ring-line backdrop-blur">
-          {canLive && <button onClick={() => setLive(!liveOn)} role="switch" aria-checked={liveOn} title={liveOn ? 'The screens are the pages themselves, from the Storybook. Click for their screenshots' : 'The screens are screenshots. Click for the pages themselves'}
-                              className={`mr-1 inline-flex items-center gap-1.5 border-r border-line pr-2 text-meta font-medium ${liveOn ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}><span className={`size-1.5 rounded-full ${liveOn ? 'animate-pulse bg-accent' : 'bg-fg-4'}`} />Live</button>}
+        <div className="absolute right-3 top-2.5 z-20 flex items-center gap-1.5 rounded-[4px] bg-surface-2/90 px-2 py-1 shadow-e1 ring-1 ring-line backdrop-blur">
+          {canLive && <button onClick={() => setLive(!liveOn)} role="switch" aria-checked={liveOn} title={liveOn ? 'The screens are the pages themselves. Click for their screenshots' : 'The screens are screenshots. Click for the pages themselves'}
+                              className={`mr-1 inline-flex items-center gap-1.5 border-r border-line pr-2 text-meta font-medium ${liveOn ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}><span className={`size-1.5 rounded-full ${liveOn ? 'bg-accent' : 'bg-fg-4'}`} />Live</button>}
           <button onClick={() => zoomTo(zoom - 40)} aria-label="Smaller" className="text-fg-3 hover:text-fg-1"><ZoomOut className="size-3.5" /></button>
           <input type="range" min={120} max={440} step={20} value={zoom} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Size of the screens" className="w-20 accent-current text-accent" />
           <button onClick={() => zoomTo(zoom + 40)} aria-label="Larger" className="text-fg-3 hover:text-fg-1"><ZoomIn className="size-3.5" /></button>
         </div>
-        {/* the board: a faint grid under the screens, moving with them */}
-        <div className="size-full overflow-auto p-5" style={{ backgroundImage: 'linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px)', backgroundSize: '28px 28px', backgroundAttachment: 'local' }}>
-          <div className="grid w-max items-start gap-x-4 gap-y-7" style={{ '--cell': zoom, gridTemplateColumns: `6.5rem repeat(${cols}, ${zoom}px)` } as CSSProperties}>
-            {domains.map((d) => {
-              const row = screens.filter((x) => x.domain === d)
-              const lit = !hot || row.some((x) => has.get(x)?.has(hot))
-              return (
-                <Fragment key={d}>
-                  <div className={`sticky left-0 z-10 -ml-5 self-stretch bg-gradient-to-r from-[var(--surface-1)] from-70% to-transparent pl-5 pr-3 pt-1 transition-opacity duration-300 ${lit ? '' : 'opacity-40'}`}>
-                    <p className="text-small font-semibold text-fg-1">{d}</p>
-                    <p className="text-micro text-fg-4">{row.length} step{row.length === 1 ? '' : 's'}</p>
-                  </div>
-                  {row.map((sh) => <Mini key={`${sh.name}:${sh.after ?? ''}`} src={url(sh)} live={liveOf(sh)} shot={sh} mode={modeOf(sh)} onHover={onHover} onPin={pin} />)}
-                  {Array.from({ length: cols - row.length }, (_, i) => <span key={i} aria-hidden />)}
-                </Fragment>
-              )
-            })}
+        {/* the board: a faint grid, moving with the screens */}
+        <div className="size-full overflow-auto px-6 pb-8 pt-5" style={{ backgroundImage: 'linear-gradient(color-mix(in oklch, var(--line) 45%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--line) 45%, transparent) 1px, transparent 1px)', backgroundSize: '40px 40px', backgroundAttachment: 'local' }}>
+          <div className="w-max space-y-8" style={{ '--cell': zoom } as CSSProperties}>
+            {groups.map((g) => (
+              <section key={g.app ?? ''} className="space-y-2.5">
+                {(groups.length > 1 || g.app) && (
+                  <header className="sticky left-0 flex w-fit items-baseline gap-2 pr-4">
+                    <h3 className="text-body font-semibold tracking-tight text-fg-1">{g.app ?? 'The app'}</h3>
+                    <span className="text-meta text-fg-4">{g.domains.length} domain{g.domains.length === 1 ? '' : 's'} · {g.domains.reduce((n, d) => n + d.screens.length, 0)} screens</span>
+                  </header>
+                )}
+                {g.domains.map((d) => {
+                  const lit = !hot || d.screens.some((x) => has.get(x)?.has(hot))
+                  return (
+                    <div key={d.name} className={`grid items-start gap-x-3.5 rounded-[4px] bg-fill/35 px-3 py-3 ring-1 ring-line/60 transition-opacity duration-500 ${lit ? '' : 'opacity-50'}`}
+                         style={{ gridTemplateColumns: `7.5rem repeat(${cols}, ${zoom}px)` }}>
+                      <div className="sticky left-0 z-10 self-stretch pr-2 pt-0.5">
+                        <p className="text-small font-semibold text-fg-1">{d.name}</p>
+                        <p className="text-micro text-fg-4">{d.screens.length} step{d.screens.length === 1 ? '' : 's'}</p>
+                      </div>
+                      {d.screens.map((sh, i) => <Mini key={`${sh.name}:${sh.after ?? ''}`} src={url(sh)} live={liveOf(sh)} shot={sh} mode={modeOf(sh)} step={i + 1} onHover={onHover} onOpen={onOpen} />)}
+                    </div>
+                  )
+                })}
+              </section>
+            ))}
           </div>
         </div>
 
-        {/* where the lit component is used: floats over the board's corner, and stays while it is pinned */}
-        {hot && (
-          <div key={hot} role="status" className="pointer-events-none absolute bottom-3 right-3 z-20 w-72 animate-[pop-in_180ms_var(--ease-snappy)_both] rounded-card bg-surface-2/95 p-3 shadow-e3 ring-1 ring-line backdrop-blur">
+        {/* where the lit component is used: eases in, and out with the last one */}
+        <div role="status" className={`pointer-events-none absolute bottom-3 right-3 z-20 w-72 rounded-[6px] bg-surface-2/95 p-3 shadow-e3 ring-1 ring-line backdrop-blur transition-[opacity,transform] duration-300 ease-[var(--ease-out)] ${hot && !open ? 'translate-y-0 opacity-100' : 'translate-y-1.5 opacity-0'}`}>
+          {shownCard && <>
             <div className="flex items-center gap-2">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent text-micro font-semibold text-on-accent">{numbers.get(hot) ?? '·'}</span>
-              <span className="min-w-0 flex-1 truncate text-small font-semibold text-fg-1">{hot}</span>
+              <span className="text-micro tabular-nums text-accent-text">{numbers.get(shownCard) ?? ''}</span>
+              <span className="min-w-0 flex-1 truncate text-small font-semibold text-fg-1">{bare(shownCard)}</span>
               {part && <KindChip kind={part.kind} />}
             </div>
             {part?.file && <p className="mt-1 truncate font-mono text-micro text-fg-4" title={part.file}>{part.file}</p>}
-            {story && <img src={shotUrl(pr, set.sha, story.after!)} alt="" className="mt-2 max-h-20 w-full rounded-ctl bg-fill object-contain ring-1 ring-line" />}
-            <p className="mt-2 text-meta text-fg-2">{used.length ? `On ${used.length} of ${screens.length} screens, in ${new Set(used.map((x) => x.domain)).size} of ${domains.length} domains` : 'On no screen of the board: only in its own stories'}</p>
+            {story && <img src={shotUrl(pr, set.sha, story.after!)} alt="" className="mt-2 max-h-20 w-full rounded-[3px] bg-fill object-contain ring-1 ring-line" />}
+            <p className="mt-2 text-meta text-fg-2">{used.length ? `On ${used.length} of ${screens.length} screens, in ${domainsOf(used).length} domain${domainsOf(used).length === 1 ? '' : 's'}` : 'On no screen of the map: only in its own stories'}</p>
             <ul className="mt-1 space-y-0.5">
-              {domains.filter((d) => used.some((x) => x.domain === d)).slice(0, 6).map((d) => (
-                <li key={d} className="flex gap-1.5 text-micro"><span className="shrink-0 font-medium text-fg-2">{d}</span><span className="truncate text-fg-3">{used.filter((x) => x.domain === d).map((x) => x.variant).join(', ')}</span></li>
-              ))}
+              {domainsOf(used).slice(0, 6).map((d) => <li key={d} className="flex gap-1.5 text-micro"><span className="shrink-0 font-medium text-fg-2">{d}</span><span className="truncate text-fg-3">{used.filter((x) => x.domain === d).map((x) => x.variant).join(', ')}</span></li>)}
             </ul>
             <p className="pointer-events-auto mt-2 flex items-center gap-2 text-micro text-fg-4">
-              {pinned === hot ? <><Pin className="size-3" />Pinned: click it again to let go</> : 'Click to keep it lit'}
+              {pinned === shownCard ? <><Pin className="size-3" />Pinned: click it in the list to let go</> : 'Click it in the list to keep it lit'}
               {story && <button onClick={onStates} className="ml-auto font-medium text-accent-text hover:underline">Its states</button>}
             </p>
-          </div>
-        )}
+          </>}
+        </div>
+
+        {open && <Focus key={open.shot.name} pr={pr} sha={set.sha} shot={open.shot} origin={open.from} live={liveOf(open.shot)} target={aim} onPart={pick} onClose={() => { setOpen(undefined); setAim(undefined) }} onStep={step} />}
       </div>
     </div>
   )
