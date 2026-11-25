@@ -7,7 +7,7 @@
 import { Background, BackgroundVariant, Handle, MarkerType, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Check, Cloud, Cpu, Database, Lightbulb, ListChecks, MessageCircleQuestion, Radio, ShieldAlert, TriangleAlert, UserRound, X, type LucideIcon } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DIMS, linksAt, visibleAt, type Dim, type Levels } from '../../server/levels.ts'
 import { edgeTypes } from '../components/Explain.tsx'
 import { Tabs } from '../components/Tabs.tsx'
@@ -16,7 +16,7 @@ import { Tabs } from '../components/Tabs.tsx'
 export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[] }
 export type Lane = { id: string; label: string; hint: string; icon: LucideIcon; cards: Card[]; skip?: boolean } // skip: left out when empty, unnamed
 
-const W = 260, H = 96, GAP = 24, LABEL_W = 168, LANE_GAP = 28, COLS = 4
+const W = 260, H = 124, GAP = 24, LABEL_W = 168, LANE_GAP = 28, COLS = 4
 const said = (x?: string) => x?.replace(/`([^`]+)`/g, '$1')
 type Pt = { x: number; y: number }
 
@@ -92,13 +92,21 @@ export function LaneBoard({ lanes, links, top, children }: { lanes: Lane[]; link
   }, [drawn.map((l) => l.id + l.cards.map((c) => c.id).join()).join('|'), links, on, !!children]) // eslint-disable-line react-hooks/exhaustive-deps
   const rf = useReactFlow()
   const shape = drawn.map((l) => `${l.id}:${l.cards.map((c) => c.id).join()}`).join('|')
-  useEffect(() => { const t = setTimeout(() => void rf.fitView({ padding: 0.08, maxZoom: 1, duration: 250 }), 30); return () => clearTimeout(t) }, [shape, rf])
+  const box = useRef<HTMLDivElement>(null)
+  // fitted again whenever the board's own size changes (the side panel opening, the window, the meter's level)
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined
+    const fit = () => { clearTimeout(t); t = setTimeout(() => void rf.fitView({ padding: 0.08, maxZoom: 1, duration: 200 }), 40) }
+    fit()
+    const o = new ResizeObserver(fit); if (box.current) o.observe(box.current)
+    return () => { clearTimeout(t); o.disconnect() }
+  }, [shape, rf])
   const sel = lanes.flatMap((l) => l.cards).find((c) => c.id === on)
   return (
     <div className="flex min-h-0 flex-1 gap-3">
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         {top}
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-card bg-[var(--bg-app)] ring-1 ring-line">
+        <div ref={box} className="relative min-h-0 flex-1 overflow-hidden rounded-card bg-[var(--bg-app)] ring-1 ring-line">
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView fitViewOptions={{ padding: 0.08, maxZoom: 1 }} minZoom={0.5} maxZoom={1.6}
                      nodesConnectable={false} elementsSelectable={false} onNodeClick={(_, n) => { if (n.type === 'card') setOn((o) => (o === n.id ? undefined : n.id)) }}
                      onPaneClick={() => setOn(undefined)} proOptions={{ hideAttribution: true }}>
