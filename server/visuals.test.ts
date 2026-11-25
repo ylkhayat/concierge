@@ -119,3 +119,11 @@ test('setting a Storybook up goes through the three skills, as a PR, and ends wi
   assert.match(p, /start with rumanna/); assert.match(p, /PR <url>/)
   assert.equal(slugOf(baselineId('ylkhayat/elbuffeh')), 'repo-ylkhayat-elbuffeh')
 })
+
+test('with Storybook, the capture reads its components manifest and tests the stories it writes; the setup installs the agent tooling', async () => {
+  const { capturePrompt, setupPrompt } = await import('./visuals.ts')
+  const c = capturePrompt({ pr: { id: 'a/b#1', number: 1, title: 't', base: 'main', head: 'x', headSha: 'abcdef1234' }, out: '/o', files: [] })
+  assert.match(c, /\/manifests\/components\.json/); assert.match(c, /iframe\.html\?id=<story id>/); assert.match(c, /vitest --project=storybook/)
+  const s = setupPrompt({ repo: 'a/b', dir: '/d' })
+  for (const x of ['@storybook/addon-mcp', '@storybook/addon-vitest', 'features.componentsManifest', '@summary', 'prop combinations in controls']) assert.ok(s.includes(x), x)
+})
