@@ -3790,11 +3790,28 @@ root.route('/', app)
 // MSW's worker for a built Storybook that asks for it at the site's root (see /visuals/sb): the one beside the page that
 // asks, found by its address; its scope is that page's folder (the page registers it so), never Concierge's own pages
 root.get('/mockServiceWorker.js', async (c) => {
+  // the Storybook that asks, by its address; the browser's own update checks don't say, and get any build's worker
+  // (MSW's worker is the same file for a version). No Service-Worker-Allowed: each page registers it for its own folder,
+  // under the root this address already allows, and one shared address serves every Storybook's folder
   const from = /\/api\/visuals\/sb\/([^/]+)\/([0-9a-f]{7,40})\/([^/]+)\//.exec(c.req.header('referer') ?? '')
-  const path = from && await storybookFile(from[1], from[2], `${from[3]}/mockServiceWorker.js`)
+  let path = from ? await storybookFile(from[1], from[2], `${from[3]}/mockServiceWorker.js`) : undefined
+  if (!path) path = await anyWorker()
   if (!path) return c.body(null, 404)
-  return new Response(await readFile(path), { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': `/api/visuals/sb/${from![1]}/${from![2]}/${from![3]}/` } })
+  return new Response(await readFile(path), { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' } })
 })
+/** Any built Storybook's MSW worker, the newest baseline's first. */
+async function anyWorker(): Promise<string | undefined> {
+  const { readdir } = await import('node:fs/promises')
+  const { VISUALS_DIR } = await import('./visuals.ts')
+  for (const slug of (await readdir(VISUALS_DIR).catch(() => [] as string[])).filter((x) => x.startsWith('repo-'))) {
+    const shas = await Promise.all((await readdir(join(VISUALS_DIR, slug)).catch(() => [] as string[])).map(async (x) => [x, (await stat(join(VISUALS_DIR, slug, x)).catch(() => undefined))?.mtimeMs ?? 0] as const))
+    for (const [sha] of shas.sort((x, y) => y[1] - x[1])) for (const book of await readdir(join(VISUALS_DIR, slug, sha, 'storybook')).catch(() => [] as string[])) {
+      const p = await storybookFile(slug, sha, `${book}/mockServiceWorker.js`)
+      if (p) return p
+    }
+  }
+  return undefined
+}
 if (process.env.NODE_ENV === 'production') {
   const dist = new URL('../dist', import.meta.url).pathname
   // hashed file names: a browser keeps them for good and only index.html is asked for again
