@@ -127,3 +127,38 @@ test('with Storybook, the capture reads its components manifest and tests the st
   const s = setupPrompt({ repo: 'a/b', dir: '/d' })
   for (const x of ['@storybook/addon-mcp', '@storybook/addon-vitest', 'features.componentsManifest', '@summary', 'prop combinations in controls']) assert.ok(s.includes(x), x)
 })
+
+test('the baseline carries the board: screens by domain and step, each with every component on it', async () => {
+  const { setupPrompt, setsOf, shotsDir, baselineId } = await import('./visuals.ts')
+  const p = setupPrompt({ repo: 'a/b', dir: '/d' })
+  assert.match(p, /as a storyline/); assert.match(p, /The board \(the blueprint of the app\)/); assert.match(p, /"domain":"<Domain>","variant"/); assert.match(p, /One mark per component instance/)
+  const id = baselineId('ylkhayat/elbuffeh'), dir = shotsDir(id, 'ccccccc')
+  mkdirSync(dir, { recursive: true })
+  const marks = Array.from({ length: 70 }, (_, i) => ({ x: i, y: 1, w: 1, h: 5, part: 'Chip' }))
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ head: 'ccccccc', at: '2026-11-25T10:00:00Z', source: 'storybook', shots: [
+    { name: 'Courses · empty', domain: 'Courses', variant: 'empty', after: 'after-board-a.png', marks },
+    { name: 'Chip · default', lens: 'changed', part: 'Chip', after: 'after-chip.png', marks },
+  ] }))
+  const [set] = await setsOf(id)
+  assert.deepEqual([set.shots[0].domain, set.shots[0].variant, set.shots[0].marks!.length], ['Courses', 'empty', 60]) // a screen keeps many marks
+  assert.deepEqual([set.shots[1].domain, set.shots[1].marks!.length], [undefined, 12]) // a capture, its few
+})
+
+test('a baseline serves its built Storybook, and nothing else: no PR capture, no path out of its folder', async () => {
+  const { storybookFile, shotsDir, baselineId, slugOf, setsOf } = await import('./visuals.ts')
+  const id = baselineId('ylkhayat/live'), slug = slugOf(id), dir = join(shotsDir(id, 'ddddddd'), 'storybook', 'rumanna')
+  mkdirSync(join(dir, 'assets'), { recursive: true })
+  writeFileSync(join(dir, 'iframe.html'), '<html></html>'); writeFileSync(join(dir, 'assets', 'a-B1.js'), '1')
+  assert.ok(await storybookFile(slug, 'ddddddd', 'rumanna/iframe.html'))
+  assert.ok(await storybookFile(slug, 'ddddddd', 'rumanna/assets/a-B1.js'))
+  assert.equal(await storybookFile(slug, 'ddddddd', 'rumanna/../../manifest.json'), undefined)
+  assert.equal(await storybookFile(slug, 'ddddddd', 'rumanna/.env'), undefined)
+  assert.equal(await storybookFile('ylkhayat-elbuffeh-40', 'ddddddd', 'rumanna/iframe.html'), undefined) // a PR's capture: never a page
+  writeFileSync(join(shotsDir(id, 'ddddddd'), 'manifest.json'), JSON.stringify({ head: 'ddddddd', at: '2026-11-25T10:00:00Z', source: 'storybook', shots: [
+    { name: 'A', domain: 'Courses', variant: 'empty', after: 'a.png', book: 'rumanna', story: 'screens-courses--empty', height: 1400 },
+    { name: 'B', domain: 'Courses', variant: 'x', after: 'b.png', book: '../up', story: 'bad id!', height: -3 },
+  ] }))
+  const [set] = await setsOf(id)
+  assert.deepEqual([set.shots[0].book, set.shots[0].story, set.shots[0].height], ['rumanna', 'screens-courses--empty', 1400])
+  assert.deepEqual([set.shots[1].book, set.shots[1].story, set.shots[1].height], [undefined, undefined, undefined])
+})

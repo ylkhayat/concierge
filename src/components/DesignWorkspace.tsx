@@ -1,14 +1,14 @@
 // Design: what the pull requests look like, before and after, without opening them. Built like Plans: the list on the
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
-import { ArrowUp, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutTemplate, LoaderCircle, Palette, Square, Camera, Tag, Wand } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { ArrowUp, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, ZoomIn, ZoomOut } from 'lucide-react'
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
-import type { Kind, Mark, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
+import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'
 import { api, enc } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
-import { Pick } from '../ui/Pick.tsx'
+import { partAt } from '../board.ts'
 import { ActivityFeed } from './ActivityFeed.tsx'
 import { Skeleton } from './Connections.tsx'
 import { Md } from './Md.tsx'
@@ -119,16 +119,19 @@ function Empty() {
 function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast: Toast }) {
   const path = `/visuals/repos/${repo}`
   const [ticking, setTicking] = useState(false)
+  const [talk, setTalk] = useState<boolean>()
   const q = useApi<{ repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; sets: VisualSet[] }>(path, { refetchInterval: ticking ? 3000 : 30_000 })
   const b = q.data, t = b?.task
   useEffect(() => setTicking(busy(t)), [t?.state])
   const post = (body: object, msg?: string) => api(path, body).then(() => { void refresh(path); void refresh('/visuals'); if (msg) toast(msg) }, (e: Error) => toast(e.message, 'error'))
   if (!b) return <div className="p-4"><Skeleton rows={6} /></div>
   const set = b.sets[0]
+  // the conversation: open while there is nothing to look at yet (or it works), folded away beside a baseline
+  const showTalk = talk ?? (!set || busy(t))
   return (
     <div className="flex h-full min-h-0">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl space-y-3 p-4">
+        <div className={`space-y-3 p-4 ${set ? '' : 'mx-auto max-w-5xl'}`}>
           <header className="card px-4 py-3.5">
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
@@ -143,6 +146,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
                 {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
                 {busy(t)
                   ? <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
@@ -159,13 +163,14 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
                 <li>Each component's stories as its full state matrix; one screen story per app.</li>
                 <li>Design docs: foundations from the tokens, a page per primitive.</li>
                 <li>The first shot: every story at phone and laptop, here.</li>
+                <li>The blueprint: every screen in small on one board, a row per domain, a column per step, each component lit wherever it shows.</li>
               </ol>
               <p className="text-meta text-fg-4">Say in the conversation what to start with, or what to leave out.</p>
             </div>
           )}
         </div>
       </div>
-      <Conversation id={baselineKey(repo)} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast} />
+      {showTalk && <Conversation id={baselineKey(repo)} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast} />}
     </div>
   )
 }
@@ -219,8 +224,8 @@ export function VisualsView({ id, feed, toast }: { id: string; feed: Activity[];
                 {p.ui && <p className="text-meta text-fg-4" title={p.ui.files.join('\n')}>{p.ui.is ? 'Changes what people see' : 'Doesn’t change what people see'}: {p.ui.why}</p>}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <Pick label="Visuals for this PR" value={p.override ?? 'repo'} onChange={(v) => post({ override: v === 'repo' ? null : v }, v === 'repo' ? `Follows ${p.repo}: ${modeWord[p.mode]}` : v === 'on' ? 'Captured for every commit' : 'Not captured')}
-                      options={[{ value: 'repo', label: `As its repo (${p.mode})` }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
+                <Tabs size="sm" label="Visuals for this PR" value={p.override ?? 'repo'} onChange={(v) => post({ override: v === 'repo' ? null : v }, v === 'repo' ? `Follows ${p.repo}: ${modeWord[p.mode]}` : v === 'on' ? 'Captured for every commit' : 'Not captured')}
+                      options={[{ id: 'repo' as const, label: `As its repo · ${p.mode}` }, { id: 'on' as const, label: 'On' }, { id: 'off' as const, label: 'Off' }]} />
                 {busy(p.task)
                   ? <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
                   : <button onClick={() => post({ capture: true }, 'Capturing its screens')} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Camera className="size-3.5" />Capture now</button>}
@@ -353,6 +358,179 @@ const KIND_LABEL: Record<Kind, string> = { component: 'Component', layout: 'Layo
 const KindChip = ({ kind }: { kind: Kind }) => <span className="rounded-full bg-fill px-1.5 py-px text-micro font-medium text-fg-2">{KIND_LABEL[kind]}</span>
 const away = (d: number) => (d <= 1 ? 'uses it directly' : `${d} imports away`)
 
+/** Where a mark sits on its image, as the style of a box over it. */
+const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, width: `${m.w}%`, height: `${m.h}%` })
+
+/**
+ * A screen on the board, small: the page itself when the baseline has its Storybook (`live`: the story's own page,
+ * rendered at its real size and scaled down, so it is the app, not a picture of it), else its screenshot. Every
+ * component on it is a way in. With a component lit, the page falls back behind a scrim with a window cut for each of
+ * its instances.
+ *
+ * Built to be many: no element per component (the pointer's place is worked out against the marks), drawn again only
+ * when its own state changes (`mode`: idle, dimmed, or the component lit on it), skipped by the browser while off
+ * screen. A live page is only there while its screen is near the board's view (its screenshot holds the place before
+ * and after), and takes no pointer: the board does.
+ */
+const Mini = memo(function Mini({ src, live, shot, mode, onHover, onPin }: { src: string; live?: string; shot: Shot; mode: string; onHover: (part?: string) => void; onPin: (part: string) => void }) {
+  const marks = shot.marks ?? []
+  const lit = mode !== 'idle' && mode !== 'dim' ? marks.filter((m) => m.part === mode) : []
+  const frame = useRef<HTMLDivElement>(null)
+  const [near, setNear] = useState(false), [ready, setReady] = useState(false)
+  useEffect(() => {
+    if (!live || !frame.current) return
+    const io = new IntersectionObserver(([e]) => { setNear(e.isIntersecting); if (!e.isIntersecting) setReady(false) }, { rootMargin: '240px' })
+    io.observe(frame.current)
+    return () => io.disconnect()
+  }, [live])
+  const W = shot.width ?? 1280, H = shot.height ?? Math.round(W * 0.625)
+  const mask = `m${useId().replace(/\W/g, '')}`
+  const at = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return partAt(marks, ((e.clientX - r.left) / r.width) * 100, ((e.clientY - r.top) / r.height) * 100)
+  }
+  return (
+    <figure className={`transition-opacity duration-300 ease-[var(--ease-out)] [contain-intrinsic-size:auto_200px] [content-visibility:auto] ${mode === 'dim' ? 'opacity-20' : ''}`}>
+      <div ref={frame} style={live ? { aspectRatio: `${W} / ${H}` } : undefined} className={`relative cursor-pointer overflow-hidden rounded-ctl bg-surface-1 shadow-e1 ring-1 ${lit.length ? 'ring-accent/50' : 'ring-line'}`}
+           onMouseMove={(e) => onHover(at(e))} onMouseLeave={() => onHover(undefined)} onClick={(e) => { const part = at(e); if (part) onPin(part) }}>
+        <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className={`select-none ${live ? 'absolute inset-0 size-full object-cover object-top' : 'block w-full'}`} />
+        {live && near && (
+          <iframe src={live} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
+                  style={{ width: W, height: H, transform: `scale(calc(var(--cell) / ${W}))`, transformOrigin: '0 0' }}
+                  className={`pointer-events-none absolute left-0 top-0 border-0 bg-surface-1 transition-opacity duration-300 ${ready ? 'opacity-100' : 'opacity-0'}`} />
+        )}
+        {lit.length > 0 && (
+          <svg aria-hidden viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 size-full animate-[fade-in_200ms_var(--ease-out)_both]">
+            <mask id={mask}><rect width="100" height="100" fill="white" />{lit.map((m, i) => <rect key={i} x={m.x} y={m.y} width={m.w} height={m.h} fill="black" />)}</mask>
+            <rect width="100" height="100" mask={`url(#${mask})`} style={{ fill: 'color-mix(in oklch, var(--surface-1) 48%, transparent)' }} />
+          </svg>
+        )}
+        {lit.map((m, i) => <span key={i} aria-hidden style={boxOf(m)} className="pointer-events-none absolute animate-[fade-in_200ms_var(--ease-out)_both] rounded-[2px] shadow-[0_0_0_3px_var(--accent-soft)] ring-[1.5px] ring-accent" />)}
+      </div>
+      <figcaption className="mt-1.5 truncate text-micro text-fg-3" title={shot.note}>{shot.variant ?? shot.name}</figcaption>
+    </figure>
+  )
+})
+
+/**
+ * The blueprint of the app: every screen in small, a row per domain, a column per step of its storyline; every
+ * component on the left. Rest on a component, there or on any screen, and the board falls back, leaving it lit wherever
+ * it shows, with a card on where it is used. A click keeps it lit.
+ */
+function Blueprint({ pr, set, screens, parts, numbers, onStates }: { pr: string; set: VisualSet; screens: Shot[]; parts: Part[]; numbers: Map<string, number>; onStates: () => void }) {
+  const [hover, setHover] = useState<string>(), [pinned, setPinned] = useState<string>(), [find, setFind] = useState('')
+  const [zoom, setZoom] = useState(() => { try { return Number(localStorage.getItem('design:board-zoom')) || 220 } catch { return 220 } })
+  // live: the screens as the pages themselves (a baseline with its Storybook built beside it); yours to turn off
+  const canLive = pr.startsWith('repo:') && screens.some((x) => x.book && x.story)
+  const [liveOn, setLiveOn] = useState(() => { try { return localStorage.getItem('design:board-live') !== 'off' } catch { return true } })
+  const setLive = (on: boolean) => { setLiveOn(on); try { localStorage.setItem('design:board-live', on ? 'on' : 'off') } catch { /* private window */ } }
+  const liveOf = (sh: Shot) => (canLive && liveOn && sh.book && sh.story ? `/api/visuals/sb/${pr.replace(/[^\w.-]+/g, '-')}/${set.sha}/${sh.book}/iframe.html?id=${encodeURIComponent(sh.story)}&viewMode=story` : undefined)
+  const zoomTo = (z: number) => { const v = Math.min(440, Math.max(120, z)); setZoom(v); try { localStorage.setItem('design:board-zoom', String(v)) } catch { /* private window */ } }
+  const hot = hover ?? pinned
+  const pin = useCallback((part: string) => setPinned((x) => (x === part ? undefined : part)), [])
+  // the pointer moves many times a frame: the lit component changes at most once a frame, and only when it differs
+  const next = useRef<{ part?: string; frame?: number }>({})
+  const onHover = useCallback((part?: string) => {
+    next.current.part = part
+    next.current.frame ??= requestAnimationFrame(() => { next.current.frame = undefined; setHover((was) => (was === next.current.part ? was : next.current.part)) })
+  }, [])
+  useEffect(() => () => { if (next.current.frame) cancelAnimationFrame(next.current.frame) }, [])
+  const domains = useMemo(() => [...new Set(screens.map((x) => x.domain!))], [screens])
+  // where each component shows: the screens that mark it
+  const usage = useMemo(() => {
+    const by = new Map<string, Shot[]>()
+    for (const sh of screens) for (const name of new Set((sh.marks ?? []).map((m) => m.part).filter((x): x is string => !!x))) by.set(name, [...(by.get(name) ?? []), sh])
+    return by
+  }, [screens])
+  // the components: the ones the capture named, and any a screen marks besides; the most used first
+  const names = useMemo(() => [...new Set([...parts.map((x) => x.name), ...usage.keys()])].sort((a, b) => (usage.get(b)?.length ?? 0) - (usage.get(a)?.length ?? 0) || a.localeCompare(b)), [parts, usage])
+  const shown = names.filter((n) => n.toLowerCase().includes(find.trim().toLowerCase()))
+  const cols = Math.max(1, ...domains.map((d) => screens.filter((x) => x.domain === d).length))
+  // the small image until the screens are large enough to need the whole one
+  const url = (sh: Shot) => shotUrl(pr, set.sha, (zoom <= 300 && sh.thumb) || (sh.after ?? sh.before)!)
+  // which components each screen shows, looked up once: a screen's state on a hover is then one lookup
+  const has = useMemo(() => new Map(screens.map((sh) => [sh, new Set((sh.marks ?? []).map((m) => m.part))])), [screens])
+  const modeOf = (sh: Shot) => (!hot ? 'idle' : has.get(sh)?.has(hot) ? hot : 'dim')
+  const part = hot ? parts.find((x) => x.name === hot) : undefined, used = hot ? usage.get(hot) ?? [] : []
+  const story = hot ? set.shots.find((x) => x.lens === 'changed' && x.part === hot && x.after) : undefined
+  return (
+    <div className="card relative flex overflow-hidden" style={{ height: 'clamp(24rem, calc(100vh / var(--z, 1) - 17.5rem), 64rem)' }}>
+      <aside aria-label="Components" className="flex w-52 shrink-0 flex-col border-r border-line">
+        <label className="m-2 flex items-center gap-1.5 rounded-ctl bg-fill px-2 py-1"><Search className="size-3.5 shrink-0 text-fg-4" />
+          <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`${names.length} components`} aria-label="Find a component" className="w-full bg-transparent text-small outline-none placeholder:text-fg-4" /></label>
+        <ul className="min-h-0 flex-1 overflow-y-auto px-1 pb-1" onMouseLeave={() => onHover(undefined)}>
+          {shown.map((n) => {
+            const on = hot === n, count = usage.get(n)?.length ?? 0
+            return (
+              <li key={n}>
+                <button onMouseEnter={() => onHover(n)} onFocus={() => onHover(n)} onBlur={() => onHover(undefined)} onClick={() => pin(n)} aria-pressed={pinned === n}
+                        className={`flex w-full items-center gap-2 rounded-ctl px-2 py-1 text-left text-small transition-colors duration-150 ${on ? 'sel text-accent-text' : hot ? 'text-fg-4' : 'text-fg-2 hover:bg-hover'}`}>
+                  <span className={`flex size-4 shrink-0 items-center justify-center rounded-full text-micro font-semibold transition-colors ${on ? 'bg-accent text-on-accent' : 'bg-fill text-fg-3'}`}>{numbers.get(n) ?? '·'}</span>
+                  <span className="min-w-0 flex-1 truncate">{n}</span>
+                  {pinned === n ? <Pin className="size-3 shrink-0" /> : <span className={`shrink-0 tabular-nums text-micro ${count ? '' : 'opacity-40'}`}>{count}</span>}
+                </button>
+              </li>
+            )
+          })}
+          {!shown.length && <li className="px-2 py-1.5 text-meta text-fg-4">None matches.</li>}
+        </ul>
+      </aside>
+
+      <div className="relative min-w-0 flex-1">
+        <div className="absolute right-3 top-2.5 z-20 flex items-center gap-1.5 rounded-ctl bg-surface-2/90 px-2 py-1 shadow-e1 ring-1 ring-line backdrop-blur">
+          {canLive && <button onClick={() => setLive(!liveOn)} role="switch" aria-checked={liveOn} title={liveOn ? 'The screens are the pages themselves, from the Storybook. Click for their screenshots' : 'The screens are screenshots. Click for the pages themselves'}
+                              className={`mr-1 inline-flex items-center gap-1.5 border-r border-line pr-2 text-meta font-medium ${liveOn ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}><span className={`size-1.5 rounded-full ${liveOn ? 'animate-pulse bg-accent' : 'bg-fg-4'}`} />Live</button>}
+          <button onClick={() => zoomTo(zoom - 40)} aria-label="Smaller" className="text-fg-3 hover:text-fg-1"><ZoomOut className="size-3.5" /></button>
+          <input type="range" min={120} max={440} step={20} value={zoom} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Size of the screens" className="w-20 accent-current text-accent" />
+          <button onClick={() => zoomTo(zoom + 40)} aria-label="Larger" className="text-fg-3 hover:text-fg-1"><ZoomIn className="size-3.5" /></button>
+        </div>
+        {/* the board: a faint grid under the screens, moving with them */}
+        <div className="size-full overflow-auto p-5" style={{ backgroundImage: 'linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px)', backgroundSize: '28px 28px', backgroundAttachment: 'local' }}>
+          <div className="grid w-max items-start gap-x-4 gap-y-7" style={{ '--cell': zoom, gridTemplateColumns: `6.5rem repeat(${cols}, ${zoom}px)` } as CSSProperties}>
+            {domains.map((d) => {
+              const row = screens.filter((x) => x.domain === d)
+              const lit = !hot || row.some((x) => has.get(x)?.has(hot))
+              return (
+                <Fragment key={d}>
+                  <div className={`sticky left-0 z-10 -ml-5 self-stretch bg-gradient-to-r from-[var(--surface-1)] from-70% to-transparent pl-5 pr-3 pt-1 transition-opacity duration-300 ${lit ? '' : 'opacity-40'}`}>
+                    <p className="text-small font-semibold text-fg-1">{d}</p>
+                    <p className="text-micro text-fg-4">{row.length} step{row.length === 1 ? '' : 's'}</p>
+                  </div>
+                  {row.map((sh) => <Mini key={`${sh.name}:${sh.after ?? ''}`} src={url(sh)} live={liveOf(sh)} shot={sh} mode={modeOf(sh)} onHover={onHover} onPin={pin} />)}
+                  {Array.from({ length: cols - row.length }, (_, i) => <span key={i} aria-hidden />)}
+                </Fragment>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* where the lit component is used: floats over the board's corner, and stays while it is pinned */}
+        {hot && (
+          <div key={hot} role="status" className="pointer-events-none absolute bottom-3 right-3 z-20 w-72 animate-[pop-in_180ms_var(--ease-snappy)_both] rounded-card bg-surface-2/95 p-3 shadow-e3 ring-1 ring-line backdrop-blur">
+            <div className="flex items-center gap-2">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent text-micro font-semibold text-on-accent">{numbers.get(hot) ?? '·'}</span>
+              <span className="min-w-0 flex-1 truncate text-small font-semibold text-fg-1">{hot}</span>
+              {part && <KindChip kind={part.kind} />}
+            </div>
+            {part?.file && <p className="mt-1 truncate font-mono text-micro text-fg-4" title={part.file}>{part.file}</p>}
+            {story && <img src={shotUrl(pr, set.sha, story.after!)} alt="" className="mt-2 max-h-20 w-full rounded-ctl bg-fill object-contain ring-1 ring-line" />}
+            <p className="mt-2 text-meta text-fg-2">{used.length ? `On ${used.length} of ${screens.length} screens, in ${new Set(used.map((x) => x.domain)).size} of ${domains.length} domains` : 'On no screen of the board: only in its own stories'}</p>
+            <ul className="mt-1 space-y-0.5">
+              {domains.filter((d) => used.some((x) => x.domain === d)).slice(0, 6).map((d) => (
+                <li key={d} className="flex gap-1.5 text-micro"><span className="shrink-0 font-medium text-fg-2">{d}</span><span className="truncate text-fg-3">{used.filter((x) => x.domain === d).map((x) => x.variant).join(', ')}</span></li>
+              ))}
+            </ul>
+            <p className="pointer-events-auto mt-2 flex items-center gap-2 text-micro text-fg-4">
+              {pinned === hot ? <><Pin className="size-3" />Pinned: click it again to let go</> : 'Click to keep it lit'}
+              {story && <button onClick={onStates} className="ml-auto font-medium text-accent-text hover:underline">Its states</button>}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /**
  * A capture through two lenses. Changed: each component the PR edits, in focus. Affected: where those changes show,
  * the components, layouts and screens that use them, each with the changed ones that reach it. A changed component
@@ -361,9 +539,10 @@ const away = (d: number) => (d <= 1 ? 'uses it directly' : `${d} imports away`)
 function Impact({ pr, set }: { pr: string; set: VisualSet }) {
   const im = set.impact
   const lensed = !!im || set.shots.some((x) => x.lens)
-  type Lens = 'changed' | 'affected' | 'all'
-  const ORDER: Lens[] = ['changed', 'affected', 'all']
-  const [lens, setLensNow] = useState<Lens>(lensed ? 'changed' : 'all')
+  type Lens = 'board' | 'changed' | 'affected' | 'all'
+  const ORDER: Lens[] = ['board', 'changed', 'affected', 'all']
+  const screens = set.shots.filter((x) => x.domain && (x.after ?? x.before)) // the board: whole screens, by domain and step
+  const [lens, setLensNow] = useState<Lens>(screens.length ? 'board' : lensed ? 'changed' : 'all')
   const [from, setFrom] = useState(1) // the side the next lens slides in from
   const setLens = (l: Lens) => { setFrom(ORDER.indexOf(l) >= ORDER.indexOf(lens) ? 1 : -1); setLensNow(l) }
   const [focus, setFocus] = useState<string>()
@@ -382,8 +561,8 @@ function Impact({ pr, set }: { pr: string; set: VisualSet }) {
       {set.summary && <div className="card px-4 py-3 text-small text-fg-2"><Md text={set.summary} /></div>}
       <div className="flex flex-wrap items-center gap-2">
         <LensSwitch value={lens} onChange={setLens}
-                    options={[...(lensed ? [{ id: 'changed' as const, label: 'Changed', count: changed.length, icon: Crosshair }, { id: 'affected' as const, label: 'Affected', count: affected.length, icon: LayoutTemplate }] : []), { id: 'all' as const, label: 'All', count: set.shots.length, icon: Images }]} />
-        {marked && <button onClick={() => setMarks(!marks)} aria-pressed={marks} title={marks ? 'Hide the annotations' : 'Show where each change sits'}
+                    options={[...(screens.length ? [{ id: 'board' as const, label: 'Blueprint', count: screens.length, icon: LayoutGrid }] : []), ...(lensed ? [{ id: 'changed' as const, label: 'Changed', count: changed.length, icon: Crosshair }, { id: 'affected' as const, label: 'Affected', count: affected.length, icon: LayoutTemplate }] : []), { id: 'all' as const, label: 'All', count: set.shots.length, icon: Images }]} />
+        {marked && lens !== 'board' && <button onClick={() => setMarks(!marks)} aria-pressed={marks} title={marks ? 'Hide the annotations' : 'Show where each change sits'}
                            className={`inline-flex items-center gap-1.5 rounded-ctl px-2 py-1 text-meta font-medium transition-colors ${marks ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}>{marks ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}Marks</button>}
         <span className="ml-auto text-meta text-fg-4">from {set.source === 'storybook' ? 'its Storybook stories' : 'the running app'} · {new Date(set.at).toLocaleString()}</span>
       </div>
@@ -461,6 +640,7 @@ function Impact({ pr, set }: { pr: string; set: VisualSet }) {
         </div>
       )}
 
+      {lens === 'board' && <Blueprint pr={pr} set={set} screens={screens} parts={changed} numbers={numbers} onStates={() => setLens('changed')} />}
       {lens === 'all' && <Gallery pr={pr} set={set} />}
       </div>
     </div>

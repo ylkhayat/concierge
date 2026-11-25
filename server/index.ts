@@ -16,7 +16,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { live, stale } from './live.ts'
-import { baselineId, DESIGN_LABEL, imagePath, modeOf, setsOf, uiChange, VISUALS_MODES, wanted, type VisualsMode } from './visuals.ts'
+import { baselineId, DESIGN_LABEL, imagePath, modeOf, setsOf, storybookFile, uiChange, VISUALS_MODES, wanted, type VisualsMode } from './visuals.ts'
 import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
@@ -2534,6 +2534,21 @@ app.post('/visuals/repos/:owner/:name', async (c) => {
 })
 app.get('/visuals/setup/:owner/:name/activity', async (c) => c.json(await loadActivity(`setup:${c.req.param('owner')}/${c.req.param('name')}`)))
 app.get('/visuals/:id/activity', async (c) => c.json(await loadActivity(`visuals:${decodeURIComponent(c.req.param('id'))}`)))
+// a baseline's built Storybook, file by file, for the board's live screens (visuals.ts storybookFile: baselines only)
+const SB_TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', json: 'application/json', map: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', ico: 'image/x-icon', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm' }
+app.get('/visuals/sb/:slug/:sha/*', async (c) => {
+  const { slug, sha } = c.req.param(), rest = decodeURIComponent(c.req.path.split(`/visuals/sb/${slug}/${sha}/`)[1] ?? '')
+  const path = await storybookFile(slug, sha, rest)
+  if (!path) return c.body(null, 404)
+  const ext = path.split('.').pop()!.toLowerCase(), html = ext === 'html'
+  return new Response(await readFile(path), { headers: {
+    'content-type': SB_TYPES[ext] ?? 'application/octet-stream',
+    // a build never changes under its commit; the pages themselves are looked at again
+    'cache-control': html ? 'private, no-cache' : 'private, max-age=31536000, immutable',
+    // shown only inside Concierge's own page, never framed elsewhere
+    ...(html && { 'content-security-policy': "frame-ancestors 'self'" }), 'x-content-type-options': 'nosniff',
+  } })
+})
 // one screenshot, by PR, commit and file name (nothing else under the visuals folder is reachable)
 app.get('/visuals/image', async (c) => {
   const path = await imagePath(c.req.query('pr') ?? '', c.req.query('sha') ?? '', c.req.query('f') ?? '')

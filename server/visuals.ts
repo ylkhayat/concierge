@@ -83,20 +83,25 @@ export type Impact = { changed: Part[]; affected: Affected[] }
  */
 // a mark: where a changed component sits on the image, in percent of its width and height, for the numbered outline
 export type Mark = { x: number; y: number; w: number; h: number; part?: string; label?: string; side?: 'before' | 'after' }
-export type Shot = { name: string; note?: string; before?: string; after?: string; width?: number; lens?: 'changed' | 'affected'; part?: string; viewport?: string; marks?: Mark[] }
+// domain, variant: a whole screen's place on the baseline's board (the blueprint): its row (an area of the app) and
+// its column (a step or state of that area's storyline, in the order shot); its marks then say where every component sits
+export type Shot = { name: string; note?: string; before?: string; after?: string; width?: number; lens?: 'changed' | 'affected'; part?: string; viewport?: string; marks?: Mark[]; domain?: string; variant?: string; thumb?: string
+  // a screen of the baseline's board, live: its story in the Storybook built beside the capture (storybook/<book>/),
+  // and the page's height at its width, so the small render keeps the screenshot's shape and its marks stay in place
+  book?: string; story?: string; height?: number }
 export type Manifest = { head: string; base?: string; at: string; source: 'storybook' | 'app'; summary?: string; impact?: Impact; shots: Shot[] }
 export type VisualSet = Manifest & { sha: string }
 
 const pct = (n: unknown) => Math.min(100, Math.max(0, Number(n) || 0))
 /** A shot's marks, kept to boxes inside the image (they come from an agent). */
-export function marksOf(raw: unknown): Mark[] | undefined {
+export function marksOf(raw: unknown, max = 12): Mark[] | undefined {
   if (!Array.isArray(raw)) return undefined
   const out = raw.flatMap((m) => {
     const o = m as Partial<Mark>
     const x = pct(o.x), y = pct(o.y), w = Math.min(pct(o.w), 100 - x), h = Math.min(pct(o.h), 100 - y)
     if (w < 0.5 || h < 0.5) return []
     return [{ x, y, w, h, ...(o.part && { part: String(o.part).slice(0, 80) }), ...(o.label && { label: String(o.label).slice(0, 160) }), ...((o.side === 'before' || o.side === 'after') && { side: o.side }) }]
-  }).slice(0, 12)
+  }).slice(0, max)
   return out.length ? out : undefined
 }
 
@@ -134,9 +139,12 @@ export async function setsOf(prId: string): Promise<VisualSet[]> {
     if (!/^[0-9a-f]{7,40}$/.test(sha)) continue
     const m = await readFile(join(dir, sha, 'manifest.json'), 'utf8').then((t) => JSON.parse(t) as Manifest, () => undefined)
     if (!m || !Array.isArray(m.shots)) continue
-    const shots: Shot[] = m.shots.filter((s) => s && typeof s.name === 'string').slice(0, 60).map((s) => ({
+    const shots: Shot[] = m.shots.filter((s) => s && typeof s.name === 'string').slice(0, 200).map((s) => ({
       name: String(s.name).slice(0, 120), note: s.note ? String(s.note).slice(0, 400) : undefined, before: safeFile(s.before), after: safeFile(s.after), width: Number(s.width) || undefined,
-      lens: s.lens === 'changed' || s.lens === 'affected' ? s.lens : undefined, part: s.part ? String(s.part).slice(0, 80) : undefined, viewport: s.viewport ? String(s.viewport).slice(0, 20) : undefined, marks: marksOf(s.marks),
+      lens: s.lens === 'changed' || s.lens === 'affected' ? s.lens : undefined, part: s.part ? String(s.part).slice(0, 80) : undefined, viewport: s.viewport ? String(s.viewport).slice(0, 20) : undefined,
+      // a screen on the board names every component on it: more marks than a capture's few
+      marks: marksOf(s.marks, s.domain ? 60 : 12), domain: s.domain ? String(s.domain).slice(0, 40) : undefined, variant: s.variant ? String(s.variant).slice(0, 60) : undefined, thumb: safeFile(s.thumb),
+      book: typeof s.book === 'string' && /^[\w.-]{1,60}$/.test(s.book) && !s.book.includes('..') ? s.book : undefined, story: typeof s.story === 'string' && /^[\w-]{1,200}$/.test(s.story) ? s.story : undefined, height: Number(s.height) > 0 ? Math.min(20000, Number(s.height)) : undefined,
     }))
     out.push({ ...m, sha, source: m.source === 'storybook' ? 'storybook' : 'app', summary: m.summary ? String(m.summary).slice(0, 2000) : undefined, impact: impactOf(m.impact), shots })
   }
@@ -147,6 +155,19 @@ export async function setsOf(prId: string): Promise<VisualSet[]> {
 export async function imagePath(prId: string, sha: string, file: string): Promise<string | undefined> {
   if (!/^[0-9a-f]{7,40}$/.test(sha) || !safeFile(file)) return undefined
   const p = join(shotsDir(prId, sha), file)
+  return (await stat(p).then((s) => s.isFile(), () => false)) ? p : undefined
+}
+/**
+ * A file of the Storybook built beside a baseline (visuals/repo-<owner>-<repo>/<sha>/storybook/…), for the board's live
+ * screens. Baselines only: a repository's own default branch, as the agents already run it; a PR's capture (it may be
+ * someone else's code) is never served as a page, only as images.
+ */
+export async function storybookFile(slug: string, sha: string, rest: string): Promise<string | undefined> {
+  if (!/^repo-[\w.-]+$/.test(slug) || !/^[0-9a-f]{7,40}$/.test(sha)) return undefined
+  const parts = rest.split('/').filter(Boolean)
+  if (!parts.length || parts.some((x) => x === '..' || x.startsWith('.') && x !== '.storybook' || !/^[\w@.+~-]+$/.test(x))) return undefined
+  const root = join(VISUALS_DIR, slug, sha, 'storybook'), p = join(root, ...parts)
+  if (!p.startsWith(root + '/')) return undefined
   return (await stat(p).then((s) => s.isFile(), () => false)) ? p : undefined
 }
 export const hasSet = (prId: string, sha: string) => existsSync(join(shotsDir(prId, sha), 'manifest.json'))
@@ -165,12 +186,15 @@ export function setupPrompt(p: { repo: string; dir: string; said?: string }): st
 
 1. Work in a new worktree on a branch \`storybook/setup\` off the up-to-date default branch (git worktree add, never your checkout's own branch).
 2. Set Storybook up the way the storybook-architecture skill says: one per UI package (composed at the root when there are several), the layers, the shared decorators for every provider, one named viewport set, data mocked at the network, and the agent tooling: @storybook/addon-a11y, @storybook/addon-vitest, @storybook/addon-mcp and the components manifest (features.componentsManifest), so the next agents read the components from it and test through it.
-3. Write stories the way the storybook-stories skill says: every component the app's screens are built from, primitives first, each as its state matrix composed from its parts' stories (a story per state a person meets, prop combinations in controls), each component, prop and story with its JSDoc @summary, and one screen story per app with mocked data. Many components: cover every component of the main screens, and list the rest in the PR.
+3. Write stories the way the storybook-stories skill says: every component the app's screens are built from, primitives first, each as its state matrix composed from its parts' stories (a story per state a person meets, prop combinations in controls), each component, prop and story with its JSDoc @summary. Then the screens, as a storyline: for each domain of the app (an area a person would name: its navigation's entries, its route folders), a screen story for each step and state a person goes through there, in order (arriving with nothing, filled, in the middle of the main action, done, when it fails), with mocked data. Many components: cover every component of those screens, and list the rest in the PR.
 4. Write the docs the way the design-docs skill says: the foundations pages generated from the tokens, and a page for each primitive.
 5. Prove it as the skills say, working the loop (run the tests, fix, run again): for each package storybook build succeeds, vitest --project=storybook passes with no a11y violation, and /manifests/components.json lists every component with its summary and props. Commit (conventional commits), push, and open the PR: title "Storybook: the design system, in stories"; its body says what each layer holds, how to add a story, and what is covered and what isn't yet.
 6. The first shot: screenshot every story you wrote (#storybook-root of its iframe page, with Playwright) at the phone and laptop viewports, into ${p.dir}/<the full sha of your last commit>/ (make it): after-<story-id>-<viewport>.png (letters, digits, dots and dashes only; there is no before: this is the baseline), and manifest.json:
 {"head":"<that sha>","at":"<now, ISO>","source":"storybook","summary":"<what the design system holds, in two or three sentences>","impact":{"changed":[{"name":"<Component>","file":"<path>","kind":"component"|"layout"|"screen"}],"affected":[]},"shots":[{"name":"<Component> · <story>","lens":"changed","part":"<Component>","viewport":"<viewport name>","width":<viewport width>,"note":"<the state it shows>","after":"after-<story-id>-<viewport>.png"}]}
-At most 80 shots: each component's default story at both viewports first, then its other states at laptop.
+At most 80 of these shots: each component's default story at both viewports first, then its other states at laptop.
+7. The board (the blueprint of the app): screenshot every screen story at the laptop viewport, the whole page (after-board-<story-id>.png), and the same again small for the board itself (thumb-board-<story-id>.png, 480px wide: the same page at a device scale factor of 480 / the viewport's width), and add each to the manifest's shots with its place and every component on it. The board shows these screens live, from the Storybook itself: build each package's Storybook (storybook build) into ${p.dir}/<that sha>/storybook/<package name>/ (static files, with its mockServiceWorker.js), and give each screen its book (that folder's name), its story id and the page's height in px at the laptop width:
+{"name":"<Domain> · <step or state>","lens":"affected","domain":"<Domain>","variant":"<step or state, a few words>","viewport":"laptop","width":<width>,"note":"<what a person does here>","after":"after-board-<story-id>.png","thumb":"thumb-board-<story-id>.png","book":"<package name>","story":"<story-id>","height":<page height in px>,"marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<Component, as named in the impact>"}]}
+One mark per component instance that shows (Playwright boundingBox of its root element, as percent of the screenshot; find each root by its role, test id or the element its story renders), nested ones included, 60 at most a screen. Domains in the order of the app's navigation, a domain's screens in the order a person meets them: the board lays them out as rows and columns in that order.
 End with the PR's address on its own line: PR <url>.`
 }
 
