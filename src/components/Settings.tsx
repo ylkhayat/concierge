@@ -145,7 +145,10 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
   const [tab, setTabState] = useState<SettingsTab>(ALIAS[initial] ?? initial)
   const [setup, setSetup] = useState<SetupView>()
   const [q, setQ] = useState('')
-  useEffect(() => { if (open) { setTabState(ALIAS[initial] ?? initial); api('/setup').then(setSetup).catch(() => {}) } }, [open, initial])
+  const [setupFailed, setSetupFailed] = useState<string>()
+  const loadSetup = (tries = 0): void => { setSetupFailed(undefined); api('/setup').then(setSetup, (e: Error) => (tries < 10 ? void setTimeout(() => loadSetup(tries + 1), 3000) : setSetupFailed(e.message))) }
+  // the server may be restarting (an update): asked again every 3s for half a minute before it says so
+  useEffect(() => { if (open) { setTabState(ALIAS[initial] ?? initial); loadSetup() } }, [open, initial]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector(':popover-open, dialog[open]')) { e.preventDefault(); onClose() } }
@@ -217,7 +220,11 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
             {tab === 'accounts' && <Agents toast={toast} onConnections={() => go('connections')} />}
             {tab === 'compliance' && <ComplianceSettings setup={setup} saveConfig={saveConfig} />}
             {tab === 'spend' && <Usage health={health} setup={setup} save={save} saveConfig={saveConfig} />}
-            {tab === 'repos' && <Repositories setup={setup} health={health} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />}
+            {tab === 'repos' && (setup ? <Repositories setup={setup} health={health} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />
+              // never the workspaces drawn empty while their repositories haven't come
+              : <p className="flex items-center gap-2 py-6 text-small text-fg-3">{setupFailed
+                ? <>Couldn't read the repositories ({setupFailed}). <button onClick={() => loadSetup()} className="font-medium text-accent-text hover:underline">Try again</button></>
+                : <><LoaderCircle className="size-4 animate-spin" />Loading the repositories…</>}</p>)}
             {tab === 'connections' && <Connections toast={toast} />}
             {tab === 'machines' && <><Access toast={toast} /><MachinesSettings /><Update />
               <details className="group/adv rounded-xl ring-1 ring-line [&[open]]:pb-3">
