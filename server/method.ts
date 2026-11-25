@@ -22,6 +22,10 @@ export const FEATURES = {
   stacks: { skill: 'plan-stacks', label: 'Stacking tickets', hint: 'Which tickets ship together, before a run of several' },
   plan: { skill: 'plan-project', label: 'Plans', hint: 'Breaking a brief down into a project' },
   skills: { skill: 'improve-skills', label: 'Skill reviews', hint: 'Judging your skills from their runs' },
+  // Design (visuals.ts): without the skill on a machine, Concierge's own words for it are used
+  visuals: { skill: 'capture-visuals', label: 'Visuals', hint: 'A pull request\'s screens, before and after: the changed components in focus, where they show' },
+  blueprint: { skill: 'draw-blueprint', label: 'Blueprint', hint: 'The map of a project: its screens by domain and step, every component marked' },
+  storybook: { skill: 'set-up-storybook', label: 'Storybook setup', hint: 'Giving a repository its Storybook, as a pull request' },
 } as const
 export type Feature = keyof typeof FEATURES
 

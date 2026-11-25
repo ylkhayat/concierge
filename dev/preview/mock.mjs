@@ -105,7 +105,13 @@ http.createServer((req, res) => {
   if (process.env.MOCK_FIXTURES) { const fx = `${process.env.MOCK_FIXTURES}/${p.slice(1).replace(/\//g, '_') || 'index'}.json`; if (existsSync(fx)) return json(res, JSON.parse(readFileSync(fx, 'utf8'))) }
   // Design: the list, a repository's baseline, a PR's capture, and the made-up screens themselves
   if (p === '/visuals') return json(res, { joined: true, repos: [{ repo: 'ylkhayat/elbuffeh', mode: 'auto', baseline: { sha: baseline.sha, at: baseline.at, count: PARTS.length, thumb: 'board-s1.png', screens: SCREENS.length, domains: 3 }, fromApp: false }], prs: [{ ...prView, latest: { sha: prSet.sha, at: prSet.at, summary: prSet.summary, count: prSet.shots.length, thumb: 'board-s1.png' } }], tickets: [{ id: 'ELBU-3', title: 'Learner creates a course with a language and level', labels: ['design'], url: '#', prs: [prView.id] }] })
-  if (p === '/visuals/repos/ylkhayat/elbuffeh') return json(res, { repo: 'ylkhayat/elbuffeh', mode: 'auto', task: { state: 'done', prUrl: 'https://github.com/ylkhayat/elbuffeh/pull/22' }, sets: [baseline] })
+  // MOCK_MAP: the blueprint's page before its map: none (nothing set up), stories (its components, no screens), running (the map being made)
+  if (p === '/visuals/repos/ylkhayat/elbuffeh') {
+    const m = process.env.MOCK_MAP, stories = { ...baseline, shots: baseline.shots.filter((x) => !x.domain) }
+    return json(res, { repo: 'ylkhayat/elbuffeh', mode: 'auto', sets: m === 'none' ? [] : m ? [stories] : [baseline],
+      task: m === 'none' ? undefined : m === 'running' ? { state: 'running', board: true, machine: 'macbookpro', prUrl: 'https://github.com/ylkhayat/elbuffeh/pull/22' } : { state: 'done', prUrl: 'https://github.com/ylkhayat/elbuffeh/pull/22' } })
+  }
+  if (p === '/visuals/setup/ylkhayat/elbuffeh/activity' && process.env.MOCK_MAP === 'running') return json(res, [{ at: new Date().toISOString(), kind: 'text', text: 'Steps 1–3 are done: the stories are committed and pushed at c6343c9, and both Storybooks are built into the visuals folder. Checking that the branch is still current, then re-writing the board capture script.' }])
   if (decodeURIComponent(p) === `/prs/${prView.id}/visuals`) return json(res, { ...prView, sets: [prSet] })
   if (p.startsWith('/visuals/') && p.endsWith('/activity')) return json(res, [])
   // a baseline's Storybook, made up: each story's page drawn live from the same boxes (a dot blinks: it is a page)

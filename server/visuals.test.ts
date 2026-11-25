@@ -131,7 +131,7 @@ test('with Storybook, the capture reads its components manifest and tests the st
 test('the baseline carries the board: screens by domain and step, each with every component on it', async () => {
   const { setupPrompt, setsOf, shotsDir, baselineId } = await import('./visuals.ts')
   const p = setupPrompt({ repo: 'a/b', dir: '/d' })
-  assert.match(p, /as a storyline/); assert.match(p, /The board \(the blueprint of the app\)/); assert.match(p, /"domain":"<Domain>","variant"/); assert.match(p, /One mark per component instance/)
+  assert.match(p, /as a storyline/); assert.match(p, /The blueprint is a map of the project/); assert.match(p, /"domain":"<Domain>","variant"/); assert.match(p, /one mark per component instance/)
   const id = baselineId('ylkhayat/elbuffeh'), dir = shotsDir(id, 'ccccccc')
   mkdirSync(dir, { recursive: true })
   const marks = Array.from({ length: 70 }, (_, i) => ({ x: i, y: 1, w: 1, h: 5, part: 'Chip' }))
@@ -166,6 +166,19 @@ test('a baseline serves its built Storybook, and nothing else: no PR capture, no
 test('the board alone, for a baseline set up before it: screens, the built Storybook, marks, the earlier shots kept', async () => {
   const { boardPrompt } = await import('./visuals.ts')
   const p = boardPrompt({ repo: 'ylkhayat/elbuffeh', dir: '/d', last: '84ff594', said: 'rumanna first' })
-  assert.match(p, /not its board/); assert.match(p, /storybook build\) into \/d\//); assert.match(p, /the manifest of \/d\/84ff594\/ as it is \(copy its images too\)/)
-  assert.match(p, /"book":"<package name>","story":"<story-id>"/); assert.match(p, /One mark per component instance/); assert.match(p, /rumanna first/)
+  assert.match(p, /needs its screens/); assert.match(p, /Save into \/d\//); assert.match(p, /the manifest of \/d\/84ff594\/ as it is \(copy its images too\)/)
+  assert.match(p, /"book":"<package name>","story":"<story-id>"/); assert.match(p, /one mark per component instance/); assert.match(p, /rumanna first/)
+})
+
+test('the method is a skill of yours when a machine has it: its words take the built-in ones\' place, the ask and the format stay Concierge\'s', async () => {
+  const { capturePrompt, boardPrompt, setupPrompt, METHODS } = await import('./visuals.ts')
+  const pr = { id: 'a/b#1', number: 1, title: 't', base: 'main', head: 'x', headSha: 'abcdef1234' }
+  const mine = capturePrompt({ pr, out: '/o', files: [], how: 'MY WAY OF CAPTURING' })
+  assert.match(mine, /MY WAY OF CAPTURING/); assert.ok(!mine.includes(METHODS.capture.slice(0, 60))) // the skill's, not the built-in
+  assert.match(mine, /pull request #1/); assert.match(mine, /Save into \/o/); assert.match(mine, /"impact":\{"changed"/) // the ask and the format, as ever
+  assert.ok(capturePrompt({ pr, out: '/o', files: [] }).includes(METHODS.capture)) // no skill here: Concierge's own words
+  const b = boardPrompt({ repo: 'a/b', dir: '/d', how: 'MY WAY OF DRAWING' })
+  assert.match(b, /MY WAY OF DRAWING/); assert.ok(!b.includes('as a storyline')); assert.match(b, /"domain":"<Domain>"/)
+  const s = setupPrompt({ repo: 'a/b', dir: '/d', how: 'MY SETUP', map: 'MY MAP' })
+  assert.match(s, /MY SETUP/); assert.match(s, /MY MAP/); assert.match(s, /PR <url>/)
 })

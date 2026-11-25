@@ -1,7 +1,7 @@
 // Design: what the pull requests look like, before and after, without opening them. Built like Plans: the list on the
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
-import { ArrowUp, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowUp, Check, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, ZoomIn, ZoomOut } from 'lucide-react'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
 import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
@@ -133,64 +133,116 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   const mapped = screens.length > 0, onMap = mapped && view === 'map'
   const parts = set?.impact?.changed ?? []
   const numbers = new Map(parts.map((c, i) => [c.name, i + 1]))
-  // the conversation: open while there is nothing to look at yet (or it works), folded away beside a baseline
-  const showTalk = talk ?? (!set || busy(t))
+  // the conversation: a click away (the onboarding and the map say where things stand)
+  const showTalk = talk ?? false
+  // what the agent last said, for the onboarding's progress (the whole of it is the conversation)
+  const said = busy(t) ? [...feed].reverse().find((x) => x.kind === 'text' || x.kind === 'result')?.text : undefined
+  const making = !!(t as { board?: boolean } | undefined)?.board || !!set
   return (
     <div className="flex h-full min-h-0">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div className={`space-y-3 p-4 ${set ? '' : 'mx-auto max-w-5xl'}`}>
+        <div className="space-y-3 p-4">
           <header className="card px-4 py-3.5">
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-meta text-fg-3">{repo} · blueprint</p>
-                <h2 className="text-title font-semibold text-fg-1">{mapped ? `The map of ${repo.split('/')[1]}` : set ? 'Its components, not yet its map' : 'No Storybook yet'}</h2>
+                <h2 className="text-title font-semibold text-fg-1">{mapped ? `The map of ${repo.split('/')[1]}` : `${repo.split('/')[1]}: no map yet`}</h2>
                 <p className={`mt-0.5 text-meta ${t?.state === 'failed' ? 'text-wait-text' : busy(t) ? 'text-run-text' : 'text-fg-3'}`}>
-                  {t?.state === 'running' ? `Setting its Storybook up${t.machine ? ` on ${t.machine}` : ''}: layers, stories, docs, then the first shot…`
+                  {t?.state === 'running' ? `${making ? 'Making its map' : 'Setting its Storybook up'}${t.machine ? ` on ${t.machine}` : ''}…`
                     : t?.state === 'queued' ? 'Waiting for a machine with its checkout'
                     : t?.state === 'failed' ? `It didn't finish: ${t.error ?? 'it failed'}`
                     : mapped ? `${screens.length} screens in ${new Set(screens.map((x) => x.domain)).size} domains, ${parts.length} components · ${new Date(set!.at).toLocaleString()}`
-                    : set ? `${set.shots.length} shots of ${parts.length} components, ${new Date(set.at).toLocaleString()}`
-                    : 'Its PRs are captured from the running app, screen by screen. With stories, each component is captured on its own, in each of its states.'}
+                    : set ? `${parts.length} components in stories, ${new Date(set.at).toLocaleString()}`
+                    : 'Not set up yet'}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {mapped && <Tabs size="sm" label="What to look at" value={view} onChange={setView} options={[{ id: 'map' as const, label: 'Map' }, { id: 'components' as const, label: `Components · ${parts.length}` }]} />}
+                {set && <Tabs size="sm" label="What to look at" value={view} onChange={setView} options={[{ id: 'map' as const, label: 'Map' }, { id: 'components' as const, label: `Components · ${parts.length}` }]} />}
                 <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
                 {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
                 {busy(t)
                   ? <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
-                  : <button onClick={() => post({ setup: true }, set ? 'Taking the baseline again' : 'Setting its Storybook up')} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Wand className="size-3.5" />{set ? 'Shoot again' : 'Set up Storybook'}</button>}
+                  : mapped && <button onClick={() => post({ board: true }, 'Drawing the map again, from the code as it is now')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Wand className="size-3.5" />Draw it again</button>}
               </div>
             </div>
           </header>
-          {set && !set.shots.some((x) => x.domain) && (
-            <div className="card flex flex-wrap items-center gap-3 px-4 py-3.5">
-              <LayoutGrid className="size-5 shrink-0 text-accent-text" />
-              <div className="min-w-0 flex-1">
-                <p className="text-small font-semibold text-fg-1">{busy(t) ? 'Making the map…' : 'No map yet'}</p>
-                <p className="text-meta text-fg-3">The blueprint is a map of the project: every screen in small and live, a row per domain, a column per step or variation, each component lit wherever it shows. This one has each component's stories, but not its screens. {busy(t) ? 'The map shows here when the run ends.' : 'It was set up before the map existed, or without its screens.'}</p>
-              </div>
-              {!busy(t) && <button onClick={() => post({ board: true }, 'Making the blueprint: the screens, the built Storybook, every component marked')} className="btn-primary btn-sm inline-flex shrink-0 items-center gap-1.5"><LayoutGrid className="size-3.5" />Make the blueprint</button>}
-            </div>
-          )}
           {onMap ? <Blueprint pr={baselineKey(repo)} set={set!} screens={screens} parts={parts} numbers={numbers} onStates={() => setView('components')} fill />
-            : set ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} noBoard /> : !busy(t) && (
-            <div className="card space-y-2 px-4 py-4 text-small text-fg-2">
-              <p className="font-medium text-fg-1">What Set up Storybook does, as one pull request</p>
-              <ol className="list-decimal space-y-1 pl-5 text-fg-3">
-                <li>Storybook per UI package, in layers: foundations, primitives, components, patterns, screens.</li>
-                <li>Shared decorators for every provider, one named viewport set, data mocked at the network.</li>
-                <li>Each component's stories as its full state matrix; one screen story per app.</li>
-                <li>Design docs: foundations from the tokens, a page per primitive.</li>
-                <li>The first shot: every story at phone and laptop, here.</li>
-                <li>The blueprint: every screen in small on one board, a row per domain, a column per step, each component lit wherever it shows.</li>
-              </ol>
-              <p className="text-meta text-fg-4">Say in the conversation what to start with, or what to leave out.</p>
-            </div>
-          )}
+            : set && view === 'components' ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} noBoard />
+            : <MapOnboarding name={repo.split('/')[1]} has={set ? parts.length : 0} task={t} said={said}
+                             onStart={() => (set ? post({ board: true }, 'Making the map: its screens, the built Storybook, every component marked') : post({ setup: true }, 'Setting its Storybook up, then its map'))}
+                             onStop={() => post({ cancel: true }, 'Stopped')} onComponents={set ? () => setView('components') : undefined} onTalk={() => setTalk(true)} />}
         </div>
       </div>
       {showTalk && <Conversation id={baselineKey(repo)} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast} />}
+    </div>
+  )
+}
+
+/**
+ * No map yet: what the blueprint is, drawn small, and the one thing to do. With stories already there (`has`), only
+ * the map is left to make; while it is being made, the steps, and the agent's last words.
+ */
+function MapOnboarding({ name, has, task, said, onStart, onStop, onComponents, onTalk }: {
+  name: string; has: number; task?: VisualsTask & { board?: boolean }; said?: string; onStart: () => void; onStop: () => void; onComponents?: () => void; onTalk: () => void
+}) {
+  const working = busy(task), failed = task?.state === 'failed'
+  // a picture of it: three domains, their steps, one component lit across them
+  const ROWS = [[[18, 30, 20, 30], [44, 30, 20, 30], [70, 30, 20, 30]], [[18, 22, 30, 50], [56, 22, 34, 22]], [[18, 26, 44, 20], [18, 54, 20, 22], [70, 26, 20, 48]]]
+  const LIT = new Set(['0:1', '1:1', '2:1', '0:2'])
+  const steps = [
+    { done: has > 0, text: has > 0 ? `Storybook and stories: ${has} components` : 'Storybook, with every component in stories', now: working && !has },
+    { done: false, text: 'The screens, as a storyline: each domain, step by step', now: working && has > 0 },
+    { done: false, text: 'The Storybook built in, so the screens are the pages themselves' },
+    { done: false, text: 'Every component found on every screen' },
+  ]
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col items-center px-4 py-10 text-center">
+      <div aria-hidden className="w-full max-w-md rounded-panel p-4 ring-1 ring-line" style={{ backgroundImage: 'linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+        <div className="space-y-2.5">
+          {ROWS.map((row, r) => (
+            <div key={r} className="flex items-center gap-2.5">
+              <span className="h-1.5 w-10 shrink-0 rounded-full bg-fill-strong" />
+              {[0, 1, 2].map((c) => (
+                <span key={c} className={`relative aspect-[16/10] flex-1 overflow-hidden rounded-ctl bg-surface-1 shadow-e1 ring-1 ring-line ${working ? 'animate-pulse' : ''}`} style={{ animationDelay: `${(r * 3 + c) * 120}ms` }}>
+                  {row.map(([x, y, w, h], i) => <span key={i} className={`absolute rounded-[2px] ${LIT.has(`${r}:${i}`) && c !== 2 - r ? 'bg-accent/70 ring-1 ring-accent' : 'bg-fill-strong'}`} style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%` }} />)}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <h2 className="mt-7 text-display font-semibold tracking-tight text-fg-1">{working ? `Drawing the map of ${name}` : `A map of ${name}`}</h2>
+      <p className="mt-2 max-w-lg text-body text-fg-3">Every screen of the app on one board, small and live: a row for each domain, a column for each step and variation. Point at a component and it lights up wherever it is used.</p>
+
+      <ol className="mt-6 w-full max-w-md space-y-2 text-left">
+        {steps.map((x, i) => (
+          <li key={i} className="flex items-center gap-2.5 text-small">
+            <span className={`flex size-5 shrink-0 items-center justify-center rounded-full text-micro font-semibold ${x.done ? 'bg-ok/15 text-ok-text' : x.now ? 'bg-accent/15 text-accent-text' : 'bg-fill text-fg-3'}`}>
+              {x.done ? <Check className="size-3" strokeWidth={3} /> : x.now ? <LoaderCircle className="size-3 animate-spin" /> : i + 1}
+            </span>
+            <span className={x.done ? 'text-fg-3' : x.now ? 'font-medium text-fg-1' : 'text-fg-2'}>{x.text}</span>
+          </li>
+        ))}
+      </ol>
+
+      {working ? (
+        <div className="mt-7 w-full max-w-md space-y-3">
+          {said && <p className="line-clamp-3 rounded-card bg-fill/60 px-3.5 py-2.5 text-left text-small text-fg-2 ring-1 ring-line">{said}</p>}
+          <p className="text-meta text-fg-3">{task?.state === 'queued' ? 'Waiting for a machine that has its checkout.' : `An agent is at it${task?.machine ? ` on ${task.machine}` : ''}. You can leave this page: the map shows here when it is done.`}</p>
+          <p className="flex items-center justify-center gap-3">
+            <button onClick={onTalk} className="btn-outline btn-sm inline-flex items-center gap-1.5"><MessageSquare className="size-3.5" />Follow it</button>
+            <button onClick={onStop} className="btn-ghost btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
+          </p>
+        </div>
+      ) : (
+        <div className="mt-7 space-y-3">
+          {failed && <p className="max-w-md rounded-card bg-wait/10 px-3.5 py-2.5 text-left text-small text-wait-text ring-1 ring-wait/20">The last try didn't finish: {task?.error ?? 'it failed'}</p>}
+          <button onClick={onStart} className="btn-primary btn-lg inline-flex items-center gap-2"><LayoutGrid className="size-4" />{has ? (failed ? 'Try again' : 'Make the map') : 'Set up Storybook and make the map'}</button>
+          <p className="max-w-md text-meta text-fg-4">{has ? 'The agent that set the Storybook up goes on: it adds the screens and their components, as commits on its pull request.' : 'One agent run, one pull request: Storybook in layers, every component in stories, the design docs, then the map.'}</p>
+          {onComponents && <button onClick={onComponents} className="text-meta font-medium text-accent-text hover:underline">See its {has} components' stories</button>}
+        </div>
+      )}
     </div>
   )
 }

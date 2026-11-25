@@ -36,7 +36,7 @@ import { draining, heldWhy, machines, place, route, slotsHere, signInFor, token,
 import { remoteAgent } from './worker.ts'
 import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
-import { keptMethod } from './method.ts'
+import { keptMethod, skillBody, skillFor } from './method.ts'
 import { DECIDE_NOTE, fromAgent, hashOf, proseOf, type NextSteps } from './next.ts'
 
 /** A run's final words: the prose kept as its summary, and the decisions block it ended with as its next steps. */
@@ -611,7 +611,7 @@ export function pump() {
         place: { repo: p.repo, provider: p.job.provider ?? providerFor(p.mine ? 'revise' : 'review', p.repo), prefer: p.job.machine, review: true } }] : []),
       // a capture of its screens (visuals.ts): after the reviews, on a machine that has the checkout (its session is
       // where it ran before); someone else's PR runs fenced, as a review of it does
-      ...(p.visuals?.state === 'queued' && !children.has(`visuals:${p.id}`) && available(p.visuals.provider ?? providerFor('review', p.repo)) ? [{ prio: 1, at: p.visuals.queuedAt, go: (on?: string) => startVisuals(p, on),
+      ...(p.visuals?.state === 'queued' && !children.has(`visuals:${p.id}`) && available(p.visuals.provider ?? providerFor('review', p.repo)) ? [{ prio: 1, at: p.visuals.queuedAt, go: (on?: string) => void startVisuals(p, on),
         place: { repo: p.repo, provider: p.visuals.provider ?? providerFor('review', p.repo), prefer: p.visuals.machine, review: !p.mine } }] : []),
       // an explanation waits while one below it in the stack is still being written: it reads theirs
       ...(p.explain?.state === 'queued' && !below(p).some((b) => b.explain?.state === 'queued' || b.explain?.state === 'running')
@@ -813,8 +813,12 @@ export function cancelVisuals(pr: Pr) {
   children.get(visualsKey(pr))?.kill('SIGTERM')
 }
 
-function startVisuals(pr: Pr, on?: string) {
+/** A Design method as your skill says it (Settings → Skills), when it is installed here: else Concierge's own words. */
+const how = (f: 'visuals' | 'blueprint' | 'storybook') => skillBody(skillFor(f)).catch(() => undefined)
+
+async function startVisuals(pr: Pr, on?: string) {
   const t = pr.visuals!, key = visualsKey(pr), now = new Date().toISOString()
+  const method = await how('visuals')
   const where = on ?? fleet.machine
   // your words go on in the agent's own session, where it ran before; anywhere else it starts over with them
   const again = !!t.sessionId && !!t.said && (!t.machine || t.machine === where)
@@ -829,7 +833,7 @@ function startVisuals(pr: Pr, on?: string) {
     key, label: `Visuals #${pr.number}`, cwd: config.repos[pr.repo], on, provider: t.provider, untrusted: !pr.mine,
     onSession: (id) => { if (t.sessionId !== id) { t.sessionId = id; save() } },
     args: [
-      '-p', capturePrompt({ pr, out, files: pr.ui?.files ?? [], said: t.said, again }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
+      '-p', capturePrompt({ pr, out, files: pr.ui?.files ?? [], said: t.said, again, how: method }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
       '--output-format', 'stream-json', '--verbose', '--allowedTools', 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
       '--add-dir', VISUALS_DIR, '--max-budget-usd', '4',
     ],
@@ -879,6 +883,7 @@ async function startSetup(repo: string, on?: string) {
   // your words, or the board alone, go on in the session that set it up (it knows the repository), where that ran
   const again = !!t.sessionId && (!!t.said || !!t.board) && t.machine === where
   const last = t.board ? (await setsOf(baselineId(repo)).catch(() => []))[0]?.sha : undefined
+  const [setup, map] = await Promise.all([how('storybook'), how('blueprint')])
   const sid = again ? t.sessionId! : randomUUID()
   Object.assign(t, { state: 'running', startedAt: now, endedAt: undefined, error: undefined, costUsd: undefined, summary: undefined, sessionId: sid, machine: where, provider: t.provider ?? providerFor('exec', repo) })
   note(key, { at: now, kind: 'section', text: t.board ? `Blueprint for ${repo}` : `Storybook for ${repo}` })
@@ -890,7 +895,7 @@ async function startSetup(repo: string, on?: string) {
     key, label: `Storybook ${repo}`, cwd: config.repos[repo], on, provider: t.provider,
     onSession: (id) => { if (t.sessionId !== id) { t.sessionId = id; save() } },
     args: [
-      '-p', t.board ? boardPrompt({ repo, dir, last, said: t.said }) : again ? `${t.said}\n\nGo on with the Storybook and its first shot with that in mind.` : setupPrompt({ repo, dir, said: t.said }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
+      '-p', t.board ? boardPrompt({ repo, dir, last, said: t.said, how: map }) : again ? `${t.said}\n\nGo on with the Storybook and its map with that in mind.` : setupPrompt({ repo, dir, said: t.said, how: setup, map }), ...(again ? ['--resume', sid] : ['--session-id', sid]),
       '--output-format', 'stream-json', '--verbose', '--allowedTools', ...config.exec.allowedTools, 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Skill',
       '--add-dir', VISUALS_DIR, '--max-budget-usd', '25',
     ],

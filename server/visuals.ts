@@ -172,61 +172,19 @@ export async function storybookFile(slug: string, sha: string, rest: string): Pr
 }
 export const hasSet = (prId: string, sha: string) => existsSync(join(shotsDir(prId, sha), 'manifest.json'))
 
-// --- a repository's baseline: its Storybook set up, and the first shot of every component -----------------------------
+// --- what the agents are asked ----------------------------------------------------------------------------------------
+// As everywhere in Concierge (method.ts): the method is a skill of yours (Settings → Skills: Visuals, Blueprint,
+// Storybook setup), and Concierge brings only the ask (which PR, which repository, where to save) and the format its
+// pages read back (the manifest). The methods below are the ones used when a machine doesn't have the skill; the skills
+// in the skill source say the same, and are yours to change. Nothing here is ever shown as a message of yours.
+
 /** The id a repository's baseline is kept under, beside its PRs' captures (visuals/repo-<owner>-<repo>/<sha>). */
 export const baselineId = (repo: string) => `repo:${repo}`
 
-/**
- * Set a repository's Storybook up (as a PR, through the Storybook skills) and capture its first shot: every story it
- * wrote, at phone and laptop, the repository's baseline in Design. For a repository whose captures came from the
- * running app: once it has stories, every PR is captured from them, component by component.
- */
-export function setupPrompt(p: { repo: string; dir: string; said?: string }): string {
-  return `Give ${p.repo} a Storybook, as a pull request, and take its first shot.${p.said ? `\n\nWhat I asked for: ${p.said}` : ''}
-
-1. Work in a new worktree on a branch \`storybook/setup\` off the up-to-date default branch (git worktree add, never your checkout's own branch).
-2. Set Storybook up the way the storybook-architecture skill says: one per UI package (composed at the root when there are several), the layers, the shared decorators for every provider, one named viewport set, data mocked at the network, and the agent tooling: @storybook/addon-a11y, @storybook/addon-vitest, @storybook/addon-mcp and the components manifest (features.componentsManifest), so the next agents read the components from it and test through it.
-3. Write stories the way the storybook-stories skill says: every component the app's screens are built from, primitives first, each as its state matrix composed from its parts' stories (a story per state a person meets, prop combinations in controls), each component, prop and story with its JSDoc @summary. Then the screens, as a storyline: for each domain of the app (an area a person would name: its navigation's entries, its route folders), a screen story for each step and state a person goes through there, in order (arriving with nothing, filled, in the middle of the main action, done, when it fails), with mocked data. Many components: cover every component of those screens, and list the rest in the PR.
-4. Write the docs the way the design-docs skill says: the foundations pages generated from the tokens, and a page for each primitive.
-5. Prove it as the skills say, working the loop (run the tests, fix, run again): for each package storybook build succeeds, vitest --project=storybook passes with no a11y violation, and /manifests/components.json lists every component with its summary and props. Commit (conventional commits), push, and open the PR: title "Storybook: the design system, in stories"; its body says what each layer holds, how to add a story, and what is covered and what isn't yet.
-6. The first shot: screenshot every story you wrote (#storybook-root of its iframe page, with Playwright) at the phone and laptop viewports, into ${p.dir}/<the full sha of your last commit>/ (make it): after-<story-id>-<viewport>.png (letters, digits, dots and dashes only; there is no before: this is the baseline), and manifest.json:
-{"head":"<that sha>","at":"<now, ISO>","source":"storybook","summary":"<what the design system holds, in two or three sentences>","impact":{"changed":[{"name":"<Component>","file":"<path>","kind":"component"|"layout"|"screen"}],"affected":[]},"shots":[{"name":"<Component> · <story>","lens":"changed","part":"<Component>","viewport":"<viewport name>","width":<viewport width>,"note":"<the state it shows>","after":"after-<story-id>-<viewport>.png"}]}
-At most 80 of these shots: each component's default story at both viewports first, then its other states at laptop.
-7. The board (the blueprint of the app): screenshot every screen story at the laptop viewport, the whole page (after-board-<story-id>.png), and the same again small for the board itself (thumb-board-<story-id>.png, 480px wide: the same page at a device scale factor of 480 / the viewport's width), and add each to the manifest's shots with its place and every component on it. The board shows these screens live, from the Storybook itself: build each package's Storybook (storybook build) into ${p.dir}/<that sha>/storybook/<package name>/ (static files, with its mockServiceWorker.js), and give each screen its book (that folder's name), its story id and the page's height in px at the laptop width:
-{"name":"<Domain> · <step or state>","lens":"affected","domain":"<Domain>","variant":"<step or state, a few words>","viewport":"laptop","width":<width>,"note":"<what a person does here>","after":"after-board-<story-id>.png","thumb":"thumb-board-<story-id>.png","book":"<package name>","story":"<story-id>","height":<page height in px>,"marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<Component, as named in the impact>"}]}
-One mark per component instance that shows (Playwright boundingBox of its root element, as percent of the screenshot; find each root by its role, test id or the element its story renders), nested ones included, 60 at most a screen. Domains in the order of the app's navigation, a domain's screens in the order a person meets them: the board lays them out as rows and columns in that order.
-End with the PR's address on its own line: PR <url>.`
-}
-
-/**
- * The board alone, for a baseline that has its Storybook and its components' shots but no blueprint yet (it was set up
- * before the board, or its screens were left out): the screens as a storyline, the Storybook built beside the baseline,
- * and every screen shot with every component marked. Into a new folder for the new commit, the earlier shots kept.
- */
-export function boardPrompt(p: { repo: string; dir: string; last?: string; said?: string }): string {
-  return `The baseline of ${p.repo} has its Storybook and its components' shots, but not its board: the blueprint of the app, every screen in small, a row per domain and a column per step. Add it.${p.said ? `\n\nWhat I asked for: ${p.said}` : ''}
-
-1. Work on the Storybook's branch (\`storybook/setup\`, its PR), in a worktree, up to date.
-2. The screens, as a storyline: for each domain of each app (an area a person would name: its navigation's entries, its route folders), a screen story for each step and state a person goes through there, in order (arriving with nothing, filled, in the middle of the main action, done, when it fails), with mocked data, the way the storybook-stories skill says. Keep the ones that exist; write the missing ones, at least three domains an app and two steps a domain where the app has them. Their tests pass (vitest --project=storybook). Commit (conventional commits) and push to the PR.
-3. Build each package's Storybook (storybook build) into ${p.dir}/<the full sha of your last commit>/storybook/<package name>/ (static files, with its mockServiceWorker.js): the board shows the screens live from it.
-4. Screenshot every screen story at the laptop viewport, the whole page (after-board-<story-id>.png), and the same again small (thumb-board-<story-id>.png, 480px wide: the same page at a device scale factor of 480 / the viewport's width), into ${p.dir}/<that sha>/.
-5. Write ${p.dir}/<that sha>/manifest.json: ${p.last ? `the manifest of ${p.dir}/${p.last}/ as it is (copy its images too), its head and at made yours, ` : 'the manifest as the baseline has it, '}with one more shot per screen:
-{"name":"<Domain> · <step or state>","lens":"affected","domain":"<Domain>","variant":"<step or state, a few words>","viewport":"laptop","width":<width>,"note":"<what a person does here>","after":"after-board-<story-id>.png","thumb":"thumb-board-<story-id>.png","book":"<package name>","story":"<story-id>","height":<page height in px>,"marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<Component, as named in the impact>"}]}
-One mark per component instance that shows (Playwright boundingBox of its root element, as percent of the screenshot; find each root by its role, test id or the element its story renders), nested ones included, 60 at most a screen; every part it names is in the impact's changed list (add the ones that aren't). Several apps: the domain carries the app when two share a name ("Buffehgi · Inbox"). Domains in the order of the app's navigation, a domain's screens in the order a person meets them.
-End with one short paragraph: the domains and how many screens each has.`
-}
-
-// --- what the agent is asked ------------------------------------------------------------------------------------------
-export function capturePrompt(p: { pr: { id: string; number: number; title: string; base: string; head: string; headSha: string }; out: string; files: string[]; said?: string; again?: boolean }): string {
-  if (p.again) return `${p.said ?? 'Capture again.'}
-
-Capture again with that in mind, the same way as before, into ${p.out} (a new folder for the PR's current commit ${p.pr.headSha.slice(0, 7)}: write all of it there, the manifest included). End with one short paragraph on what changed visually.`
-  return `Show what pull request #${p.pr.number} ("${p.pr.title}") changes visually, so a designer can judge it from screenshots alone, without opening it.
-
-Where: the PR's branch \`${p.pr.head}\` (commit ${p.pr.headSha.slice(0, 7)}) is the after; its base \`${p.pr.base}\` is the before. Make a worktree of each in a scratch folder of your own (git worktree add, never your checkout's own branch), install what they need, and take them off when you are done.
-${p.files.length ? `The files it changes that people see: ${p.files.slice(0, 30).join(', ')}.` : 'Find from its diff which screens and components it changes.'}
-
-First, the impact (read the after worktree's code, not guesses):
+/** The methods, as Concierge has them built in: what each skill says when it isn't installed (`how` not given). */
+export const METHODS = {
+  // capture-visuals: a PR's screens, before and after
+  capture: `First, the impact (read the after worktree's code, not guesses):
 - Changed: each component, layout or screen the PR edits (its changed files that render something), by its exported name and file.
 - Affected: every component, layout and screen that imports a changed one, directly or through others, up to three imports away (follow the imports, re-exports and barrel files included), each with which changed ones reach it ("via") and how far ("depth": 1 for a direct import). Kind: "screen" for a route's page, "layout" for a layout, shell or frame, else "component".
 
@@ -236,14 +194,86 @@ Then capture through both lenses:
 - Marks: on every affected shot, mark where each changed component sits (Playwright boundingBox of its element, as percent of the screenshot's width and height, on the side it is on); on a changed shot, mark the parts inside it that the change alters most, when there are some. Each mark names its part and says in a few words what changed there.
 
 How:
+- Make a worktree of the PR's branch (the after) and of its base (the before) in a scratch folder of your own (git worktree add, never your checkout's own branch), install what they need, and take them off when you are done.
 - The repository has Storybook (a .storybook folder, or @storybook in a package.json): run its dev server in each worktree (one port each). With its components manifest on (features.componentsManifest), read http://localhost:<port>/manifests/components.json: each component's file, props, summary and stories with their ids. It maps the changed files to their components and stories, and its imports give the impact, without searching files. Capture the stories of the changed components, each state the change touches: screenshot each story's iframe page (/iframe.html?id=<story id>&viewMode=story, #storybook-root) with Playwright, at the viewports the story lists in parameters.capture.viewports, else the repo's viewport set's phone and laptop sizes (its .storybook/preview, named as the repo names them). Changed components without stories: write their stories with the storybook-stories skill in the after worktree only, never committed, run their tests (vitest --project=storybook) until they pass, and say in the summary which stories the PR should add.
 - No Storybook: run the app (its dev server, the way its README or package.json says) and screenshot the screens it changes with Playwright at phone (375 wide) and laptop (1280 wide), logged out unless a seed or test account makes the screen meaningful. A screen that needs data you can't get: say so in its note, never fake it. Say in the summary that stories (the storybook-architecture skill) would make these captures exact.
 - The same screens, the same viewports and the same state before and after. A screen that is new has no before; one that is gone has no after.
 - Never push, commit to the PR, or open anything; this only looks.
-${p.said ? `\nWhat I asked for: ${p.said}\n` : ''}
+- At most 30 shots: every changed component in focus first, then the affected layouts and screens that matter most.`,
+
+  // set-up-storybook: a repository's Storybook, as a PR
+  storybook: `1. Work in a new worktree on a branch \`storybook/setup\` off the up-to-date default branch (git worktree add, never your checkout's own branch).
+2. Set Storybook up the way the storybook-architecture skill says: one per UI package (composed at the root when there are several), the layers, the shared decorators for every provider, one named viewport set, data mocked at the network, and the agent tooling: @storybook/addon-a11y, @storybook/addon-vitest, @storybook/addon-mcp and the components manifest (features.componentsManifest), so the next agents read the components from it and test through it.
+3. Write stories the way the storybook-stories skill says: every component the app's screens are built from, primitives first, each as its state matrix composed from its parts' stories (a story per state a person meets, prop combinations in controls), each component, prop and story with its JSDoc @summary. Many components: cover every component of the main screens, and list the rest in the PR.
+4. Write the docs the way the design-docs skill says: the foundations pages generated from the tokens, and a page for each primitive.
+5. Prove it as the skills say, working the loop (run the tests, fix, run again): for each package storybook build succeeds, vitest --project=storybook passes with no a11y violation, and /manifests/components.json lists every component with its summary and props. Commit (conventional commits), push, and open the PR: title "Storybook: the design system, in stories"; its body says what each layer holds, how to add a story, and what is covered and what isn't yet.
+6. The first shot: screenshot every story you wrote (#storybook-root of its iframe page, with Playwright) at the phone and laptop viewports (after-<story-id>-<viewport>.png; there is no before: this is the baseline). At most 80 of these shots: each component's default story at both viewports first, then its other states at laptop.
+7. Then the map, as the draw-blueprint skill says.`,
+
+  // draw-blueprint: the map of a project, its screens by domain and step
+  blueprint: `The blueprint is a map of the project: every screen in small, a row per domain and a column per step or variation, each component marked wherever it shows.
+1. Work on the Storybook's branch (\`storybook/setup\` until its PR is merged, then a branch off the default one), in a worktree, up to date.
+2. The screens, as a storyline: for each domain of each app (an area a person would name: its navigation's entries, its route folders), a screen story for each step and state a person goes through there, in order (arriving with nothing, filled, in the middle of the main action, done, when it fails), with mocked data, the way the storybook-stories skill says. Keep the ones that exist; write the missing ones, at least three domains an app and two steps a domain where the app has them. Their tests pass (vitest --project=storybook). Commit (conventional commits) and push.
+3. Build each package's Storybook (storybook build) into the capture's folder, under storybook/<package name>/ (static files, with its mockServiceWorker.js): the map shows the screens live from it.
+4. Screenshot every screen story at the laptop viewport, the whole page (after-board-<story-id>.png), and the same again small (thumb-board-<story-id>.png, 480px wide: the same page at a device scale factor of 480 / the viewport's width).
+5. Mark every component on every screen: one mark per component instance that shows (Playwright boundingBox of its root element, as percent of the screenshot; find each root by its role, test id or the element its story renders), nested ones included, 60 at most a screen. Every part a mark names is in the impact's changed list (add the ones that aren't).
+6. Several apps: the domain carries the app when two share a name ("Buffehgi · Inbox"). Domains in the order of the app's navigation, a domain's screens in the order a person meets them: the map lays them out as rows and columns in that order.`,
+}
+
+// the formats: what the pages read back, the same whoever's method was followed
+const SHOT = `{"name":"<Component or screen> · <state>","lens":"changed"|"affected","part":"<its name in the impact>","viewport":"<viewport name>","width":<viewport width>,"note":"<what to look at here>","before":"before-<name>-<viewport>.png","after":"after-<name>-<viewport>.png","marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<changed name>","label":"<what changed there>","side":"after"}]}`
+const IMPACT = `"impact":{"changed":[{"name":"<Component>","file":"<path in the repo>","kind":"component"|"layout"|"screen"}],"affected":[{"name":"<Component>","file":"<path>","kind":"…","via":["<changed name>"],"depth":1}]}`
+const SCREEN = `{"name":"<Domain> · <step or state>","lens":"affected","domain":"<Domain>","variant":"<step or state, a few words>","viewport":"laptop","width":<width>,"note":"<what a person does here>","after":"after-board-<story-id>.png","thumb":"thumb-board-<story-id>.png","book":"<package name>","story":"<story-id>","height":<page height in px>,"marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<Component, as named in the impact>"}]}`
+const said = (x?: string) => (x ? `\n\nWhat I asked for: ${x}` : '')
+
+/**
+ * Set a repository's Storybook up (as a PR) and take its first shot and its map. `how`: your set-up-storybook and
+ * draw-blueprint skills' words, when this machine has them.
+ */
+export function setupPrompt(p: { repo: string; dir: string; said?: string; how?: string; map?: string }): string {
+  return `Give ${p.repo} a Storybook, as a pull request, then take its first shot and draw its map.${said(p.said)}
+
+${p.how ?? METHODS.storybook}
+
+The map:
+${p.map ?? METHODS.blueprint}
+
+Save everything into ${p.dir}/<the full sha of your last commit>/ (make it; file names in letters, digits, dots and dashes only), with manifest.json:
+{"head":"<that sha>","at":"<now, ISO>","source":"storybook","summary":"<what the design system holds, in two or three sentences>","impact":{"changed":[{"name":"<Component>","file":"<path>","kind":"component"|"layout"|"screen"}],"affected":[]},"shots":[<one per story shot>, <one per screen of the map>]}
+A story's shot: {"name":"<Component> · <story>","lens":"changed","part":"<Component>","viewport":"<viewport name>","width":<viewport width>,"note":"<the state it shows>","after":"after-<story-id>-<viewport>.png"}
+A screen of the map: ${SCREEN}
+The built Storybooks go in ${p.dir}/<that sha>/storybook/<package name>/.
+End with the PR's address on its own line: PR <url>.`
+}
+
+/**
+ * The map alone, for a baseline that has its Storybook and its components' shots (set up before the map, or drawn
+ * again from the code as it is now). Into a new folder for the new commit, the earlier shots kept. `how`: your
+ * draw-blueprint skill's words, when this machine has it.
+ */
+export function boardPrompt(p: { repo: string; dir: string; last?: string; said?: string; how?: string }): string {
+  return `Draw the map of ${p.repo}: its baseline has its Storybook and its components' shots, and needs its screens.${said(p.said)}
+
+${p.how ?? METHODS.blueprint}
+
+Save into ${p.dir}/<the full sha of your last commit>/ (make it; file names in letters, digits, dots and dashes only): the built Storybooks under storybook/<package name>/, the screens' images, and manifest.json: ${p.last ? `the manifest of ${p.dir}/${p.last}/ as it is (copy its images too), its head and at made yours, its screens of an earlier map replaced, ` : 'the manifest as the baseline has it, '}with one shot per screen:
+${SCREEN}
+End with one short paragraph: the domains and how many screens each has.`
+}
+
+/** Show what a PR changes visually. `how`: your capture-visuals skill's words, when this machine has it. */
+export function capturePrompt(p: { pr: { id: string; number: number; title: string; base: string; head: string; headSha: string }; out: string; files: string[]; said?: string; again?: boolean; how?: string }): string {
+  if (p.again) return `${p.said ?? 'Capture again.'}
+
+Capture again with that in mind, the same way as before, into ${p.out} (a new folder for the PR's current commit ${p.pr.headSha.slice(0, 7)}: write all of it there, the manifest included). End with one short paragraph on what changed visually.`
+  return `Show what pull request #${p.pr.number} ("${p.pr.title}") changes visually, so a designer can judge it from screenshots alone, without opening it. The PR's branch \`${p.pr.head}\` (commit ${p.pr.headSha.slice(0, 7)}) is the after; its base \`${p.pr.base}\` is the before.
+${p.files.length ? `The files it changes that people see: ${p.files.slice(0, 30).join(', ')}.` : 'Find from its diff which screens and components it changes.'}${said(p.said)}
+
+${p.how ?? METHODS.capture}
+
 Save into ${p.out} (make it): the images as PNG, named like before-<name>-<viewport>.png and after-<name>-<viewport>.png (letters, digits, dots and dashes only), and manifest.json with the impact and one shot per capture and viewport:
 {"head":"${p.pr.headSha}","base":"<the base commit you used>","at":"<now, ISO>","source":"storybook" or "app","summary":"<two or three sentences: what changed visually>",
- "impact":{"changed":[{"name":"<Component>","file":"<path in the repo>","kind":"component"|"layout"|"screen"}],"affected":[{"name":"<Component>","file":"<path>","kind":"…","via":["<changed name>"],"depth":1}]},
- "shots":[{"name":"<Component or screen> · <state>","lens":"changed"|"affected","part":"<its name in the impact>","viewport":"<viewport name>","width":<viewport width>,"note":"<what to look at here>","before":"before-<name>-<viewport>.png","after":"after-<name>-<viewport>.png","marks":[{"x":<% from left>,"y":<% from top>,"w":<% wide>,"h":<% high>,"part":"<changed name>","label":"<what changed there>","side":"after"}]}]}
-At most 30 shots: every changed component in focus first, then the affected layouts and screens that matter most. End with the summary in one short paragraph.`
+ ${IMPACT},
+ "shots":[${SHOT}]}
+End with the summary in one short paragraph.`
 }
