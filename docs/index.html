@@ -270,6 +270,14 @@ h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.03em; line-height: 1.
 .notes span { font-size: 12px; padding: 7px 10px; border-radius: 3px; box-shadow: 0 6px 14px -8px rgb(0 0 0 / .4); animation: pop .5s both; color: #2a1d05; }
 .notes .ev { background: #fdba74; } .notes .en { background: #fde047; } .notes .ru { background: #c4b5fd; color: #1e1240; } .notes .st { background: #7dd3fc; color: #062033; }
 /* design: soon */
+.bp { display: grid; gap: 10px; padding: 18px; height: 100%; min-height: 260px; align-content: center; background-image: linear-gradient(var(--line, #8881) 1px, transparent 1px), linear-gradient(90deg, var(--line, #8881) 1px, transparent 1px); background-size: 22px 22px; border-radius: 14px; }
+.bp .row { display: grid; grid-template-columns: 64px repeat(3, 1fr); gap: 10px; align-items: center; }
+.bp .row b { font-size: 12px; opacity: .75; }
+.bp .scr { position: relative; aspect-ratio: 16/10; border-radius: 8px; background: var(--s1); box-shadow: var(--e1); overflow: hidden; transition: opacity .3s; }
+.bp .scr i { position: absolute; border-radius: 3px; background: oklch(0.7 0.02 var(--h) / .35); transition: background .3s, box-shadow .3s; }
+.bp.lit .scr:not(.on) { opacity: .3; }
+.bp.lit .scr i.c { background: oklch(0.65 0.2 var(--h)); box-shadow: 0 0 0 2px oklch(0.65 0.2 var(--h) / .35); }
+.bp p { margin: 6px 0 0; font-size: 13px; opacity: .8; text-align: center; }
 .soon { display: grid; place-items: center; text-align: center; height: 100%; min-height: 260px; }
 .soon .blur { display: flex; gap: 10px; filter: blur(3px); opacity: .55; margin-bottom: 18px; }
 .soon .blur span { width: 92px; height: 120px; border-radius: 14px; background: linear-gradient(160deg, oklch(0.7 0.15 var(--h) / .35), var(--s1)); box-shadow: var(--e1); }
@@ -554,14 +562,14 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
     <div class="reveal">
       <p class="kicker">Modes</p>
       <h2>One place, for whoever you are today.</h2>
-      <p class="sub">Work as a developer, a product manager, or both. Each mode has its own views, skills and setup, and switching takes one click.</p>
+      <p class="sub">Work as a developer, a product manager, a designer, or all three. Each mode has its own views, skills and setup, and switching takes one click.</p>
     </div>
     <div class="modes reveal" id="modes-demo" style="--h:276">
       <div class="mswitch" role="tablist" aria-label="Modes">
         <span class="mpill" aria-hidden="true"></span>
         <button role="tab" aria-selected="true" data-m="0">Developer</button>
         <button role="tab" aria-selected="false" data-m="1">Product</button>
-        <button role="tab" aria-selected="false" data-m="2">Design <small>Soon</small></button>
+        <button role="tab" aria-selected="false" data-m="2">Design</button>
       </div>
       <div class="mstage" aria-live="polite">
         <div class="mrail" id="mrail"></div>
@@ -606,6 +614,19 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
         <h3>Plans</h3>
         <p>Write a brief, and an agent breaks it down with you into epics and user stories, drawn live as one roadmap to the goal. Play with it: try moves and plays, see the date move, then apply it to your tracker. Each workspace's plans are checked against its own compliance, or none for your own.</p>
       </div>
+    </div>
+  </section>
+
+  <section id="design" class="wrap">
+    <div class="reveal">
+      <p class="kicker">Design</p>
+      <h2>See every change, without opening it.</h2>
+      <p class="sub">Design mode shows what pull requests look like, before and after, and keeps a living map of the whole app.</p>
+    </div>
+    <div class="grid" style="margin-top:28px">
+      <div class="feat reveal" style="--h:335"><h3>Blueprint</h3><p>Every screen of the app on one board, small and live: a row per domain, a column per step. Point at a component and the board dims, leaving it lit wherever it is used.</p></div>
+      <div class="feat reveal" style="--h:335"><h3>Changed and Affected</h3><p>Each PR's changed components in focus, and every layout and screen they reach, with numbered marks where the change sits.</p></div>
+      <div class="feat reveal" style="--h:335"><h3>Storybook, set up for you</h3><p>One click gives a repository its Storybook as a pull request: layers, stories for every state, design docs, tests, and the agent tooling Storybook ships.</p></div>
     </div>
   </section>
 
@@ -1098,7 +1119,7 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
   const MODES = [
     { h: 276, who: 'Developer', rail: ['Desk', 'Review', 'Ship', 'Standup', 'Skills'] },
     { h: 150, who: 'Product', rail: ['Plans', 'Skills'] },
-    { h: 335, who: 'Design', rail: ['Review', 'Skills'] },
+    { h: 335, who: 'Design', rail: ['Design', 'Review', 'Skills'] },
   ]
   const LANES = [['Build', 276], ['Intent', 70], ['Understanding', 230]]
   const SAID = [['Add a test for the retry', 0, 'an instruction: the agent acts on it'], ['Is this supposed to cover archived users?', 1, 'what it is meant to do'], ['Why does it retry three times?', 2, 'what it does: read-only']]
@@ -1139,7 +1160,14 @@ body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-in
     later(() => { const [x1, y1] = xy(5), [x2, y2] = xy(6), a = map.children[6]?.offsetWidth ?? 130, b = map.children[7]?.offsetWidth ?? 130; svg.insertAdjacentHTML('beforeend', `<path class="dep" d="M${x1 + a} ${y1 + 15} C ${x1 + a + 46} ${y1 + 15}, ${x2 + b + 46} ${y2 + 15}, ${x2 + b + 4} ${y2 + 15}"/>`) }, still ? 0 : 250 + N.length * 420)
     ;[['ev', 'Seat paused'], ['en', 'Seat'], ['ru', 'A paused seat isn’t billed'], ['st', 'Admin resumes it']].forEach(([c, t], i) => later(() => notes.insertAdjacentHTML('beforeend', `<span class="${c}">${t}</span>`), still ? 0 : 3400 + i * 300))
   }
-  const design = () => { scene.innerHTML = `<div class="soon"><div><div class="blur"><span></span><span></span><span></span></div><b>Design is coming</b><p>The journey, the screens and their states, and the words people see, for every change.</p></div></div>` }
+  // Design: the blueprint, every screen by domain and step; the lit component shows wherever it is used
+  const design = () => {
+    const rows = [['Courses', [1, 1, 0]], ['Board', [0, 1, 1]], ['Settings', [1, 0, 0]]]
+    const scr = (on) => `<span class="scr${on ? ' on' : ''}"><i style="left:6%;top:8%;width:14%;height:84%"></i><i style="left:26%;top:14%;width:40%;height:28%"></i><i class="${on ? 'c' : ''}" style="left:26%;top:52%;width:22%;height:14%"></i><i style="left:72%;top:14%;width:22%;height:60%"></i></span>`
+    scene.innerHTML = `<div class="bp" id="bp">${rows.map(([d, on]) => `<div class="row"><b>${d}</b>${on.map(scr).join('')}</div>`).join('')}<p>The blueprint: every screen, small and live, by domain and step. Point at a component and it lights up wherever it is used.</p></div>`
+    const bp = scene.querySelector('#bp'); let t = setInterval(() => bp && bp.classList.toggle('lit'), 1600)
+    const stop = new MutationObserver(() => { if (!document.body.contains(bp)) { clearInterval(t); stop.disconnect() } }); stop.observe(scene, { childList: true })
+  }
   const SCENES = [developer, product, design]
   const show = (m) => {
     clear(); at = m
