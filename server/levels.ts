@@ -10,13 +10,13 @@ export type LevelNode = { id: string; parent?: string; level: 1 | 2 | 3 | 4 | 5;
 export type Levels = { nodes: LevelNode[]; links: [string, string][] } // links: cause → effect, across dimensions
 
 export const LEVELS_SCHEMA = {
-  type: 'object', required: ['nodes', 'links', 'files'],
+  type: 'object', additionalProperties: false, required: ['nodes', 'links', 'files'],
   properties: {
-    nodes: { type: 'array', items: { type: 'object', required: ['id', 'level', 'dim', 'title', 'after'], properties: {
+    nodes: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'level', 'dim', 'title', 'after'], properties: {
       id: { type: 'string' }, parent: { type: 'string' }, level: { type: 'integer', minimum: 1, maximum: 4 }, dim: { type: 'string', enum: [...DIMS] },
       title: { type: 'string' }, before: { type: 'string' }, after: { type: 'string' }, why: { type: 'string' } } } },
-    links: { type: 'array', items: { type: 'object', required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } } },
-    files: { type: 'array', items: { type: 'object', required: ['path', 'parent'], properties: { path: { type: 'string' }, parent: { type: 'string' } } } },
+    links: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } } },
+    files: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'parent'], properties: { path: { type: 'string' }, parent: { type: 'string' } } } },
   },
 }
 

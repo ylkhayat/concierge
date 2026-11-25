@@ -261,8 +261,9 @@ const SCHEMA = {
     },
     nodes: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'summary', 'responsibilities'], properties: { path: str, summary: str, responsibilities: { type: 'array', items: str }, businessRole: str } } },
     overlay: {
-      type: 'object', additionalProperties: false, required: ['business', 'touched', 'impact', 'flows', 'tour'],
+      type: 'object', additionalProperties: false, required: ['business', 'touched', 'impact', 'flows', 'tour', 'levels'],
       properties: {
+        levels: LEVELS_SCHEMA, // the Understanding board's five levels, written in the same pass as the tour (Intent)
         business: { type: 'object', additionalProperties: false, required: ['headline', 'what', 'why', 'who', 'risk', 'riskWhy'], properties: { headline: str, what: str, why: str, who: str, risk: { enum: ['low', 'medium', 'high'] }, riskWhy: str } },
         touched: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'change', 'after', 'why'], properties: { path: str, change: { enum: ['added', 'modified', 'removed'] }, before: str, after: str, why: str } } },
         impact: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'reason'], properties: { path: str, reason: str } } },
@@ -428,7 +429,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   })
   const prompt = buildPrompt({ pr, base, head: pr.headSha, facts, skeleton, needSkeleton, sig, nodes, asks, askTouched, prev, interdiff, tickets, builds })
   writeJson(join(OVERLAYS(pr), 'last-prompt.json'), { prompt }) // for debugging what was (not) asked
-  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress, SCHEMA, config.explainBudgetUsd ?? 1.5, await method('explainChange', FORMAT), undefined, pr.repo)
+  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress, SCHEMA, config.explainBudgetUsd ?? 1.5, await method('explainChange', `${FORMAT}\n\noverlay.levels: ${LEVELS_SYSTEM}`), undefined, pr.repo)
 
   // persist the shared knowledge first, so even a later failure leaves the atlas richer
   const now = new Date().toISOString()
@@ -448,7 +449,9 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
     touched: [...kept, ...result.overlay.touched.filter((t) => current.has(t.path))],
     facts,
   }
-  const done = await withLevels(overlay, pr, opts.signal, progress)
+  // the levels come with the explanation; an answer without them (an old skill, a cut-off) gets them on their own
+  const lv = (result.overlay as { levels?: Parameters<typeof levelsOf>[0] }).levels
+  const done = lv?.nodes.length ? { ...overlay, levels: levelsOf(lv, overlay) } : await withLevels(overlay, pr, opts.signal, progress)
   writeJson(join(OVERLAYS(pr), `${pr.headSha}.json`), done)
   writeJson(join(OVERLAYS(pr), 'latest.json'), { head: pr.headSha })
   return overlay
