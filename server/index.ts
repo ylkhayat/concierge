@@ -2556,11 +2556,34 @@ app.get('/visuals/:id/activity', async (c) => c.json(await loadActivity(`visuals
 // a baseline's built Storybook, file by file, for the board's live screens (visuals.ts storybookFile: baselines only)
 const SB_TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', json: 'application/json', map: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', ico: 'image/x-icon', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm' }
 const SW_SCOPE = `(function(){var c=navigator.serviceWorker;if(!c)return;var r=c.register.bind(c),base=location.pathname.replace(/[^/]*$/,'');c.register=function(u,o){try{if(/mockServiceWorker\\.js$/.test(new URL(u,location.href).pathname))o=Object.assign({},o,{scope:base})}catch(e){}return r(u,o)}})()`
+// the board's screens as they rendered (the page's own HTML and CSS, without its scripts): one live page renders each
+// once, in the browser, and its markup is kept beside the build, for every visit and every machine after (it travels)
+const SNAP = /^[\w-]{1,200}$/
+app.get('/visuals/snaps/:slug/:sha', async (c) => {
+  const { slug, sha } = c.req.param(), { readdir } = await import('node:fs/promises'), { VISUALS_DIR } = await import('./visuals.ts')
+  if (!/^repo-[\w.-]+$/.test(slug) || !/^[0-9a-f]{7,40}$/.test(sha)) return c.json([])
+  const dir = join(VISUALS_DIR, slug, sha, 'storybook'), out: string[] = []
+  for (const book of await readdir(dir).catch(() => [] as string[])) for (const f of await readdir(join(dir, book, '__snap__')).catch(() => [] as string[])) if (f.endsWith('.html')) out.push(`${book}/${f.slice(0, -5)}`)
+  return c.json(out)
+})
+app.post('/visuals/snaps/:slug/:sha', async (c) => {
+  const { slug, sha } = c.req.param(), b = await c.req.json() as { book?: string; story?: string; html?: string }
+  if (!/^repo-[\w.-]+$/.test(slug) || !/^[0-9a-f]{7,40}$/.test(sha) || !b.book || !/^[\w.-]{1,60}$/.test(b.book) || b.book.includes('..') || !b.story || !SNAP.test(b.story) || typeof b.html !== 'string' || b.html.length > 6_000_000) return c.json({ error: 'Not a screen' }, 400)
+  if (!await storybookFile(slug, sha, `${b.book}/iframe.html`)) return c.json({ error: 'No such Storybook' }, 404)
+  const { VISUALS_DIR } = await import('./visuals.ts'), dir = join(VISUALS_DIR, slug, sha, 'storybook', b.book, '__snap__')
+  // nothing that runs: no script, no handler, no javascript: address (the page serves it with script-src 'none' too)
+  const html = b.html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, '').replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '').replace(/javascript:/gi, '')
+  await mkdir(dir, { recursive: true }); await writeFile(join(dir, `${b.story}.html`), html)
+  return c.json({ ok: true })
+})
 app.get('/visuals/sb/:slug/:sha/*', async (c) => {
   const { slug, sha } = c.req.param(), rest = decodeURIComponent(c.req.path.split(`/visuals/sb/${slug}/${sha}/`)[1] ?? '')
   const path = await storybookFile(slug, sha, rest)
   if (!path) return c.body(null, 404)
-  const ext = path.split('.').pop()!.toLowerCase(), html = ext === 'html'
+  const ext = path.split('.').pop()!.toLowerCase(), html = ext === 'html', snap = rest.includes('/__snap__/')
+  if (snap) return new Response(await readFile(path), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-cache',
+    // a screen as it rendered, kept: nothing in it runs
+    'content-security-policy': "script-src 'none'; frame-ancestors 'self'", 'x-content-type-options': 'nosniff' } })
   // a build made for its own server registers MSW's worker at the site's root ('/mockServiceWorker.js'): served there
   // below, and registered here for this Storybook's folder only, so it mocks its pages and never sees Concierge's
   const body = html ? (await readFile(path, 'utf8')).replace(/<head[^>]*>/i, (h) => `${h}<script>${SW_SCOPE}</script>`) : await readFile(path)

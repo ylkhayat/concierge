@@ -442,6 +442,66 @@ const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, wi
  * screen. A live page is only there while its screen is near the board's view. The light comes and goes softly: the
  * last lit component stays drawn while it fades out.
  */
+/**
+ * A rendered page as plain HTML: its markup and every style it has (the files it links, and the rules a CSS-in-JS
+ * library put in by script), what is typed in its fields, without a script, and its addresses read from its own
+ * folder (`base`). What the board shows: the page itself, drawn by the browser, with nothing running in it.
+ */
+export function pageHtml(doc: Document, base: string): string {
+  const copy = doc.documentElement.cloneNode(true) as HTMLElement
+  const live = [...doc.querySelectorAll('style')], copies = [...copy.querySelectorAll('style')]
+  live.forEach((st, i) => { try { if (!st.textContent?.trim() && st.sheet && copies[i]) copies[i].textContent = [...st.sheet.cssRules].map((r) => r.cssText).join('\n') } catch { /* another origin's sheet */ } })
+  const head = copy.querySelector('head') ?? copy
+  for (const sheet of doc.adoptedStyleSheets ?? []) { try { const st = doc.createElement('style'); st.textContent = [...sheet.cssRules].map((r) => r.cssText).join('\n'); head.append(st) } catch { /* unreadable */ } }
+  const fields = [...doc.querySelectorAll('input, textarea, select')], kept = [...copy.querySelectorAll('input, textarea, select')]
+  fields.forEach((f, i) => {
+    const k = kept[i]; if (!k) return
+    if (f instanceof HTMLInputElement) { if (f.type === 'checkbox' || f.type === 'radio') { if (f.checked) k.setAttribute('checked', '') } else k.setAttribute('value', f.value) }
+    else if (f instanceof HTMLTextAreaElement) k.textContent = f.value
+    else if (f instanceof HTMLSelectElement) k.querySelectorAll('option').forEach((o, j) => { if (j === f.selectedIndex) o.setAttribute('selected', '') })
+  })
+  copy.querySelectorAll('script, noscript, iframe, link[rel="modulepreload"], link[as="script"]').forEach((x) => x.remove())
+  copy.style.removeProperty('zoom')
+  head.insertAdjacentHTML('afterbegin', `<base href="${base}">`)
+  return `<!doctype html>${copy.outerHTML}`
+}
+
+/**
+ * The one live page the board ever runs: off screen, it renders the screens that have no HTML kept yet, one after
+ * another (a page is dropped before the next loads), waits until Storybook shows the story and it holds still, and
+ * keeps its HTML. Each screen once, for every visit and every machine after.
+ */
+function Renderer({ base, slug, sha, jobs, onDone }: { base: string; slug: string; sha: string; jobs: Shot[]; onDone: (key: string) => void }) {
+  const job = jobs[0], frame = useRef<HTMLIFrameElement>(null)
+  useEffect(() => {
+    if (!job) return
+    let stop = false, last = '', still = 0
+    const t0 = Date.now(), key = `${job.book}/${job.story}`
+    const tick = async () => {
+      if (stop) return
+      const d = frame.current?.contentDocument, body = d?.body
+      if (!d || !body || body.classList.contains('sb-show-errordisplay') || Date.now() - t0 > 30_000) return void (stop || onDone(key))
+      const shown = body.classList.contains('sb-show-main') || (!/\bsb-show/.test(body.className) && Date.now() - t0 > 1500 && !!body.innerText.trim())
+      if (shown) {
+        const root = d.querySelector('#storybook-root') ?? body, sig = `${root.innerHTML.length}:${root.querySelectorAll('*').length}`
+        still = sig === last ? still + 1 : 0; last = sig
+        if (still >= 3) {
+          await d.fonts?.ready
+          if (stop) return
+          await api(`/visuals/snaps/${slug}/${sha}`, { book: job.book, story: job.story, html: pageHtml(d, `${base}/${job.book}/`) }).catch(() => {})
+          return void (stop || onDone(key))
+        }
+      }
+      setTimeout(() => void tick(), 350)
+    }
+    const t = setTimeout(() => void tick(), 600)
+    return () => { stop = true; clearTimeout(t) }
+  }, [job?.book, job?.story])
+  if (!job) return null
+  return <iframe key={`${job.book}/${job.story}`} ref={frame} aria-hidden tabIndex={-1} title="" src={`${base}/${job.book}/iframe.html?id=${encodeURIComponent(job.story!)}&viewMode=story`}
+                 style={{ position: 'fixed', left: -20000, top: 0, width: job.width ?? 1280, height: job.height ?? 800, border: 0, opacity: 0, pointerEvents: 'none' }} />
+}
+
 /** A page while it loads: the shape of a screen (its rail, its title, a few blocks), softly pulsing, never a picture of it. */
 const PageSkeleton = () => (
   <span aria-hidden className="absolute inset-0 animate-pulse bg-surface-1">
@@ -454,8 +514,8 @@ const PageSkeleton = () => (
   </span>
 )
 
-const Mini = memo(function Mini({ src, live, shot, mode, step, cell, onHover, onOpen }: {
-  src: string; live?: string; shot: Shot; mode: string; step: number; cell: number; onHover: (part: string | undefined, ms: number) => void; onOpen: (sh: Shot, from: DOMRect) => void
+const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, onHover, onOpen }: {
+  src: string; live?: string; waiting?: boolean; shot: Shot; mode: string; step: number; cell: number; onHover: (part: string | undefined, ms: number) => void; onOpen: (sh: Shot, from: DOMRect) => void
 }) {
   const marks = shot.marks ?? []
   const litPart = mode !== 'idle' && mode !== 'dim' ? mode : undefined
@@ -481,12 +541,12 @@ const Mini = memo(function Mini({ src, live, shot, mode, step, cell, onHover, on
   }
   return (
     <figure className={`transition-opacity duration-500 ease-[var(--ease-out)] [contain-intrinsic-size:auto_160px] [content-visibility:auto] ${mode === 'dim' ? 'opacity-30' : ''}`}>
-      <div ref={frame} style={live ? { aspectRatio: `${W} / ${H}` } : undefined} title={shot.note}
+      <div ref={frame} style={live !== undefined || waiting ? { aspectRatio: `${W} / ${H}` } : undefined} title={shot.note}
            className={`group/mini relative cursor-zoom-in overflow-hidden rounded-[3px] bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.18)] ring-1 transition-[box-shadow,transform] duration-300 ease-[var(--ease-out)] hover:-translate-y-px ${litPart ? 'ring-accent/60' : 'ring-line-strong hover:ring-fg-4'}`}
            onMouseMove={(e) => onHover(at(e), 1000)} onMouseLeave={() => onHover(undefined, 0)} onClick={(e) => onOpen(shot, e.currentTarget.getBoundingClientRect())}>
-        {live ? (!ready && <PageSkeleton />) : <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className="block w-full select-none" />}
+        {live !== undefined || waiting ? (!ready && <PageSkeleton />) : <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className="block w-full select-none" />}
         {live && near && (
-          <iframe ref={page} src={live} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
+          <iframe ref={page} src={live} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-same-origin" onLoad={() => setReady(true)}
                   style={{ width: '100%', height: '100%' }}
                   className={`pointer-events-none absolute inset-0 border-0 bg-surface-1 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
         )}
@@ -596,7 +656,16 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const [zoom, setZoom] = useState(() => { try { return Number(localStorage.getItem('design:board-zoom')) || 180 } catch { return 180 } })
   const canLive = pr.startsWith('repo:') && screens.some((x) => x.book && x.story)
-  const liveOn = true // the pages themselves; their pictures only hold the place while they load
+  const liveOn = true // the pages themselves; a skeleton holds the place until one is there
+  // the screens as kept HTML (rendered once, one live page at a time): '' while one isn't kept yet
+  const slug = pr.replace(/[^\w.-]+/g, '-'), sbBase = `/api/visuals/sb/${slug}/${set.sha}`
+  const failed = useRef(new Set<string>()) // screens the renderer couldn't keep: left as skeletons, not tried again here
+  const kept = useApi<string[]>(canLive ? `/visuals/snaps/${slug}/${set.sha}` : undefined)
+  const [done, setDone] = useState<Set<string>>(new Set())
+  const keyOf = (sh: Shot) => `${sh.book}/${sh.story}`
+  const isKept = (sh: Shot) => kept.data?.includes(keyOf(sh)) || done.has(keyOf(sh))
+  const pageOf = (sh: Shot) => (!canLive || !sh.book || !sh.story ? undefined : isKept(sh) ? `${sbBase}/${sh.book}/__snap__/${sh.story}.html?v=${done.has(keyOf(sh)) ? 1 : 0}` : '')
+  const toRender = kept.data ? screens.filter((sh) => sh.book && sh.story && !isKept(sh) && !failed.current.has(keyOf(sh))) : []
   const liveOf = (sh: Shot) => (canLive && liveOn && sh.book && sh.story ? `/api/visuals/sb/${pr.replace(/[^\w.-]+/g, '-')}/${set.sha}/${sh.book}/iframe.html?id=${encodeURIComponent(sh.story)}&viewMode=story` : undefined)
   const zoomTo = (z: number) => { const v = Math.min(440, Math.max(120, z)); setZoom(v); try { localStorage.setItem('design:board-zoom', String(v)) } catch { /* private window */ } }
   const hot = hover ?? pinned
@@ -704,7 +773,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
                         <p className="text-small font-semibold text-fg-1">{d.name}</p>
                         <p className="text-micro text-fg-4">{d.screens.length} step{d.screens.length === 1 ? '' : 's'}</p>
                       </div>
-                      {d.screens.map((sh, i) => <Mini key={`${sh.name}:${sh.after ?? ''}`} src={url(sh)} live={liveOf(sh)} shot={sh} mode={modeOf(sh)} step={i + 1} cell={zoom} onHover={onHover} onOpen={onOpen} />)}
+                      {d.screens.map((sh, i) => <Mini key={`${sh.name}:${sh.after ?? ''}`} src={url(sh)} live={pageOf(sh) || undefined} waiting={pageOf(sh) === ''} shot={sh} mode={modeOf(sh)} step={i + 1} cell={zoom} onHover={onHover} onOpen={onOpen} />)}
                     </div>
                   )
                 })}
@@ -734,6 +803,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
           </>}
         </div>
 
+        {canLive && <Renderer base={sbBase} slug={slug} sha={set.sha} jobs={toRender} onDone={(key) => setDone((d) => { if (!d.has(key) && !kept.data?.includes(key)) failed.current.add(key); const n = new Set(d); n.add(key); return n })} />}
         {open && <Focus key={open.shot.name} pr={pr} sha={set.sha} shot={open.shot} origin={open.from} live={liveOf(open.shot)} target={aim} onPart={pick} onClose={() => { setOpen(undefined); setAim(undefined) }} onStep={step} />}
       </div>
     </div>
