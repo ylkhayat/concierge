@@ -47,7 +47,7 @@ function Missing({ prId, busy, toast }: { prId: string; busy: boolean; toast: (m
 /** Explained before the levels existed: asked for once (only the levels are written), the old map shown meanwhile. */
 function Leveling({ prId, busy }: { prId: string; busy: boolean }) {
   useEffect(() => { if (busy || started.has(`lv:${prId}`)) return; started.add(`lv:${prId}`); api(`/prs/${enc(prId)}/explain`, {}).catch(() => started.delete(`lv:${prId}`)) }, [prId, busy])
-  return <p className="flex items-center gap-1.5 text-micro text-fg-3"><LoaderCircle className="size-3 animate-spin" />Drawing it at five levels, from general to the code: it switches over by itself.</p>
+  return <p className="flex items-center gap-1.5 text-micro text-fg-3"><LoaderCircle className="size-3 animate-spin" />Drawing it at five levels, from general to the code: it updates by itself.</p>
 }
 
 // --- Understanding: the change as a mind map -----------------------------------------------------------------
@@ -255,7 +255,7 @@ export function UnderstandingMap({ prId, path, toast }: { prId: string; path?: s
     <ReactFlowProvider>
       <div className="flex h-full min-h-0 flex-col gap-3">
         {q.data?.stale && <p className="text-micro text-wait-text">Drawn for an earlier push: Explain catches it up.</p>}
-        {o.levels ? <LevelsBoard prId={prId} levels={o.levels} /> : <><Story o={o} /><Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} /><MapCanvas o={o} /></>}
+        {o.levels ? <>{o.levels.nodes.some((n) => n.level === 5 && !n.title) && <Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} />}<LevelsBoard prId={prId} levels={o.levels} /></> : <><Story o={o} /><Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} /><MapCanvas o={o} /></>}
       </div>
     </ReactFlowProvider>
   )

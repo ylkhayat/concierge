@@ -395,7 +395,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   const prev = opts.fresh ? undefined : loadOverlay(pr)
   // nothing changed: keep it, unless its tour is missing or predates the story slides; then files carry over and the tour is written
   if (prev && prev.headSha === pr.headSha && prev.baseSha === base && prev.tour?.story) {
-    if (prev.levels) return prev
+    if (prev.levels?.nodes.every((n) => n.level < 5 || n.title)) return prev // files without a title of their own: drawn again
     // explained before the levels existed: only they are written, from the explanation it has
     const o = await withLevels(prev, pr, opts.signal, progress)
     writeJson(join(OVERLAYS(pr), `${pr.headSha}.json`), o)

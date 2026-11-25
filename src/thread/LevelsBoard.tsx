@@ -15,7 +15,7 @@ import { edgeTypes, nodeTypes, type Card as Box } from '../components/Explain.ts
 export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[] }
 export type Lane = { id: string; label: string; hint: string; icon: LucideIcon; cards: Card[]; skip?: boolean } // skip: an empty lane isn't drawn
 
-const W = 236, H = 100, GAP = 28, PAD = 20, HEAD = 46, THIN = 46, LANE_GAP = 18 // W, H: the Explain tab's box
+const W = 236, H = 100, GAP = 28, PAD = 20, HEAD = 46, THIN = 46, LANE_GAP = 18, COLS = 4 // W, H: the Explain tab's box; COLS: a lane wraps after
 const said = (x?: string) => x?.replace(/`([^`]+)`/g, '$1')
 type Pt = { x: number; y: number }
 
@@ -24,7 +24,7 @@ function route(a: Pt, b: Pt, gapY: number | undefined): Pt[] {
   const s = { x: a.x + W, y: a.y + H / 2 }, t = { x: b.x, y: b.y + H / 2 }
   if (gapY === undefined && t.x > s.x && t.x - s.x <= GAP + 1) return [s, t] // side by side
   const x1 = s.x + GAP / 2, x2 = t.x - GAP / 2
-  const y = gapY ?? a.y - LANE_GAP / 2 - 4 // the same lane: over its boxes, under its head
+  const y = gapY ?? a.y - GAP / 2 // the same lane: the gap over the source's row
   return [s, { x: x1, y: s.y }, { x: x1, y }, { x: x2, y }, { x: x2, y: t.y }, t]
 }
 
@@ -33,17 +33,17 @@ export function LaneBoard({ lanes, links, children }: { lanes: Lane[]; links: [s
   const [on, setOn] = useState<string>()
   const { nodes, edges } = useMemo(() => {
     const drawn = lanes.filter((l) => !(l.skip && !l.cards.length))
-    const width = Math.max(3, ...drawn.map((l) => l.cards.length)) * (W + GAP) - GAP + 2 * PAD
+    const width = Math.min(COLS, Math.max(3, ...drawn.map((l) => l.cards.length))) * (W + GAP) - GAP + 2 * PAD
     const out: Node[] = [], at = new Map<string, Pt & { lane: number }>(), bands: { top: number; bottom: number }[] = []
     let y = 0
     drawn.forEach((lane, li) => {
-      const none = !lane.cards.length, h = none ? THIN : HEAD + H + PAD
-      const frame: Box = { id: `lane:${lane.id}`, kind: 'system', icon: lane.icon, name: lane.label, summary: none ? 'unchanged' : lane.hint, fixed: true, ...(!none && { mark: 'contains' as const }) }
+      const rows = Math.ceil(lane.cards.length / COLS), none = !rows, h = none ? THIN : HEAD + rows * (H + GAP) - GAP + PAD
+      const frame: Box = { id: `lane:${lane.id}`, kind: 'system', icon: lane.icon, name: lane.label, summary: none ? 'unchanged' : lane.hint, fixed: true }
       out.push({ id: frame.id, type: 'box', position: { x: 0, y }, data: frame, style: { width, height: h, opacity: none ? 0.5 : 1 }, draggable: false, selectable: false, zIndex: -1 })
       lane.cards.forEach((c, k) => {
-        const p = { x: PAD + k * (W + GAP), y: y + HEAD }
+        const p = { x: PAD + (k % COLS) * (W + GAP), y: y + HEAD + Math.floor(k / COLS) * (H + GAP) }
         at.set(c.id, { ...p, lane: li })
-        const box: Box = { id: c.id, kind: 'system', icon: lane.icon, name: said(c.title) ?? '', summary: said(c.line), ...(c.tone === 'strong' ? { plain: true } : c.tone !== 'faded' && { mark: c.before ? 'modified' as const : 'added' as const }), ...(c.more?.length && { sub: `${c.more.length} inside` }) }
+        const box: Box = { id: c.id, kind: 'system', icon: lane.icon, name: said(c.title) ?? '', summary: said(c.line), ...(c.tone !== 'faded' && { plain: true }), ...(c.more?.length && { sub: `${c.more.length} inside` }) }
         out.push({ id: c.id, type: 'card', position: p, data: box, style: { width: W, height: H }, selected: on === c.id, draggable: false })
       })
       bands.push({ top: y, bottom: y + h }); y += h + LANE_GAP
