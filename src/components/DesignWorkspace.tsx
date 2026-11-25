@@ -442,8 +442,20 @@ const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, wi
  * screen. A live page is only there while its screen is near the board's view. The light comes and goes softly: the
  * last lit component stays drawn while it fades out.
  */
-const Mini = memo(function Mini({ src, live, shot, mode, step, onHover, onOpen }: {
-  src: string; live?: string; shot: Shot; mode: string; step: number; onHover: (part: string | undefined, ms: number) => void; onOpen: (sh: Shot, from: DOMRect) => void
+/** A page while it loads: the shape of a screen (its rail, its title, a few blocks), softly pulsing, never a picture of it. */
+const PageSkeleton = () => (
+  <span aria-hidden className="absolute inset-0 animate-pulse bg-surface-1">
+    <span className="absolute inset-y-0 left-0 w-[16%] bg-fill" />
+    <span className="absolute left-[22%] top-[9%] h-[5%] w-[28%] rounded-[2px] bg-fill-strong" />
+    <span className="absolute left-[22%] top-[22%] h-[26%] w-[34%] rounded-[2px] bg-fill" />
+    <span className="absolute left-[60%] top-[22%] h-[26%] w-[34%] rounded-[2px] bg-fill" />
+    <span className="absolute left-[22%] top-[56%] h-[4%] w-[52%] rounded-[2px] bg-fill" />
+    <span className="absolute left-[22%] top-[64%] h-[4%] w-[40%] rounded-[2px] bg-fill" />
+  </span>
+)
+
+const Mini = memo(function Mini({ src, live, shot, mode, step, cell, onHover, onOpen }: {
+  src: string; live?: string; shot: Shot; mode: string; step: number; cell: number; onHover: (part: string | undefined, ms: number) => void; onOpen: (sh: Shot, from: DOMRect) => void
 }) {
   const marks = shot.marks ?? []
   const litPart = mode !== 'idle' && mode !== 'dim' ? mode : undefined
@@ -459,6 +471,9 @@ const Mini = memo(function Mini({ src, live, shot, mode, step, onHover, onOpen }
     return () => io.disconnect()
   }, [live])
   const W = shot.width ?? 1280, H = shot.height ?? Math.round(W * 0.625)
+  // the page itself, drawn at this size: its layout as at full width, the browser zooming it down (never a picture shrunk)
+  const page = useRef<HTMLIFrameElement>(null), k = cell / W
+  useEffect(() => { try { const d = page.current?.contentDocument; if (d) d.documentElement.style.zoom = String(k) } catch { /* another origin: as drawn */ } }, [k, ready])
   const mask = `m${useId().replace(/\W/g, '')}`
   const at = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -469,11 +484,11 @@ const Mini = memo(function Mini({ src, live, shot, mode, step, onHover, onOpen }
       <div ref={frame} style={live ? { aspectRatio: `${W} / ${H}` } : undefined} title={shot.note}
            className={`group/mini relative cursor-zoom-in overflow-hidden rounded-[3px] bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.18)] ring-1 transition-[box-shadow,transform] duration-300 ease-[var(--ease-out)] hover:-translate-y-px ${litPart ? 'ring-accent/60' : 'ring-line-strong hover:ring-fg-4'}`}
            onMouseMove={(e) => onHover(at(e), 1000)} onMouseLeave={() => onHover(undefined, 0)} onClick={(e) => onOpen(shot, e.currentTarget.getBoundingClientRect())}>
-        <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className={`select-none ${live ? 'absolute inset-0 size-full object-cover object-top' : 'block w-full'}`} />
+        {live ? (!ready && <PageSkeleton />) : <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className="block w-full select-none" />}
         {live && near && (
-          <iframe src={live} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
-                  style={{ width: W, height: H, transform: `scale(calc(var(--cell) / ${W}))`, transformOrigin: '0 0' }}
-                  className={`pointer-events-none absolute left-0 top-0 border-0 bg-surface-1 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
+          <iframe ref={page} src={live} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
+                  style={{ width: '100%', height: '100%' }}
+                  className={`pointer-events-none absolute inset-0 border-0 bg-surface-1 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
         )}
         <div aria-hidden className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ease-[var(--ease-out)] ${litPart ? 'opacity-100' : 'opacity-0'}`}>
           {shown.length > 0 && <>
@@ -519,6 +534,20 @@ function Focus({ pr, sha, shot, origin, live, target, onPart, onClose, onStep }:
     return () => removeEventListener('keydown', key)
   }, [onClose, onStep])
   const [ready, setReady] = useState(false)
+  // sharp at any zoom: the live page draws itself at the size it is shown (`R` times its own, its layout unchanged),
+  // instead of a small picture of it being magnified. While the view glides it moves as drawn; once it lands, it is
+  // drawn again for where it landed
+  const [fw, setFw] = useState(0), [settled, setSettled] = useState(1)
+  useLayoutEffect(() => {
+    const el = stage.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setFw(el.clientWidth))
+    ro.observe(el); setFw(el.clientWidth)
+    return () => ro.disconnect()
+  }, [])
+  const R = fw ? Math.round((fw / W) * settled * 1000) / 1000 : 1 // the page's zoom: its layout at full width, drawn at the size it is shown
+  const page = useRef<HTMLIFrameElement>(null)
+  useEffect(() => { try { const d = page.current?.contentDocument; if (d) d.documentElement.style.zoom = String(R) } catch { /* not the same origin: as drawn */ } }, [R, ready])
   const hoverTimer = useRef<number | undefined>(undefined)
   const over = (m?: Mark) => { clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(() => setHoverMark(m), m ? 350 : 150) }
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
@@ -533,12 +562,13 @@ function Focus({ pr, sha, shot, origin, live, target, onPart, onClose, onStep }:
       <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-5" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
         <div ref={stage} style={{ aspectRatio: `${W} / ${H}`, transform: from, transformOrigin: '0 0', transition: from ? 'none' : 'transform 420ms var(--ease-out)' }}
              className="relative max-h-full w-full max-w-[min(100%,calc((100vh/var(--z,1)-14rem)*1.6))] overflow-hidden rounded-[4px] bg-surface-1 shadow-e3 ring-1 ring-line-strong">
-          <div className="absolute inset-0 origin-top-left transition-transform duration-700 ease-[var(--ease-out)]" style={{ transform: `translate(${t.tx}%, ${t.ty}%) scale(${t.s})` }}>
-            <img src={shotUrl(pr, sha, (shot.after ?? shot.before)!)} alt={shot.name} className="absolute inset-0 size-full object-cover object-top" />
+          <div className="absolute inset-0 origin-top-left transition-transform duration-700 ease-[var(--ease-out)]" style={{ transform: `translate(${t.tx}%, ${t.ty}%) scale(${t.s})` }}
+               onTransitionEnd={(e) => { if (e.target === e.currentTarget) setSettled(t.s) }}>
+            {live ? (!ready && <PageSkeleton />) : <img src={shotUrl(pr, sha, (shot.after ?? shot.before)!)} alt={shot.name} className="absolute inset-0 size-full object-cover object-top" />}
             {live && (
-              <span className="absolute inset-0 overflow-hidden" ref={(el) => { if (el) el.style.setProperty('--fw', String(el.clientWidth)) }}>
-                <iframe src={live} title={shot.name} sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
-                        style={{ width: W, height: H, transform: `scale(calc(var(--fw) / ${W}))`, transformOrigin: '0 0' }}
+              <span className="absolute inset-0 overflow-hidden">
+                <iframe ref={page} src={live} title={shot.name} sandbox="allow-scripts allow-same-origin" onLoad={() => setReady(true)}
+                        style={{ width: fw * settled, height: (fw * settled * H) / W, transform: `scale(${1 / settled})`, transformOrigin: '0 0' }}
                         className={`pointer-events-none absolute left-0 top-0 border-0 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
               </span>
             )}
@@ -566,8 +596,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const [zoom, setZoom] = useState(() => { try { return Number(localStorage.getItem('design:board-zoom')) || 180 } catch { return 180 } })
   const canLive = pr.startsWith('repo:') && screens.some((x) => x.book && x.story)
-  const [liveOn, setLiveOn] = useState(() => { try { return localStorage.getItem('design:board-live') !== 'off' } catch { return true } })
-  const setLive = (on: boolean) => { setLiveOn(on); try { localStorage.setItem('design:board-live', on ? 'on' : 'off') } catch { /* private window */ } }
+  const liveOn = true // the pages themselves; their pictures only hold the place while they load
   const liveOf = (sh: Shot) => (canLive && liveOn && sh.book && sh.story ? `/api/visuals/sb/${pr.replace(/[^\w.-]+/g, '-')}/${set.sha}/${sh.book}/iframe.html?id=${encodeURIComponent(sh.story)}&viewMode=story` : undefined)
   const zoomTo = (z: number) => { const v = Math.min(440, Math.max(120, z)); setZoom(v); try { localStorage.setItem('design:board-zoom', String(v)) } catch { /* private window */ } }
   const hot = hover ?? pinned
@@ -651,8 +680,6 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
 
       <div className="relative min-w-0 flex-1">
         <div className="absolute right-3 top-2.5 z-20 flex items-center gap-1.5 rounded-[4px] bg-surface-2/90 px-2 py-1 shadow-e1 ring-1 ring-line backdrop-blur">
-          {canLive && <button onClick={() => setLive(!liveOn)} role="switch" aria-checked={liveOn} title={liveOn ? 'The screens are the pages themselves. Click for their screenshots' : 'The screens are screenshots. Click for the pages themselves'}
-                              className={`mr-1 inline-flex items-center gap-1.5 border-r border-line pr-2 text-meta font-medium ${liveOn ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}><span className={`size-1.5 rounded-full ${liveOn ? 'bg-accent' : 'bg-fg-4'}`} />Live</button>}
           <button onClick={() => zoomTo(zoom - 40)} aria-label="Smaller" className="text-fg-3 hover:text-fg-1"><ZoomOut className="size-3.5" /></button>
           <input type="range" min={120} max={440} step={20} value={zoom} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Size of the screens" className="w-20 accent-current text-accent" />
           <button onClick={() => zoomTo(zoom + 40)} aria-label="Larger" className="text-fg-3 hover:text-fg-1"><ZoomIn className="size-3.5" /></button>
@@ -677,7 +704,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
                         <p className="text-small font-semibold text-fg-1">{d.name}</p>
                         <p className="text-micro text-fg-4">{d.screens.length} step{d.screens.length === 1 ? '' : 's'}</p>
                       </div>
-                      {d.screens.map((sh, i) => <Mini key={`${sh.name}:${sh.after ?? ''}`} src={url(sh)} live={liveOf(sh)} shot={sh} mode={modeOf(sh)} step={i + 1} onHover={onHover} onOpen={onOpen} />)}
+                      {d.screens.map((sh, i) => <Mini key={`${sh.name}:${sh.after ?? ''}`} src={url(sh)} live={liveOf(sh)} shot={sh} mode={modeOf(sh)} step={i + 1} cell={zoom} onHover={onHover} onOpen={onOpen} />)}
                     </div>
                   )
                 })}
