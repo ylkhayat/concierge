@@ -85,9 +85,42 @@ const prSet = { head: 'abc1234', sha: 'abc1234', at: new Date(now - 600e3).toISO
   ] }
 const vTask = undefined
 const prView = { id: 'ylkhayat/elbuffeh#21', repo: 'ylkhayat/elbuffeh', number: 21, title: 'feat(rumanna): courses, fast fitted corrections and learner choices', url: 'https://github.com/ylkhayat/elbuffeh/pull/21', author: 'ylkhayat', mine: true, draft: false, headSha: 'abc1234', mode: 'auto', ui: { is: true, why: '14 files people see: CourseCard.tsx, LevelChip.tsx, page.tsx…', files: [], head: 'abc1234', at: new Date().toISOString() }, wanted: true, task: vTask, tickets: ['ELBU-3'] }
+// MOCK_LIST=n: a busy day for timing the lists (switching items): n PRs and n tickets over the event stream, each
+// with a feed of MOCK_FEED entries (default 300, in runs of MOCK_RUN: 50) that answers after MOCK_FEED_MS (default 60)
+const LIST = Number(process.env.MOCK_LIST) || 0, FEED = Number(process.env.MOCK_FEED) || 300, RUN = Number(process.env.MOCK_RUN) || 50, FEED_MS = Number(process.env.MOCK_FEED_MS ?? 60)
+const words = 'the agent read the diff and checked how billing handles a paused seat before it changes the proration path'.split(' ')
+const say = (i, n) => Array.from({ length: n }, (_, j) => words[(i * 7 + j) % words.length]).join(' ')
+const feedOf = (seed) => Array.from({ length: FEED }, (_, i) => {
+  const at = new Date(now - (FEED - i) * 20e3).toISOString()
+  if (i % RUN === 0) return { at, kind: 'section', text: i ? 'Revise' : 'Review' }
+  if (i % RUN === RUN - 1) return { at, kind: 'result', text: `## Done (${seed})\n\n- ${say(i, 9)}\n- ${say(i + 1, 11)}\n\n\`\`\`ts\nconst x = ${i}\n\`\`\``, costUsd: i / 100 }
+  if (i % 5 === 0) return { at, kind: 'text', text: `**${say(i, 4)}**: ${say(i + 2, 24)}. See \`server/billing.ts\` and [the ticket](https://linear.app/x/issue/AC-${i}).` }
+  return { at, kind: 'tool', tool: ['Bash', 'Read', 'Grep', 'Edit'][i % 4], text: i % 4 === 0 ? `git log --oneline -n ${i} -- server/billing.ts` : `server/${say(i, 1)}/${say(i + 3, 1)}.ts` }
+})
+const STATUSES = ['ready', 'in-review', 'new', 'preparing', 'reviewed', 'new', 'no-checkout']
+const listPrs = Array.from({ length: LIST }, (_, i) => {
+  const mine = i % 4 === 3, status = mine ? ['new', 'answered', 'clear', 'approved'][i % 4] : STATUSES[i % STATUSES.length]
+  return { id: `acme/app#${100 + i}`, repo: 'acme/app', number: 100 + i, title: `${['feat', 'fix', 'chore'][i % 3]}(billing): ${say(i, 6 + (i % 5))}`, url: `https://github.com/acme/app/pull/${100 + i}`,
+    author: { login: `dev${i % 6}`, avatar: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }, draft: false, base: 'main', head: `b${i}`, headSha: `sha${i}`, additions: 10 + i * 3, deletions: i, changedFiles: 1 + (i % 9),
+    createdAt: new Date(now - i * 3600e3).toISOString(), updatedAt: new Date(now - i * 600e3).toISOString(), firstSeenAt: new Date(now - i * 3600e3).toISOString(),
+    requested: !mine, mine, closed: false, dismissed: false, hasBody: false, background: 0, status, missing: [], linked: [],
+    flow: { state: mine ? 'feedback' : 'to-review', step: 0, why: 'Requested from you', next: 'run', also: [] } }
+})
+const listTickets = Array.from({ length: LIST }, (_, i) => ({ id: `AC-${200 + i}`, title: `${say(i + 3, 5 + (i % 6))}`, url: `https://linear.app/acme/issue/AC-${200 + i}`, description: say(i, 40),
+  state: 'Todo', stateType: 'unstarted', priority: 1 + (i % 4), labels: [], team: 'AC', branch: `ac-${200 + i}`, updatedAt: new Date(now - i * 600e3).toISOString(), createdAt: new Date(now - i * 3600e3).toISOString(),
+  agentWaiting: false, prs: [], closedPrs: [], bucket: ['needs-you', 'tend', 'in-progress', 'todo', 'todo'][i % 5], repo: 'acme/app', busy: false, env: { env: 'unknown', source: 'none', detail: '' }, linked: [], background: 0 }))
+const feedJson = (res, seed) => setTimeout(() => json(res, feedOf(seed)), FEED_MS)
 const json = (res, v, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(v)) }
 http.createServer(async (req, res) => {
   const p = new URL(req.url, 'http://x').pathname.replace(/^\/api/, '')
+  if (LIST && p === '/events') {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+    const ev = (name, v) => res.write(`event: ${name}\ndata: ${JSON.stringify(v)}\n\n`)
+    ev('prs', listPrs); ev('exec', { actions: [], missing: [], tickets: listTickets, at: new Date().toISOString(), polling: false, configured: true, hasKey: true }); ev('alerts', [])
+    return
+  }
+  if (LIST && p === '/me') return json(res, { login: 'me', name: 'Me', avatar: '' })
+  if (LIST && /^\/(prs\/[^/]+|exec\/tickets\/[^/]+)\/activity$/.test(p)) return feedJson(res, p)
   if (p === '/events') { res.writeHead(204); return res.end() }
   // settings saved: kept in memory (the company profile and the rest of config)
   if (p === '/config' && req.method === 'POST') { let b = ''; req.on('data', (c) => { b += c }); req.on('end', () => { const v = JSON.parse(b || '{}'); Object.assign(setupMock.config, v); json(res, setupMock) }); return }

@@ -5,12 +5,19 @@
 // gliding measures where it really is; a new move starts from where it shows, not from where it was headed.
 // Only items never seen before fade in (`ids`: every item in the data, shown or not): one that comes back into view
 // (a tab, a folded section, a filter cleared, a blip in the data) just shows. Rows that leave just go.
-import { useLayoutEffect, useRef, type RefObject } from 'react'
+// A render that moves nothing (a click selecting a row, a time ticking) measures after it paints, not before: read
+// right after React's commit, every row's offsetTop forced a layout of the whole page, the new detail pane included,
+// inside the click's frame. After the paint the layout is already done, so the same reads cost next to nothing.
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 
 export function useFlip(box: RefObject<HTMLElement | null>, shape: string, ids: string[]) {
   const last = useRef(new Map<string, number>())
   const was = useRef(shape)
   const known = useRef<Set<string>>(undefined)
+  const later = useRef(0)
+  // where every row sits now, for the next move to start from
+  const measure = (el: HTMLElement) => { const now = new Map<string, number>(); for (const row of el.querySelectorAll<HTMLElement>('[data-flip]')) now.set(row.dataset.flip!, topIn(row, el)); last.current = now }
+  useEffect(() => () => cancelAnimationFrame(later.current), [])
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
@@ -20,12 +27,15 @@ export function useFlip(box: RefObject<HTMLElement | null>, shape: string, ids: 
     const born = new Set(first ? [] : ids.filter((id) => !known.current!.has(id)))
     known.current ??= new Set()
     for (const id of ids) known.current.add(id)
+    cancelAnimationFrame(later.current)
+    // nothing moved or arrived: measured once this frame has painted (a frame later, the layout is clean)
+    if (first || (!moved && !born.size)) { later.current = requestAnimationFrame(() => { later.current = requestAnimationFrame(() => { if (box.current) measure(box.current) }) }); return }
     const now = new Map<string, number>()
     const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
     for (const row of el.querySelectorAll<HTMLElement>('[data-flip]')) {
       const key = row.dataset.flip!, top = topIn(row, el)
       now.set(key, top)
-      if (calm || first || (!moved && !born.size)) continue
+      if (calm) continue
       if (born.has(key)) { row.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' }); continue }
       const from = last.current.get(key)
       if (!moved || from === undefined) continue

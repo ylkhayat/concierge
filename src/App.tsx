@@ -1,6 +1,5 @@
 import { ClipboardList, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap, Palette as Swatch } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import { flushSync } from 'react-dom'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
 import { Standup } from './components/Standup.tsx'
@@ -44,7 +43,7 @@ import { deckKey, designOn, readPlace, workspaceFor, type DesignFrom, type Mode,
 
 // the graph libraries load only when the codebase view opens
 const CodebaseView = lazy(() => import('./components/Codebase.tsx'))
-import { ago, api, critUrl, enc, isTyping, param, setParam, useDeck, useNow, useTheme, type PrView, type TicketView } from './lib.ts'
+import { ago, api, critUrl, enc, isTyping, param, prefetchFeed, setParam, useDeck, useNow, useTheme, type PrView, type TicketView } from './lib.ts'
 
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
@@ -150,17 +149,14 @@ export function App() {
   // quick confirmations ("Copied", "Run queued"): sonner, like the alerts
   const toast = (msg: string, tone: Toast['tone'] = 'ok') => { if (tone === 'ok') sonner.success(msg); else sonner.error(msg) }
 
-  const detailRef = useRef<HTMLElement>(null)
   const away = useAway() // this machine's view: repositories not on it, whose PRs and tickets aren't listed or opened here
   const held = useHeld() // repositories no machine can work on now, and why
   const prs = away.size && allPrs ? allPrs.filter((p) => !away.has(p.repo) || p.id === selected) : allPrs
   const select = (id?: string) => {
     if (id === selected) return
-    // switching items: the browser crossfades the detail pane alone (an element-scoped view transition); the list,
-    // the rail and the header don't move. Where there is no such thing, the page's own entrance (Detail) does it
-    const pane = detailRef.current as (HTMLElement & { startViewTransition?: (f: () => void) => unknown }) | null
-    if (scopedTransitions && pane?.startViewTransition && selected && id && !matchMedia('(prefers-reduced-motion: reduce)').matches) pane.startViewTransition(() => flushSync(() => setSelected(id)))
-    else setSelected(id)
+    // switching items: at once, in the frame of the click. A crossfade (a view transition on the detail pane) waited
+    // a frame for its snapshot and then held the new page under a ~300ms fade; the row lit before the page did
+    setSelected(id)
     // the query (tabs, view, focus…) stays; a tour step belongs to the PR it was on
     const u = new URL(location.href); u.searchParams.delete('step'); u.hash = id ? enc(id) : ''
     history.replaceState(null, '', u)
@@ -237,6 +233,18 @@ export function App() {
   const focusedPrs = prs && focus ? prs.filter((p) => p.repo === focus || p.id === selected || stack?.members.includes(p)) : prs
   const list = focusedPrs ? ordered(focusedPrs, query, tab) : []
   const needsYou = prs?.filter(waiting).length ?? 0
+  // the items either side of the open one, read ahead once the page is idle: j / k (or the next row down) opens them
+  // whole instead of empty for the time the fetch takes (a row the pointer rests on is read ahead by its list)
+  const listIds = mode === 'exec' ? execList.map((t) => t.id) : mode === 'review' ? list.map((p) => p.id) : []
+  const at = listIds.indexOf(selected ?? '')
+  const around = at < 0 ? '' : [listIds[at - 1], listIds[at + 1]].filter(Boolean).join(' ')
+  useEffect(() => {
+    if (!around) return
+    const go = () => { for (const id of around.split(' ')) prefetchFeed(mode === 'exec' ? `ticket:${id}` : id) }
+    if (typeof requestIdleCallback === 'undefined') { const t = setTimeout(go, 300); return () => clearTimeout(t) }
+    const t = requestIdleCallback(go, { timeout: 1000 })
+    return () => cancelIdleCallback(t)
+  }, [around, mode])
   // the desk: one unit (a stack, a ticket with its PRs, a lone PR) at a time, under the same focus
   const newer = useNewVersion()
   // once per build: say what you're on now, so you know an update reached you
@@ -454,7 +462,7 @@ export function App() {
             : <div className="space-y-2 p-3 pt-16">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[46px] animate-pulse rounded-lg bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
-      <main ref={detailRef} data-detail className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
+      <main data-detail className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
         {codebaseRepo ? (
           <div key="codebase" className="h-full animate-[detail-in_180ms_var(--ease-snappy)]">
             <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}>
@@ -492,7 +500,7 @@ export function App() {
             : <div className="space-y-2 p-3 pt-6">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-xl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
-      <main ref={detailRef} data-detail className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
+      <main data-detail className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
         {stackPage ? stackPage : ticket ? null : (
           <ExecHome repo={focus} tickets={scoped} prs={prs ?? []} now={now} onTicket={select} onPr={goPr} onMap={focus && repos.includes(focus) ? () => goCodebase(focus) : undefined} />
         )}
@@ -668,14 +676,11 @@ const Boot = () => (
   </div>
 )
 
-/** Element-scoped view transitions (Chrome 147+): a part of the page transitions on its own. */
-const scopedTransitions = typeof HTMLElement !== 'undefined' && 'startViewTransition' in HTMLElement.prototype
-
-/** An opened PR, stack or ticket: one entrance for the whole page. What it holds (the chat's turns, the vitals) would
- *  fade in again as its data lands; for the page's first moments that is held back (.fresh, index.css), so it doesn't
- *  arrive twice. What comes in after that still fades in. */
+/** An opened PR, stack or ticket: shown at once, no entrance (switching items is instant). What it holds (the chat's
+ *  turns, the vitals) would fade in as its data lands; for the page's first moments that is held back (.fresh,
+ *  index.css), so it just shows. What comes in after that still fades in. */
 function Detail({ children }: { children: React.ReactNode }) {
   const [fresh, setFresh] = useState(true)
   useEffect(() => { const t = setTimeout(() => setFresh(false), 1200); return () => clearTimeout(t) }, [])
-  return <div className={`h-full ${scopedTransitions ? '' : 'animate-[detail-in_180ms_var(--ease-snappy)]'} ${fresh ? 'fresh' : ''}`}>{children}</div>
+  return <div className={`h-full ${fresh ? 'fresh' : ''}`}>{children}</div>
 }

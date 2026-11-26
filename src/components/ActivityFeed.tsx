@@ -3,7 +3,7 @@ import {
   Bot, CircleCheck, FilePen, FileText, Search, ShieldAlert, Sparkles, SquareTerminal, TriangleAlert, Users, Wrench,
   ChevronRight, type LucideIcon,
 } from 'lucide-react'
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { memo, startTransition, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { api, here, hereIn, type Activity } from '../lib.ts'
 import { Md } from './Md.tsx'
 import { Tabs } from './Tabs.tsx'
@@ -48,6 +48,17 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
   const newest = chapters.at(-1)?.key
   if (newest !== lastKey.current) { if (lastKey.current && !pinned.current) kept.current.add(lastKey.current); lastKey.current = newest }
   const open = (ch: Chapter, i: number) => (i === chapters.length - 1 || kept.current.has(ch.key)) !== flipped.has(ch.key)
+  // a page opening draws the newest lines of its run first (the feed is pinned to them, so they are what's in view),
+  // and the rest just after, in a transition a click can interrupt: a run of a few hundred lines drew every message's
+  // markdown inside the click that opened it
+  const [whole, setWhole] = useState(false)
+  useEffect(() => {
+    if (whole || !feed.length) return
+    // after the first frame has painted (a frame, then a task)
+    let t: ReturnType<typeof setTimeout> | undefined
+    const f = requestAnimationFrame(() => { t = setTimeout(() => startTransition(() => setWhole(true))) })
+    return () => { cancelAnimationFrame(f); clearTimeout(t) }
+  }, [whole, feed.length > 0])
   const pane = useRef<HTMLElement | null>(null)
   useEffect(() => {
     const b = pane.current = scroller(box.current)
@@ -64,7 +75,7 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
     down()
     const id = requestAnimationFrame(down)
     return () => cancelAnimationFrame(id)
-  }, [feed.length, live])
+  }, [feed.length, live, whole])
 
   const entry = (a: Activity, k: string) => {
           // a turn of Intent or Understanding: a plain message with its lane's rail and name (yours to the right, as yours are)
@@ -184,7 +195,7 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
     <div ref={box} className="px-4 py-3">
       <ol className="relative space-y-5">
         {chapters.map((ch, ci) => (
-          <Turn key={ch.key} ch={ch} open={open(ch, ci)} live={live && ci === chapters.length - 1} details={details} onToggle={() => toggle(ch.key)}
+          <Turn key={ch.key} ch={ch} open={open(ch, ci)} live={live && ci === chapters.length - 1} details={details} onToggle={() => toggle(ch.key)} tail={whole ? undefined : TAIL}
                 until={chapters[ci + 1]?.head?.at} before={chapters.slice(0, ci).flatMap((c) => c.items).findLast((a) => a.costUsd != null)?.costUsd}
                 entry={(a, k) => entry(a, `${ci}:${k}`)} />
         ))}
@@ -365,9 +376,11 @@ const secs = (ms: number) => ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))
  * the account) sit in one quiet line above it. Folded (an earlier turn), it is what started it and how it ended.
  */
 // a run that is over doesn't change: it renders again only when it opens, closes or gets a line (the live one)
-const Turn = memo(TurnImpl, (a, b) => a.ch.key === b.ch.key && a.ch.items.length === b.ch.items.length && a.open === b.open && a.live === b.live && a.details === b.details && a.until === b.until && a.before === b.before)
-function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
-  ch: Chapter; open: boolean; live: boolean; details: boolean; onToggle: () => void; until?: string; before?: number; entry: (a: Activity, k: string) => ReactNode
+const Turn = memo(TurnImpl, (a, b) => a.ch.key === b.ch.key && a.ch.items.length === b.ch.items.length && a.open === b.open && a.live === b.live && a.details === b.details && a.until === b.until && a.before === b.before && a.tail === b.tail)
+/** How much of a turn's body a page's first frame draws: its last parts (ActivityFeed's `whole`). */
+const TAIL = 16
+function TurnImpl({ ch, open, live, details, onToggle, until, before, entry, tail }: {
+  ch: Chapter; open: boolean; live: boolean; details: boolean; onToggle: () => void; until?: string; before?: number; entry: (a: Activity, k: string) => ReactNode; tail?: number
 }) {
   const h = ch.head!
   const steps = ch.items.filter((a) => a.kind === 'tool').length
@@ -385,6 +398,7 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
   // a failed step mid-run (an exit code) is part of the work; only an error that ends the run stands on its own
   for (const a of rest) { if (matters(a) && (a.kind !== 'error' || a === ch.outcome)) body.push(a); else if (Array.isArray(body.at(-1))) (body.at(-1) as Activity[]).push(a); else body.push([a]) }
   const keys = keysOf(ch.items)
+  const from = tail && body.length > tail ? body.length - tail : 0 // the first frame: only the last parts
   const label = h.text === 'Your reply' ? (trigger ? 'You asked' : 'Your reply') : h.text
   return (
     <li className={`list-none ${live ? '' : 'cv'}`}>
@@ -405,7 +419,7 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
       </button>
       <ol className="space-y-1.5">
         {trigger && <YouSaid a={trigger} clamp={!open} />}
-        {open ? body.map((g, i) => Array.isArray(g)
+        {open ? body.map((g, i) => i < from ? null : Array.isArray(g)
           ? <Worked key={`w:${keys.get(g[0])}`} items={g} open={details} live={live && i === body.length - 1} until={(body[i + 1] as Activity | undefined)?.at ?? (live ? undefined : stop)} render={(a) => entry(a, keys.get(a)!)} />
           : entry(g, keys.get(g)!))
           : (ch.outcome || steps > 0) && (

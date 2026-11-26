@@ -3,8 +3,8 @@ import { useHeld } from '../held.ts'
 import { appColor } from '../appColor.ts'
 import { askLine } from '../../server/reply.ts'
 import { Bookmark, ChevronRight, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { api, type PrView } from '../lib.ts'
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { api, prefetchFeed, useStable, type PrView } from '../lib.ts'
 import { treeOf } from '../desk.ts'
 import { useDragPick } from '../pick.ts'
 import { reviewPlan } from '../plan.ts'
@@ -88,7 +88,7 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
   useEffect(() => setOver((o) => pending(o, given)), [given])
   const prs = given.map((p) => (over[p.id] ? { ...p, ...over[p.id] } : p)).filter((p) => !p.dismissed)
   const nav = useRef<HTMLElement>(null)
-  const act: Act = (p, what) => {
+  const act: Act = useStable((p: PrView, what: 'pin' | 'hide') => {
     const name = `${p.repo.split('/')[1]}#${p.number}`
     if (what === 'hide') {
       setOver((o) => ({ ...o, [p.id]: { ...o[p.id], dismissed: true } }))
@@ -99,7 +99,8 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
     setOver((o) => ({ ...o, [p.id]: { ...o[p.id], pinned: on } }))
     api('/pins', { key: `pr:${p.id}`, on }).then(() => toast(on ? `${name} bookmarked: it stays on top` : `${name}: bookmark removed`),
       (e: Error) => { setOver((o) => ({ ...o, [p.id]: { ...o[p.id], pinned: !on } })); toast(e.message, 'error') })
-  }
+  })
+  const select = useStable(onSelect)
   // a burst of updates moves rows once, when it settles (settle.ts); the filter, the tab and your clicks at once
   const groups = useSettled(grouped(prs, query, tab), prId, groupTitle, `${tab}|${query}|${JSON.stringify(over)}`), list = groups.flatMap((g) => g.units.flat())
   useFlip(nav, `${tab}|${shapeKey(groups, prId, groupTitle)}`, prs.map(prId))
@@ -117,7 +118,9 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
   useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [selected])
   // picking, for a planned batch of reviews: the avatar (a stack's node) is the pick box, or drag across rows
   const drag = useDragPick(picked, onPick)
-  const pick: Pick = { picked, drag, toggle: (id) => onPick(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]) }
+  const toggle = useStable((id: string) => onPick(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]))
+  // the same props from one render to the next (the rows are memoized): a click redraws the row it lit and the one it left
+  const pick: Pick = useMemo(() => ({ picked, drag, toggle }), [picked, drag, toggle])
 
   return (
     <div className="flex h-full flex-col">
@@ -176,8 +179,8 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
                 </button>
               </h2>
               {!shut[g.title] && units.map((u) => u[0].stack && u.length > 1
-                ? <Stack key={stackKey(u[0])} prs={u} here={g.recent || g.pinned ? u.map((p) => p.status) : g.statuses} byNumber={byNumber} selected={selected} onSelect={onSelect} now={now} activeRef={activeRef} pick={pick} act={act} />
-                : <Row key={u[0].id} p={u[0]} seen={g.recent ? seen.get(u[0].id) : undefined} active={u[0].id === selected} onSelect={onSelect} now={now} activeRef={activeRef} pick={pick} act={act} />)}
+                ? <Stack key={stackKey(u[0])} prs={u} here={g.recent || g.pinned ? u.map((p) => p.status) : g.statuses} byNumber={byNumber} selected={u.some((p) => p.id === selected || `stack:${p.id}` === selected) ? selected : undefined} onSelect={select} now={now} activeRef={activeRef} pick={pick} act={act} />
+                : <Row key={u[0].id} p={u[0]} seen={g.recent ? seen.get(u[0].id) : undefined} active={u[0].id === selected} onSelect={select} now={now} activeRef={activeRef} pick={pick} act={act} />)}
             </section>
           )
         })}
@@ -235,13 +238,21 @@ function Quick({ p, act }: { p: PrView; act: Act }) {
   )
 }
 
-/** A PR on its own: avatar with its status dot, title, and the facts line. */
-function Row({ p, seen, active, onSelect, now, activeRef, pick, act }: RowProps) {
+/** A row's drag-to-pick handlers, and its feed read ahead while the pointer (or the focus) rests on it: by the click it
+ *  is cached, so the page opens whole instead of empty for the time the fetch takes. */
+const bindRow = (p: PrView, pick: Pick, can: boolean) => {
+  const d = pick.drag(p.id, can) as { onPointerEnter?: () => void }
+  return { ...d, onPointerEnter: () => { prefetchFeed(p.id); d.onPointerEnter?.() }, onFocus: () => prefetchFeed(p.id) }
+}
+
+/** A PR on its own: avatar with its status dot, title, and the facts line. Memoized: its props keep their identity
+ *  between renders (PrList), so selecting another PR redraws only the row it lights and the one it leaves. */
+const Row = memo(function Row({ p, seen, active, onSelect, now, activeRef, pick, act }: RowProps) {
   const away = useAway() // its repository isn't on this machine: shown, not opened
   const held = useHeld() // no machine can work on its application now: dimmed, opened to read, not picked
   const working = p.status === 'preparing' || p.status === 'posting'
   return (
-    <button data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} disabled={away.has(p.repo)} data-away={away.has(p.repo) || undefined} data-held={(!!held[p.repo] && !away.has(p.repo)) || undefined} {...pick.drag(p.id, pickable(p) && !held[p.repo])} aria-current={active} title={`${p.title}\n${p.repo}#${p.number}${held[p.repo] ? `\nActions off: ${held[p.repo]}` : ''}`} style={appColor(p.repo).style}
+    <button data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} disabled={away.has(p.repo)} data-away={away.has(p.repo) || undefined} data-held={(!!held[p.repo] && !away.has(p.repo)) || undefined} {...bindRow(p, pick, pickable(p) && !held[p.repo])} aria-current={active} title={`${p.title}\n${p.repo}#${p.number}${held[p.repo] ? `\nActions off: ${held[p.repo]}` : ''}`} style={appColor(p.repo).style}
             className={`group relative mb-0.5 flex w-full items-center gap-2.5 overflow-hidden rounded-ctl px-2.5 py-2 text-left reading:flex-col reading:gap-1 reading:px-0 reading:py-1.5 -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${active ? ACTIVE : pick.picked.includes(p.id) ? PICKED : IDLE}`}>
       {working && <Shimmer />}
       <PickMark p={p} pick={pick}>
@@ -260,16 +271,23 @@ function Row({ p, seen, active, onSelect, now, activeRef, pick, act }: RowProps)
       <Trail actions={<Quick p={p} act={act} />}><StatusBadge status={p.status} mine={p.mine} compact /></Trail>
     </button>
   )
+})
+
+type StackProps = {
+  prs: PrView[]; here: PrView['status'][]; byNumber: Map<string, PrView>; selected?: string; onSelect: (id: string) => void; now: number
+  activeRef: RefObject<HTMLButtonElement | null>; pick: Pick; act: Act
 }
+/** The same stack as before: its members, its group, the selection within it (PrList passes it only when it is one of
+ *  them), and every PR its strip shows. The arrays are made afresh each render, so they are compared by what they hold. */
+const sameStack = (a: StackProps, b: StackProps) => a.selected === b.selected && a.now === b.now && a.pick === b.pick && a.onSelect === b.onSelect && a.act === b.act
+  && a.prs.length === b.prs.length && a.prs.every((p, i) => p === b.prs[i]) && a.here.join() === b.here.join()
+  && a.prs.every((p) => (p.stack ?? []).every((s) => a.byNumber.get(`${p.repo}#${s.number}`) === b.byNumber.get(`${p.repo}#${s.number}`)))
 
 /**
  * A stack as one card: a header with where it lives and a strip of every member's status, then its PRs bottom to top
  * on a rail, each node its status. The ones that put the stack in this group stand out; the rest stay quiet.
  */
-function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, act }: {
-  prs: PrView[]; here: PrView['status'][]; byNumber: Map<string, PrView>; selected?: string; onSelect: (id: string) => void; now: number
-  activeRef: RefObject<HTMLButtonElement | null>; pick: Pick; act: Act
-}) {
+const Stack = memo(function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, act }: StackProps) {
   const away = useAway()
   const held = useHeld()
   // every PR of the tree, bottom first (PRs built on the same one have different lines: one card holds them all)
@@ -297,7 +315,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
         const active = p.id === selected, lit = here.includes(p.status)
         const working = p.status === 'preparing' || p.status === 'posting' || p.stackRun === 'running'
         return (
-          <button key={p.id} data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} disabled={away.has(p.repo)} data-away={away.has(p.repo) || undefined} data-held={(!!held[p.repo] && !away.has(p.repo)) || undefined} {...pick.drag(p.id, pickable(p) && !held[p.repo])} aria-current={active} title={`${p.title}\n${p.repo}#${p.number} · ${statusMeta(p.status, p.mine).label}${held[p.repo] ? `\nActions off: ${held[p.repo]}` : ''}`}
+          <button key={p.id} data-flip={p.id} ref={active ? activeRef : undefined} onClick={() => onSelect(p.id)} disabled={away.has(p.repo)} data-away={away.has(p.repo) || undefined} data-held={(!!held[p.repo] && !away.has(p.repo)) || undefined} {...bindRow(p, pick, pickable(p) && !held[p.repo])} aria-current={active} title={`${p.title}\n${p.repo}#${p.number} · ${statusMeta(p.status, p.mine).label}${held[p.repo] ? `\nActions off: ${held[p.repo]}` : ''}`}
                   className={`group relative flex w-full items-center gap-2.5 overflow-hidden rounded-ctl py-1.5 pl-2.5 pr-2 text-left reading:flex-col reading:gap-1 reading:px-0 reading:py-1.5 -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${active ? ACTIVE : pick.picked.includes(p.id) ? PICKED : IDLE}`}>
             {working && <Shimmer />}
             {/* the rail: joins this node to the PR below and the one above */}
@@ -321,7 +339,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
       })}
     </div>
   )
-}
+}, sameStack)
 
 const ACTIVE = 'sel-row'
 const PICKED = 'bg-accent/6 ring-1 ring-accent/25'

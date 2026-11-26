@@ -19,9 +19,6 @@ html { font-feature-settings: "cv11", "ss01"; font-optical-sizing: auto; }
 * { scrollbar-width: thin; scrollbar-color: transparent transparent; }
 *:hover { scrollbar-color: rgb(161 161 170 / 0.4) transparent; }
 
-/* PR switch: native View Transitions crossfade + slide */
-::view-transition-old(detail) { animation: 120ms ease-in both fade-out; }
-::view-transition-new(detail) { animation: 220ms var(--ease-snappy) both rise-in; }
 @keyframes fade-out { to { opacity: 0; } }
 /* a page just opened (Detail, App.tsx): its parts arrive with it, not in a second wave of their own */
 .fresh :is(.lane, [class*='detail-in'], [class*='pop-in'], [class*='toast-in']) { animation: none; }
@@ -135,6 +132,8 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
    lift: an accent wash, an accent bar on its leading edge and an accent hairline, over the card's lift */
 .sel-row { background: color-mix(in oklch, var(--accent) 13%, var(--surface-1)); color: var(--fg-1);
   box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent), var(--e1); }
+/* a click lights its row at once, in the click's frame (the row it leaves still fades back) */
+.sel-row, .sel-row .transition-colors { transition-duration: 0s; }
 /* every card is the same material: a surface with a hairline, a soft drop and a lit top edge, not a bare outline */
 .bg-surface-1.ring-1.ring-line:not(:focus-within), .bg-white.ring-1.ring-line:not(:focus-within) { box-shadow: var(--e1); }
 :root.dark .bg-white.ring-1.ring-line { background: var(--surface-1); }
@@ -148,12 +147,6 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
    virtualization); each remembers its last height, so the scrollbar doesn't jump */
 [data-flip], .cv { content-visibility: auto; contain-intrinsic-size: auto 72px; }
 .cv { contain-intrinsic-size: auto 160px; }
-
-/* switching items: the detail pane's own view transition (App.tsx select) — the old page goes quickly, the new one
-   rises in a touch after it, so the text changes in one soft motion instead of two snapshots crossfading */
-[data-detail]::view-transition-group(*) { animation-duration: 200ms; animation-timing-function: var(--ease-snappy); }
-[data-detail]::view-transition-old(*) { animation: 90ms var(--ease-in) both fade-out; }
-[data-detail]::view-transition-new(*) { animation: 180ms 40ms var(--ease-out) both rise-in; }
 
 /* Textures (Settings → Appearance): a grain over the whole app, the tactile touch of 2026's interfaces. One fixed
    layer that takes no clicks, at very low opacity and with no blend mode, so it costs nothing to draw. Grain is fine
