@@ -3,7 +3,7 @@
 //   atlas/<repo>/nodes.json     what a folder is, keyed by path and the git tree sha it was written for
 //   explain/<repo>-<n>/<head>   the PR overlay; a new push only re-explains files changed since the last head
 import { tmpdir } from 'node:os'
-import { LEVELS_SCHEMA, LEVELS_SYSTEM, levelsOf, levelsPrompt } from './levels.ts'
+import { LEVELS_SCHEMA, LEVELS_SYSTEM, STORY_RULE, levelsOf, levelsPrompt } from './levels.ts'
 import { method } from './method.ts'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
@@ -58,6 +58,7 @@ export type Overlay = {
   tour?: Tour // absent on explanations made before the tour existed
   facts: Facts
   levels?: import('./levels.ts').Levels // the change at five depths, by dimension (the Understanding board's meter)
+  cards?: Partial<Record<IntentCard, string>> // the Intent board's cards in context, written in the same pass
 }
 /** A guided reading of the PR: why it exists, then the change in the order that makes sense, then what does not belong. */
 export type Shape = { label: string; tone: 'ok' | 'bad' | 'neutral' }
@@ -248,6 +249,11 @@ const str = { type: 'string' }
 const LANE = { type: 'object', additionalProperties: false, required: ['shapes', 'caption'], properties: {
   shapes: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'tone'], properties: { label: str, tone: { enum: ['ok', 'bad', 'neutral'] } } } }, caption: str,
 } }
+/** The Intent board's cards that come from the explanation (src/thread/ChangeMap.tsx IntentFlow), each said in context. */
+export const INTENT_CARDS = ['problem', 'before', 'approach', 'result', 'risk'] as const
+export type IntentCard = (typeof INTENT_CARDS)[number]
+const CARDS_SYSTEM = `the Intent board's cards, each in context: problem (what was going wrong), before (what people saw before), approach (how it is fixed), result (what is true once fixed, or who it is for), risk (its risk). Each: ${STORY_RULE}`
+
 const SCHEMA = {
   type: 'object', additionalProperties: false, required: ['nodes', 'overlay'],
   properties: {
@@ -261,8 +267,9 @@ const SCHEMA = {
     },
     nodes: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'summary', 'responsibilities'], properties: { path: str, summary: str, responsibilities: { type: 'array', items: str }, businessRole: str } } },
     overlay: {
-      type: 'object', additionalProperties: false, required: ['business', 'touched', 'impact', 'flows', 'tour', 'levels'],
+      type: 'object', additionalProperties: false, required: ['business', 'touched', 'impact', 'flows', 'tour', 'levels', 'cards'],
       properties: {
+        cards: { type: 'object', additionalProperties: false, required: [...INTENT_CARDS], properties: Object.fromEntries(INTENT_CARDS.map((k) => [k, str])) },
         levels: LEVELS_SCHEMA, // the Understanding board's five levels, written in the same pass as the tour (Intent)
         business: { type: 'object', additionalProperties: false, required: ['headline', 'what', 'why', 'who', 'risk', 'riskWhy'], properties: { headline: str, what: str, why: str, who: str, risk: { enum: ['low', 'medium', 'high'] }, riskWhy: str } },
         touched: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'change', 'after', 'why'], properties: { path: str, change: { enum: ['added', 'modified', 'removed'] }, before: str, after: str, why: str } } },
@@ -429,7 +436,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   })
   const prompt = buildPrompt({ pr, base, head: pr.headSha, facts, skeleton, needSkeleton, sig, nodes, asks, askTouched, prev, interdiff, tickets, builds })
   writeJson(join(OVERLAYS(pr), 'last-prompt.json'), { prompt }) // for debugging what was (not) asked
-  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress, SCHEMA, config.explainBudgetUsd ?? 1.5, await method('explainChange', `${FORMAT}\n\noverlay.levels: ${LEVELS_SYSTEM}`), undefined, pr.repo)
+  const { result, cost } = await callClaude(prompt, cwd, opts.signal, progress, SCHEMA, config.explainBudgetUsd ?? 1.5, await method('explainChange', `${FORMAT}\n\noverlay.levels: ${LEVELS_SYSTEM}\n\noverlay.cards: ${CARDS_SYSTEM}`), undefined, pr.repo)
 
   // persist the shared knowledge first, so even a later failure leaves the atlas richer
   const now = new Date().toISOString()

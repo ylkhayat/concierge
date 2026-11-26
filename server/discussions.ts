@@ -11,6 +11,7 @@ import { providerFor, spawnAgent } from './providers.ts'
 import { haiku } from './next.ts'
 import { save as persist, state } from './store.ts'
 import { stale } from './live.ts'
+import { STORY_RULE } from './levels.ts'
 // kept, and every open page showing it reads it again (live.ts)
 const save = () => { persist(); stale('/discussions') }
 
@@ -41,7 +42,7 @@ export type Brief = { version: string; status: string; short: string; long: stri
 /** The card as a picture: Understanding's path through the code (before → after over it), Intent's decision as a fork. */
 export type Diagram =
   | { kind: 'path'; before: string; after: string; steps: { label: string; file: string; detail: string }[] }
-  | { kind: 'fork'; problem: string; chosen: { label: string; why: string }; setAside: { label: string; why: string }[]; open: string[] }
+  | { kind: 'fork'; problem: string; chosen: { label: string; why: string; story?: string }; setAside: { label: string; why: string; story?: string }[]; open: string[] }
 /** What a discussion over several PRs settled for one of them: the decision as it applies there, and its agent's steer. */
 export type PerPr = { number: number; decision: string; steer?: string | null; sentAt?: string }
 export type Adr = { title: string; status: 'proposed' | 'accepted'; context: string; decision: string; consequences: string; alternatives?: string }
@@ -117,7 +118,8 @@ status: 2 to 5 words on where the intent stands ("Decided: no fallback", "2 deci
 short: at most 3 short plain lines, the gist a developer reads on hover.
 long: markdown, at most 120 words, these bold-labelled parts, each one or two short lines (each part is read alone, as one slide): **Problem** (what asked for it: ticket, review, incident), **Decision** (what was chosen), **Set aside** (alternatives and why), **Constraints** (the stack's direction, what reviewers agreed), **Open** (decisions nobody made yet, or "none").
 Only what the material says; never retell what the code does.
-For the card's picture, a fork: problem (at most 8 words), chosen (label at most 5 words, why one short sentence), setAside (0 to 3 alternatives, each label and why it was set aside), open (0 to 3 decisions nobody made, at most 8 words each). Nothing in the material for a part: leave it empty.`,
+For the card's picture, a fork: problem (at most 8 words), chosen (label at most 5 words, why one short sentence), setAside (0 to 3 alternatives, each label and why it was set aside), open (0 to 3 decisions nobody made, at most 8 words each). Nothing in the material for a part: leave it empty.
+chosen and each setAside also carry story: that option in context, ${STORY_RULE}`,
   understanding: `You write the Understanding card of a code change, for its developer: WHAT the change does now. ${LINE}
 status: 2 to 5 words on what it does ("Calls read one envelope").
 short: at most 3 short plain lines, the gist a developer reads on hover.
@@ -125,7 +127,7 @@ long: markdown, at most 120 words, these bold-labelled parts, each one or two sh
 Never retell why it was decided.
 For the card's picture, a path: before and after (the behaviour, at most 8 words each), steps (the path in order, 3 to 5, each label at most 4 words naming the function or piece, file its repo path or empty, detail one short sentence on what happens there).`,
 }
-const str = { type: 'string' }, why = { type: 'object', additionalProperties: false, required: ['label', 'why'], properties: { label: str, why: str } }
+const str = { type: 'string' }, why = { type: 'object', additionalProperties: false, required: ['label', 'why', 'story'], properties: { label: str, why: str, story: str } }
 const CARD_BASE = { status: str, short: str, long: str }
 const CARD_SCHEMA: Record<Topic, object> = {
   intent: { type: 'object', additionalProperties: false, required: ['status', 'short', 'long', 'problem', 'chosen', 'setAside', 'open'],
@@ -133,7 +135,7 @@ const CARD_SCHEMA: Record<Topic, object> = {
   understanding: { type: 'object', additionalProperties: false, required: ['status', 'short', 'long', 'before', 'after', 'steps'],
     properties: { ...CARD_BASE, before: str, after: str, steps: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'file', 'detail'], properties: { label: str, file: str, detail: str } } } } },
 }
-type CardOut = { status: string; short: string; long: string; problem?: string; chosen?: { label: string; why: string }; setAside?: { label: string; why: string }[]; open?: string[]; before?: string; after?: string; steps?: { label: string; file: string; detail: string }[] }
+type CardOut = { status: string; short: string; long: string; problem?: string; chosen?: { label: string; why: string; story?: string }; setAside?: { label: string; why: string; story?: string }[]; open?: string[]; before?: string; after?: string; steps?: { label: string; file: string; detail: string }[] }
 /** The picture from what the card returned, when there is enough of it to draw. */
 export function diagramOf(topic: Topic, o: CardOut): Diagram | undefined {
   if (topic === 'understanding') return o.steps?.length ? { kind: 'path', before: o.before ?? '', after: o.after ?? '', steps: o.steps.slice(0, 5) } : undefined

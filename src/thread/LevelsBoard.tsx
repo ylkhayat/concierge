@@ -14,7 +14,7 @@ import { Tabs } from '../components/Tabs.tsx'
 import { api, enc } from '../lib.ts'
 
 /** A card on a board: a change said in words. strong: the one the lane is about; faded: set aside. */
-export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[] }
+export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[]; story?: string } // story: its "In context", written with the board
 export type Lane = { id: string; label: string; hint: string; icon: LucideIcon; cards: Card[]; skip?: boolean } // skip: left out when empty, unnamed
 
 const W = 260, H = 124, GAP = 24, LABEL_W = 168, LANE_GAP = 28, COLS = 4
@@ -60,19 +60,19 @@ function route(a: Pt, b: Pt, gapY: number | undefined): Pt[] {
 }
 
 /** Lanes stacked down the board, cards left to right in each; a click opens a card's whole story on the side. */
-/** A card as a short user story, written on its first click (server: /prs/:id/story) and kept. */
+/** A card as a short user story: written with the board; a card from before that, on its first click (server: /prs/:id/story), and kept. */
 const told = new Map<string, string>()
 function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'intent'; c: Card }) {
   const key = `v2:${prId}:${board}:${c.id}`
-  const [text, setText] = useState(told.get(key)), [failed, setFailed] = useState(false)
+  const [text, setText] = useState(c.story ?? told.get(key)), [failed, setFailed] = useState(false)
   useEffect(() => {
-    setText(told.get(key)); setFailed(false)
-    if (told.has(key)) return
+    setText(c.story ?? told.get(key)); setFailed(false)
+    if (c.story || told.has(key)) return
     let live = true
     api(`/prs/${enc(prId)}/story`, { board, card: { id: c.id, title: c.title, line: c.line, before: c.before, why: c.why } })
       .then((r: { story: string }) => { told.set(key, r.story); if (live) setText(r.story) }, () => { if (live) setFailed(true) })
     return () => { live = false }
-  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, c.story]) // eslint-disable-line react-hooks/exhaustive-deps
   if (failed) return null
   return (
     <div className="rounded-ctl bg-fill px-2.5 py-2">
@@ -195,7 +195,7 @@ export function LevelsBoard({ prId, levels }: { prId: string; levels: Levels }) 
     const order = new Map(levels.nodes.map((n, k) => [n.id, k]))
     const rank = (n: Levels['nodes'][number]) => (n.path ? (order.get(n.parent ?? '') ?? 0) + order.get(n.id)! / 1e4 : order.get(n.id)!)
     const lanes: Lane[] = DIMS.map((d) => ({ id: d, ...DIM[d], cards: shown.filter((n) => n.dim === d).sort((a, b) => rank(a) - rank(b)).map((n) => ({
-      id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, more: kids(n.id), tone: n.level === 1 ? 'strong' as const : undefined,
+      id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, story: n.story, more: kids(n.id), tone: n.level === 1 ? 'strong' as const : undefined,
     })) }))
     return { lanes, links: linksAt(levels, level) }
   }, [levels, level])
