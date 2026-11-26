@@ -101,6 +101,13 @@ http.createServer(async (req, res) => {
       { label: 'Cancel now as not a desktop bug' }, { label: 'Hand it to the backend team as a separate upload bug' }] },
     { kind: 'go', text: 'Post the investigation summary on the Linear ticket', checked: true },
   ] } })
+  // MOCK_BG=1: what the gallery's running chat (/?gallery=chat&live) left in the background: a shell with output, a
+  // subagent, and a long-named process under the agent
+  if (p === '/gallery/run/background' && process.env.MOCK_BG) return json(res, { tasks: [
+    { id: 'b1', kind: 'shell', alive: true, outlived: false, pids: [101], cpu: 88, mb: 412, at: new Date(now - 38 * 60e3).toISOString(), cmd: 'npm run test:exports -- --bucket staging-exports-eu-west-1 --retries 3 --reporter verbose > /tmp/exports-suite-with-a-very-long-name.log 2>&1',
+      tail: Array.from({ length: 12 }, (_, i) => `  ✓ export ${i + 1} of 240 (retry ${i % 3}) uploaded to s3://staging-exports-eu-west-1/reporters/long/path/segment-${i}.zip in ${(i * 1.7).toFixed(1)}s`).join('\n') },
+    { id: 'b2', kind: 'agent', alive: true, outlived: false, pids: [], cpu: 0, mb: 0, at: new Date(now - 37 * 60e3).toISOString(), cmd: 'Read the upload service logs for the last 30 days and list every export that was retried until it timed out' },
+  ], procs: [{ pid: 202, cmd: 'node /code/app/node_modules/.bin/vitest run --project exports --reporter=verbose --pool=forks --poolOptions.forks.singleFork', cpu: 41, mb: 230 }] })
   // MOCK_FIXTURES: a folder of real answers (providers.json, setup.json, plans_teams.json…) to preview a page with them
   if (process.env.MOCK_FIXTURES) { const fx = `${process.env.MOCK_FIXTURES}/${p.slice(1).replace(/\//g, '_') || 'index'}.json`; if (existsSync(fx)) return json(res, JSON.parse(readFileSync(fx, 'utf8'))) }
   // MOCK_REAL: a real baseline's folder (…/visuals/repo-<owner>-<name>/<sha>): its map, its built Storybooks and kept screens
