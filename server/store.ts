@@ -285,6 +285,7 @@ type State = {
   customConnectors?: Record<string, string> // connectors you added by address (name → URL), re-added when the container is rebuilt
   mutedConnectors?: string[] // connectors you don't use: folded away in Settings → Connections
   dimmed?: Record<string, string> // tickets dimmed for now → their bucket then: they light up again once it changes
+  handed?: Record<string, import('./handover.ts').TicketHandover> // tickets handed over to their PRs: the PRs' agents own their next steps (handover.ts)
   // GitHub webhooks (hooks.ts, hookSetup.ts): the public address the funnel opened, the hooks Concierge made (removed by
   // Turn off), and why a repository has none (no admin, the token's scope)
   hooks?: { url?: string; repos: Record<string, { id: number; at: string }>; problems?: Record<string, { problem: 'no-admin' | 'scope' | 'error'; text: string; at: string }> }

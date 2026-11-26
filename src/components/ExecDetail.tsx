@@ -11,6 +11,7 @@ import { Md } from './Md.tsx'
 import { Pick } from '../ui/Pick.tsx'
 import { Chip } from './Chip.tsx'
 import { NextSteps } from './NextSteps.tsx'
+import { HandedPanel, handedPlaceholder } from './Handed.tsx'
 import { Working } from './Working.tsx'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
 import { PanelSection, type Sync } from './NextPanel.tsx'
@@ -191,7 +192,9 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   const panelBody = <>
         {!t.busy && <ConnectCard compact onRun={t.repo ? runIt : undefined} toast={toast} />}
         {!t.busy && asking && <ActionCard inline t={t} actions={actions} toast={toast} />}
-        {!(!t.busy && next === 'dock' && asking) && <PanelSection title={t.busy ? 'The agent is working' : 'Do next'} icon={t.busy ? LoaderCircle : ArrowRight} tone={t.busy ? 'text-run' : 'text-accent'}>
+        {/* handed over to its PRs: their agent owns the next steps, so that is what shows, not the ticket's stale ones */}
+        {!t.busy && t.handed ? <PanelSection title="Handed over" icon={GitPullRequest} tone="text-accent"><HandedPanel h={t.handed} onOpen={openPr} /></PanelSection>
+        : !(!t.busy && next === 'dock' && asking) && <PanelSection title={t.busy ? 'The agent is working' : 'Do next'} icon={t.busy ? LoaderCircle : ArrowRight} tone={t.busy ? 'text-run' : 'text-accent'}>
           <div className="space-y-2">
             {t.busy ? (
               <Working why={run?.phase ? `${PHASE_LABEL[run.phase] ?? run.phase}.` : undefined} feed={feed} onStop={() => act('cancel', 'Run stopped')} bg={run ? { base: `/exec/${run.id}`, count: t.background } : undefined} toast={toast} />
@@ -256,7 +259,11 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   </>
   const steerSection = <>
         {/* once it hands back: its Linear question, its decisions, or your own words */}
-        {asking ? null : run && !t.busy && (run.state === 'done' || run.state === 'failed') ? (
+        {asking ? null : t.handed && !t.busy ? (
+          <PanelSection title="New work" icon={MessageSquare}>
+            <NextSteps inline handover={handoverBox(t)} replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:handed`} toast={toast} placeholder={handedPlaceholder(t.handed)} />
+          </PanelSection>
+        ) : run && !t.busy && (run.state === 'done' || run.state === 'failed') ? (
           <PanelSection title={runAsks ? 'Decide' : 'Tell the agent'} icon={MessageSquare} tone={runAsks ? 'text-accent' : undefined}>
             <NextSteps inline nextUrl={`/exec/${run.id}/next`} replyUrl={`/exec/${run.id}/reply`} draft={`ticket:${t.id}`} version={run.endedAt ?? ''} toast={toast} placeholder="Tell the agent what to change, answer, or do next…" />
           </PanelSection>
@@ -282,6 +289,9 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   return { panelBody, steerSection, ticketBody, statusField, parentLinks, stackNav, headerActions, t, actions, missing, feed, onSelect, toast, sync, onOpenLinked, compact, pr, run, tab, setTabState, setTab, copied, setCopied, g, P, prs, ci, threads, dot, resumeCmd, lastAction, runIt, act, siblings, prItems, newer, asking, shipped, runAsks, tending, next, openPr, tabBtn, chips }
 }
 
+
+/** A handed ticket's box (NextSteps' handover): its words are routed to the PR's agent or a new stacked PR. */
+export const handoverBox = (t: TicketView) => t.handed && { routeUrl: `/exec/tickets/${encodeURIComponent(t.id)}/route`, main: t.handed.main, open: t.handed.mainState === 'open' }
 
 /** Linear markdown, lightly: headings become headings, everything else keeps its lines with inline links, code and bold. */
 const ACTION_ICON = { play: Play, file: FileText, reply: Reply, wand: Wand, search: SearchCheck }

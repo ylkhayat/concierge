@@ -1,6 +1,7 @@
-import { ChevronUp, LoaderCircle, Send, Sparkles, Upload } from 'lucide-react'
+import { ChevronUp, GitPullRequest, Layers, LoaderCircle, Send, Sparkles, Upload } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { NextSteps as Steps } from '../../server/next.ts'
+import type { Routed, RouteTo } from '../../server/handover.ts'
 import { composeChecklist, type Step } from '../../server/reply.ts'
 import { laneOf, type Lane } from '../../server/lanes.ts'
 import { api } from '../lib.ts'
@@ -15,7 +16,15 @@ import { Pick } from '../ui/Pick.tsx'
  * each decision with the agent's pick selected, publishing steps marked. Untick what you don't want, pick otherwise,
  * add your own words, and one Send tells the agent all of it, including what not to do now.
  */
-export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholder, isNext, inline, draft, self, others, commands, stepper, route, attach }: {
+// words held back from a handed ticket's box (you chose Keep editing): back in the box, no error
+const KEPT = new Error('kept')
+// how long the routing decision shows before the words go: time to send them the other way
+const ROUTE_MS = 5000
+
+export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholder, isNext, inline, draft, self, others, commands, stepper, route, attach, handover }: {
+  // the ticket handed over to its PR (handover.ts): what you send to the agent is routed first, to that PR's agent or
+  // to a new PR stacked on it; the decision shows a moment before it goes, with the other way one click away
+  handover?: { routeUrl: string; main: number; open: boolean }
   attach?: import('../thread/Vitals.tsx').Attach // the discussions' suggestions you picked: over the box, sent with your words
   // one box for everything (the new design): you just send; then a small model reads your words with the agent's last
   // reply and routes them (laneModel.ts): an instruction to the agent, scope to Intent, a question to Understanding
@@ -47,6 +56,24 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   const [pin, setPinState] = useState<Lane | 'auto'>(() => { try { return (localStorage.getItem('send-lane') as Lane | 'auto' | null) ?? 'auto' } catch { return 'auto' } })
   const setPin = (l: Lane | 'auto') => { setPinState(l); try { localStorage.setItem('send-lane', l) } catch { /* private window */ } }
   const [placing, setPlacing] = useState<string>() // words sent on Auto whose lane is still being found
+  // a handed ticket's words, routed and about to go: where, why, and how to settle the send that waits on it
+  const [routed, setRouted] = useState<{ text: string; d: Routed; done: (r: unknown) => void; fail: (e: Error) => void }>()
+  // words to the agent: straight to the reply URL, or on a handed ticket routed first and sent once the moment passes
+  const ship = (words: string): Promise<any> => !handover ? api(replyUrl, { text: words })
+    : api(handover.routeUrl, { text: words }).then((d: Routed) => new Promise((done, fail) => setRouted({ text: words, d, done, fail })))
+  const go = (to: RouteTo) => {
+    const r = routed
+    if (!r) return
+    setRouted(undefined)
+    api(replyUrl, { text: r.text, to }).then((x: { routed?: Routed }) => {
+      toast(to === 'pr' ? `Sent to #${r.d.pr}’s agent` : handover?.open ? `Starting a new PR stacked on #${r.d.pr}` : 'Starting a new PR')
+      r.done(x)
+    }, r.fail)
+  }
+  const keep = () => { const r = routed; setRouted(undefined); r?.fail(KEPT) }
+  useEffect(() => { if (!routed) return; const t = setTimeout(() => go(routed.d.to), ROUTE_MS); return () => clearTimeout(t) }, [routed])
+  // a send that didn't go: your words back in the box; only a real failure says so
+  const failed = (e: Error, words?: string) => { if (words !== undefined) setText(words); if (e !== KEPT) toast(e.message, 'error') }
   useEffect(() => { if (!sentTo) return; const t = setTimeout(() => setSentTo(undefined), 30_000); return () => clearTimeout(t) }, [sentTo])
 
   // what the agent asks, cached per run (its version): reading it takes a model call the first time, so coming back to
@@ -76,7 +103,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   const asked = list.length ? list.map((x) => x.text + (x.options?.length ? ` (${x.options.map((o) => o.label).join(' / ')})` : '')).join('\n') : undefined
   const routing = !!route && !going.length && !decided
   const extra = attach?.count ?? 0
-  const blocked = sending || (!routing && unanswered.length > 0) || (!text.trim() && !going.length && !decided && !extra)
+  const blocked = sending || !!routed || (!routing && unanswered.length > 0) || (!text.trim() && !going.length && !decided && !extra)
   // where your words go: the filter's discussion; else read with the agent's last reply (a small model), else the rules
   const where = async (words: string): Promise<Lane> => {
     if (route?.force) return route.force
@@ -85,7 +112,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
     return laneOf(words, list.length > 0)
   }
   // words to a lane: the agent (as a reply), or a discussion beside it
-  const deliver = (lane: Lane, words: string) => (lane === 'ship' ? api(replyUrl, { text: words }) : route!.send(lane, words))
+  const deliver = (lane: Lane, words: string) => (lane === 'ship' ? ship(words) : route!.send(lane, words))
   const send = async () => {
     const words = text.trim()
     // suggestions picked over the box: their steers and your words (and the checklist, if any) go to the agent as one
@@ -97,10 +124,10 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
       if (armed) arm(armed, () => {})
       setSending(true)
       try {
-        if (msg) { const r = await api(replyUrl, { text: msg }) as { handedOver?: number[] }; if (r?.handedOver?.length) forget() }
+        if (msg) { const r = await ship(msg) as { handedOver?: number[] }; if (r?.handedOver?.length) forget() }
         await attach!.run(); attach!.done(); setText('')
-        toast(msg ? `Sent to the agent${extra > 1 ? `, with ${extra} suggestions` : ''}` : 'Done')
-      } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }
+        if (!handover) toast(msg ? `Sent to the agent${extra > 1 ? `, with ${extra} suggestions` : ''}` : 'Done')
+      } catch (e) { failed(e as Error) } finally { setSending(false) }
       return
     }
     if (routing && words) {
@@ -108,13 +135,13 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
       const fixed = route?.force ?? (pin !== 'auto' ? pin : undefined)
       if (fixed) {
         setSending(true)
-        try { await deliver(fixed, words); setText(''); setSentTo({ lane: fixed, text: words, at: Date.now() }) } catch (e) { toast((e as Error).message, 'error') } finally { setSending(false) }
+        try { await deliver(fixed, words); setText(''); setSentTo({ lane: fixed, text: words, at: Date.now() }) } catch (e) { failed(e as Error) } finally { setSending(false) }
         return
       }
       // Auto: the box is yours again at once; where it fits is found in the background, and said when it lands
       setText(''); setSentTo(undefined); setPlacing(words)
       void (async () => {
-        try { const lane = await where(words); await deliver(lane, words); setSentTo({ lane, text: words, at: Date.now() }) } catch (e) { toast((e as Error).message, 'error'); setText(words) } finally { setPlacing(undefined) }
+        try { const lane = await where(words); await deliver(lane, words); setSentTo({ lane, text: words, at: Date.now() }) } catch (e) { failed(e as Error, words) } finally { setPlacing(undefined) }
       })()
       return
     }
@@ -124,6 +151,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
     if (publishing.length && armed !== 'send') return arm('send', () => {})
     if (armed) arm(armed, () => {})
     setSending(true)
+    if (handover) { ship(msg).then(() => { setText(''); setPicks({}); setChecked({}) }, (e: Error) => failed(e, msg)).finally(() => setSending(false)); setText(''); return }
     api(replyUrl, { text: msg }).then(
       (r: { sent?: string; handedOver?: number[]; askAuthor?: number[]; passedTo?: string[] }) => { toast((r.passedTo?.length ? `${r.passedTo.join(', ')} ${r.passedTo.length === 1 ? 'is' : 'are'} in another run: it got your answer too. ` : '') + (r.handedOver?.length ? `Handed over to ${r.handedOver.map((n) => `#${n}`).join(', ')}'s agent. ` : '') + (r.askAuthor?.length ? `${r.askAuthor.map((n) => `#${n}`).join(', ')} isn't yours: the agent drafts a comment to its author instead. ` : '') + (r.handedOver?.length && !r.sent ? '' : r.sent === 'now' ? 'Sent: the agent reads it between steps' : r.sent === 'after' ? 'Sent: the agent takes it up as this turn ends' : r.sent === 'queued' ? 'Sent: it waits in the queue, and the agent reads it the moment it starts' : 'Sent to the agent')); setText(''); setPicks({}); setChecked({}); setOpen(false); if (r.handedOver?.length) forget() },
       (e: Error) => toast(e.message, 'error')).finally(() => setSending(false))
@@ -241,7 +269,8 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
               {armed === 'send' ? <ArmLabel>{`Confirm: ${publishing.length} public step${publishing.length === 1 ? '' : 's'}`}</ArmLabel> : sendLabel}
               {armed === 'send' && <ArmBar on="color" />}
             </button>
-          {placing && <span className="flex min-w-0 items-center gap-1.5 text-micro text-fg-3 animate-[detail-in_200ms_var(--ease-snappy)]"><Sparkles className="size-3 shrink-0 animate-pulse text-accent" /><span className="truncate">Sent · finding where “{placing.slice(0, 60)}{placing.length > 60 ? '…' : ''}” fits best…</span></span>}
+          {placing && !routed && <span className="flex min-w-0 items-center gap-1.5 text-micro text-fg-3 animate-[detail-in_200ms_var(--ease-snappy)]"><Sparkles className="size-3 shrink-0 animate-pulse text-accent" /><span className="truncate">Sent · finding where “{placing.slice(0, 60)}{placing.length > 60 ? '…' : ''}” fits best…</span></span>}
+          {routed && <RouteBar d={routed.d} open={!!handover?.open} onGo={go} onKeep={keep} />}
           {sentTo && route && <SentTo to={sentTo} unsettled={route.unsettled} onMove={(l) => { const t = sentTo.text; setSentTo(undefined); void deliver(l, t).then(() => setSentTo({ lane: l, text: t, at: Date.now() }), (e: Error) => toast(e.message, 'error')) }} />}
           </div>
           </div>
@@ -259,6 +288,29 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
         {isNext && !nothing && <span className="shrink-0 rounded-full bg-accent px-1.5 text-micro font-bold uppercase leading-4 tracking-wider text-on-accent">next · answer here</span>}
         <ChevronUp className={`size-4 shrink-0 text-fg-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>}
+    </div>
+  )
+}
+
+/**
+ * Where a handed ticket's words go, shown a moment before they do: its PR's agent, or a new PR stacked on it, with why
+ * (a rule, or the small model). The button that sends now drains as the moment passes; the other way is one click.
+ */
+function RouteBar({ d, open, onGo, onKeep }: { d: Routed; open: boolean; onGo: (to: RouteTo) => void; onKeep: () => void }) {
+  const other: RouteTo = d.to === 'pr' ? 'stack' : 'pr'
+  const say = (to: RouteTo) => (to === 'pr' ? `#${d.pr}’s agent` : open ? `a new PR stacked on #${d.pr}` : 'a new PR')
+  return (
+    <div role="status" className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-micro text-fg-3 animate-[detail-in_200ms_var(--ease-snappy)]">
+      <span className="inline-flex items-center gap-1 rounded-md bg-run/12 px-1.5 py-0.5 font-semibold text-run-text">
+        {d.to === 'pr' ? <GitPullRequest className="size-3" /> : <Layers className="size-3" />}{d.to === 'pr' ? `Goes to #${d.pr}’s agent` : open ? `Starts a new PR stacked on #${d.pr}` : 'Starts a new PR'}
+      </span>
+      <span className="min-w-0 truncate" title={d.by === 'model' ? 'Read by a small model from your words and the PR' : 'By rule'}>{d.why}{d.by === 'model' ? ' · read by a small model' : ''}</span>
+      <span className="flex-1" />
+      <button type="button" onClick={() => onGo(d.to)} className={`${armedCls} rounded-md px-1.5 py-0.5 font-medium text-fg-1 ring-1 ring-line`}>
+        Send now<span aria-hidden className="pointer-events-none absolute inset-0 -z-10 origin-right animate-[arm_5s_linear_forwards] bg-current opacity-[0.12]" />
+      </button>
+      {!(other === 'pr' && d.fixed) && <button type="button" onClick={() => onGo(other)} className="rounded-md px-1.5 py-0.5 font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1">To {say(other)} instead</button>}
+      <button type="button" onClick={onKeep} className="rounded-md px-1.5 py-0.5 font-medium text-fg-3 transition-colors hover:text-fg-1">Keep editing</button>
     </div>
   )
 }

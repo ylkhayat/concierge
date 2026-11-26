@@ -33,7 +33,8 @@ import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
 import { cachedStackTour, makeStackTour, writingStackTour } from './stackTour.ts'
 import { trackTurns } from './turns.ts'
-import { hashOf, nextSteps, stepHash, toSteps, withoutCiWatch, type NextSteps } from './next.ts'
+import { haiku, hashOf, nextSteps, stepHash, toSteps, withoutCiWatch, type NextSteps } from './next.ts'
+import { activeHandover, carryNote, carryOf, handoverDue, mainOf, ROUTE_SCHEMA, routeInstruction, routePrompt, stackedPrompt, type PrRef, type RouteTo, type Routed, type TicketHandover } from './handover.ts'
 import { pendingOf, routeSteps } from './reply.ts'
 import { alert, alerts, condition, seeAlerts, whenAlerts } from './alerts.ts'
 import { pin, pins, prText, prYours, ticketText, ticketYours, watch, type Seen } from './pins.ts'
@@ -375,12 +376,18 @@ bus.on('held', (short: boolean) => condition('memory', 'Memory', short ? 'Runs a
 bus.on('started', (id: string, job: Job) => { const p = state.prs[id]; if (p) { alert(prTarget(p), `${JOB[job.kind] ?? 'Agent'} started`); seeAlerts([`pr:${p.id}`]) } })
 bus.on('exec-started', (run: ExecRun) => { for (const id of run.ids) { alert(ticketTarget(id), `${run.label ?? 'Ship'} started`); seeAlerts([`ticket:${id}`]) } })
 bus.on('exec-finished', (run: ExecRun) => {
-  stepsFor(run, `exec:${run.id}`).then(() => bus.emit('exec')).catch(() => {}) // ready by the time you look
+  const read = stepsFor(run, `exec:${run.id}`).catch(() => null) // ready by the time you look
+  // its steps read, the ticket may hand over to the PR it opened (handover.ts): then that is what the alert says
+  void read.then(() => { settleHandovers(run.ids, true); bus.emit('exec') })
   for (const id of run.ids) {
     const out = run.outcomes[id]?.outcome
     if (run.refused?.length) alert(ticketTarget(id), `${run.label ?? 'Ship'}: ${refusedNote(run)}`, 'warn')
     if (run.state === 'failed') alert(ticketTarget(id), `${run.label ?? 'Ship'} failed${run.error ? `: ${run.error.slice(0, 120)}` : ''}`, 'warn')
-    else if (run.state === 'done') stepsFor(run, `exec:${run.id}`).then((n) => alert(ticketTarget(id), asks(n ?? undefined) || out === 'refined' ? `${run.label ?? 'Ship'} finished, ${asked(n ?? undefined) || 'it needs your decision on Linear'}` : `${run.label ?? 'Ship'} finished${out ? ` (${out})` : ''}`, asks(n ?? undefined) || out === 'refined' ? 'you' : 'ok')).catch(() => {})
+    else if (run.state === 'done') void read.then((n) => {
+      const h = state.handed?.[id]
+      if (h?.run === run.id) return alert(ticketTarget(id), `${run.label ?? 'Ship'} finished: handed over to ${refsOf(h)}, whose agent owns the next steps`, 'ok')
+      alert(ticketTarget(id), asks(n ?? undefined) || out === 'refined' ? `${run.label ?? 'Ship'} finished, ${asked(n ?? undefined) || 'it needs your decision on Linear'}` : `${run.label ?? 'Ship'} finished${out ? ` (${out})` : ''}`, asks(n ?? undefined) || out === 'refined' ? 'you' : 'ok')
+    })
   }
   if (run.state === 'done') for (const h of run.handovers ?? []) void handOver(run, h)
   batchStep(run)
@@ -453,6 +460,63 @@ async function handOver(from: ExecRun, h: Handover) {
   note(key, { at: at(), kind: 'event', text: next ? `Handed over to ${h.id}: its own run started, and its progress shows on ${h.id}.${assigned}` : `Could not start ${h.id}'s run.${assigned}` })
   if (next) alert(ticketTarget(h.id), `Handed over from ${src}: its run started`, 'info')
   void pollTickets()
+}
+
+// --- a ticket hands over to its PRs (handover.ts): from then on their agents own its next steps ---------------
+const prKey = (p: PrRef) => `${p.repo}#${p.number}`
+const prStateOf = (p: PrRef): 'open' | 'merged' | 'closed' => {
+  const s = state.prs[prKey(p)], h = execBoard.health[prKey(p)]
+  return s?.merged || h?.merged || h?.state === 'MERGED' ? 'merged' : s?.closed || h?.state === 'CLOSED' ? 'closed' : 'open'
+}
+const isOpen = (p: PrRef) => prStateOf(p) === 'open'
+const refsOf = (h: Pick<TicketHandover, 'to'>) => `${h.to.map((p) => `#${p.number}`).join(' → ')}${h.to.length > 1 ? ' (its stack)' : ''}`
+/** Hand the ticket over when its run produced its PRs (handoverDue says when); true when the record changed. */
+function settleHandover(t: Ticket, quiet = false) {
+  const run = latestRun(t.id)
+  if (!run || run.ids.some((id) => id.startsWith('STACK-'))) return false
+  const was = state.handed?.[t.id]
+  const prs = prsOf(t, run).map((p) => ({ repo: p.repo, number: p.number, open: isOpen(p), agentAt: state.prs[prKey(p)]?.job?.queuedAt }))
+  const steps = withoutCiWatch(run.next)?.steps
+  const due = handoverDue({ run: { ...run, outcome: run.outcomes[t.id]?.outcome }, prs, steps, was })
+  if (!due) return false
+  const fresh = was?.run !== due.run
+  // what the ticket left open goes to the PR's agent once: what it already lists, or was handed already, aside
+  const main = state.prs[prKey(mainOf(due, isOpen)!)]
+  const theirs = [...(main?.job?.next?.steps ?? []).map((x) => x.text), ...(main?.handoffs ?? []).map((x) => x.text)]
+  // (handed already, only its PRs changed: due is the record as it was, with them)
+  const carry = fresh ? [...new Set([...(was && !was.carriedAt ? was.carry ?? [] : []), ...carryOf(steps, theirs)])] : []
+  const h: TicketHandover = fresh ? { ...due, ...(carry.length > 0 && { carry }) } : due as TicketHandover
+  ;(state.handed ??= {})[t.id] = h
+  if (fresh) {
+    note(`exec:${run.id}`, { at: h.at, kind: 'event', text: `Handed over to ${refsOf(h)}${h.why === 'pr-agent' ? ': its agent has worked on it since' : ''}. Its agent owns the next steps from here; this ticket's are no longer offered.${carry.length ? ` ${carry.length} step${carry.length === 1 ? '' : 's'} left open here go${carry.length === 1 ? 'es' : ''} to it with the next word it gets.` : ''}` })
+    // news only when it is: the first pass after an update hands over every older shipped ticket, quietly
+    if (!quiet && Date.now() - Date.parse(run.endedAt ?? run.queuedAt) < 6 * 3600_000) alert(ticketTarget(t.id), `Handed over to ${refsOf(h)}: its agent owns the next steps`, 'info')
+  }
+  return true
+}
+function settleHandovers(ids?: string[], quiet = false) {
+  let changed = false
+  for (const t of execBoard.tickets) if ((!ids || ids.includes(t.id)) && !ticketBusy(t.id)) changed = settleHandover(t, quiet) || changed
+  if (changed) { save(); ticketCache = undefined; bus.emit('exec') }
+}
+let settleSoon: ReturnType<typeof setTimeout> | undefined
+const settleLater = () => { settleSoon ??= setTimeout(() => { settleSoon = undefined; settleHandovers() }, 2000) }
+// a PR's agent started (a review, a fix, your words there): its ticket's words are older than what it knows now
+bus.on('started', (id: string) => { if (state.prs[id]) settleLater() })
+/**
+ * The steps a handed ticket left open, for this PR's agent: added to the next word it gets, once. Only the PR the
+ * ticket's words go to (the top of its open stack) carries them.
+ */
+function carriedTo(p: Pr) {
+  let out = ''
+  for (const [id, h] of Object.entries(state.handed ?? {})) {
+    const m = h.carry?.length && !h.carriedAt ? mainOf(h, isOpen) : undefined
+    if (!m || prKey(m) !== p.id) continue
+    out += carryNote(id, h.carry!); h.carriedAt = new Date().toISOString()
+    note(`exec:${h.run}`, { at: h.carriedAt, kind: 'event', text: `The ${h.carry!.length} step${h.carry!.length === 1 ? '' : 's'} left open here went to #${p.number}'s agent.` })
+  }
+  if (out) { save(); bus.emit('exec') }
+  return out
 }
 
 let followed = false
@@ -1475,7 +1539,9 @@ type PrHealth = Awaited<ReturnType<typeof prHealth>>
 const execBoard: { tickets: Ticket[]; health: Record<string, PrHealth>; at?: string; error?: string; polling: boolean } = { tickets: [], health: {}, polling: false }
 
 type TicketPr = Ticket['prs'][number] & Partial<PrHealth>
-export type TicketView = Omit<Ticket, 'prs'> & { queued?: Queued; waitsOn?: string; background: number; prs: TicketPr[]; closedPrs: TicketPr[]; bucket: Bucket; repo?: string; pr?: TicketPr; run?: ExecRun; busy: boolean; env: Env & { asking?: boolean }; linked: Linked[]; stack?: TicketStack; pinned?: boolean; dimmed?: boolean }
+export type TicketView = Omit<Ticket, 'prs'> & { queued?: Queued; waitsOn?: string; background: number; prs: TicketPr[]; closedPrs: TicketPr[]; bucket: Bucket; repo?: string; pr?: TicketPr; run?: ExecRun; busy: boolean; env: Env & { asking?: boolean }; linked: Linked[]; stack?: TicketStack; pinned?: boolean; dimmed?: boolean; handed?: HandedView }
+/** A ticket handed over to its PRs, as the page shows it: which ones (their state), the one new words go to, what went along. */
+export type HandedView = Omit<TicketHandover, 'to'> & { to: (TicketPr & { prState: 'open' | 'merged' | 'closed'; tracked: boolean })[]; main: number; mainId: string; mainState: 'open' | 'merged' | 'closed' }
 // which environment a ticket is about: cached from Sentry, else plain words in the ticket, else unknown
 const envAsked = new Set<string>()
 function envOf(t: Ticket): Env & { asking?: boolean } {
@@ -1524,7 +1590,10 @@ function ticketViews(): TicketView[] {
 function buildTicketViews(): TicketView[] {
   const runs = Object.values(state.execs).sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))
   const views: TicketView[] = execBoard.tickets.map((t) => {
-    const run = latestRun(t.id) // the index, not a search of every run per ticket (profiled)
+    const latest = latestRun(t.id) // the index, not a search of every run per ticket (profiled)
+    // handed over to its PRs: the run's own next steps are stale, so the view has none (the list, the bucket and the
+    // linked cards stop saying it asks you); the PR's agent's are the ones the page shows
+    const h = activeHandover(state.handed?.[t.id], latest), run = h && latest?.next ? { ...latest, next: undefined } : latest
     // every PR the ticket has, bottom of the stack first, each with its own CI and threads
     const all = stackOrder(prsOf(t, run).map((p) => ({ ...p, ...execBoard.health[`${p.repo}#${p.number}`] })))
     const prs = all.filter((p) => !p.merged && p.state !== 'CLOSED')
@@ -1539,12 +1608,18 @@ function buildTicketViews(): TicketView[] {
       // the open ones (all of them when none is open); closed and merged ones apart, so they show but don't count
       ...t, ...(waitsOn && !ticketBusy(t.id) && { waitsOn }), ...(run?.state === 'queued' && { queued: queuedWhy(run, 'exec', undefined, run.repo) }), background: run ? openTasks(`exec:${run.id}`) : 0, prs: prs.length ? prs : all, closedPrs: prs.length ? all.filter((p) => !prs.includes(p)) : [], env: envOf(t), repo: repoFor(t.id, config.exec.repoByPrefix), run, busy: ticketBusy(t.id) && !settled,
       bucket: settled === 'parked' && bucket !== 'closed' && bucket !== 'handed' ? 'needs-you' as const : bucket, pr, linked: linksOfTicket(t, `${run?.summary ?? ''}\n${t.lastComment?.body ?? ''}`),
+      ...(h && { handed: handedView(h, all) }),
     }
   })
   // the tickets that ship together (their PRs stacked on GitHub, or one run's), for the list to keep as one
   const stacks = ticketStacks(views, (k) => state.prs[k]?.stack)
   // dimmed for now: until its state moves on (another bucket), then it's back to normal by itself
   return views.map((v) => ({ ...v, stack: stacks.get(v.id), pinned: `ticket:${v.id}` in pins(), dimmed: state.dimmed?.[v.id] === v.bucket }))
+}
+const handedView = (h: TicketHandover, all: TicketPr[]): HandedView => {
+  const main = mainOf(h, isOpen)!
+  return { ...h, main: main.number, mainId: prKey(main), mainState: prStateOf(main),
+    to: h.to.map((p) => ({ ...(all.find((q) => q.repo === p.repo && q.number === p.number) ?? { ...p, url: state.prs[prKey(p)]?.url ?? '', title: state.prs[prKey(p)]?.title }), prState: prStateOf(p), tracked: !!state.prs[prKey(p)] })) }
 }
 const cap = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}…` : t)
 /**
@@ -1655,6 +1730,7 @@ async function pollTickets() {
     }))
     execBoard.tickets = [...tickets, ...(hasKey() ? await offList(linear) : [])]
     execBoard.error = undefined
+    settleHandovers() // a PR newly linked on Linear, or merged since
     save()
   } catch (e) {
     execBoard.error = (e as Error).message
@@ -3456,6 +3532,7 @@ app.post('/stacks/drive', async (c) => {
   return run ? c.json({ ok: true, run: { id: run.id, state: run.state } }) : c.json({ error: 'Could not start the stack run' }, 400)
 })
 function sendReply(p: Pr, msg: string): string | undefined {
+  msg += carriedTo(p) // what a ticket that handed over to this PR left open, once
   // no run has worked on it yet: your words start one
   if (!p.job?.sessionId) {
     enqueue(p, 'reply', `${msg}\n\n(Sent from Concierge about ${p.mine ? 'my' : 'a'} pull request ${p.url}: "${p.title}", branch ${p.head} into ${p.base}. `
@@ -3471,6 +3548,9 @@ function sendReply(p: Pr, msg: string): string | undefined {
 }
 app.get('/exec/:run/next', async (c) => {
   const run = state.execs[c.req.param('run')]
+  // handed over to its PRs: these steps are stale, and the PR's agent's are the ones offered (never both)
+  const h = run && run.ids.map((id) => state.handed?.[id]).find((x) => x?.run === run.id)
+  if (h) return c.json({ steps: null, handed: { to: h.to.map((p) => p.number), at: h.at } })
   try { return c.json({ steps: await stepsFor(run, `exec:${run?.id}`) }) } catch (e) { return c.json({ error: (e as Error).message }, 502) }
 })
 app.post('/exec/:run/reply', async (c) => {
@@ -3498,15 +3578,58 @@ app.post('/exec/:run/reply', async (c) => {
   return next ? c.json({ run: next, passedTo: busy }) : c.json({ error: 'Could not resume the session' }, 400)
 })
 
+// where words on a handed ticket would go, before they are sent: shown with a one-click override (handover.ts)
+app.post('/exec/tickets/:id/route', async (c) => {
+  const t = ticketViews().find((x) => x.id === c.req.param('id'))
+  const { text } = await c.req.json().catch(() => ({})) as { text?: string }
+  if (!t?.handed) return c.json({ error: `${c.req.param('id')} isn't handed over to a PR` }, 404)
+  return c.json(await routeFor(t, typeof text === 'string' ? text.trim().slice(0, 6000) : ''))
+})
+/** The rule, then (for an open PR it doesn't settle) a small model reading the words against the PR's scope. */
+function routeFor(t: TicketView, text: string): Promise<Routed> {
+  const h = t.handed!, p = state.prs[h.mainId]
+  const pr = { number: h.main, state: h.mainState, approved: p?.reviewDecision === 'APPROVED', agent: !!p?.mine && !!config.repos[p.repo] }
+  return routeInstruction(text, pr, p && (() => haiku<{ route: 'same' | 'new'; why: string }>(routePrompt({ ticket: `${t.id} "${t.title}"`, text, pr: { number: p.number, title: p.title, body: p.body, said: p.job?.summary ?? p.lastSaid?.summary } }), ROUTE_SCHEMA, 'You decide which pull request new work belongs in. Return only the structured output.')
+    .then(({ out, costUsd, provider, tokens }) => { addSpend(costUsd, provider, tokens); save(); return out })))
+}
+/** Words on a handed ticket, where routing sent them: its PR's agent (as a handover), or a new run for a PR on top. */
+async function sendHanded(t: TicketView, msg: string, r: Routed): Promise<{ sent?: string; run?: ExecRun }> {
+  const h = t.handed!, p = state.prs[h.mainId], feed = `exec:${h.run}`, at = new Date().toISOString()
+  if (r.to === 'pr') {
+    if (h.mainState !== 'open') throw new Error(`#${h.main} is ${h.mainState}: it can't take more. Start a new PR instead.`)
+    if (!p || !p.mine || !config.repos[p.repo]) throw new Error(`#${h.main} isn't one of your PRs tracked here, so no agent of yours works on it. Start a new PR instead, or open it in Review.`)
+    rememberSaid(`ticket:${t.id}`, msg)
+    // the same way one PR's agent hands work to another's (/prs/:id/reply): a handover the PR's feed shows as one
+    const sent = sendReply(p, `Handed over from ticket ${t.id} ("${t.title}"): it handed over to this PR, so its new work comes to you. Do this here, on this PR:\n\n${msg}`)
+    note(feed, { at, kind: 'you', text: msg })
+    note(feed, { at, kind: 'event', text: `Sent to #${h.main}'s agent (${r.why}).` })
+    bus.emit('exec')
+    return { sent }
+  }
+  const below = p ?? { number: h.main, url: h.to.find((x) => x.number === h.main)?.url ?? '', head: '', base: '' }
+  const prompt = stackedPrompt({ ticket: t.id, title: t.title, url: t.url, text: msg, command: slot('exec') ? execCommand(slot('exec'), [t.id]) : undefined,
+    pr: { number: below.number, url: below.url, head: below.head || `#${below.number}'s branch`, base: below.base || 'the default branch', merged: h.mainState !== 'open' } })
+  const run = enqueueExec([t.id], t.repo!, false, { label: h.mainState === 'open' ? `New PR on #${h.main}` : `New PR after #${h.main}`, prompt, said: msg })
+  if (!run) throw new Error('Could not start the run for the new PR')
+  rememberSaid(`ticket:${t.id}`, msg)
+  note(feed, { at, kind: 'event', text: `${h.mainState === 'open' ? `A new PR stacked on #${h.main}` : `A new PR (#${h.main} is ${h.mainState})`} is being built for this (${r.why}).` })
+  return { run }
+}
+
 // Steer a ticket from the dock whatever state it is in: a running agent is stopped first, then the ticket's one
 // session continues with your direction; a ticket never run here gets a run told where its work lives.
 app.post('/exec/tickets/:id/steer', async (c) => {
   const t = ticketViews().find((x) => x.id === c.req.param('id'))
-  const { text } = await c.req.json() as { text?: string }
+  const { text, to } = await c.req.json() as { text?: string; to?: RouteTo }
   const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
   if (!t) return c.json({ error: 'Unknown ticket' }, 404)
   if (!msg) return c.json({ error: 'Write your direction first' }, 400)
   if (!t.repo) return c.json({ error: `No repository mapped for ${t.team}` }, 400)
+  // handed over to its PR: the words go to that PR's agent, or to a new PR stacked on it (handover.ts)
+  if (t.handed && !ticketBusy(t.id)) {
+    const r = to === 'pr' || to === 'stack' ? { to, pr: t.handed.main, why: 'you picked it', by: 'rule' as const } : await routeFor(t, msg)
+    return sendHanded(t, msg, r).then((x) => c.json({ ok: true, routed: r, ...x }), (e: Error) => c.json({ error: e.message }, 400))
+  }
   if (ticketBusy(t.id) && t.run) { // a parked ticket still lives in its run: your words go there
     const run = state.execs[t.run.id]
     // queued, not started: your direction waits with it, and it reads it the moment it starts

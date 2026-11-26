@@ -2,10 +2,11 @@
 // conversation with its next step, and beside it what to check before trusting what was built.
 import { TicketOverview } from './Overview.tsx'
 import { queuedText } from '../time.ts'
-import { ArrowRight, LoaderCircle, MessageCircleQuestion } from 'lucide-react'
+import { ArrowRight, GitPullRequest, LoaderCircle, MessageCircleQuestion } from 'lucide-react'
 import { useState } from 'react'
 import { ActivityFeed, FeedMode } from '../components/ActivityFeed.tsx'
-import { useTicketThread, type TicketThreadProps } from '../components/ExecDetail.tsx'
+import { handoverBox, useTicketThread, type TicketThreadProps } from '../components/ExecDetail.tsx'
+import { handedPlaceholder } from '../components/Handed.tsx'
 import { StackNav } from '../components/StackNav.tsx'
 import { NextSteps } from '../components/NextSteps.tsx'
 import { SectionHeadings } from '../components/NextPanel.tsx'
@@ -74,7 +75,12 @@ export function TicketThread(props: TicketThreadProps) {
   // the discussions' suggestions: picked over the box, sent with your words in one go
   const lane = useLaneActions({ d: talks.d, target, onChange: talks.set, onSteer: steerMain, toast })
   const handedBack = !!run && !t.busy && (run.state === 'done' || run.state === 'failed')
-  const steer = handedBack
+  // handed over to its PR: no checklist of the ticket's own (stale) steps; new words are routed to the PR's agent or
+  // a new PR stacked on it, and the panel shows what the PR's agent asks
+  const handed = !t.busy ? t.handed : undefined
+  const steer = handed
+    ? <NextSteps attach={lane} route={route} commands={commands} stepper inline handover={handoverBox(t)} replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:handed:${handed.at}`} toast={toast} placeholder={handedPlaceholder(handed)} />
+    : handedBack
     ? <NextSteps attach={lane} route={route} commands={commands} stepper inline nextUrl={`/exec/${run.id}/next`} replyUrl={`/exec/${run.id}/reply`} draft={`ticket:${t.id}`} version={run.endedAt ?? ''} toast={toast} placeholder="Tell the agent what to change, answer, or do next…" />
     : <NextSteps attach={lane} route={route} commands={commands} stepper inline replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:${t.busy}`} toast={toast}
                  placeholder={t.busy ? 'Tell it something while it works: it reads it between steps, without stopping' : `What should ${t.id}’s implementation do differently?`} />
@@ -85,7 +91,10 @@ export function TicketThread(props: TicketThreadProps) {
       subject={t.id}
       follow={`${t.id}:${count}:${t.busy}:${next}`}
       header={<ThreadHeader crumb={parentLinks} title={t.title} status={statusField} meta={chips} links={<>{stackNav}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>} actions={headerActions && <Off why={held} layout="flex items-center gap-0.5">{headerActions}</Off>} />}
-      next={runAsks && next === 'dock' ? (
+      next={handed ? (
+        <NextCard icon={GitPullRequest} tone="run" title={`Handed over to #${handed.main}${handed.to.length > 1 ? ' and its stack' : ''}`}
+                  actions={<SectionHeadings.Provider value={false}><div className="space-y-3">{panelBody}</div></SectionHeadings.Provider>} />
+      ) : runAsks && next === 'dock' ? (
         // it handed back with questions: answering them is the next step, and the plan is under Understanding
         <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent asks you" actions={steer} />
       ) : t.busy ? (
@@ -102,7 +111,7 @@ export function TicketThread(props: TicketThreadProps) {
       onAsk={(q) => appendDraft(`ticket:${t.id}`, q)}
       vitals={(<>
           <WorkStrip work={work} here={`ticket:${t.id}`} toast={toast} onOpen={(k) => onOpenLinked(k.startsWith('pr:') ? { kind: 'pr', id: k.slice(3), label: work?.members.find((m) => m.key === k)?.label ?? k, title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' } : { kind: 'ticket', id: k.slice(7), label: k.slice(7), title: '', agent: 'none' })} />
-          <Vitals shipping={<ShippingVital update={lastUpdate(feed)} title={t.queued ? 'Queued' : t.busy ? 'The agent is working' : runAsks ? 'The agent asks you' : next ? TITLE[next](t) : 'All clear'} tone={t.busy ? 'run' : runAsks || asking ? 'wait' : next ? 'run' : 'ok'} busy={t.busy}
+          <Vitals shipping={<ShippingVital update={lastUpdate(feed)} title={t.queued ? 'Queued' : t.busy ? 'The agent is working' : handed ? `With #${handed.main}’s agent` : runAsks ? 'The agent asks you' : next ? TITLE[next](t) : 'All clear'} tone={t.busy ? 'run' : runAsks || asking ? 'wait' : next ? 'run' : 'ok'} busy={t.busy}
                                            at={t.busy ? 1 : next === 'run' ? (run ? 2 : 1) : next === 'dock' ? 2 : next ? 3 : 4}
                                            why={t.queued ? queuedText(t.queued) : t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}
                   topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: t.prs.length > 1 ? steerPr : undefined, toast, prId: t.pr ? `${t.pr.repo}#${t.pr.number}` : undefined }} />
