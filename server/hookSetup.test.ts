@@ -1,23 +1,24 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { closeFunnel, connectRepo, funnelBlocker, funnelError, funnelOffArgs, funnelOnArgs, funnelOnIn, openFunnel, pingHook, removeHook, scopesAllowHooks, type Call, type Run } from './hookSetup.ts'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { askDoor, connectRepo, doorAnswer, doorResult, funnelBlocker, funnelError, pingHook, removeHook, scopesAllowHooks, type Call } from './hookSetup.ts'
 import { deviceCode } from './githubLogin.ts'
 
 const self = { DNSName: 'box.tail123.ts.net.', Capabilities: ['https', 'funnel', 'https://tailscale.com/cap/funnel-ports?ports=443,8443,10000'] }
-const status = JSON.stringify({
-  TCP: { 8443: { HTTPS: true } },
-  Web: { 'box.tail123.ts.net:8443': { Handlers: { '/hooks/github': { Proxy: 'http://127.0.0.1:8790/hooks/github' } } } },
-  AllowFunnel: { 'box.tail123.ts.net:8443': true },
-})
-
-test('the funnel opens only the hook path, on its own port', () => {
-  assert.deepEqual(funnelOnArgs(8790), ['funnel', '--bg', '--yes', '--https=8443', '--set-path=/hooks/github', 'http://127.0.0.1:8790/hooks/github'])
-  assert.deepEqual(funnelOffArgs(), ['funnel', '--yes', '--https=8443', '--set-path=/hooks/github', 'off'])
-  assert.equal(funnelOnIn(status, 'box.tail123.ts.net.', 8790), true)
-  assert.equal(funnelOnIn(status, 'box.tail123.ts.net', 8791), false) // another listener
-  assert.equal(funnelOnIn(JSON.stringify({ ...JSON.parse(status), AllowFunnel: {} }), 'box.tail123.ts.net', 8790), false) // served on the tailnet only
-  assert.equal(funnelOnIn('{}', 'box.tail123.ts.net', 8790), false)
-  assert.equal(funnelOnIn('No serve config', 'box.tail123.ts.net', 8790), false)
+test('the app asks the fleet for the door and reads its answer, never running Tailscale itself', async () => {
+  const hosts = mkdtempSync(join(tmpdir(), 'door-'))
+  const at = askDoor(hosts, true, 8790, 1000)
+  assert.deepEqual(JSON.parse(readFileSync(join(hosts, 'hooks-funnel.json'), 'utf8')), { on: true, port: 8790, at: 1000 })
+  assert.equal(doorResult(hosts, 'windows'), undefined) // the standby hasn't said anything yet
+  assert.equal(await doorAnswer(hosts, 'windows', at, 50, 10), undefined) // and doesn't in time: no answer
+  writeFileSync(join(hosts, 'hooks-funnel.windows.result.json'), JSON.stringify({ on: false, ok: true, asked: 999, at: 1 })) // an older ask's
+  assert.equal(await doorAnswer(hosts, 'windows', at, 50, 10), undefined)
+  writeFileSync(join(hosts, 'hooks-funnel.windows.result.json'), JSON.stringify({ on: true, ok: true, asked: 1000, at: 2 }))
+  assert.deepEqual(await doorAnswer(hosts, 'windows', at, 50, 10), { on: true, ok: true, asked: 1000, at: 2 })
+  assert.equal(doorResult(hosts, 'mac'), undefined) // each machine's standby answers for itself
+  assert.equal(doorResult(hosts, undefined), undefined) // no fleet, no door
 })
 
 test('what stops Funnel is said before trying, with where to fix it', () => {
@@ -30,20 +31,6 @@ test('what stops Funnel is said before trying, with where to fix it', () => {
   assert.match(funnelError('Funnel is not enabled on your tailnet.\nTo enable, visit:\n\n         https://login.tailscale.com/f/funnel?node=abc\n'), /login\.tailscale\.com\/f\/funnel\?node=abc/)
   assert.match(funnelError('error: HTTPS is not enabled for your tailnet'), /HTTPS certificates are off/)
   assert.match(funnelError('something odd happened'), /Tailscale refused: something odd happened/)
-})
-
-test('opening the funnel runs the command, then checks it took', async () => {
-  const calls: string[][] = []
-  const run = (answers: Record<string, { code: number; out: string }>): Run => async (args) => { calls.push(args); return answers[args[1]] ?? answers.default }
-  assert.equal(await openFunnel(run({ status: { code: 0, out: status }, default: { code: 0, out: 'Available on the internet:\nhttps://box.tail123.ts.net:8443/hooks/github' } }), self, 8790), 'https://box.tail123.ts.net:8443/hooks/github')
-  assert.deepEqual(calls.map((c) => c[1]), ['--bg', 'status'])
-  await assert.rejects(openFunnel(run({ default: { code: 1, out: 'Funnel is not enabled on your tailnet.\nTo enable, visit:\nhttps://login.tailscale.com/f/funnel?node=abc' } }), self, 8790), /login\.tailscale\.com\/f\/funnel/)
-  await assert.rejects(openFunnel(run({ status: { code: 0, out: '{}' }, default: { code: 0, out: '' } }), self, 8790), /didn't take/)
-  calls.length = 0
-  await assert.rejects(openFunnel(run({ default: { code: 0, out: '' } }), { ...self, Capabilities: ['https'] }, 8790), /node attribute/)
-  assert.equal(calls.length, 0) // nothing run when its status already says no
-  await closeFunnel(run({ default: { code: 0, out: '' } }))
-  await closeFunnel(run({ default: { code: 1, out: 'error: handler does not exist' } })) // already off
 })
 
 type Reply = { status: number; json?: unknown }

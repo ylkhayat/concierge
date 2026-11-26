@@ -26,7 +26,7 @@ import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit,
 import { addException, exceptionsOf } from './norms.ts'
 import { defaultBranch, tokenChanged, getMe, gh, ghBudget, ghCall, outside, poll, pollPrs, prHealth, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
 import { coalescer, hookLive, hookStats, listen, listening, newSecret, targetsOf, type Handler as HookHandler, type Target as HookTarget } from './hooks.ts'
-import { closeFunnel, connectRepo, funnelBlocker, funnelOnIn, FUNNEL_PORT, hookUrl, openFunnel, pingHook, removeHook, scopesAllowHooks, tailscale, type Self } from './hookSetup.ts'
+import { askDoor, connectRepo, doorAnswer, doorResult, funnelBlocker, funnelError, FUNNEL_PORT, hookUrl, pingHook, removeHook, scopesAllowHooks, type Self } from './hookSetup.ts'
 import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
 import { assignToMe, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
 import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, togetherPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
@@ -849,11 +849,12 @@ let hookSignIn = false // the sign-in running is the webhooks' (its state is sho
 async function hooksView() {
   const self = (await tsStatus())?.Self as Self | undefined
   const h = state.hooks, stats = hookStats()
-  const on = !!h?.url && !!self?.DNSName && funnelOnIn((await tailscale(['funnel', 'status', '--json'], 10_000)).out, self.DNSName, hookPort())
+  // the door as the fleet's standby last said it stands on this machine (it runs Tailscale, the app doesn't)
+  const door = doorResult(HOSTS_DIR, fleet.machine), on = !!h?.url && !!door?.on
   const scopes = tokenScopes() ?? await readScopes().catch(() => undefined)
   return {
     control: !fleet.elsewhere(), machine: fleet.machine, listening: listening(), port: hookPort(), funnelPort: FUNNEL_PORT,
-    funnel: { on, url: h?.url ?? (self?.DNSName ? hookUrl(self) : undefined), blocker: funnelBlocker(self) },
+    funnel: { on, url: h?.url ?? (self?.DNSName ? hookUrl(self) : undefined), blocker: funnelBlocker(self), fleet: !!fleet.machine, error: door && !door.ok && door.error ? funnelError(door.error) : undefined },
     token: { source: tokenSource(), scopes, canHook: scopesAllowHooks(scopes) },
     signIn: hookSignIn ? githubLoginState() : undefined,
     repos: hookRepos().map((repo) => ({ repo, watched: repo in config.repos, id: h?.repos[repo]?.id, live: hooked(repo), lastAt: stats.byRepo[repo], problem: h?.problems?.[repo] })),
@@ -861,6 +862,19 @@ async function hooksView() {
   }
 }
 export type HooksView = Awaited<ReturnType<typeof hooksView>>
+const HOSTS_DIR = join(STATE_DIR, 'hosts')
+/** Ask the fleet to open or close the webhook door here, and wait for its standby to say it did (Tailscale is the
+ *  fleet's: a machine without the fleet has no door to open). */
+async function door(on: boolean) {
+  if (!fleet.machine) throw new Error('Live updates need the fleet: Tailscale, which opens the door, runs there (fleet/README.md)')
+  const r = await doorAnswer(HOSTS_DIR, fleet.machine, askDoor(HOSTS_DIR, on, hookPort()))
+  if (!r) throw new Error('The fleet hasn\'t answered yet: its standby runs Tailscale and looks every 10 seconds. Is it running on this machine?')
+  if (!r.ok) throw new Error(funnelError(r.error ?? ''))
+  if (r.on !== on) throw new Error(on ? 'Funnel didn\'t take' : 'Funnel stayed on')
+}
+// the door follows the control plane: each start says what is wanted now (open, or closed if it was turned off on
+// another machine meanwhile), and the standby opens it only where this machine runs Concierge, closing it anywhere else
+if (fleet.machine) askDoor(HOSTS_DIR, !!state.hooks?.url, hookPort())
 const hookFail = (c: Context, e: unknown) => c.json({ error: (e as Error).message }, 400)
 app.get('/hooks', async (c) => c.json(await hooksView()))
 // Step 1: the funnel, for the hook path only (a secret made the first time, the listener started)
@@ -868,13 +882,15 @@ app.post('/hooks/funnel', async (c) => {
   const { on } = await c.req.json<{ on?: boolean }>().catch(() => ({ on: undefined }))
   try {
     if (on) {
+      const self = (await tsStatus())?.Self as Self | undefined, why = funnelBlocker(self)
+      if (why) throw new Error(why)
       if (!readSecrets().webhookSecret) saveSecrets({ webhookSecret: newSecret() })
       await startHooks()
-      const url = await openFunnel(tailscale, (await tsStatus())?.Self as Self | undefined, hookPort())
-      state.hooks = { repos: {}, ...state.hooks, url }
-      console.log(`hooks: funnel open at ${url}`)
+      await door(true)
+      state.hooks = { repos: {}, ...state.hooks, url: hookUrl(self!) }
+      console.log(`hooks: funnel open at ${state.hooks.url}`)
     } else {
-      await closeFunnel(tailscale)
+      await door(false)
       if (state.hooks) delete state.hooks.url
       console.log('hooks: funnel closed')
     }
@@ -927,7 +943,7 @@ app.post('/hooks/off', async (c) => {
     const ok = await removeHook(ghCall, repo, id).catch(() => false)
     if (ok) delete state.hooks!.repos[repo]; else left.push(repo)
   }
-  try { await closeFunnel(tailscale) } catch (e) { save(); return hookFail(c, e) }
+  try { await door(false) } catch (e) { save(); return hookFail(c, e) }
   if (!left.length) state.hooks = undefined; else delete state.hooks!.url
   save()
   return c.json({ left, view: await hooksView() })

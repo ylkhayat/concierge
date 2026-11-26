@@ -1,19 +1,39 @@
 // Setting the webhooks up, from Settings (never by itself): Tailscale Funnel opens only the hook listener's path to the
 // internet, on a port of its own (the app on 443 stays tailnet-only), and each repository gets a webhook pointing
-// there. Concierge records the hooks it made, so Turn off removes exactly those. The commands and GitHub calls come in
-// as functions, so tests run them against fakes.
-import { execFile } from 'node:child_process'
+// there. Concierge records the hooks it made, so Turn off removes exactly those. GitHub calls come in as functions, so
+// tests run them against fakes.
+//
+// Tailscale is the fleet's, not the app's (the app has no tailscale command, only a read-only look at the link's
+// status): the app says whether it wants the door (hosts/hooks-funnel.json) and the fleet's standby, which runs the
+// link, opens or closes it on the control plane and says how it went (hosts/hooks-funnel.<machine>.result.json).
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { EVENTS, HOOK_PATH } from './hooks.ts'
 
 export const FUNNEL_PORT = 8443 // Funnel allows 443, 8443 and 10000; 443 is the app's (tailnet only)
-export type Run = (args: string[], timeoutMs: number) => Promise<{ code: number; out: string }>
 
-/** The tailscale command, through the fleet link's socket when there is one (tailscale.ts reads it the same way). */
-export const tailscale: Run = (args, timeoutMs) => new Promise((resolve) => {
-  const sock = process.env.TAILSCALE_SOCKET
-  execFile('tailscale', [...(sock ? [`--socket=${sock}`] : []), ...args], { timeout: timeoutMs, maxBuffer: 1 << 20 }, (e, stdout, stderr) =>
-    resolve({ code: e ? (typeof (e as { code?: unknown }).code === 'number' ? (e as { code: number }).code : 1) : 0, out: `${stdout ?? ''}${stderr ?? ''}` }))
-})
+/** The door as the app wants it, for the fleet's standby to apply: `at` tells this ask from the last. */
+export function askDoor(hosts: string, on: boolean, port: number, at = Date.now()): number {
+  mkdirSync(hosts, { recursive: true })
+  const tmp = join(hosts, '.hooks-funnel.tmp')
+  writeFileSync(tmp, JSON.stringify({ on, port, at }))
+  renameSync(tmp, join(hosts, 'hooks-funnel.json'))
+  return at
+}
+export type DoorResult = { on: boolean; ok: boolean; asked: number; at: number; error?: string | null }
+/** What the standby on `machine` last did with the door, if anything. */
+export function doorResult(hosts: string, machine: string | undefined): DoorResult | undefined {
+  if (!machine) return undefined
+  try { return JSON.parse(readFileSync(join(hosts, `hooks-funnel.${machine}.result.json`), 'utf8')) as DoorResult } catch { return undefined }
+}
+/** The standby's answer to the ask made at `at` (it looks every 10 seconds), or undefined after `ms`. */
+export async function doorAnswer(hosts: string, machine: string | undefined, at: number, ms = 45_000, step = 1000): Promise<DoorResult | undefined> {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, step))) {
+    const r = doorResult(hosts, machine)
+    if (r && r.asked >= at) return r
+  }
+  return undefined
+}
 
 const ACLS = 'https://login.tailscale.com/admin/acls'
 const DNS = 'https://login.tailscale.com/admin/dns'
@@ -31,18 +51,8 @@ export function funnelBlocker(self: Self | undefined): string | undefined {
 
 /** The public address of the hook path on this machine. */
 export const hookUrl = (self: Self) => `https://${self.DNSName!.replace(/\.$/, '')}:${FUNNEL_PORT}${HOOK_PATH}`
-export const target = (port: number) => `http://127.0.0.1:${port}${HOOK_PATH}`
 
-/** Is the funnel on for the hook path, from `tailscale funnel status --json` (a ServeConfig)? */
-export function funnelOnIn(json: string, host: string, port: number): boolean {
-  try {
-    const c = JSON.parse(json) as { Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>; AllowFunnel?: Record<string, boolean> }
-    const key = `${host.replace(/\.$/, '')}:${FUNNEL_PORT}`
-    return !!c.AllowFunnel?.[key] && c.Web?.[key]?.Handlers?.[HOOK_PATH]?.Proxy === target(port)
-  } catch { return false }
-}
-
-/** A failed funnel command, said plainly: what Tailscale refused, and where to fix it. */
+/** A failed funnel command (the standby passes Tailscale's own words on), said plainly: what Tailscale refused, and where to fix it. */
 export function funnelError(out: string): string {
   const link = out.match(/https:\/\/login\.tailscale\.com\/\S+/)?.[0]
   if (/funnel/i.test(out) && /not (enabled|allowed|available)|requires|attribute|policy|denied/i.test(out)) {
@@ -50,29 +60,8 @@ export function funnelError(out: string): string {
   }
   if (/https|cert/i.test(out) && /not (enabled|available)|disabled|enable/i.test(out)) return `HTTPS certificates are off for your tailnet: turn on HTTPS under DNS (${DNS}), then try again.`
   if (/port/i.test(out) && /in use|already|conflict/i.test(out)) return `Port ${FUNNEL_PORT} is already served by something else on this machine: \`tailscale funnel status\` shows what.`
-  if (/ENOENT|not found|no such file/i.test(out)) return 'The tailscale command isn\'t on this machine.'
   const last = out.split('\n').map((l) => l.trim()).filter(Boolean).at(-1)
   return `Tailscale refused: ${last?.slice(0, 240) ?? 'no reason given'}`
-}
-
-export const funnelOnArgs = (port: number) => ['funnel', '--bg', '--yes', `--https=${FUNNEL_PORT}`, `--set-path=${HOOK_PATH}`, target(port)]
-export const funnelOffArgs = () => ['funnel', '--yes', `--https=${FUNNEL_PORT}`, `--set-path=${HOOK_PATH}`, 'off']
-
-/** Open the funnel for the hook path only. Resolves to the public URL, or throws why not. */
-export async function openFunnel(run: Run, self: Self | undefined, port: number): Promise<string> {
-  const why = funnelBlocker(self)
-  if (why) throw new Error(why)
-  // --bg returns at once once it is set; one waiting on Funnel to be enabled prints a link and waits: cut off, the link said
-  const r = await run(funnelOnArgs(port), 30_000)
-  if (r.code !== 0 || /https:\/\/login\.tailscale\.com/.test(r.out)) throw new Error(funnelError(r.out))
-  const st = await run(['funnel', 'status', '--json'], 10_000)
-  if (!funnelOnIn(st.out, self!.DNSName!, port)) throw new Error(funnelError(r.out || 'Funnel didn\'t take: tailscale funnel status doesn\'t show the hook path'))
-  return hookUrl(self!)
-}
-export async function closeFunnel(run: Run): Promise<void> {
-  const r = await run(funnelOffArgs(), 15_000)
-  // already off: nothing to remove, which is fine
-  if (r.code !== 0 && !/not found|no (serve|funnel)|does not exist|nothing/i.test(r.out)) throw new Error(funnelError(r.out))
 }
 
 // --- GitHub ---------------------------------------------------------------------------------------------------------
