@@ -398,7 +398,10 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry, tai
   // a failed step mid-run (an exit code) is part of the work; only an error that ends the run stands on its own
   for (const a of rest) { if (matters(a) && (a.kind !== 'error' || a === ch.outcome)) body.push(a); else if (Array.isArray(body.at(-1))) (body.at(-1) as Activity[]).push(a); else body.push([a]) }
   const keys = keysOf(ch.items)
-  const from = tail && body.length > tail ? body.length - tail : 0 // the first frame: only the last parts
+  // the first frame: only the last parts, and only of a long run. A shorter one drawn in two steps showed its older
+  // parts appearing above the newest a moment later, pushing them down (a flicker on every switch); a long one fills the
+  // pane, so what comes in later lands above it, out of sight
+  const from = tail && body.length > tail * 4 ? body.length - tail : 0
   const label = h.text === 'Your reply' ? (trigger ? 'You asked' : 'Your reply') : h.text
   return (
     <li className={`list-none ${live ? '' : 'cv'}`}>
