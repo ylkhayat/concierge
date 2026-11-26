@@ -166,14 +166,9 @@ export function LoadRibbon() {
   const open = () => document.getElementById('load')?.showPopover()
   const line = (k: string, v: string) => <span className="flex justify-between gap-4"><span className="text-fg-3">{k}</span><span className="font-medium tabular-nums">{v}</span></span>
   const cpuHot = total.cpu >= m.cores * 75, memHot = m.freeMb < 1024
-  // a window that has reset counts as empty until an agent reports it again
-  const live = (w?: { used: number; resetsAt: number }) => (w && w.resetsAt * 1000 > Date.now() ? w : undefined)
-  const plan = ([['5-hour', live(load.plan?.five)], ['weekly', live(load.plan?.seven)]] as const).flatMap(([k, w]) => (w ? [{ ...w, k }] : [])).sort((a, b) => b.used - a.used)[0]
-  // whose plan and which window, so it isn't read as the account named beside it
-  const planText = plan && `${load.plan!.label} ${plan.k} ${Math.round(plan.used * 100)}%`
-  // one sentence, the way you'd say it: what the agents are doing, and only what needs a look
-  const planHot = !!plan && plan.used >= load.plan!.stopAt - 0.1
-  const issues = [cpuHot && 'machine busy', memHot && 'memory low', used != null && m.diskFreeGb! < 10 && 'disk almost full', planHot && `${planText} used`].filter(Boolean) as string[]
+  // one sentence, the way you'd say it: what the agents are doing, and only what needs a look on this machine. No plan
+  // window here: it followed one account while the account in use (and its plan) sits beside it in the bar
+  const issues = [cpuHot && 'machine busy', memHot && 'memory low', used != null && m.diskFreeGb! < 10 && 'disk almost full'].filter(Boolean) as string[]
   const doing = running ? `${running} agent${running === 1 ? '' : 's'} working` : 'Agents idle'
   const section = (title: string, body: ReactNode) => <span className="block space-y-1 border-t border-line pt-2 first:border-0 first:pt-0"><span className="block text-meta font-medium text-fg-3">{title}</span>{body}</span>
   return (
@@ -189,10 +184,6 @@ export function LoadRibbon() {
           {load.runs.length > 6 && <span className="block text-fg-3">+{load.runs.length - 6} more</span>}
           {load.queued > 0 && line('Queued', String(load.queued))}{load.crit.length > 0 && line('crit servers', String(load.crit.length))}
           {load.strays > 0 && <span className="block text-wait">{load.strays} left over from a restart</span>}
-        </>)}
-        {plan && section('Plan', <>
-          {([['5-hour', load.plan!.five], ['7-day', load.plan!.seven]] as const).map(([k, w]) => w && line(k, `${Math.round(w.used * 100)}% · resets ${resets(w.resetsAt)}`))}
-          <span className="block text-meta text-fg-4">At {Math.round(load.plan!.stopAt * 100)}% the agents pause and continue once it resets.</span>
         </>)}
         {section('This machine', <>
           {line('CPU', `${Math.round(total.cpu / m.cores)}% of ${m.cores} cores${(m.count ?? 1) > 1 ? ` (${m.count} machines)` : ''}`)}{line('Memory', `${fmt(total.mb)} used · ${fmt(m.freeMb)} free`)}
