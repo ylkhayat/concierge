@@ -114,7 +114,7 @@ http.createServer(async (req, res) => {
       const f = `${R}/storybook/${decodeURIComponent(sb[1])}`, ext = f.split('.').pop(), T = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', svg: 'image/svg+xml', woff2: 'font/woff2', png: 'image/png' }
       if (!existsSync(f)) { res.writeHead(404); return res.end() }
       if (f.includes('/__snap__/')) { res.writeHead(200, { 'content-type': 'text/html', 'content-security-policy': "script-src 'none'" }); return res.end(readFileSync(f)) }
-      const SW = `(function(){var c=navigator.serviceWorker;if(!c)return;var r=c.register.bind(c),base=location.pathname.replace(/[^/]*$/,'');c.register=function(u,o){try{if(/mockServiceWorker\\.js$/.test(new URL(u,location.href).pathname))o=Object.assign({},o,{scope:base})}catch(e){}return r(u,o)}})()`
+      const SW = `(function(){var w=console.warn;console.warn=function(){if(!/Runtime config is deprecated/.test(String(arguments[0])))w.apply(console,arguments)}})();(function(){var c=navigator.serviceWorker;if(!c)return;var r=c.register.bind(c),base=location.pathname.replace(/[^/]*$/,'');c.register=function(u,o){try{if(/mockServiceWorker\\.js$/.test(new URL(u,location.href).pathname))o=Object.assign({},o,{scope:base})}catch(e){}return r(u,o)};var g=c.getRegistrations.bind(c),at=location.origin+base;c.getRegistrations=function(){return g().then(function(l){return l.filter(function(x){return x.scope===at})})}})()`
       res.writeHead(200, { 'content-type': T[ext] ?? 'application/octet-stream' }); return res.end(ext === 'html' ? readFileSync(f, 'utf8').replace(/<head[^>]*>/i, (h) => `${h}<script>${SW}</script>`) : readFileSync(f))
     }
   }

@@ -2556,7 +2556,11 @@ app.get('/visuals/setup/:owner/:name/activity', async (c) => c.json(await loadAc
 app.get('/visuals/:id/activity', async (c) => c.json(await loadActivity(`visuals:${decodeURIComponent(c.req.param('id'))}`)))
 // a baseline's built Storybook, file by file, for the board's live screens (visuals.ts storybookFile: baselines only)
 const SB_TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', json: 'application/json', map: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', ico: 'image/x-icon', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', txt: 'text/plain; charset=utf-8', wasm: 'application/wasm' }
-const SW_SCOPE = `(function(){var c=navigator.serviceWorker;if(!c)return;var r=c.register.bind(c),base=location.pathname.replace(/[^/]*$/,'');c.register=function(u,o){try{if(/mockServiceWorker\\.js$/.test(new URL(u,location.href).pathname))o=Object.assign({},o,{scope:base})}catch(e){}return r(u,o)}})()`
+// MSW reloads a page it doesn't control yet whenever any registration of its worker's address exists, whichever
+// Storybook's folder it is for: each page sees only its own Storybook's (or Rumanna reloaded forever once Buffehgi had one).
+// Also quiet: Next's "Runtime config is deprecated", which Storybook's Next.js framework sets off on every page load (it
+// imports next/config itself; nothing in the app to change)
+const SW_SCOPE = `(function(){var w=console.warn;console.warn=function(){if(!/Runtime config is deprecated/.test(String(arguments[0])))w.apply(console,arguments)}})();(function(){var c=navigator.serviceWorker;if(!c)return;var r=c.register.bind(c),base=location.pathname.replace(/[^/]*$/,'');c.register=function(u,o){try{if(/mockServiceWorker\\.js$/.test(new URL(u,location.href).pathname))o=Object.assign({},o,{scope:base})}catch(e){}return r(u,o)};var g=c.getRegistrations.bind(c),at=location.origin+base;c.getRegistrations=function(){return g().then(function(l){return l.filter(function(x){return x.scope===at})})}})()`
 // the board's screens as they rendered (the page's own HTML and CSS, without its scripts): one live page renders each
 // once, in the browser, and its markup is kept beside the build, for every visit and every machine after (it travels)
 const SNAP = /^[\w-]{1,200}$/

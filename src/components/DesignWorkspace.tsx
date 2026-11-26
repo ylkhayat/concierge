@@ -484,7 +484,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 function BookRenderer({ base, slug, sha, book, jobs, onDone }: { base: string; slug: string; sha: string; book: string; jobs: Shot[]; onDone: (key: string, ok: boolean) => void }) {
   const frame = useRef<HTMLIFrameElement>(null), pending = useRef(jobs), done = useRef(onDone)
   pending.current = jobs; done.current = onDone
-  const tried = useRef(new Set<string>()), loads = useRef(0), now = useRef<string | undefined>(undefined), again = useRef(new Set<string>())
+  const tried = useRef(new Set<string>()), loads = useRef(0), now = useRef<string | undefined>(undefined), again = useRef(new Set<string>()), storm = useRef(0) // storm: reloads in a row with nothing kept
   const [start, setStart] = useState(() => ({ story: jobs[0]?.story, n: 0 })) // the story the page is loaded at, and which load
   const next = () => pending.current.find((j) => !tried.current.has(j.story!))
   useEffect(() => {
@@ -513,6 +513,7 @@ function BookRenderer({ base, slug, sha, book, jobs, onDone }: { base: string; s
     }
     const keep = async (job: Shot) => {
       const d = doc(); if (!d || stop) return false
+      storm.current = 0
       return api(`/visuals/snaps/${slug}/${sha}`, { book, story: job.story, html: pageHtml(d, `${base}/${book}/`) }).then(() => true, () => false)
     }
     const show = (ch: Channel, story: string) => new Promise<boolean>((res) => { // Storybook's own switch, and its word that it drew it
@@ -550,6 +551,8 @@ function BookRenderer({ base, slug, sha, book, jobs, onDone }: { base: string; s
                    // loaded again: the story reloaded the page or took it elsewhere. It gets one page of its own; a
                    // second time it is let go, and the page starts again at the next
                    const cur = now.current; now.current = undefined
+                   // a page that keeps reloading (a Storybook that can't settle) is let go for this visit, not run forever
+                   if (++storm.current > 4) { for (const j of pending.current) if (!tried.current.has(j.story!)) { tried.current.add(j.story!); done.current(`${book}/${j.story}`, false) } if (cur) done.current(`${book}/${cur}`, false); return setStart({ story: undefined, n: start.n + 1 }) }
                    if (cur && !again.current.has(cur)) { again.current.add(cur); return setStart({ story: cur, n: start.n + 1 }) }
                    if (cur) done.current(`${book}/${cur}`, false)
                    const n = next(); setStart({ story: n?.story, n: start.n + 1 })
