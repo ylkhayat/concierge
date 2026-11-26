@@ -3559,6 +3559,9 @@ app.post('/exec/:run/reply', async (c) => {
   const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
   if (!run) return c.json({ error: 'Unknown run' }, 404)
   if (!msg) return c.json({ error: 'Pick something or write your answer' }, 400)
+  // handed over to its PR: the ticket's own session is done talking (a page from before the handover could still ask);
+  // new words go through the ticket's box, which routes them to the PR's agent or a new stacked PR
+  if (run.state !== 'running' && run.state !== 'queued' && run.ids.some((id) => activeHandover(state.handed?.[id], run))) return c.json({ error: 'This ticket was handed over to its pull request: write in the ticket\'s box, which sends it to the PR\'s agent (or a new stacked PR)' }, 409)
   for (const id of run.ids) if (execBoard.tickets.some((t) => t.id === id)) { rememberSaid(`ticket:${id}`, msg); linkMentions(`ticket:${id}`, msg, run.repo); break }
   // still at it: a running one reads your words between steps; a queued one, the moment it starts
   if (run.state === 'queued') { holdWords(run, `exec:${run.id}`, msg); return c.json({ ok: true, sent: 'queued' }) }
