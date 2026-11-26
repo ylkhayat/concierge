@@ -131,7 +131,7 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 /* the open item of a list (PRs, tickets, repos): it has to read at a glance, from across the room, not only as a slight
    lift: an accent wash, an accent bar on its leading edge and an accent hairline, over the card's lift */
 .sel-row { background: color-mix(in oklch, var(--accent) 13%, var(--surface-1)); color: var(--fg-1);
-  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent), var(--e1); }
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent), var(--e1); }
 /* a click lights its row at once, in the click's frame (the row it leaves still fades back) */
 .sel-row, .sel-row .transition-colors { transition-duration: 0s; }
 /* every card is the same material: a surface with a hairline, a soft drop and a lit top edge, not a bare outline */
