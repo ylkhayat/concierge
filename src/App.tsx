@@ -1,4 +1,4 @@
-import { ClipboardList, Clock, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap, Palette as Swatch } from 'lucide-react'
+import { ClipboardList, Clock, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Palette as Swatch } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
@@ -14,7 +14,7 @@ import { usePinNotifications } from './components/PinButton.tsx'
 import type { Alert } from '../server/alerts.ts'
 import type { Prep } from '../server/plan.ts'
 import { label, sha, VERSION } from './version.ts'
-import { SettingsDialog, ThemeButton, Toggle, UpdateChip, type SettingsTab } from './components/Settings.tsx'
+import { SettingsDialog, ThemeButton, UpdateChip, type SettingsTab } from './components/Settings.tsx'
 import { Onboarding } from './components/Onboarding.tsx'
 import { ExecList, groupOf, orderedTickets } from './components/ExecList.tsx'
 import { PrThread } from './thread/PrThread.tsx'
@@ -293,8 +293,6 @@ export function App() {
   })
 
   const refresh = () => { setRefreshing(true); api('/poll', {}).finally(() => setRefreshing(false)) }
-  const toggleAuto = () => health && api('/auto-start', { on: !health.autoStart }).then((h) => toast(h.autoStart ? 'Auto-review on: new requests start on their own' : 'Auto-review off'))
-  const autoOn = !!health?.autoStart
 
   const openSettings = () => setSettingsOpen(mode === 'exec' ? 'exec' : 'general')
   const goCodebase = (repo = (focus && repos.includes(focus) ? focus : undefined) ?? codebaseRepo ?? repos[0]) => {
@@ -328,15 +326,6 @@ export function App() {
     <button onClick={mode === 'exec' ? () => { setRefreshing(true); api('/exec/poll', {}).finally(() => setRefreshing(false)) } : refresh} title={mode === 'exec' ? 'Check Linear now' : 'Check GitHub now'} aria-label="Refresh" className="group rounded-md p-1 transition-colors hover:bg-hover hover:text-fg-1">
       <RefreshCw className={`size-3.5 transition-transform duration-500 ${refreshing ? 'animate-spin' : 'group-hover:rotate-90'}`} />
     </button>
-  )
-  const autoToggle = (
-    <label className="flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-hover"
-           title={autoOn ? 'New review requests start your review command automatically' : 'Auto-review is off: run reviews by hand'}>
-      <Zap className={`size-3.5 transition-colors ${autoOn ? 'fill-accent text-accent' : 'text-fg-3'}`} />
-      {/* a phone: the bolt and the switch say it (the name is for the screen reader); the bar has no room for the word */}
-      <span className="font-medium text-fg-2 max-sm:sr-only">Auto-review</span>
-      <Toggle label="Auto-review" on={autoOn} onChange={() => toggleAuto()} />
-    </label>
   )
 
   // the two workspaces: Review reads and judges (list + detail), Exec ships (board + console)
@@ -583,7 +572,6 @@ export function App() {
           {/* in a focus block the alerts wait, faded, until it ends */}
           <span className={focusBlock() ? 'pointer-events-none opacity-30' : 'contents'}><AlertDock alerts={alerts} now={now} onOpen={openAlert} /></span>
           <UpdateChip onOpen={() => setSettingsOpen('machines')} />
-          {(mode === 'review' || mode === 'exec') && autoToggle}
         </footer>
       </div>
 

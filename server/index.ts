@@ -118,10 +118,12 @@ export type Health = ReturnType<typeof healthView>
 /** The account the agents use now (the one most kinds of work go to), its plan windows and today's use: the sidebar's chip. */
 function accountNow() {
   const r = routing()
-  const counts = new Map<string, number>()
-  for (const x of r) counts.set(x.using, (counts.get(x.using) ?? 0) + 1)
-  const id = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'claude', a = accounts().find((x) => x.id === id)
-  const standIn = r.find((x) => x.using === id && x.chosen !== id)
+  // the account your agents' own work runs on (Ship's, else Review's), as chosen in Settings → Accounts, or the one
+  // standing in for it: not a count over every kind of work, where the small model's quick calls (often another
+  // account) could outvote it and the bar named an account the agents weren't on
+  const main = r.find((x) => x.work === 'exec') ?? r.find((x) => x.work === 'review')
+  const id = main?.using ?? 'claude', a = accounts().find((x) => x.id === id)
+  const standIn = main && main.chosen !== main.using ? main : undefined
   return { id, label: a?.label ?? id, kind: a?.kind ?? 'claude', windows: windowsFor(id), today: state.spendBy?.[today()]?.[id], standingInFor: standIn?.chosenLabel, why: standIn?.why }
 }
 const days = (n: number) => Array.from({ length: n }, (_, i) => new Date(Date.now() - (n - 1 - i) * 86400_000).toLocaleDateString('en-CA'))

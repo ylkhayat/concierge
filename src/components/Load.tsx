@@ -182,7 +182,6 @@ export function LoadRibbon() {
         <span className={`size-1.5 rounded-full ${issues.length ? 'bg-wait' : running ? 'animate-pulse bg-run' : 'bg-ok'}`} />
         <span>{doing}{load.queued > 0 && `, ${load.queued} queued`}</span>
         {issues.length > 0 && <span className="text-fg-1">· {issues.join(', ')}</span>}
-        {!issues.length && plan && <span className="text-fg-4">· {planText}</span>}
       </button>
       <span className="pointer-events-none absolute bottom-full right-0 z-50 mb-1.5 hidden w-64 space-y-2 rounded-card bg-surface-1 p-3 text-small text-fg-2 shadow-e2 group-hover/r:block">
         {section('Agents', <>
