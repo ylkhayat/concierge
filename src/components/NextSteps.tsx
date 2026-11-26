@@ -214,8 +214,9 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
           )}
 
           {/* the box: docked under the checklist; in steps, under every step, so you can steer whichever decision is on screen.
-              Solid: the steps scroll under it, never show through it */}
-          <div className={inline ? 'sticky bottom-0 -mx-1 space-y-2 bg-surface-1 px-1 pb-1 pt-2.5 shadow-[0_-12px_12px_-12px_rgb(0_0_0/0.35)]' : 'space-y-3'}>
+              Solid: the steps scroll under it, never show through it. Its edge's shadow only over steps: with nothing
+              above it, it drew a grey bar across the top of the box */}
+          <div className={inline ? `sticky bottom-0 -mx-1 space-y-2 bg-surface-1 px-1 pb-1 ${nothing ? '' : 'pt-2.5 shadow-[0_-12px_12px_-12px_rgb(0_0_0/0.35)]'}` : 'space-y-3'}>
           {attach?.chips}
           {route && !route.force && <LanePicker pin={pin} onPin={setPin} />}
           <div className="relative" style={mention.open ? mention.anchor : slash.anchor}>

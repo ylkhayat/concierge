@@ -117,8 +117,10 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col">
             <Transcript follow={follow}>{children}</Transcript>
           </section>
-          {/* its box, or (no box: the agent asks) the next step: at most about half the height, scrolling inside */}
-          {left && <div className="flex max-h-[min(46vh,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4">{left}</div>}
+          {/* its box, or (no box: the agent asks) the next step: at most about half the height, scrolling inside. Narrow,
+              a share of the column (not of the screen): stacked over the next step's dock, two halves of the screen
+              left the conversation nothing */}
+          {left && <div className="flex max-h-[min(55%,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4 @[1100px]/thread:max-h-[min(46vh,560px)]">{left}</div>}
         </div>
         {/* the handle between the two: drag to share the width, double-click to go back to this chat's own split */}
         <div role="separator" aria-orientation="vertical" aria-label="Resize the chat and the panel" title="Drag to resize · double-click to reset"
@@ -130,8 +132,9 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           <div className="hidden shrink-0 border-b border-line px-4 @[1100px]/thread:block"><TabBar tabs={tabs} tab={tab} onTab={onTab} /></div>
           <Quotable onAsk={ask} fill={current.fill} key={current.id}>{pane}</Quotable>
         </section>
-                {/* under the panel: the next step, beside the box */}
-        {under && <div className="flex max-h-[min(46vh,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-4 sm:pb-4 @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-2">{under}</div>}
+        {/* under the panel: the next step, beside the box. Narrow, under the box: at most a third of what is left, so the
+            conversation, the box and it (a working bar opened to its details) all keep a place */}
+        {under && <div className="flex max-h-[min(36%,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-4 sm:pb-4 @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-2 @[1100px]/thread:max-h-[min(46vh,560px)]">{under}</div>}
       </div>
     </div>
   )
@@ -186,11 +189,14 @@ function Transcript({ children, follow }: { children: ReactNode; follow?: unknow
   const onScroll = () => { const el = ref.current!; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
   const end = () => { const el = ref.current; if (el && pinned.current) el.scrollTop = el.scrollHeight }
   useLayoutEffect(end, [follow])
-  // what renders late (markdown, a folded chapter opening) grows it after the fact: still at the newest, it follows
+  // what renders late (markdown, a folded chapter opening) grows it after the fact: still at the newest, it follows.
+  // So does the docks under it growing (a working bar opened, background tasks listed): the newest stays in sight
+  // instead of sliding under them
   const inner = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const o = new ResizeObserver(end)
     if (inner.current) o.observe(inner.current)
+    if (ref.current) o.observe(ref.current)
     return () => o.disconnect()
   }, [])
   return (

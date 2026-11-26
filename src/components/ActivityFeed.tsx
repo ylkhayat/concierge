@@ -122,7 +122,7 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
                   <ul className="ml-8 mt-1 max-w-[620px] divide-y divide-line overflow-hidden rounded-ctl bg-surface-1 ring-1 ring-line">
                     {e.items.map((x, i) => (
                       <li key={i} className="group/it px-3 py-2">
-                        <p className="text-small font-medium text-fg-1">{x.label}</p>
+                        <p className="break-words text-small font-medium text-fg-1">{x.label}</p>
                         {x.detail && (
                           <p className="mt-0.5 flex items-center gap-1.5">
                             <code className="min-w-0 flex-1 truncate font-mono text-meta text-fg-3" title={x.detail}>{x.detail}</code>
@@ -138,10 +138,12 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
             )
           }
           if (a.kind === 'text' || a.kind === 'result') return (
-            <li key={k} className="group/msg relative py-1">
+            <li key={k} className="group/msg pt-1">
               <Md text={a.text} className="break-words !text-body !leading-relaxed text-fg-1 [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 [&_h1]:!text-reading [&_h2]:!text-body [&_h3]:!text-body [&_pre]:!text-small [&_table]:!text-small" />
               {after?.(a)}
-              <time className="absolute -bottom-3 left-0 font-mono text-micro tabular-nums text-fg-4 opacity-0 transition-opacity group-hover/msg:opacity-100" title={stamp(a.at)}>{clock(a.at, true)}</time>
+              {/* its time on hover, on a line of its own under it (as yours is): hung below it, it covered the next row,
+                  and under a turn's last message the turn's paint containment (.cv) cut it off */}
+              <time className="mt-0.5 block font-mono text-micro leading-none tabular-nums text-fg-4 opacity-0 transition-opacity group-hover/msg:opacity-100" title={stamp(a.at)}>{clock(a.at, true)}</time>
             </li>
           )
           const [Icon] = iconFor(a)
@@ -362,9 +364,9 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
       <button onClick={onToggle} aria-expanded={open} title={stamp(h.at)}
               className="group/turn mb-2 flex w-full items-center gap-2 text-left text-micro text-fg-4 transition-colors hover:text-fg-2">
         <span className="h-px w-3 shrink-0 bg-line" />
-        <span className="font-semibold uppercase tracking-wide text-fg-3 group-hover/turn:text-fg-1">{label}</span>
-        {live ? <span className="flex items-center gap-1 font-medium text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />running</span>
-          : ok ? <CircleCheck className="size-3 text-ok" aria-label="finished" /> : bad ? <TriangleAlert className="size-3 text-fail" aria-label="ended with an error" /> : null}
+        <span className="min-w-0 truncate font-semibold uppercase tracking-wide text-fg-3 group-hover/turn:text-fg-1">{label}</span>
+        {live ? <span className="flex shrink-0 items-center gap-1 font-medium text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />running</span>
+          : ok ? <CircleCheck className="size-3 shrink-0 text-ok" aria-label="finished" /> : bad ? <TriangleAlert className="size-3 shrink-0 text-fail" aria-label="ended with an error" /> : null}
         <span className="h-px min-w-3 flex-1 bg-line" />
         <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
           <span>{when(h.at)}</span>

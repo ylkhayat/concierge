@@ -139,7 +139,8 @@ export function BgNow({ base, count, parked, open: start = false, toast }: { bas
         <ChevronRight className={`ml-auto size-3.5 shrink-0 text-fg-4 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
       </button>
       {open && (
-        <ul className="space-y-2 border-t border-run/15 px-3 py-2">
+        // capped, scrolling inside: a handful of tasks with their output would otherwise run the chat off its screen
+        <ul className="max-h-[min(50vh,420px)] space-y-2 overflow-y-auto overscroll-contain border-t border-run/15 px-3 py-2">
           {parked && <li className="text-meta text-fg-3">Its turn is over: it carries on when {running.length === 1 ? 'this finishes' : 'these finish'}.</li>}
           {running.map((t) => (
             <li key={t.id}>
