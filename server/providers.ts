@@ -2,6 +2,7 @@
 // pointing it at Ollama, which speaks Anthropic's API, so its runs keep skills, slash commands, mid-run messages and
 // resume. OpenAI runs through Codex (`codex exec`), with your ChatGPT sign-in or an API key: callers keep building
 // Claude Code's flags and reading its stream, translated for Codex on the way in and out, so every run reads the same.
+import { gateEnv } from './gate.ts'
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -508,7 +509,7 @@ export type AgentProcess = Pick<ChildProcess, 'kill' | 'pid'> & EventEmitter & {
 export function spawnAgent(p: ProviderId, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; stdin?: boolean; signal?: AbortSignal }): AgentProcess {
   // stdin stays open only for a run that takes messages mid-way (runAgent): `claude -p` otherwise waits for it to end
   const stdio: ['pipe' | 'ignore', 'pipe', 'pipe'] = [opts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe']
-  const kind = kindOf(p), env = envOf(p, opts.env)
+  const kind = kindOf(p), env = gateEnv(envOf(p, opts.env)) // the push gate (gate.ts): a push that doesn't typecheck is refused
   if (kind === 'claude') return spawn('claude', claudeModels(args, p), { cwd: opts.cwd, env, signal: opts.signal, stdio }) as AgentProcess
   if (kind === 'llama') return llama(p, args, { ...opts, env }, stdio)
   if (kind === 'copilot') {

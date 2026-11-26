@@ -1,4 +1,5 @@
 // first: the keys every machine shares go into the environment before any module reads it
+import { writeGate } from './gate.ts'
 import { markNotWaiting } from './judge.ts'
 import { reviewStack, type StackItem } from './stackSteps.ts'
 import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.ts'
@@ -1064,6 +1065,7 @@ function sharedChanged(changed: SharedKey[]) {
   if (changed.includes('LINEAR_API_KEY')) void pollTickets()
 }
 setInterval(() => sharedChanged(applyShared()), 30_000).unref()
+void writeGate().catch((e) => console.warn('push gate:', (e as Error).message)) // every agent's push typechecks first (gate.ts)
 void gitIdentity() // a token from an earlier sign-in: commits carry its account from the start
 // a machine's recent log (scrubbed), this one's or another's through its worker
 // the page's slow moments (src/slowUi.ts), into this machine's log, where its logs page shows them
