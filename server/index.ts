@@ -24,7 +24,9 @@ import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
-import { defaultBranch, tokenChanged, getMe, gh, ghBudget, outside, poll, prHealth, refreshOne, setOnStacks, slowedUntil } from './github.ts'
+import { defaultBranch, tokenChanged, getMe, gh, ghBudget, ghCall, outside, poll, pollPrs, prHealth, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
+import { coalescer, hookLive, hookStats, listen, listening, newSecret, targetsOf, type Handler as HookHandler, type Target as HookTarget } from './hooks.ts'
+import { closeFunnel, connectRepo, funnelBlocker, funnelOnIn, FUNNEL_PORT, hookUrl, openFunnel, pingHook, removeHook, scopesAllowHooks, tailscale, type Self } from './hookSetup.ts'
 import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
 import { assignToMe, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
 import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, togetherPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
@@ -180,20 +182,54 @@ function views(): PrView[] {
 
 let pollAgain = false
 let lastPollAt = 0
+let lastFullAt = 0 // the last full sync (every repository read, hooked or not)
+const SAFETY_EVERY = 10 * 60_000 // while webhooks deliver, a full sync this often: the net for a delivery that never came
+/** A repository its webhook carries now: Concierge made its hook, and it delivered (an event or the heartbeat ping) lately. */
+const hooked = (repo: string) => !!state.hooks?.repos[repo] && hookLive(repo)
 async function doPoll(forced?: unknown) {
   if (fleet.elsewhere()) return // a worker: the control plane polls, once for all machines (GitHub's budget is shared)
-  // a poll asked for while one runs is not dropped: it runs right after
-  if (health.polling) { pollAgain = true; return }
+  // a poll asked for while one runs (or while a webhook's PRs are read) is not dropped: it runs right after
+  if (health.polling || hookBusy) { pollAgain = true; return }
   // GitHub's budget nearly spent (it is shared with your own gh): every 5 minutes instead of every minute, until it resets
   if (forced !== true && (ghBudget.remaining ?? 5000) < 500 && Date.now() - lastPollAt < 5 * 60_000) return
   // GitHub said slow down: nothing is asked until its wait is over (asking anyway only makes the wait longer)
   if (slowedUntil()) return
+  // webhooks deliver: between full syncs, a light one, which leaves the hooked repositories to them (github.ts poll)
+  const light = forced !== true && Object.keys(state.hooks?.repos ?? {}).some(hooked) && Date.now() - lastFullAt < SAFETY_EVERY
   lastPollAt = Date.now()
+  if (!light) lastFullAt = lastPollAt
   health.polling = true
   bus.emit('health')
   try {
     const openBefore = new Set(Object.values(state.prs).filter((p) => !p.closed).map((p) => p.id))
-    const { fresh } = await poll()
+    const { fresh } = await poll(light ? { skip: hooked } : {})
+    afterSync(fresh, openBefore)
+    if (!light) void heartbeat()
+    health.pollError = undefined
+  } catch (e) {
+    health.pollError = whyFailed(e)
+  }
+  condition('github', 'GitHub sync', health.pollError && `GitHub sync is failing: ${health.pollError.slice(0, 160)}`)
+  if (state.claudeLoginLapsed && state.claudeLoginLapsed !== lapsedSeen) {
+    lapsedSeen = state.claudeLoginLapsed
+    alert({ kind: 'system', id: 'claude-login', label: 'Claude sign-in', title: 'Claude sign-in' }, 'The claude.ai sign-in stopped working: agents use the token instead. Sign in again under Settings → Connections.', 'warn')
+  }
+  dropClosed()
+  pump()
+  health.lastPollAt = new Date().toISOString()
+  health.polling = false
+  bus.emit('change')
+  bus.emit('health')
+  if (pollAgain) { pollAgain = false; doPoll() } else void flushHooks()
+}
+
+/**
+ * What follows reading PRs from GitHub, whether a poll read them or a webhook named them: others' doings into each
+ * PR's Activity and the alerts, a new review request alerted (and started, with auto-review), worktrees of a PR that
+ * just closed, a new head explained, stacks aligned. One path, so a webhook changes nothing in how it is told.
+ */
+function afterSync(fresh: string[], openBefore: Set<string>) {
+  {
     // a PR that just merged or closed: its worktrees go (the rules still keep anything with work in it)
     const justClosed = Object.values(state.prs).filter((p) => p.closed && openBefore.has(p.id))
     if (state.autoClean && justClosed.length) void autoClean(`${justClosed.map((p) => `#${p.number}`).join(', ')} closed`, (w) => justClosed.some((p) => belongsTo(w, p)))
@@ -226,22 +262,54 @@ async function doPoll(forced?: unknown) {
       for (const p of linkStacks(Object.values(state.prs))) alert(prTarget(p), `Not in its stack on GitHub: it is built on #${p.stack![p.stack!.findIndex((s) => s.number === p.number) - 1]?.number ?? '?'}, but reviewers see it on its own. Link into stack puts it there.`, 'warn')
     }, (e) => console.error('stack check:', e.message))
     if (!followed) { followed = true; followRemote(Object.values(state.prs)).catch((e) => console.error('follow remote:', e.message)) }
-    health.pollError = undefined
-  } catch (e) {
-    health.pollError = whyFailed(e)
   }
-  condition('github', 'GitHub sync', health.pollError && `GitHub sync is failing: ${health.pollError.slice(0, 160)}`)
-  if (state.claudeLoginLapsed && state.claudeLoginLapsed !== lapsedSeen) {
-    lapsedSeen = state.claudeLoginLapsed
-    alert({ kind: 'system', id: 'claude-login', label: 'Claude sign-in', title: 'Claude sign-in' }, 'The claude.ai sign-in stopped working: agents use the token instead. Sign in again under Settings → Connections.', 'warn')
+}
+
+// --- webhooks (hooks.ts): the PRs a delivery names are read at once, through afterSync, one batch at a time ----------
+let hookBusy = false
+const hookQueue = new Map<string, HookTarget>()
+const hookCoalesce = coalescer((due) => { for (const t of due) hookQueue.set(t.id, { ...hookQueue.get(t.id), ...t }); return flushHooks() })
+async function flushHooks() {
+  if (health.polling || hookBusy || !hookQueue.size || fleet.elsewhere()) return
+  if (slowedUntil()) { setTimeout(() => void flushHooks(), slowedUntil() - Date.now() + 1000).unref(); return } // GitHub said wait: after it
+  hookBusy = true
+  const targets = [...hookQueue.values()]
+  hookQueue.clear()
+  try {
+    const openBefore = new Set(Object.values(state.prs).filter((p) => !p.closed).map((p) => p.id))
+    const { fresh } = await pollPrs(targets)
+    afterSync(fresh, openBefore)
+    dropClosed()
+    pump()
+  } catch (e) { console.error('hooks: reading', targets.map((t) => t.id).join(', '), (e as Error).message) } finally {
+    hookBusy = false
+    bus.emit('change')
+    if (pollAgain) { pollAgain = false; void doPoll() } else if (hookQueue.size) void flushHooks()
   }
-  dropClosed()
-  pump()
-  health.lastPollAt = new Date().toISOString()
-  health.polling = false
-  bus.emit('change')
-  bus.emit('health')
-  if (pollAgain) { pollAgain = false; doPoll() }
+}
+const hookHandler: HookHandler = {
+  secret: () => readSecrets().webhookSecret,
+  active: () => !fleet.elsewhere(), // the funnel lives on the control plane; a worker does nothing with one
+  deliver: (event, payload) => {
+    const tracked = Object.values(state.prs).map((p) => ({ id: p.id, repo: p.repo, head: p.head, headSha: p.headSha, closed: p.closed }))
+    for (const t of targetsOf(event, payload, { me: state.me?.login, tracked }).targets) hookCoalesce.add(t)
+  },
+}
+const hookPort = () => Number(setting('HOOKS_PORT') ?? config.hooks?.port ?? 8790)
+const startHooks = () => listen(hookPort(), hookHandler)
+if (readSecrets().webhookSecret) void startHooks().catch(() => {})
+/**
+ * Every full sync, a ping to each hook Concierge made (one REST call a repository every 10 minutes): it proves the
+ * whole way (GitHub, the funnel, the secret) works, and keeps a quiet repository counted as hooked. A hook gone from
+ * GitHub is forgotten, and its repository is polled again.
+ */
+async function heartbeat() {
+  const h = state.hooks
+  if (!h?.url || fleet.elsewhere()) return
+  for (const [repo, { id }] of Object.entries(h.repos)) {
+    const r = await pingHook(ghCall, repo, id).catch((e: Error) => ({ ok: false, gone: false, text: e.message }))
+    if (r.gone) { delete h.repos[repo]; (h.problems ??= {})[repo] = { problem: 'error', text: 'Its webhook was removed on GitHub: connect it again', at: new Date().toISOString() }; save() }
+  }
 }
 
 let lapsedSeen = state.claudeLoginLapsed // a lapse already known at start was alerted before
@@ -601,7 +669,7 @@ const HERE_ONLY = /^\/api\/(update$|claude-auth\/|azure\/login$|github\/login$|c
 // what only the main server knows whole (every machine, how full each is, the joins, where they differ): a follower
 // shows the main server's, so Settings → Machines lists the whole fleet on any machine's localhost
 // (an account's machines and its sync check ask every machine, which only the main one knows)
-const FLEET_VIEW = /^\/api\/(machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment|repos\/held|accounts\/[^/]+\/(machines|security))$/
+const FLEET_VIEW = /^\/api\/(hooks|machines|machines\/joins|machines\/[^/]+\/logs|fleet\/alignment|repos\/held|accounts\/[^/]+\/(machines|security))$/
 app.use('*', async (c, next) => {
   if (fleet.mayWrite() || (c.req.method === 'GET' ? !FLEET_VIEW.test(c.req.path) : HERE_ONLY.test(c.req.path))) return next()
   const main = (await replicaPeers()).find((p) => p.active)
@@ -770,6 +838,115 @@ app.post('/github/login', async (c) => {
   } catch (e) { return c.json({ error: (e as Error).message }, 400) }
 })
 app.get('/github/login', (c) => c.json(githubLoginState() ?? null))
+
+// --- GitHub webhooks, set up from Settings → Machines (hooks.ts, hookSetup.ts) -----------------------------------------
+// tailnet-only like every other route; each acts on the control plane (a worker hands the POSTs there, and FLEET_VIEW
+// shows the control plane's view), where the funnel, the listener and the token are
+const tokenSource = (): 'shared' | 'env' | 'gh' => (sharedNow().GITHUB_TOKEN ? 'shared' : localKeys.GITHUB_TOKEN ? 'env' : 'gh')
+const hookRepos = () => [...new Set([...Object.keys(config.repos), ...Object.values(state.prs).filter((p) => !p.closed && !p.dismissed).map((p) => p.repo)])].sort()
+const REPO_NAME = /^[\w.-]+\/[\w.-]+$/
+let hookSignIn = false // the sign-in running is the webhooks' (its state is shown in their section)
+async function hooksView() {
+  const self = (await tsStatus())?.Self as Self | undefined
+  const h = state.hooks, stats = hookStats()
+  const on = !!h?.url && !!self?.DNSName && funnelOnIn((await tailscale(['funnel', 'status', '--json'], 10_000)).out, self.DNSName, hookPort())
+  const scopes = tokenScopes() ?? await readScopes().catch(() => undefined)
+  return {
+    control: !fleet.elsewhere(), machine: fleet.machine, listening: listening(), port: hookPort(), funnelPort: FUNNEL_PORT,
+    funnel: { on, url: h?.url ?? (self?.DNSName ? hookUrl(self) : undefined), blocker: funnelBlocker(self) },
+    token: { source: tokenSource(), scopes, canHook: scopesAllowHooks(scopes) },
+    signIn: hookSignIn ? githubLoginState() : undefined,
+    repos: hookRepos().map((repo) => ({ repo, watched: repo in config.repos, id: h?.repos[repo]?.id, live: hooked(repo), lastAt: stats.byRepo[repo], problem: h?.problems?.[repo] })),
+    lastAt: stats.lastAt, today: stats.today, bad: stats.bad,
+  }
+}
+export type HooksView = Awaited<ReturnType<typeof hooksView>>
+const hookFail = (c: Context, e: unknown) => c.json({ error: (e as Error).message }, 400)
+app.get('/hooks', async (c) => c.json(await hooksView()))
+// Step 1: the funnel, for the hook path only (a secret made the first time, the listener started)
+app.post('/hooks/funnel', async (c) => {
+  const { on } = await c.req.json<{ on?: boolean }>().catch(() => ({ on: undefined }))
+  try {
+    if (on) {
+      if (!readSecrets().webhookSecret) saveSecrets({ webhookSecret: newSecret() })
+      await startHooks()
+      const url = await openFunnel(tailscale, (await tsStatus())?.Self as Self | undefined, hookPort())
+      state.hooks = { repos: {}, ...state.hooks, url }
+      console.log(`hooks: funnel open at ${url}`)
+    } else {
+      await closeFunnel(tailscale)
+      if (state.hooks) delete state.hooks.url
+      console.log('hooks: funnel closed')
+    }
+    save()
+    return c.json(await hooksView())
+  } catch (e) { return hookFail(c, e) }
+})
+// Step 2: a webhook on each repository chosen (one already pointing here is updated, never doubled)
+app.post('/hooks/connect', async (c) => {
+  const { repos } = await c.req.json<{ repos?: unknown }>().catch(() => ({ repos: [] }))
+  const url = state.hooks?.url, secret = readSecrets().webhookSecret
+  if (!url || !secret) return c.json({ error: 'Open the webhook door first (step 1)' }, 400)
+  const known = new Set(hookRepos())
+  const list = (Array.isArray(repos) ? repos : []).filter((r): r is string => typeof r === 'string' && REPO_NAME.test(r) && known.has(r)).slice(0, 100)
+  const h = state.hooks!
+  const results = []
+  for (const repo of list) {
+    const r = await connectRepo(ghCall, repo, url, secret)
+    results.push(r)
+    if (r.ok) {
+      h.repos[repo] = { id: r.id, at: new Date().toISOString() }
+      if (h.problems) delete h.problems[repo]
+      if (r.reused) void pingHook(ghCall, repo, r.id).catch(() => {}) // a new hook gets GitHub's own ping; an updated one is asked for it
+    } else (h.problems ??= {})[repo] = { problem: r.problem, text: r.text, at: new Date().toISOString() }
+  }
+  save()
+  console.log(`hooks: connected ${results.filter((r) => r.ok).length} of ${results.length} repositories`)
+  return c.json({ results, view: await hooksView() })
+})
+app.post('/hooks/disconnect', async (c) => {
+  const { repo } = await c.req.json<{ repo?: string }>().catch(() => ({ repo: undefined }))
+  const rec = repo ? state.hooks?.repos[repo] : undefined
+  if (!repo || !rec) return c.json({ error: 'No webhook of Concierge\'s there' }, 400)
+  try { if (!await removeHook(ghCall, repo, rec.id)) throw new Error('GitHub didn\'t remove it') } catch (e) { return hookFail(c, e) }
+  delete state.hooks!.repos[repo]; save()
+  return c.json(await hooksView())
+})
+// a ping to each hook (or one): GitHub sends it through the funnel, so its arrival proves the whole way works
+app.post('/hooks/test', async (c) => {
+  const { repo } = await c.req.json<{ repo?: string }>().catch(() => ({ repo: undefined }))
+  const hooks = Object.entries(state.hooks?.repos ?? {}).filter(([r]) => !repo || r === repo)
+  if (!hooks.length) return c.json({ error: 'No repository is connected yet' }, 400)
+  const sent = await Promise.all(hooks.map(async ([r, { id }]) => ({ repo: r, ...await pingHook(ghCall, r, id).catch((e: Error) => ({ ok: false, text: e.message })) })))
+  return c.json({ sent })
+})
+// Turn off: the hooks Concierge made go, then the funnel; polling goes back to every minute
+app.post('/hooks/off', async (c) => {
+  const left: string[] = []
+  for (const [repo, { id }] of Object.entries(state.hooks?.repos ?? {})) {
+    const ok = await removeHook(ghCall, repo, id).catch(() => false)
+    if (ok) delete state.hooks!.repos[repo]; else left.push(repo)
+  }
+  try { await closeFunnel(tailscale) } catch (e) { save(); return hookFail(c, e) }
+  if (!left.length) state.hooks = undefined; else delete state.hooks!.url
+  save()
+  return c.json({ left, view: await hooksView() })
+})
+// a token that may not manage webhooks: sign in to GitHub again, asking for admin:repo_hook. Your own gh login in use
+// (no GITHUB_TOKEN): gh adds the scope to it (gh auth refresh); else, or when that can't start, Concierge's own sign-in
+// (as in Settings → Machines), whose token replaces the shared one for every machine
+app.post('/hooks/signin', async (c) => {
+  const more = ['admin:repo_hook']
+  const afterwards = async () => { await readScopes().catch(() => undefined); return (await getMe().catch(() => undefined))?.login }
+  const shared = async (token: string) => { const w = await whoseKey('GITHUB_TOKEN', token); if (w.error) throw new Error(w.error); keepKey('GITHUB_TOKEN', token); await afterwards(); return w.who }
+  hookSignIn = true
+  try {
+    if (tokenSource() === 'gh') {
+      try { return c.json({ ...await startGithubLogin(async () => { tokenChanged(); return afterwards() }, { more, refresh: true }), via: 'gh' }) } catch (e) { console.warn('hooks: gh auth refresh did not start:', (e as Error).message) }
+    }
+    return c.json({ ...await startGithubLogin(shared, { more }), via: 'concierge' })
+  } catch (e) { return hookFail(c, e) }
+})
 /** Shared keys changed (here, or on another machine through the sync): the parts that keep their own copy pick them up. */
 function sharedChanged(changed: SharedKey[]) {
   if (!changed.length) return

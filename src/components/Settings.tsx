@@ -20,6 +20,7 @@ import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { ago, clock, weekday } from '../time.ts'
 import { ClaudeAccount, Connections, Skeleton } from './Connections.tsx'
 import { MachinesSettings } from './MachinesSettings.tsx'
+import { LiveUpdates } from './LiveUpdates.tsx'
 import { AccountMachinesFor, notReadyOn, useAccountMachines } from './AccountMachines.tsx'
 import { AccountSecurity } from './AccountSecurity.tsx'
 import type { Mode, OrgSkill } from '../../server/orgSkills.ts'
@@ -61,7 +62,7 @@ const INDEX: [string, SettingsTab][] = [
   ['Accounts and sign-in', 'accounts'], ['Fallback order', 'accounts'], ['Who runs what', 'accounts'], ['Llama models', 'accounts'],
   ['Daily budget', 'spend'], ['Budget per explanation', 'spend'], ['Runs and their cost', 'spend'],
   ['Workspaces: organizations and their repositories', 'repos'], ['Watched repositories', 'repos'], ['Codebase map', 'repos'], ['Databases (MongoDB)', 'connections'], ['Sentry', 'connections'],
-  ['This machine', 'machines'], ['Tailnet devices (Tailscale)', 'machines'], ['Sync between machines', 'machines'], ['Update now', 'machines'],
+  ['This machine', 'machines'], ['Live updates (GitHub webhooks)', 'machines'], ['Tailnet devices (Tailscale)', 'machines'], ['Sync between machines', 'machines'], ['Update now', 'machines'],
   ['Theme', 'appearance'], ['Interface size', 'appearance'], ['Open Linear links in the app', 'appearance'], ['Terminal for Resume', 'appearance'],
   ['Run setup again', 'about'], ['Settings file', 'about'], ['Keyboard shortcuts', 'about'],
 ]
@@ -226,7 +227,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
                 ? <>Couldn't read the repositories ({setupFailed}). <button onClick={() => loadSetup()} className="font-medium text-accent-text hover:underline">Try again</button></>
                 : <><LoaderCircle className="size-4 animate-spin" />Loading the repositories…</>}</p>)}
             {tab === 'connections' && <Connections toast={toast} />}
-            {tab === 'machines' && <><Access toast={toast} /><MachinesSettings /><Update />
+            {tab === 'machines' && <><Access toast={toast} /><MachinesSettings /><Update /><LiveUpdates toast={toast} />
               <details className="group/adv rounded-xl ring-1 ring-line [&[open]]:pb-3">
                 <summary className="cursor-pointer px-3.5 py-2.5 text-small font-medium text-fg-3 hover:text-fg-1">Advanced: control plane, sync, tailnet, machine key</summary>
                 <div className="space-y-5 px-3.5 pt-1"><JoinRequests /><Machines /><MachineKey /><Tailnet /></div>

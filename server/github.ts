@@ -5,7 +5,7 @@ import { judge, settled, verdictOf } from './judge.ts'
 
 let token = process.env.GITHUB_TOKEN ?? ''
 /** The shared GitHub token changed (sharedEnv.ts): use it from the next call. */
-export const tokenChanged = () => { token = process.env.GITHUB_TOKEN ?? '' }
+export const tokenChanged = () => { token = process.env.GITHUB_TOKEN ?? ''; scopes = { known: false } }
 async function getToken() {
   if (!token) token = (await promisify(execFile)('gh', ['auth', 'token'])).stdout.trim()
   return token
@@ -40,6 +40,39 @@ const secondary = (status: number, text: string, retryAfter: string | null) => (
 const rest = { remaining: Infinity, resetAt: 0 }
 export const restBudget = () => ({ ...rest })
 
+// What the token may do, as GitHub says on every REST answer (x-oauth-scopes): only a classic token or an OAuth one
+// (gh's sign-in) says it. A fine-grained token or an app's says nothing: undefined then, known: false.
+let scopes: { list?: string[]; known: boolean } = { known: false }
+function noteScopes(h: Headers) {
+  const v = h.get('x-oauth-scopes')
+  if (v !== null) scopes = { known: true, list: v.split(',').map((x) => x.trim()).filter(Boolean) } // a new token: tokenChanged forgets the old
+}
+/** The token's scopes as GitHub last reported them, or undefined when it doesn't report any (a fine-grained token). */
+export const tokenScopes = (): string[] | undefined => (scopes.known ? scopes.list : undefined)
+/** Read the scopes again now (after a new sign-in): /rate_limit costs no quota. */
+export async function readScopes(): Promise<string[] | undefined> {
+  scopes = { known: false }
+  const res = await fetch('https://api.github.com/rate_limit', { headers: { Authorization: `Bearer ${await getToken()}`, Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
+  if (res) noteScopes(res.headers)
+  return tokenScopes()
+}
+
+/** A REST call that keeps GitHub's status (the webhook setup tells "no admin" from "no scope"), through the same gate. */
+export async function ghCall<T = unknown>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<{ status: number; json: T & { message?: string } }> {
+  if (slowedUntil()) throw new Error(slowNotice())
+  const res = await gate(async () => fetch(`https://api.github.com${path}`, {
+    method, ...(body !== undefined && { body: JSON.stringify(body) }),
+    headers: { Authorization: `Bearer ${await getToken()}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(body !== undefined && { 'Content-Type': 'application/json' }) },
+    signal: AbortSignal.timeout(20_000),
+  }))
+  noteScopes(res.headers)
+  const text = await res.text()
+  if (!res.ok && secondary(res.status, text, res.headers.get('retry-after'))) { slowDown(res.headers.get('retry-after')); throw new Error(slowNotice()) }
+  let json = {} as T & { message?: string }
+  try { if (text) json = JSON.parse(text) } catch { /* a 204, or not JSON */ }
+  return { status: res.status, json }
+}
+
 // GET with ETag caching: a 304 costs no rate limit and returns the cached body.
 export async function gh<T>(path: string, accept = 'application/vnd.github+json'): Promise<T> {
   const cached = etags.get(path)
@@ -59,6 +92,7 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
       ...(cached && { 'If-None-Match': cached.etag }),
     },
   }))
+  noteScopes(res.headers)
   const left = Number(res.headers.get('x-ratelimit-remaining')), reset = Number(res.headers.get('x-ratelimit-reset'))
   if (Number.isFinite(left) && Number.isFinite(reset) && reset > 0) Object.assign(rest, { remaining: left, resetAt: reset * 1000 })
   if ((res.status === 403 || res.status === 429) && (left === 0 || res.headers.get('retry-after'))) {
@@ -226,20 +260,22 @@ let mineFullAt = 0
 // so after the agent pushes or replies the thread counts would otherwise stay stale until the 10-minute full read
 const forceMine = new Set<string>()
 const FULL_EVERY = 10 * 60_000 // a resolved thread doesn't move a PR's updatedAt: re-read everything this often
+const fullDue = (at: number, now = Date.now()) => now - at > FULL_EVERY - 30_000 // a minute tick a few ms early still counts
 
 /**
  * Your own open PRs on the configured repos, with their unresolved thread counts (the /revise picker's filter).
  * Two steps, to stay light on GitHub's budget: a cheap list (about 1 point) every poll, then the full details
  * (threads, reviews: tens of points) only for PRs that changed since the last poll, and for all of them every 10 minutes.
  */
-async function pollMine(): Promise<string[]> {
+async function pollMine(skip?: (repo: string) => boolean): Promise<string[]> {
   const repos = Object.keys(config.repos).map((r) => `repo:${r}`).join(' ')
   const list = await graphql<{ search: { nodes: { id: string; number: number; updatedAt: string; repository: { nameWithOwner: string } }[] } }>(
     `query($q:String!){ rateLimit{remaining resetAt} search(query:$q, type:ISSUE, first:50){ nodes{ ... on PullRequest { id number updatedAt repository{nameWithOwner} } } } }`,
     { q: `is:pr is:open author:@me archived:false ${repos}` })
-  const full = Date.now() - mineFullAt > FULL_EVERY
-  const stale = list.search.nodes.filter((n) => { const id = `${n.repository.nameWithOwner}#${n.number}`; return full || forceMine.has(id) || state.prs[id]?.updatedAt !== n.updatedAt })
-  forceMine.clear()
+  // a light sync (webhooks deliver the hooked repos: poll's comment) reads none of theirs, and none in full
+  const full = !skip && fullDue(mineFullAt)
+  const stale = list.search.nodes.filter((n) => { const id = `${n.repository.nameWithOwner}#${n.number}`; return forceMine.has(id) || (!skip?.(n.repository.nameWithOwner) && (full || state.prs[id]?.updatedAt !== n.updatedAt)) })
+  forceMine.clear() // every one named is in stale, light sync or not
   const nodes: MineNode[] = []
   for (let k = 0; k < stale.length; k += 20) {
     const { nodes: got } = await graphql<{ nodes: MineNode[] }>(`query($ids:[ID!]!){ rateLimit{remaining resetAt} nodes(ids:$ids){ ... on PullRequest { ${MINE_FIELDS} } } }`, { ids: stale.slice(k, k + 20).map((n) => n.id) })
@@ -418,13 +454,21 @@ async function changedOf(ids: string[], also: (id: string) => boolean): Promise<
   }
   const due = ids.filter((id) => {
     const p = state.prs[id], at = readAt.get(id)
-    return !p || !at || now - at > FULL_EVERY || also(id) || !moved.has(id) || moved.get(id) !== p.updatedAt
+    return !p || !at || fullDue(at, now) || also(id) || !moved.has(id) || moved.get(id) !== p.updatedAt
   })
   for (const id of due) readAt.set(id, now)
   return due
 }
 
-export async function poll(): Promise<{ fresh: string[]; feedback: string[] }> {
+/**
+ * `skip`: a light sync, between full ones, while webhooks deliver (index.ts doPoll). The rule: a repository whose hook
+ * delivered lately (hooks.ts hookLive) is left to its webhook; everything else is read as every minute before. So the
+ * review-request search still runs (one call: requests on repositories without a hook, and requests to a team), PRs
+ * on unhooked repositories still get the cheap change check, and your PRs there still get theirs. A full sync every
+ * 10 minutes reads everything, hooked or not: the safety net for a delivery that never came.
+ */
+export async function poll(o: { skip?: (repo: string) => boolean } = {}): Promise<{ fresh: string[]; feedback: string[] }> {
+  const { skip } = o
   const { login } = await getMe()
   const t0 = Date.now(), lap: string[] = []
   const mark = (what: string) => lap.push(`${what} ${((Date.now() - t0) / 1000).toFixed(1)}s`)
@@ -438,20 +482,52 @@ export async function poll(): Promise<{ fresh: string[]; feedback: string[] }> {
   // only what changed is read in full (GitHub's advice: fetch what changed, not everything every minute): one cheap
   // GraphQL read gives every tracked PR's updatedAt, and a PR is read again when that moved, it is new, its request
   // came or went, or it hasn't been read for 10 minutes (a few things don't move updatedAt)
-  const due = await changedOf([...ids], (id) => requested.has(id) !== !!state.prs[id]?.requested)
+  const flipped = (id: string) => requested.has(id) !== !!state.prs[id]?.requested
+  const due = await changedOf([...ids].filter((id) => !skip || flipped(id) || !skip(id.slice(0, id.lastIndexOf('#')))), flipped)
   await Promise.all(due.map((id) => { // gate() keeps it to a few at a time
     const [repo, n] = id.split('#')
     return refreshPr(repo, Number(n), requested.has(id), login).catch((e) => console.error(id, e.message))
   }))
   mark(`to-review (${due.length} of ${ids.size} read)`)
-  const feedback = await pollMine().catch((e) => { console.error('my PRs:', e.message); return [] })
+  // every watched repository hooked: nothing of yours to read until the full sync (the webhooks bring it)
+  const allHooked = !!skip && Object.keys(config.repos).every(skip)
+  const feedback = allHooked ? [] : await pollMine(skip).catch((e) => { console.error('my PRs:', e.message); return [] })
   mark('mine')
-  // stacks change rarely and take the longest: they fill in after the sync, which doesn't wait for them
-  if (!stacking) stacking = refreshStacks().catch((e) => console.error('stacks:', e.message)).finally(() => { stacking = undefined; save(); onStacks() })
+  kickStacks()
   // a slow sync says where its time went
   if (Date.now() - t0 > 15_000) console.warn(`sync took ${((Date.now() - t0) / 1000).toFixed(0)}s: ${lap.join(', ')}`)
   save()
   return { fresh, feedback }
+}
+
+// stacks change rarely and take the longest: they fill in after the sync, which doesn't wait for them
+function kickStacks() {
+  if (!stacking) stacking = refreshStacks().catch((e) => console.error('stacks:', e.message)).finally(() => { stacking = undefined; save(); onStacks() })
+}
+
+/**
+ * Read these PRs now, as a sync would (a webhook said they changed: hooks.ts). `requested`: what the delivery said
+ * about a review request for you (true: asked, false: withdrawn); else what is known. A PR not tracked is read only
+ * when it asks for you (it joins, as a poll would add it) or is yours on a watched repository (your-PRs read).
+ * Returns the ids that newly entered review-requested, like poll().
+ */
+export async function pollPrs(targets: { id: string; requested?: boolean; mine?: boolean }[]): Promise<{ fresh: string[] }> {
+  const { login } = await getMe()
+  const fresh: string[] = []
+  let mineToo = false
+  await Promise.all(targets.map(async (t) => {
+    const p = state.prs[t.id], [repo, n] = [t.id.slice(0, t.id.lastIndexOf('#')), Number(t.id.slice(t.id.lastIndexOf('#') + 1))]
+    if (p?.mine || (!p && t.mine && repo in config.repos)) { forceMine.add(t.id); mineToo = true; return }
+    if (!p && t.requested !== true) return
+    const requested = t.requested ?? p!.requested
+    if (requested && !p?.requested) fresh.push(t.id)
+    await refreshPr(repo, n, requested, login).catch((e) => console.error(t.id, e.message))
+    readAt.set(t.id, Date.now())
+  }))
+  if (mineToo) await pollMine(() => true).catch((e) => console.error('my PRs:', e.message)) // only the ones named (forceMine)
+  kickStacks()
+  save()
+  return { fresh }
 }
 
 /** Repos you were involved in (author, reviewer, mentioned) on PRs in the last 90 days, with PR counts. */

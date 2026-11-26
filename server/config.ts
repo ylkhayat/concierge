@@ -23,6 +23,7 @@ export type Config = {
   removeFrom?: Record<string, string[]>
   port: number
   pollSeconds: number
+  hooks?: { port?: number } // the GitHub webhook listener's own port on 127.0.0.1 (hooks.ts); unset: 8790
   maxJobs: number
   autoStart: boolean
   explainBudgetUsd: number // per explain run, passed as --max-budget-usd
