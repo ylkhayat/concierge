@@ -1,5 +1,5 @@
 // The Intent and Understanding cards of a PR or ticket (server/discussions.ts): asked from the chat's box, answered
-// inside the card (Vitals.tsx), so the chat stays the work with the agent.
+// from the card (Vitals.tsx); the question and its answer also show in the chat, in that lane's colour and name.
 import { Compass, Target, type LucideIcon } from 'lucide-react'
 import type { Discussion as D, Topic } from '../../server/discussions.ts'
 import { api, type Activity } from '../lib.ts'
@@ -24,8 +24,23 @@ export function useDiscussions(target: string | undefined) {
   return { d: q.data, set: (v: Discussions | undefined) => { if (path) remember(path, v) }, read: () => q.refetch() }
 }
 
-/** The chat is the work with the agent: the cards' questions and answers live in the cards (Vitals.tsx), not here. */
-export const withTurns = (feed: Activity[], ..._ds: (Discussions | undefined)[]) => feed
+/** A target's discussions as turns of the chat, each with its lane: a question routed to Understanding or Intent is
+ *  answered where it was asked, not only inside the card (where it could be missed). The card's own writing isn't a turn. */
+function laneTurns(d?: Discussions): Activity[] {
+  if (!d) return []
+  return (Object.values(d) as D[]).flatMap((x) => [
+    ...x.messages.map((m): Activity => ({ at: m.at, kind: m.who === 'you' ? 'you' : 'text', text: m.text, lane: x.topic })),
+    // answering a question (not only writing its card): said where the answer will appear, just after the question
+    // (a fixed time, so it keeps its place and isn't drawn anew on every render)
+    ...(x.busy && x.phase !== 'refreshing' && x.messages.at(-1)?.who === 'you' ? [{ at: new Date(Date.parse(x.messages.at(-1)!.at) + 1).toISOString(), kind: 'text' as const, text: x.phase === 'reading' ? '_Reading the code to answer…_' : '_Answering…_', lane: x.topic }] : []),
+    ...(x.error && x.messages.at(-1)?.who === 'you' ? [{ at: x.messages.at(-1)!.at, kind: 'text' as const, text: `**Couldn't answer:** ${x.error}`, lane: x.topic }] : []),
+  ])
+}
+/** The conversation and the discussions' questions and answers, in the order they happened. */
+export const withTurns = (feed: Activity[], ...ds: (Discussions | undefined)[]) => {
+  const turns = ds.flatMap(laneTurns)
+  return turns.length ? [...feed, ...turns].sort((a, b) => a.at.localeCompare(b.at)) : feed
+}
 /** The box's words for a card: answered from the card (written again first if the work moved on); the card lights up. */
 export const sayTo = (target: string, set: (d: Discussions) => void) => (topic: Topic, text: string) => {
   dispatchEvent(new CustomEvent('vital-ask', { detail: topic }))
