@@ -45,12 +45,26 @@ function standing(p: VisualsPr, latestSha?: string): { text: string; tone: 'run'
 }
 const TONE = { run: 'text-run-text', ok: 'text-ok-text', wait: 'text-wait-text', idle: 'text-fg-3' }
 
-export function DesignWorkspace({ selected, onSelect, feed, toast }: { selected?: string; onSelect: (id: string) => void; feed: Activity[]; toast: Toast }) {
+/**
+ * `focus`: the workspace (a repository) Design shows, else every one; `ticketRepo`: a ticket's repository, as the board
+ * knows it. `feedOf`: an item's conversation, never the item open before it (its key: a PR id, `repo:`, `ticket:`).
+ */
+export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo, toast }: {
+  selected?: string; onSelect: (id?: string) => void; feedOf: (item: string) => Activity[]; focus?: string; ticketRepo: (id: string) => string | undefined; toast: Toast
+}) {
   const list = useApi<List>('/visuals', { refetchInterval: 30_000 })
-  const prs = list.data?.prs ?? [], tickets = list.data?.tickets ?? []
-  const current = selected ?? prs[0]?.id
+  const mine = (repo?: string) => !focus || repo === focus
+  const prs = (list.data?.prs ?? []).filter((p) => mine(p.repo)), repos = (list.data?.repos ?? []).filter((r) => mine(r.repo))
+  // a ticket is the workspace's when its PRs are, or the board puts it there
+  const tickets = (list.data?.tickets ?? []).filter((t) => !focus || t.prs.some((id) => prs.some((p) => p.id === id)) || ticketRepo(t.id) === focus)
+  // what is open: the item picked, while it is in this workspace; else its first PR, then its first blueprint (another
+  // workspace's item, kept from before a switch, is never drawn)
+  const listed = (id: string) => prs.some((p) => p.id === id) || repos.some((r) => baselineKey(r.repo) === id) || tickets.some((t) => `ticket:${t.id}` === id)
+  const current = !list.data ? selected : selected && listed(selected) ? selected : prs[0]?.id ?? (repos[0] && baselineKey(repos[0].repo))
+  // and it is the selection: its feed is read, and the place Design keeps is it
+  useEffect(() => { if (list.data && current !== selected) onSelect(current) }, [list.data, current, selected]) // eslint-disable-line react-hooks/exhaustive-deps
   const ticket = current?.startsWith('ticket:') ? tickets.find((t) => `ticket:${t.id}` === current) : undefined
-  const repos = list.data?.repos ?? []
+  const feed = current ? feedOf(current) : []
   return (
     <div className="flex h-full min-h-0">
       <nav aria-label="Design" className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex">
