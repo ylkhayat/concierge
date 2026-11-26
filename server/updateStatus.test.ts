@@ -23,6 +23,17 @@ test('the update log, read as a phase', () => {
   assert.equal(at([L(3, 'running 0ec2fd5')], { now: T + 2 * 86400_000 }).phase, 'idle') // a day old: nothing going on
 })
 
+test('an ask bin/update took and is pulling is under way, not the last run\'s "up to date"', () => {
+  const lockedAt = T + 9 * 60_000
+  assert.equal(at([L(3, 'up to date (0ec2fd5)')]).busy, false)
+  const p = at([L(3, 'up to date (0ec2fd5)')], { locked: true, lockedAt })
+  assert.equal(p.phase, 'building'); assert.equal(p.busy, true); assert.match(p.text, /Pulling/)
+  assert.equal(at([], { locked: true, lockedAt }).busy, true) // a first update: no line yet
+  assert.equal(at([L(9.5, 'upstream has 3 new commit(s): bin/update --upstream merges them')], { locked: true, lockedAt }).busy, true)
+  assert.equal(at([L(3, 'up to date (0ec2fd5)')], { locked: true, lockedAt, now: lockedAt + 20 * 60_000 }).busy, false) // a lock left behind
+  assert.equal(at([L(9.5, 'up to date (0ec2fd5)')], { locked: true, lockedAt }).phase, 'current') // its own last word, as it lets go
+})
+
 test('a line in the machine\'s own zone (CET) is read, not skipped', () => {
   const [l] = datedLines(['Sat Nov 14 19:54:21 CET 2026: built; no new runs start here until it restarts (at most 30 minutes)'])
   assert.equal(new Date(l.at).toISOString(), '2026-11-14T18:54:21.000Z')

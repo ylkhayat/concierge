@@ -1211,6 +1211,9 @@ app.get('/runs', async (c) => {
   return c.json({ runs: list.slice(0, 200), totals: await totals(days) })
 })
 app.get('/update', async (c) => {
+  // ?check: the status bar's Check for updates reads GitHub now instead of waiting up to 5 minutes for checkVersions
+  // (any machine: a GET stays on the machine it asks)
+  if (c.req.query('check') != null) await readLatest(10_000).catch((e) => console.warn('versions:', (e as Error).message))
   // asked and not yet handled by this machine (bin/update notes the ask each machine handled; the folder syncs)
   const read = (f: string) => readFile(join(STATE_DIR, f), 'utf8').then((t) => t.trim(), () => '')
   const [asked, deployed, log] = await Promise.all([
@@ -1224,7 +1227,7 @@ app.get('/update', async (c) => {
     stat(join(STATE_DIR, 'update.lock.d')).catch(() => undefined), read(`draining${me}`)])
   const askedAt = asked ? (/^now (\d+)/.exec(ask) ? Number(/^now (\d+)/.exec(ask)![1]) * 1000 : Date.parse(ask.replace(/^upstream /, ''))) || Date.now() : undefined
   const status = updateStatus(full.split('\n').slice(-60), {
-    askedAt, locked: !!lock && Date.now() - lock.mtimeMs < 3 * 3600_000, drainingSince: Number(drain) * 1000 || undefined,
+    askedAt, locked: !!lock && Date.now() - lock.mtimeMs < 3 * 3600_000, lockedAt: lock?.mtimeMs, drainingSince: Number(drain) * 1000 || undefined,
     running: process.env.DECK_VERSION, agents: children.size,
   })
   const latest = latestHeads().app
@@ -1233,7 +1236,7 @@ app.get('/update', async (c) => {
   const note = up && full.split('\n').reverse().find((l) => /upstream/.test(l))
   // standby: the fleet's standby does the update on this machine (it may run Docker; the app, which runs agents, may not).
   // Without one, you run bin/update yourself (or a cron line of yours does)
-  return c.json({ asked, deployed, log, version: process.env.DECK_VERSION, status, standby: !!process.env.DECK_ROLE, latest: latest && { sha: latest.sha.slice(0, 7), at: latest.at },
+  return c.json({ asked, deployed, log, version: process.env.DECK_VERSION, status, standby: !!process.env.DECK_ROLE, latest: latest && { sha: latest.sha.slice(0, 7), at: latest.at, n: latest.n },
     upstream: up && { ...up, note: note?.replace(/^.*?\d{4}: /, '') } }) // the build this server runs (bin/update)
 })
 /** A fork's distance from the original repo, as bin/update last fetched it ("<count> <at> <url>", then "<sha> <subject>" lines). */
