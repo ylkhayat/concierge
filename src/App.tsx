@@ -544,7 +544,7 @@ export function App() {
           {/* a system alert (GitHub sync, memory, the Claude login) is about Concierge itself: nothing to open */}
           {/* in a focus block the alerts wait, faded, until it ends */}
           <span className={focusBlock() ? 'pointer-events-none opacity-30' : 'contents'}><AlertDock alerts={alerts} now={now} onOpen={openAlert} /></span>
-          <UpdateChip />
+          <UpdateChip onOpen={() => setSettingsOpen('machines')} />
           {(mode === 'review' || mode === 'exec') && autoToggle}
         </footer>
       </div>

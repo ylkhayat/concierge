@@ -6,7 +6,7 @@
 export type Running = { version?: string; fleet?: string } // version: "<build number>-<short sha>"; fleet: the extension's short sha
 export const runningHere = (): Running => ({ version: process.env.DECK_VERSION || undefined, fleet: process.env.DECK_FLEET || undefined })
 
-type Head = { sha: string; at: string } // the latest commit on the default branch, and when it was committed
+type Head = { sha: string; at: string; n?: number } // the latest commit on the default branch, when it was committed, its build number
 let latest: { app?: Head; fleet?: Head; readAt?: number } = {}
 export const latestHeads = () => latest
 
@@ -19,11 +19,25 @@ async function head(repo: string): Promise<Head | undefined> {
   const c = await r.json() as { sha: string; commit: { committer: { date: string } } }
   return { sha: c.sha, at: c.commit.committer.date }
 }
-/** Read the latest commits again (the control plane, every few minutes). */
-export async function readLatest() {
+/** The build number a newer commit gets (bin/update's DECK_VERSION counts the commits), from how far ahead of this one it is. */
+async function numberOf(repo: string, h: Head): Promise<number | undefined> {
+  const [n, run] = (process.env.DECK_VERSION ?? '').split('-')
+  if (!Number(n) || !run || h.sha.startsWith(run)) return Number(n) || undefined
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+  const r = await fetch(`https://api.github.com/repos/${repo}/compare/${run}...${h.sha}`, {
+    headers: { Accept: 'application/vnd.github+json', ...(token && { Authorization: `Bearer ${token}` }) }, signal: AbortSignal.timeout(10_000),
+  }).catch(() => undefined)
+  const c = r?.ok ? await r.json().catch(() => undefined) as { status?: string; ahead_by?: number } | undefined : undefined
+  return c?.status === 'ahead' && c.ahead_by ? Number(n) + c.ahead_by : undefined
+}
+/** Read the latest commits again (the control plane, every few minutes; Check for updates, unless read in the last `fresh` ms). */
+export async function readLatest(fresh = 0) {
   const [app, fleet] = (process.env.DECK_REPOS ?? '').split(/\s+/).filter(Boolean)
-  if (!app) return
-  latest = { app: await head(app), fleet: fleet ? await head(fleet) : undefined, readAt: Date.now() }
+  if (!app || (fresh && latest.readAt && Date.now() - latest.readAt < fresh)) return
+  const a = await head(app)
+  // the same commit as before keeps its number: GitHub is asked once per new commit, not every 5 minutes
+  if (a) a.n = a.sha === latest.app?.sha && latest.app.n ? latest.app.n : await numberOf(app, a)
+  latest = { app: a, fleet: fleet ? await head(fleet) : undefined, readAt: Date.now() }
 }
 
 const shaOf = (v?: string) => v?.split('-').pop()
