@@ -25,10 +25,9 @@ const stored = (): Role => {
 export function setRole(r: Role) {
   try { localStorage.setItem(KEY, r) } catch {}
   document.documentElement.dataset.role = r
-  // the whole app changes hats: a crossfade where the browser has it
-  const go = () => dispatchEvent(new CustomEvent(EVENT))
-  const doc = document as Document & { startViewTransition?: (f: () => void) => unknown }
-  if (doc.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) doc.startViewTransition(go); else go()
+  // the whole app changes hats at once: a crossfade (a view transition) kept the other role's view on screen while
+  // this one's drew; the view it lands on has its own entrance (App.tsx)
+  dispatchEvent(new CustomEvent(EVENT))
 }
 document.documentElement.dataset.role = stored()
 export const nextRole = (r: Role) => ORDER[(ORDER.indexOf(r) + 1) % ORDER.length]

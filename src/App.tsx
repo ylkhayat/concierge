@@ -40,6 +40,7 @@ import { stackAt, type Rules } from './desk.ts'
 import { StackPage } from './thread/StackPage.tsx'
 import { focusBlock, useDeskTime } from './deskTime.ts'
 import { useNewVersion } from './fresh.ts'
+import { deckKey, designOn, readPlace, workspaceFor, type DesignFrom, type Mode, type Place, type Visuals } from './modes.ts'
 
 // the graph libraries load only when the codebase view opens
 const CodebaseView = lazy(() => import('./components/Codebase.tsx'))
@@ -48,7 +49,6 @@ import { ago, api, critUrl, enc, isTyping, param, setParam, useDeck, useNow, use
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
 
-type Mode = 'review' | 'exec' | 'read' | 'focus' | 'standup' | 'skills' | 'plans' | 'design'
 // a phone opening the app (no PR in the link) starts on Focus: what needs you, one card at a time
 const phone = () => matchMedia('(max-width: 767px)').matches
 const modeOf = (): Mode => {
@@ -57,21 +57,27 @@ const modeOf = (): Mode => {
     // opened with nothing in the link: Review (on a phone, Focus: what needs you, one card at a time)
     : p === '/' && !location.hash && phone() ? 'focus' : 'review'
 }
+// each view keeps its place (the open item, the filter), per browser: back on it, from the rail, another role or a
+// bare address, it is as you left it
+const placeOf = (key: string): Place => { try { return readPlace(localStorage.getItem(`place:${key}`)) } catch { return {} } }
+const keepPlace = (key: string, p: Place) => { try { localStorage.setItem(`place:${key}`, JSON.stringify(p)) } catch { /* private window */ } }
+/** The open item a view comes back to (the codebase map is Review's own place, never another view's). */
+const backTo = (m: Mode) => { const s = placeOf(m).selected; return s?.startsWith('codebase:') ? undefined : s }
 /**
  * The view to open on, agreeing with the role (the rail shows that role's views): a bare address opens the role's own,
- * where you last were in it; a link to a view of another role (a PR link, /ship, while you read as PM) opens it and
- * takes that role, so the rail and the view never disagree (the rail said PM while Review showed). Read and Focus
- * open from any role.
+ * where you last were in it (its view and its open item); a link to a view of another role (a PR link, /ship, while
+ * you read as PM) opens it and takes that role, so the rail and the view never disagree (the rail said PM while Review
+ * showed). Read and Focus open from any role.
  */
 const firstMode = (): Mode => {
   const m = modeOf(), r = currentRole(), rail = ROLES[r].rail
-  if (rail.includes(m) || m === 'read' || m === 'focus') return m
-  if (location.pathname === '/' && !location.hash) {
+  if (location.pathname === '/' && !location.hash && m !== 'focus') {
     let last: string | null = null; try { last = localStorage.getItem(`mode:${r}`) } catch { /* none kept */ }
-    const own = (last && rail.includes(last) ? last : rail[0]) as Mode
-    history.replaceState(history.state, '', PATH[own] + location.search)
+    const own = (last && rail.includes(last) ? last : rail[0]) as Mode, sel = backTo(own)
+    history.replaceState(history.state, '', PATH[own] + location.search + (sel ? `#${enc(sel)}` : ''))
     return own
   }
+  if (rail.includes(m) || m === 'read' || m === 'focus') return m
   const other = (Object.keys(ROLES) as Role[]).find((x) => !ROLES[x].pending && ROLES[x].rail.includes(m))
   if (other) setRole(other)
   return m
@@ -90,17 +96,18 @@ export function App() {
   const [selected, setSelected] = useState(readHash)
   const [picked, setPicked] = useState<string[]>([])
   const [pickedPrs, setPickedPrs] = useState<string[]>([]) // Review's picks, for a planned batch of reviews
-  const [feedKey, setFeedKey] = useState<string>()
   const [query, setQueryState] = useState(() => param('q') ?? '')
   const setQuery = (q: string) => { setQueryState(q); setParam('q', q) }
   const [refreshing, setRefreshing] = useState(false)
-  const { me, prs: allPrs, health, connected, feed, feedOf, exec, alerts } = useDeck(mode === 'review' ? selected : mode === 'exec' ? feedKey : mode === 'design' ? (!selected || selected.startsWith('ticket:') ? undefined : selected.startsWith('repo:') ? `setup:${selected.slice(5)}` : `visuals:${selected}`) : feedKey ?? selected)
+  // the open item's feed, known from this render's board (modes.ts)
+  const { me, prs: allPrs, health, connected, feedOf, exec, alerts } = useDeck((b) => deckKey(mode, selected, (id) => !!b?.tickets.some((t) => t.id === id)))
   const now = useNow()
   const [theme, setTheme] = useTheme()
   const role = useRole()
-  // another role: its own workspaces, back where you were in them
+  // another role: its own workspaces, back where you were in them. Before paint: in an effect, one frame showed the
+  // new role's rail over the old role's view
   const roleWas = useRef(role)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (roleWas.current === role) return
     roleWas.current = role
     let last: string | null = null; try { last = localStorage.getItem(`mode:${role}`) } catch {}
@@ -119,13 +126,14 @@ export function App() {
   // anything can open Settings at a tab (the Next panel's "Change what's suggested")
   useEffect(() => { const f = (e: Event) => setSettingsOpen((e as CustomEvent<SettingsTab>).detail); addEventListener('concierge:settings', f); return () => removeEventListener('concierge:settings', f) }, [])
   const [repos, setRepos] = useState<string[]>([])
+  const [visuals, setVisuals] = useState<Visuals>() // where Design is on (Settings → Repositories)
   const [spaces, setSpaces] = useState<Mode[]>(['review', 'exec'])
   const [linearApp, setLinearApp] = useState(false)
   const [missing, setMissing] = useState<string[]>([]) // skills the settings run that this machine lacks
   const [machines, setMachines] = useState(0)
   // opened on this machine's localhost: its own view; through the tailnet link: the whole fleet (scope.ts)
   useEffect(() => { if (me && machines) scopeDefault(!!me.viewer?.here, machines > 1) }, [me, machines])
-  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.away, s.clones); setMachineNames(s.machineNames); setMachines(s.machines?.length ?? 0); setRepos(Object.keys(s.config.repos)); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
+  useEffect(() => { api('/setup?light=1').then((s) => { setConfigured(s.configured); setAway(s.away, s.clones); setMachineNames(s.machineNames); setMachines(s.machines?.length ?? 0); setRepos(Object.keys(s.config.repos)); setVisuals(s.config.visuals ?? {}); setSpaces(s.config.workspaces); setLinearApp(s.config.linearDesktop); setMissing(s.needed.filter((x: { found: boolean }) => !x.found).map((x: { name: string }) => x.name)) }, () => setConfigured(true)) }, [configured, setupOpen, settingsOpen])
   // Linear links open in the desktop app: linear://<same path>. One listener covers every link on the page.
   useEffect(() => {
     if (!linearApp) return
@@ -159,26 +167,24 @@ export function App() {
   }
   useEffect(() => { const f = () => { setTab(undefined); setSelected(readHash()) }; addEventListener('hashchange', f); return () => removeEventListener('hashchange', f) }, [])
 
-  // each workspace keeps its place (the open item, the filter): switching away and back finds it as it was
-  const placeOf = (m: string): { selected?: string; query?: string } => { try { return JSON.parse(sessionStorage.getItem(`place:${m}`) ?? '{}') } catch { return {} } }
-  const keepPlace = () => { try { sessionStorage.setItem(`place:${codebaseRepo ? 'codebase' : mode}`, JSON.stringify({ selected, query })) } catch { /* private window */ } }
+  // the place is kept as it changes, whichever way you leave (the rail, a link to a PR or ticket, Back), not only
+  // from the rail: going back finds the item you last had open, not an older one
+  const codebaseNow = mode === 'review' && selected?.startsWith('codebase:')
+  useEffect(() => { keepPlace(codebaseNow ? 'codebase' : mode, { selected, query }) }, [mode, codebaseNow, selected, query])
   const setMode = (m: Mode) => {
     try { localStorage.setItem(`mode:${role}`, m) } catch {}
     if (m === mode && !codebaseRepo) return
-    keepPlace()
-    const back = placeOf(m), sel = back.selected?.startsWith('codebase:') ? undefined : back.selected
+    const back = placeOf(m), sel = backTo(m)
     history.pushState(null, '', PATH[m] + location.search + (sel ? `#${enc(sel)}` : ''))
-    // the workspace crossfades in (a view transition); the rail stays put, its pill glides on its own
-    const go = () => flushSync(() => { setModeState(m); setSelected(sel); setQuery(back.query ?? '') })
-    if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(go)
-    else go()
+    // at once, in one render: the view, its item and its filter together. A crossfade (a view transition) held the
+    // old view on screen while the new one drew; the new view has its own entrance (below)
+    setModeState(m); setSelected(sel); setQuery(back.query ?? '')
   }
   useEffect(() => { const f = () => { setModeState(modeOf()); setSelected(readHash()) }; addEventListener('popstate', f); return () => removeEventListener('popstate', f) }, [])
 
   // exec mode: the selected ticket and the feed of its latest run
   const tickets = (exec?.tickets ?? []).filter((t) => !t.repo || !away.has(t.repo) || t.id === selected)
-  const ticket = mode !== 'review' ? tickets.find((t) => t.id === selected) : undefined
-  useEffect(() => { setFeedKey(ticket ? `ticket:${ticket.id}` : undefined) }, [ticket?.id]) // its whole timeline, every run a chapter
+  const ticket = mode !== 'review' ? tickets.find((t) => t.id === selected) : undefined // its feed: its whole timeline, every run a chapter
   // the last pages opened, kept alive hidden (Activity, below): back on one, it is there as you left it (ponytail: 4)
   const [recentT, setRecentT] = useState<string[]>([])
   useEffect(() => { if (ticket) setRecentT((r) => [ticket.id, ...r.filter((x) => x !== ticket.id)].slice(0, 4)) }, [ticket?.id])
@@ -187,6 +193,20 @@ export function App() {
   const [focus, setFocusState] = useState<string | undefined>(() => { try { return param('focus') || localStorage.getItem('focus') || localStorage.getItem('exec-repo') || undefined } catch { return param('focus') } })
   const setFocus = (r?: string) => { setFocusState(r); setParam('focus', r); try { if (r) localStorage.setItem('focus', r); else localStorage.removeItem('focus') } catch { /* private window */ } }
   const focusRepos = [...new Set([...repos, ...tickets.map((t) => t.repo).filter(Boolean) as string[]])]
+  // Design shows where it is on: arriving on a workspace where it is off moves to one where it is on, leaving goes back
+  // (modes.ts). Before paint, so the view never draws in the workspace it is leaving
+  const shownIn = useRef<Mode>(undefined)
+  useLayoutEffect(() => {
+    if (!visuals) return // known once /setup answers
+    const cameFrom = shownIn.current; shownIn.current = mode
+    let kept: DesignFrom | undefined
+    try { const k = JSON.parse(localStorage.getItem('design-from') ?? 'null'); if (typeof k?.picked === 'string') kept = k } catch { /* none kept */ }
+    const next = workspaceFor(mode, cameFrom, focus, repos, visuals, kept)
+    try { if (next.from) localStorage.setItem('design-from', JSON.stringify(next.from)); else localStorage.removeItem('design-from') } catch { /* private window */ }
+    if (next.focus !== focus) setFocus(next.focus)
+  }, [mode, visuals]) // eslint-disable-line react-hooks/exhaustive-deps
+  // in Design the picker offers the workspaces it is on in (and the one you are in)
+  const pickable = mode === 'design' && focusRepos.some((r) => designOn(visuals, r)) ? focusRepos.filter((r) => designOn(visuals, r) || r === focus) : focusRepos
   knowApps(focusRepos) // each app its own colour in the lists
   // the focused repo's tickets; the open one always stays listed, even from a link into another repo
   const scoped = focus ? tickets.filter((t) => t.repo === focus || t.id === selected) : tickets
@@ -270,7 +290,6 @@ export function App() {
 
   const openSettings = () => setSettingsOpen(mode === 'exec' ? 'exec' : 'general')
   const goCodebase = (repo = (focus && repos.includes(focus) ? focus : undefined) ?? codebaseRepo ?? repos[0]) => {
-    if (!codebaseRepo) keepPlace()
     if (mode !== 'review') { history.pushState(null, '', '/' + location.search); setModeState('review') }
     setSelected(`codebase:${repo}`); history.replaceState(null, '', `#${enc(`codebase:${repo}`)}`)
   }
@@ -310,8 +329,9 @@ export function App() {
   // the two workspaces: Review reads and judges (list + detail), Exec ships (board + console)
   // what the focus picker counts: the current workspace's work in each application
   // which application the open item is in: switching to another one closes it, so the new one's list (empty or not) is what shows
-  const repoOfSelected = () => selected?.startsWith('codebase:') ? selected.slice(9)
-    : (prs ?? []).find((p) => p.id === selected?.replace(/^stack:/, ''))?.repo ?? tickets.find((t) => t.id === selected)?.repo
+  // (Design's too: a blueprint is `repo:<repo>`, a ticket `ticket:<id>`)
+  const repoOfSelected = () => selected?.startsWith('codebase:') ? selected.slice(9) : selected?.startsWith('repo:') ? selected.slice(5)
+    : (prs ?? []).find((p) => p.id === selected?.replace(/^stack:/, ''))?.repo ?? tickets.find((t) => t.id === selected?.replace(/^ticket:/, ''))?.repo
   // what HeldBanner says: in the workspaces that show an application's work, the open item's application, else the
   // focused one, else every one held (a repository away from this machine has its own page instead)
   const heldInView = (): [string, string][] => {
@@ -320,7 +340,7 @@ export function App() {
     const list = r ? (held[r] ? [r] : []) : Object.keys(held)
     return list.filter((x) => !away.has(x) && (!focusRepos.length || focusRepos.includes(x))).map((x) => [x, held[x]])
   }
-  const focusCounts = focusRepos.map((r) => mode === 'exec'
+  const focusCounts = pickable.map((r) => mode === 'exec'
     ? { repo: r, tickets: tickets.filter((t) => t.repo === r).length, waiting: tickets.filter((t) => t.repo === r && ['needs-you', 'tend'].includes(groupOf(t).id)).length, away: away.has(r), held: held[r] }
     : { repo: r, tickets: (prs ?? []).filter((p) => p.repo === r).length, waiting: (prs ?? []).filter((p) => p.repo === r && waiting(p)).length, away: away.has(r), held: held[r] })
   // the rail's pill sits behind the active workspace (its icon and its name), and glides to the next one on a switch;
@@ -520,6 +540,9 @@ export function App() {
             <button onClick={() => setSettingsOpen('usage')} className="ml-auto rounded-lg px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Adjust</button>
           </div>
         )}
+        {/* one view at a time, drawn afresh on a switch (its entrance a short fade-in, never the old view fading out
+            over it); Review and Ship share a shape, so without the key one was patched into the other */}
+        <div key={mode} className="relative flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_160ms_var(--ease-out)]">
         {focus && away.has(focus) && ['review', 'exec', 'focus', 'read'].includes(mode) ? <AwayRepo repo={focus} onAllApps={() => setFocus(undefined)} />
           : mode === 'exec' ? execFrame : mode === 'focus' ? (
           <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -527,12 +550,13 @@ export function App() {
                           onRead={(id) => { history.pushState(null, '', `/read${location.search}#${enc(id)}`); setModeState('read'); setSelected(id) }} />
               : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}
           </main>
-        ) : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace selected={selected} onSelect={select} feed={feed} toast={toast} /> : mode === 'read' ? (
+        ) : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : mode === 'read' ? (
           <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             {prs ? <Read prs={focusedPrs ?? prs} tickets={scoped} rules={RULES} selected={selected} onSelect={select} toast={toast} />
               : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}
           </main>
         ) : reviewFrame}
+        </div>
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
         <footer className="relative z-30 flex h-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap border-t border-line bg-bg-rail px-2 text-meta text-fg-3 ">
           <Machine me={me} /><ScopeSwitch />

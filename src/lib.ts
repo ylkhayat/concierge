@@ -59,8 +59,12 @@ function liveEvents(scope?: string): Pick<EventSource, 'addEventListener' | 'clo
   return t as never
 }
 
-/** Live dashboard state over one SSE connection (EventSource reconnects on its own). */
-export function useDeck(selected: string | undefined) {
+/**
+ * Live dashboard state over one SSE connection (EventSource reconnects on its own). `key`: whose feed to read; given
+ * as a function of the board, it is worked out from the board as it is in this render (a ticket opened is known as one
+ * at once, not a render later).
+ */
+export function useDeck(key: string | undefined | ((exec?: ExecView) => string | undefined)) {
   const [me, setMe] = useState<Me>()
   const scopeNow = useScope().chosen
   const [prs, setPrs] = useState<PrView[]>()
@@ -130,6 +134,7 @@ export function useDeck(selected: string | undefined) {
     return () => { es.close(); if (flush) clearTimeout(flush) }
   }, [scopeNow]) // switching this machine / fleet reconnects with the other lists
 
+  const selected = typeof key === 'function' ? key(exec) : key
   // the SSE listener above outlives renders, so it reads the selection through a ref
   selectedRef.current = selected
   useEffect(() => {
