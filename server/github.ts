@@ -396,6 +396,34 @@ export function changesOf(prev: Pr | undefined, next: Pr, me: string, ctx: { pus
 export const outside: { id: string; text: string; who?: string; at?: string; info?: true }[] = [] // info: worth knowing, not waiting on you
 const pusherOf = (repo: string, sha: string) => gh<{ author: { login: string } | null }>(`/repos/${repo}/commits/${sha}`).then((c) => c.author?.login, () => undefined)
 
+const readAt = new Map<string, number>() // when each review PR was last read in full
+/**
+ * The tracked PRs worth reading in full this sync: those whose updatedAt moved since the last read (50 a GraphQL
+ * query, about a point each), the ones never read, those `also` names, and any not read for FULL_EVERY. If the cheap
+ * read fails, all of them (as before), unless GitHub asked to slow down.
+ */
+async function changedOf(ids: string[], also: (id: string) => boolean): Promise<string[]> {
+  const now = Date.now(), moved = new Map<string, string>()
+  try {
+    for (let k = 0; k < ids.length; k += 50) {
+      const part = ids.slice(k, k + 50)
+      const q = part.map((id, i) => { const [repo, n] = id.split('#'), [owner, name] = repo.split('/'); return `p${i}: repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){pullRequest(number:${Number(n)}){updatedAt}}` }).join(' ')
+      const d = await graphql<Record<string, { pullRequest?: { updatedAt: string } } | null>>(`query{ rateLimit{remaining resetAt} ${q} }`, {})
+      part.forEach((id, i) => { const u = d[`p${i}`]?.pullRequest?.updatedAt; if (u) moved.set(id, u) })
+    }
+  } catch (e) {
+    if (slowedUntil()) return []
+    console.warn('sync: change check failed, reading every PR:', (e as Error).message)
+    return ids
+  }
+  const due = ids.filter((id) => {
+    const p = state.prs[id], at = readAt.get(id)
+    return !p || !at || now - at > FULL_EVERY || also(id) || !moved.has(id) || moved.get(id) !== p.updatedAt
+  })
+  for (const id of due) readAt.set(id, now)
+  return due
+}
+
 export async function poll(): Promise<{ fresh: string[]; feedback: string[] }> {
   const { login } = await getMe()
   const t0 = Date.now(), lap: string[] = []
@@ -407,11 +435,15 @@ export async function poll(): Promise<{ fresh: string[]; feedback: string[] }> {
 
   // Requested PRs plus anything still open that we track (GitHub drops the request once you review).
   const ids = new Set([...requested, ...Object.values(state.prs).filter((p) => !p.closed && !p.mine).map((p) => p.id)])
-  await Promise.all([...ids].map((id) => {
+  // only what changed is read in full (GitHub's advice: fetch what changed, not everything every minute): one cheap
+  // GraphQL read gives every tracked PR's updatedAt, and a PR is read again when that moved, it is new, its request
+  // came or went, or it hasn't been read for 10 minutes (a few things don't move updatedAt)
+  const due = await changedOf([...ids], (id) => requested.has(id) !== !!state.prs[id]?.requested)
+  await Promise.all(due.map((id) => { // gate() keeps it to a few at a time
     const [repo, n] = id.split('#')
     return refreshPr(repo, Number(n), requested.has(id), login).catch((e) => console.error(id, e.message))
   }))
-  mark('to-review')
+  mark(`to-review (${due.length} of ${ids.size} read)`)
   const feedback = await pollMine().catch((e) => { console.error('my PRs:', e.message); return [] })
   mark('mine')
   // stacks change rarely and take the longest: they fill in after the sync, which doesn't wait for them
