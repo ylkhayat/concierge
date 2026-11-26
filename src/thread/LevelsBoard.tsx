@@ -146,7 +146,7 @@ export function LaneBoard({ prId, board, lanes, links, top, children, ask }: { p
   }, [shape, rf])
   const sel = lanes.flatMap((l) => l.cards).find((c) => c.id === on)
   return (
-    <div className="flex min-h-0 flex-1 gap-3">
+    <div className="relative flex min-h-0 flex-1 gap-3">
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         {top}
         <div ref={box} className="relative min-h-0 flex-1 overflow-hidden rounded-card bg-[var(--bg-app)] ring-1 ring-line">
@@ -159,9 +159,10 @@ export function LaneBoard({ prId, board, lanes, links, top, children, ask }: { p
         </div>
       </div>
       {sel && (
-        <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-card bg-surface-1 ring-1 ring-line">
+        // a phone has no room beside the board: the card rises over its lower part instead, the board still there above it
+        <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-card bg-surface-1 ring-1 ring-line max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:max-h-[60%] max-md:w-auto max-md:shadow-e3">
           <p className="flex items-center gap-2 border-b border-line px-3 py-2 text-small font-semibold text-fg-1"><span className="min-w-0 flex-1">{said(sel.title)}</span>
-            <button onClick={() => setOn(undefined)} aria-label="Close" className="text-fg-4 hover:text-fg-1"><X className="size-3.5" /></button></p>
+            <button onClick={() => setOn(undefined)} aria-label="Close" className="text-fg-4 hover:text-fg-1 max-md:-m-2 max-md:p-2.5"><X className="size-3.5" /></button></p>
           <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-2.5">
             <Story prId={prId} board={board} c={sel} />
             {sel.before && <div><p className="label text-fg-4">Before</p><p className="text-small leading-snug text-fg-3">{said(sel.before)}</p></div>}

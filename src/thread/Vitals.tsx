@@ -3,14 +3,16 @@
 // colour that says what is going on now and changes as the chat goes on; under the pointer (or the keyboard's focus) it
 // opens, inside itself, on what is settled, what it has for the agent and what to ask next. One not assessed yet is
 // pale: point at it and it offers to start, with the question that fits where the conversation stands.
-import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { Action, Diagram, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
 import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
 import { ago } from '../time.ts'
 import { Md } from '../components/Md.tsx'
 import { Tabs } from '../components/Tabs.tsx'
+import { usePhone } from '../components/NextPanel.tsx'
 import { TOPIC, type Discussions, type View } from './Discussion.tsx'
 import type { Tone } from '../ui/Thread.tsx'
 
@@ -52,7 +54,8 @@ export function Vital({ name, status, lane, meter, foot, busy, idle, flag, back,
              className={`group/v vital relative flex h-[68px] min-w-0 flex-col transition-[transform,box-shadow] duration-300 ease-[var(--ease-snappy)] ${onOpen ? 'cursor-pointer hover:-translate-y-px' : ''} ${busy ? 'vital-busy' : ''} ${idle ? 'vital-idle' : ''} ${open ? 'vital-open' : ''} ${glow ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_28px_-6px_var(--lane)]' : ''}`}>
       <div className="flex items-center gap-1.5">
         <span className={`size-1.5 shrink-0 rounded-full bg-[var(--lane)] ${busy ? 'animate-pulse' : ''}`} />
-        <span className="label truncate !tracking-[0.03em] text-fg-3">{name}</span>
+        {/* a phone's three tiles are narrow: the name in its own case fits where the small caps were cut off */}
+        <span className="label truncate !tracking-[0.03em] text-fg-3 max-sm:normal-case max-sm:!tracking-normal">{name}</span>
         {stale && !busy && <span className="ml-auto rounded-full bg-wait/12 px-1.5 text-micro font-medium text-wait-text" title="The work moved on since this card was written: it catches up the next time you ask it (or click Refresh)">new push</span>}
         {flag && <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-micro font-medium text-fg-2" title="It has something for the agent: point at it, or open it, to send"><Send className="size-3" /><span className="sr-only">has something for the agent</span></span>}
       </div>
@@ -263,13 +266,17 @@ type TopicProps = Omit<Parameters<typeof topicVital>[0], 'topic' | 'd' | 'open' 
  *  and Understanding are about this PR or all of them. A click on one not assessed yet starts it. */
 export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNode; topics: TopicProps; scope?: { size: number; stack: boolean; set: (stack: boolean) => void }; inline?: boolean }) {
   const [open, setOpen] = useState<Topic>()
+  // a phone: an open card is a screen of its own, over the thread, with a way back (not a box squeezed under the row)
+  const phone = usePhone()
+  const sheet = phone
+  const sheetRef = useRef<HTMLDivElement>(null)
   // asked from the chat's box: that card opens, to light up and answer where you can see it
   useEffect(() => { const on = (e: Event) => setOpen((e as CustomEvent<Topic>).detail); addEventListener('vital-ask', on); return () => removeEventListener('vital-ask', on) }, [])
   // the floating details close on Esc or a click anywhere else
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open || inline) return
-    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(undefined) }
+    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node) && !sheetRef.current?.contains(e.target as Node)) setOpen(undefined) }
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(undefined) }
     addEventListener('pointerdown', away); addEventListener('keydown', esc)
     return () => { removeEventListener('pointerdown', away); removeEventListener('keydown', esc) }
@@ -309,7 +316,23 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
       )}
       {/* what a clicked one holds: floating over the panel under the row, so nothing below it moves. One container for
           both cards: it rises in when one opens and stays while you switch, the two cards stacked in its one cell */}
-      {open && (
+      {/* on the page's own layer (a portal): over the tab bar and the status bar, whatever holds the row */}
+      {open && sheet && createPortal(
+        <div ref={sheetRef} role="dialog" aria-label={TOPIC[open].label} className="fixed inset-x-0 top-0 z-50 flex h-dvh flex-col bg-bg-app pt-[env(safe-area-inset-top)] animate-[detail-in_200ms_var(--ease-snappy)]">
+          <div className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-1.5">
+            <button onClick={() => setOpen(undefined)} className="btn-ghost inline-flex min-h-10 items-center gap-1.5"><ArrowLeft className="size-4" />Back</button>
+            <span className="min-w-0 flex-1 truncate text-small font-semibold text-fg-1">{TOPIC[open].label}</span>
+          </div>
+          {/* one scroll for the card; a board (a PR's) takes the height that is left and pans inside itself */}
+          <div className={`grid min-h-0 flex-1 p-3 pb-[calc(12px+env(safe-area-inset-bottom))] ${rest.prId ? 'grid-rows-[minmax(0,1fr)]' : 'overflow-y-auto overscroll-contain'}`}>
+            {(['intent', 'understanding'] as const).map((tp, i) => v[i].details && (
+              <div key={tp} inert={tp !== open} aria-hidden={tp !== open || undefined}
+                   className={`col-start-1 row-start-1 min-h-0 min-w-0 ${tp === open ? 'relative z-[1]' : 'pointer-events-none opacity-0'}`}>{v[i].details}</div>
+            ))}
+          </div>
+        </div>, document.body,
+      )}
+      {open && !sheet && (
         <div className={`grid animate-[detail-in_200ms_var(--ease-snappy)] ${inline ? '' : `absolute inset-x-3 top-full z-30 -mt-1 overflow-hidden rounded-card bg-surface-1 shadow-[var(--e3)] ${rest.prId ? 'grid-rows-[minmax(0,1fr)]' : 'max-h-[min(70vh,560px)] overflow-y-auto'}`}`} style={inline || !rest.prId ? undefined : { height: room }}>
           {(['intent', 'understanding'] as const).map((tp, i) => v[i].details && (
             <div key={tp} inert={tp !== open} aria-hidden={tp !== open || undefined}

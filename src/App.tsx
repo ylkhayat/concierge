@@ -305,11 +305,12 @@ export function App() {
     </span>
   )
   const syncState = (
+    // a phone: its icon or dot alone (the words for the screen reader), never a word cut in half
     <span className="flex min-w-0 items-center gap-1.5 truncate" title={health?.pollError}>
-      {!connected ? <><WifiOff className="size-3.5 shrink-0 text-fail" />reconnecting</>
-        : health?.pollError ? <><TriangleAlert className="size-3.5 shrink-0 text-fail" />GitHub sync failed</>
-        : health?.polling ? <><LoaderCircle className="size-3.5 shrink-0 animate-spin" />syncing</>
-        : <><span className="size-1.5 shrink-0 rounded-full bg-ok shadow-[0_0_0_3px_rgb(16_185_129/0.15)]" />synced {ago(mode === 'exec' ? exec?.at : health?.lastPollAt, now)}</>}
+      {!connected ? <><WifiOff className="size-3.5 shrink-0 text-fail" /><span className="max-sm:sr-only">reconnecting</span></>
+        : health?.pollError ? <><TriangleAlert className="size-3.5 shrink-0 text-fail" /><span className="max-sm:sr-only">GitHub sync failed</span></>
+        : health?.polling ? <><LoaderCircle className="size-3.5 shrink-0 animate-spin" /><span className="max-sm:sr-only">syncing</span></>
+        : <><span className="size-1.5 shrink-0 rounded-full bg-ok shadow-[0_0_0_3px_rgb(16_185_129/0.15)]" /><span className="max-sm:sr-only">synced {ago(mode === 'exec' ? exec?.at : health?.lastPollAt, now)}</span></>}
     </span>
   )
   const refreshBtn = (
@@ -321,7 +322,8 @@ export function App() {
     <label className="flex cursor-pointer items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-hover"
            title={autoOn ? 'New review requests start your review command automatically' : 'Auto-review is off: run reviews by hand'}>
       <Zap className={`size-3.5 transition-colors ${autoOn ? 'fill-accent text-accent' : 'text-fg-3'}`} />
-      <span className="font-medium text-fg-2 ">Auto-review</span>
+      {/* a phone: the bolt and the switch say it (the name is for the screen reader); the bar has no room for the word */}
+      <span className="font-medium text-fg-2 max-sm:sr-only">Auto-review</span>
       <Toggle label="Auto-review" on={autoOn} onChange={() => toggleAuto()} />
     </label>
   )
@@ -558,7 +560,8 @@ export function App() {
         ) : reviewFrame}
         </div>
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
-        <footer className="relative z-30 flex h-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap border-t border-line bg-bg-rail px-2 text-meta text-fg-3 ">
+        {/* narrow, what doesn't fit slides sideways instead of being cut off */}
+        <footer className="relative z-30 flex h-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap border-t border-line bg-bg-rail px-2 text-meta text-fg-3 max-md:overflow-x-auto max-md:[scrollbar-width:none]">
           <Machine me={me} /><ScopeSwitch />
           {syncState}{refreshBtn}
           <span className="flex-1" />
