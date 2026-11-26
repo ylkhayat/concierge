@@ -473,11 +473,11 @@ const refsOf = (h: Pick<TicketHandover, 'to'>) => `${h.to.map((p) => `#${p.numbe
 /** Hand the ticket over when its run produced its PRs (handoverDue says when); true when the record changed. */
 function settleHandover(t: Ticket, quiet = false) {
   const run = latestRun(t.id)
-  if (!run || run.ids.some((id) => id.startsWith('STACK-'))) return false
+  if (run?.ids.some((id) => id.startsWith('STACK-'))) return false
   const was = state.handed?.[t.id]
   const prs = prsOf(t, run).map((p) => ({ repo: p.repo, number: p.number, open: isOpen(p), agentAt: state.prs[prKey(p)]?.job?.queuedAt }))
-  const steps = withoutCiWatch(run.next)?.steps
-  const due = handoverDue({ run: { ...run, outcome: run.outcomes[t.id]?.outcome }, prs, steps, was })
+  const steps = run ? withoutCiWatch(run.next)?.steps : undefined
+  const due = handoverDue({ run: run && { ...run, outcome: run.outcomes[t.id]?.outcome }, prs, steps, was })
   if (!due) return false
   const fresh = was?.run !== due.run
   // what the ticket left open goes to the PR's agent once: what it already lists, or was handed already, aside
@@ -487,7 +487,8 @@ function settleHandover(t: Ticket, quiet = false) {
   const carry = fresh ? [...new Set([...(was && !was.carriedAt ? was.carry ?? [] : []), ...carryOf(steps, theirs)])] : []
   const h: TicketHandover = fresh ? { ...due, ...(carry.length > 0 && { carry }) } : due as TicketHandover
   ;(state.handed ??= {})[t.id] = h
-  if (fresh) {
+  // (no run of its own: no feed to note it in, and nothing new to tell)
+  if (fresh && run) {
     note(`exec:${run.id}`, { at: h.at, kind: 'event', text: `Handed over to ${refsOf(h)}${h.why === 'pr-agent' ? ': its agent has worked on it since' : ''}. Its agent owns the next steps from here; this ticket's are no longer offered.${carry.length ? ` ${carry.length} step${carry.length === 1 ? '' : 's'} left open here go${carry.length === 1 ? 'es' : ''} to it with the next word it gets.` : ''}` })
     // news only when it is: the first pass after an update hands over every older shipped ticket, quietly
     if (!quiet && Date.now() - Date.parse(run.endedAt ?? run.queuedAt) < 6 * 3600_000) alert(ticketTarget(t.id), `Handed over to ${refsOf(h)}: its agent owns the next steps`, 'info')

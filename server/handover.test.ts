@@ -20,7 +20,15 @@ test('no handover while the run works, for a prep, or with no PR', () => {
   assert.equal(handoverDue({ run: run({ state: 'queued' }), prs: [pr(12, { agentAt: NOW })] }), undefined)
   assert.equal(handoverDue({ run: run({ role: 'prep', prs: [{ repo: R, number: 12 }] }), prs: [pr(12)] }), undefined)
   assert.equal(handoverDue({ run: run({ outcome: 'shipped' }), prs: [] }), undefined)
-  assert.equal(handoverDue({ run: undefined, prs: [pr(12, { agentAt: NOW })] }), undefined)
+})
+
+test('a ticket with PRs and no run of its own, or a run that ended without naming them, hands over too', () => {
+  assert.deepEqual(handoverDue({ run: undefined, prs: [pr(12)], now: NOW }), { to: [{ repo: R, number: 12 }], at: NOW, run: '', why: 'has-pr' })
+  assert.equal(handoverDue({ run: undefined, prs: [pr(12)], was: { to: [{ repo: R, number: 12 }], at: NOW, run: '', why: 'has-pr' } }), undefined) // once
+  assert.equal(handoverDue({ run: run(), prs: [pr(12)], now: NOW })?.why, 'has-pr') // done, PR linked on Linear only
+  assert.equal(handoverDue({ run: run({ state: 'failed' }), prs: [pr(12)], now: NOW })?.why, 'has-pr')
+  assert.equal(handoverDue({ run: run({ state: 'cancelled' }), prs: [pr(12)], now: NOW })?.why, 'has-pr')
+  assert.equal(handoverDue({ run: undefined, prs: [] }), undefined)
 })
 
 test('a blocking decision keeps the ticket until it is answered', () => {
@@ -32,8 +40,8 @@ test('a blocking decision keeps the ticket until it is answered', () => {
 
 test("the PR's agent started after the run ended hands it over, even from a run that opened nothing", () => {
   assert.equal(handoverDue({ run: run({ state: 'failed' }), prs: [pr(12, { agentAt: '2026-11-20T10:45:00Z' })], now: NOW })?.why, 'pr-agent')
-  // one started before the run ended is older than the ticket's words
-  assert.equal(handoverDue({ run: run({ state: 'failed' }), prs: [pr(12, { agentAt: '2026-11-20T10:15:00Z' })] }), undefined)
+  // one started before the run ended is older than the ticket's words: it still has its PR, so it hands over as such
+  assert.equal(handoverDue({ run: run({ state: 'failed' }), prs: [pr(12, { agentAt: '2026-11-20T10:15:00Z' })] })?.why, 'has-pr')
 })
 
 test('it goes to the open PRs, or every one when none is open; again only when they change', () => {

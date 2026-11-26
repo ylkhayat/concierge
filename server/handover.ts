@@ -13,7 +13,7 @@ export type TicketHandover = {
   to: PrRef[] // the PRs that own its next steps now, bottom of the stack first
   at: string
   run: string // the ticket's run whose next steps went stale then
-  why: 'opened' | 'pr-agent' // its run ended with the PR open, or the PR's agent ran after it
+  why: 'opened' | 'pr-agent' | 'has-pr' // its run ended with the PR open, the PR's agent ran after it, or it simply has PRs (no run of its own, or one that ended without naming them)
   carry?: string[] // the ticket's steps left open then, for the PR's agent
   carriedAt?: string // when they went to it (once)
 }
@@ -43,18 +43,25 @@ export function activeHandover(was: TicketHandover | undefined, run: Pick<RunIn,
  */
 export function handoverDue(x: { run?: RunIn; prs: PrIn[]; steps?: Step[] | null; was?: TicketHandover; now?: string }): Omit<TicketHandover, 'carry' | 'carriedAt'> | undefined {
   const { run, prs, was } = x
-  if (!run || busy(run.state) || run.role === 'prep' || !prs.length) return undefined
+  if (!prs.length || (run && (busy(run.state) || run.role === 'prep'))) return undefined
   const open = prs.filter((p) => p.open), to = (open.length ? open : prs).map(({ repo, number }) => ({ repo, number }))
-  if (was?.run === run.id) {
+  const id = run?.id ?? '' // no run of its own: '' (a run started later is newer, and takes the ticket back)
+  if (was?.run === id) {
     // handed already: only its PRs can change (one more opened in the stack, one merged)
     return to.length === was.to.length && to.every((p) => was.to.some((q) => same(p, q))) ? undefined : { ...was, to }
   }
+  const at = x.now ?? new Date().toISOString()
+  // PRs and no run here (opened by hand, or by someone else): nothing on the ticket side to recommend, the PRs lead
+  if (!run) return { to, at, run: id, why: 'has-pr' }
   const end = run.endedAt ?? run.queuedAt
+  // the one hold: its run's last words wait on your decision, answered on the ticket (the reply run is judged in turn)
   const blocked = !!x.steps?.some((s) => s.kind === 'decide' && s.blocking)
-  const opened = run.state === 'done' && !blocked && (run.prs.length > 0 || run.outcome === 'shipped')
   const agent = prs.some((p) => !!p.agentAt && p.agentAt > end)
-  if (!opened && !agent) return undefined
-  return { to, at: x.now ?? new Date().toISOString(), run: run.id, why: opened ? 'opened' : 'pr-agent' }
+  if (agent) return { to, at, run: id, why: 'pr-agent' }
+  if (blocked) return undefined
+  const opened = run.state === 'done' && (run.prs.length > 0 || run.outcome === 'shipped')
+  // ended any other way (done without naming them, failed, cancelled) while its PRs exist: they lead from here
+  return { to, at, run: id, why: opened ? 'opened' : 'has-pr' }
 }
 
 /** The PR a handed ticket's words go to: the top of its open stack (the newest work), else its last. */

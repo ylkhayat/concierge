@@ -28,7 +28,7 @@ export function HandedPanel({ h, onOpen }: { h: Handed; onOpen: (p: { repo: stri
           </span>
         ))}
         {h.to.length > 1 && ' (its stack)'}{' '}
-        <span className="text-fg-3">{ago(h.at)}, {h.why === 'opened' ? 'when its run opened it' : 'once its agent worked on it'}.</span>{' '}
+        <span className="text-fg-3">{ago(h.at)}, {h.why === 'opened' ? 'when its run opened it' : h.why === 'pr-agent' ? 'once its agent worked on it' : 'as it has pull requests'}.</span>{' '}
         Its agent owns the next steps now; this ticket’s own were written before that, so they are no longer offered.
       </p>
       <button type="button" onClick={() => onOpen(main)} className={`${primary} w-full justify-center py-2.5`}>
