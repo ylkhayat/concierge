@@ -492,8 +492,14 @@ export async function poll(o: { skip?: (repo: string) => boolean } = {}): Promis
   const t0 = Date.now(), lap: string[] = []
   const mark = (what: string) => lap.push(`${what} ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   const q = encodeURIComponent('is:open is:pr archived:false review-requested:@me')
-  const { items } = await gh<{ items: SearchItem[] }>(`/search/issues?q=${q}&per_page=100`)
-  const requested = new Set(items.map((i) => `${i.repository_url.split('/repos/')[1]}#${i.number}`))
+  // GitHub's search can be paused for the account (its small allowance is shared with your agents' gh): then the PRs
+  // already known to wait on your review stand in, and the rest of the sync goes on instead of failing whole
+  const items = await gh<{ items: SearchItem[] }>(`/search/issues?q=${q}&per_page=100`).then((r) => r.items, (e: Error) => {
+    if (!/search is paused/.test(e.message)) throw e
+    console.warn(`sync: ${e.message}; using the review requests already known`)
+    return undefined
+  })
+  const requested = new Set(items ? items.map((i) => `${i.repository_url.split('/repos/')[1]}#${i.number}`) : Object.values(state.prs).filter((p) => p.requested && !p.closed).map((p) => p.id))
   const fresh = [...requested].filter((id) => !state.prs[id]?.requested)
 
   // Requested PRs plus anything still open that we track (GitHub drops the request once you review).
