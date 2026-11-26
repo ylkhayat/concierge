@@ -38,14 +38,14 @@ type Status = { Self?: { UserID?: number }; User?: Record<string, { LoginName?: 
 type WhoIs = { UserProfile?: { LoginName?: string }; Node?: { Name?: string; Tags?: string[] } }
 
 /** Who is calling from `ip`, by Tailscale, and whether it is the login this machine's Tailscale belongs to. */
-export async function whoIs(ip: string): Promise<{ login?: string; mine: boolean; link?: boolean }> {
+export async function whoIs(ip: string): Promise<{ login?: string; mine: boolean; link?: boolean; node?: string }> {
   const addr = ip.replace(/^::ffff:/, '')
   if (!/^100\.|^fd7a:/i.test(addr)) return { mine: false } // through a proxy (127.0.0.1): Tailscale can't say who
   const [w, s] = await Promise.all([localApi<WhoIs>(`whois?addr=${encodeURIComponent(`${addr}:1`)}`), localApi<Status>('status')])
   const login = w?.UserProfile?.LoginName
   const self = s?.Self?.UserID != null ? s.User?.[String(s.Self.UserID)]?.LoginName : undefined
   // a tagged node (a link container) belongs to its tag, not a person: it never counts as yours
-  return { login, mine: !!login && !!self && login === self && !w?.Node?.Tags?.length, link: !!w?.Node?.Tags?.includes('tag:concierge') }
+  return { login, mine: !!login && !!self && login === self && !w?.Node?.Tags?.length, link: !!w?.Node?.Tags?.includes('tag:concierge'), node: w?.Node?.Name?.split('.')[0] }
 }
 
 /** What GET /hello answers, without the machine key: that this is Concierge, and which machine runs the main server. */
@@ -53,7 +53,7 @@ export function hello() {
   return { concierge: true, name: fleet.machine, role: process.env.DECK_ROLE, main: fleet.elsewhere() ?? fleet.machine, version: process.env.DECK_VERSION }
 }
 
-type Join = { id: string; name: string; ip: string; login?: string; code: string; at: number; state: 'waiting' | 'approved' | 'denied' }
+type Join = { id: string; name: string; ip: string; login?: string; code: string; at: number; state: 'waiting' | 'approved' | 'denied'; rekey?: boolean }
 const joins = new Map<string, Join>()
 const NAME = /^[a-z0-9][a-z0-9-]{0,30}$/
 
@@ -83,11 +83,12 @@ async function setup(j: Join) {
 }
 
 /** A machine asks to join (POST /join, no machine key: it has none yet). */
-export async function ask(body: { name?: string }, ip: string) {
+export async function ask(body: { name?: string; rekey?: boolean }, ip: string) {
   if (!fleet.machine || fleet.elsewhere()) throw new Error(`ask the main server${fleet.elsewhere() ? `, ${fleet.elsewhere()}` : ''}`)
   const name = String(body.name ?? '').toLowerCase()
   if (!NAME.test(name)) throw new Error('a machine name is lowercase letters, digits and dashes')
   const taken = await roles()
+  if (body.rekey) return rekey(name, taken, ip)
   if (name === fleet.machine || taken[name] !== undefined) throw new Error(`${name} is already a machine here: pick another name`)
   // one open ask per address: asking again replaces it
   for (const [k, j] of joins) if (j.ip === ip && j.state === 'waiting') joins.delete(k)
@@ -105,6 +106,24 @@ export async function ask(body: { name?: string }, ip: string) {
   return { id: j.id, code: j.code, state: j.state, ...(j.state === 'approved' && { setup: await setup(j) }) }
 }
 
+/**
+ * One of your machines that missed a new machine key (it was off when the key changed) asks for the current one: it can
+ * no longer reach the others, nor they it. Granted at once only when Tailscale vouches it is that very machine (its
+ * link, concierge-<name>, on a tailnet nobody else is on) or your own login; anyone else waits for your approval.
+ */
+async function rekey(name: string, taken: Record<string, string>, ip: string) {
+  if (taken[name] === undefined || name === fleet.machine) throw new Error(`${name} isn't one of the machines here: join instead`)
+  for (const [k, j] of joins) if (j.ip === ip && j.state === 'waiting') joins.delete(k)
+  const who = await whoIs(ip)
+  const itself = who.link && who.node === `concierge-${name}` && !!(await tailnetOwner())
+  const j: Join = { id: randomUUID(), name, ip, login: who.login, code: String(randomInt(1000, 10000)), at: Date.now(), state: who.mine || itself ? 'approved' : 'waiting', rekey: true }
+  joins.set(j.id, j)
+  if (j.state === 'approved') console.log(`join: ${name} gets the current machine key (${who.mine ? 'your login' : `its link, ${who.node}`})`)
+  else alert({ kind: 'system', id: `join-${j.id}`, label: 'A machine asks for the key', title: `${name} asks for the machine key` },
+    `${name} (${who.login ?? who.node ?? `from ${ip}`}) lost the machine key and asks for it. Approve it in Settings → Machines if its log shows ${j.code}.`, 'warn', true)
+  return { id: j.id, code: j.code, state: j.state, ...(j.state === 'approved' && { setup: { name, key: token(), main: fleet.machine } }) }
+}
+
 const decided = new Map<string, (() => void)[]>()
 /**
  * The asking machine waits on this (GET /join/<id>): its setup once approved. With `wait` (seconds, up to 55) it is
@@ -120,7 +139,7 @@ export async function status(id: string, ip: string, wait = 0) {
       decided.set(id, [...(decided.get(id) ?? []), done])
     })
   }
-  return { state: j.state, code: j.code, ...(j.state === 'approved' && { setup: await setup(j) }) }
+  return { state: j.state, code: j.code, ...(j.state === 'approved' && { setup: j.rekey ? { name: j.name, key: token(), main: fleet.machine } : await setup(j) }) }
 }
 
 /** The asks waiting for you (Settings → Machines). */
