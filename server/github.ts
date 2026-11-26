@@ -13,6 +13,28 @@ async function getToken() {
 
 const etags = new Map<string, { etag: string; body: unknown }>()
 
+// GitHub's secondary limits punish bursts (many requests at once, or too many a minute), whatever the hourly quota
+// says: every call to GitHub goes through one gate, a few at a time, and once GitHub says slow down nothing asks it
+// again until the wait it gave (or a growing one: 1, 2, 4… up to 15 minutes) is over, or the limit only gets longer.
+const AT_ONCE = 4
+let running = 0
+const queue: (() => void)[] = []
+async function gate<T>(f: () => Promise<T>): Promise<T> {
+  if (running >= AT_ONCE) await new Promise<void>((r) => queue.push(r))
+  running++
+  try { return await f() } finally { running--; queue.shift()?.() }
+}
+const cool = { until: 0, strikes: 0 }
+export const slowedUntil = () => (Date.now() < cool.until ? cool.until : 0)
+const slowNotice = () => `GitHub asked Concierge to slow down (too many requests at once): it syncs again at ${new Date(cool.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+function slowDown(retryAfter: string | null) {
+  cool.strikes = Math.min(cool.strikes + 1, 5)
+  const wait = Math.max(Number(retryAfter) * 1000 || 0, Math.min(15 * 60_000, 60_000 * 2 ** (cool.strikes - 1)))
+  cool.until = Date.now() + wait
+  console.warn(`github: secondary rate limit, waiting ${Math.round(wait / 1000)}s`)
+}
+const secondary = (status: number, text: string, retryAfter: string | null) => (status === 403 || status === 429) && (/secondary rate limit|abuse/i.test(text) || !!retryAfter)
+
 // REST's own hourly quota (GraphQL keeps ghBudget): read from every response. Spent, calls fail at once until it
 // resets instead of asking GitHub again, which would keep it spent.
 const rest = { remaining: Infinity, resetAt: 0 }
@@ -25,22 +47,31 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
     if (cached) return cached.body as T // what it said last is better than nothing
     throw new Error(`GitHub REST quota spent: resets at ${new Date(rest.resetAt).toISOString().slice(11, 16)} UTC`)
   }
-  const res = await fetch(`https://api.github.com${path}`, {
+  if (slowedUntil()) {
+    if (cached) return cached.body as T
+    throw new Error(slowNotice())
+  }
+  const res = await gate(async () => fetch(`https://api.github.com${path}`, {
     headers: {
       Authorization: `Bearer ${await getToken()}`,
       Accept: accept,
       'X-GitHub-Api-Version': '2022-11-28',
       ...(cached && { 'If-None-Match': cached.etag }),
     },
-  })
+  }))
   const left = Number(res.headers.get('x-ratelimit-remaining')), reset = Number(res.headers.get('x-ratelimit-reset'))
   if (Number.isFinite(left) && Number.isFinite(reset) && reset > 0) Object.assign(rest, { remaining: left, resetAt: reset * 1000 })
   if ((res.status === 403 || res.status === 429) && (left === 0 || res.headers.get('retry-after'))) {
     Object.assign(rest, { remaining: 0, resetAt: reset ? reset * 1000 : Date.now() + Number(res.headers.get('retry-after') ?? 60) * 1000 })
   }
-  if (res.status === 304 && cached) return cached.body as T
+  if (res.status === 304 && cached) { cool.strikes = 0; return cached.body as T }
   if (res.status === 401) token = '' // re-read gh's token next time
-  if (!res.ok) throw new Error(`GitHub ${res.status} on ${path}: ${(await res.text()).slice(0, 200)}`)
+  if (!res.ok) {
+    const text = await res.text()
+    if (secondary(res.status, text, res.headers.get('retry-after'))) { slowDown(res.headers.get('retry-after')); if (cached) return cached.body as T; throw new Error(slowNotice()) }
+    throw new Error(`GitHub ${res.status} on ${path}: ${text.slice(0, 200)}`)
+  }
+  cool.strikes = 0
   const body = await res.json()
   const etag = res.headers.get('etag')
   if (etag) etags.set(path, { etag, body })
@@ -166,14 +197,16 @@ export async function ghSend<T>(method: 'POST' | 'PATCH', path: string, body: un
 /** GitHub's GraphQL budget as of the last poll (5000 points an hour, shared with your own `gh`). */
 export const ghBudget: { remaining?: number; resetAt?: string } = {}
 export async function graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-  const res = await fetch('https://api.github.com/graphql', {
+  if (slowedUntil()) throw new Error(slowNotice())
+  const res = await gate(async () => fetch('https://api.github.com/graphql', {
     method: 'POST',
     headers: { Authorization: `Bearer ${await getToken()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
-  })
-  const json = await res.json() as { data?: T & { rateLimit?: { remaining: number; resetAt: string } }; errors?: { message: string }[] }
+  }))
+  const json = await res.json().catch(() => ({})) as { data?: T & { rateLimit?: { remaining: number; resetAt: string } }; errors?: { message: string }[] }
   if (!json.data) {
-    const msg = json.errors?.[0]?.message ?? String(res.status)
+    const msg = json.errors?.[0]?.message ?? (json as { message?: string }).message ?? String(res.status)
+    if (secondary(res.status, msg, res.headers.get('retry-after')) || /secondary rate limit/i.test(msg)) { slowDown(res.headers.get('retry-after')); throw new Error(slowNotice()) }
     // refused for rate: GitHub's hourly counter can still read high (another limit on the account), so treat it as empty
     if (/rate limit/i.test(msg)) Object.assign(ghBudget, { remaining: 0, resetAt: new Date(Date.now() + 15 * 60_000).toISOString() })
     throw new Error(`GitHub GraphQL: ${msg}`)

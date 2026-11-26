@@ -24,7 +24,7 @@ import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
-import { defaultBranch, tokenChanged, getMe, gh, ghBudget, outside, poll, prHealth, refreshOne, setOnStacks } from './github.ts'
+import { defaultBranch, tokenChanged, getMe, gh, ghBudget, outside, poll, prHealth, refreshOne, setOnStacks, slowedUntil } from './github.ts'
 import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
 import { assignToMe, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
 import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, togetherPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
@@ -186,6 +186,8 @@ async function doPoll(forced?: unknown) {
   if (health.polling) { pollAgain = true; return }
   // GitHub's budget nearly spent (it is shared with your own gh): every 5 minutes instead of every minute, until it resets
   if (forced !== true && (ghBudget.remaining ?? 5000) < 500 && Date.now() - lastPollAt < 5 * 60_000) return
+  // GitHub said slow down: nothing is asked until its wait is over (asking anyway only makes the wait longer)
+  if (slowedUntil()) return
   lastPollAt = Date.now()
   health.polling = true
   bus.emit('health')
