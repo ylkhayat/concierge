@@ -89,6 +89,19 @@ export async function ghCall<T = unknown>(method: 'GET' | 'POST' | 'PATCH' | 'DE
 }
 
 // GET with ETag caching: a 304 costs no rate limit and returns the cached body.
+/**
+ * Whether a PR a run's words link to is the run's own: open, and opened since the run began or on a branch named for one
+ * of its tickets. A run links to other PRs while it investigates (an old revert, a related fix); those are never its own.
+ */
+export async function runOwns(run: { ids: string[]; startedAt?: string; queuedAt: string }, p: { repo: string; number: number }): Promise<boolean> {
+  try {
+    const r = await gh<{ state: string; created_at: string; head: { ref: string } }>(`/repos/${p.repo}/pulls/${p.number}`)
+    if (r.state !== 'open') return false
+    const ref = r.head.ref.toLowerCase()
+    return Date.parse(r.created_at) >= Date.parse(run.startedAt ?? run.queuedAt) - 60_000 || run.ids.some((id) => ref.includes(id.toLowerCase()))
+  } catch { return false } // can't tell: not claimed (a missed link shows up again once the PR is tracked)
+}
+
 export async function gh<T>(path: string, accept = 'application/vnd.github+json'): Promise<T> {
   const cached = etags.get(path)
   if (rest.remaining <= 0 && Date.now() < rest.resetAt) {

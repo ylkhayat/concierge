@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { explain, loadOverlay, mapBase } from './explain.ts'
 import { issueNote, issueOf, shipIssuesPrompt } from './issues.ts'
 import { execCommand, furthest, goalSettings, handGoalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
-import { defaultBranch } from './github.ts'
+import { defaultBranch, runOwns } from './github.ts'
 import { fill } from './config.ts'
 import { baselineId, boardPrompt, capturePrompt, hasSet, setsOf, setupPrompt, shotsDir, slugOf, VISUALS_DIR } from './visuals.ts'
 import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend } from './store.ts'
@@ -1513,10 +1513,15 @@ function startExec(run: ExecRun, on?: string) {
   const cmd = slot('exec', run.as ?? 'developer'), issues = run.ids.every((id) => issueOf(id))
   const asked = (run.prompt ?? (issues ? shipIssuesPrompt(run.ids) : execCommand(cmd, run.ids)) + (run.said ? `\n\nMy direction for these tickets, follow it: ${run.said}` : '') + (run.brief ?? '')) + issueNote(run.ids)
   let last = 0
+  const checking = new Set<string>()
   const changed = () => { if (Date.now() - last > 400) { last = Date.now(); bus.emit('exec') } }
   const read = (text: string) => {
     Object.assign(run.outcomes, outcomesIn(text))
-    for (const p of prLinksIn(text)) if (!run.prs.some((x) => x.url === p.url)) run.prs.push(p)
+    // a linked PR is the run's only when GitHub says so (runOwns): a run cites other PRs while it investigates
+    for (const p of prLinksIn(text)) if (!run.prs.some((x) => x.url === p.url) && !checking.has(p.url)) {
+      checking.add(p.url)
+      void runOwns(run, p).then((own) => { if (own && !run.prs.some((x) => x.url === p.url)) { run.prs.push(p); save(); bus.emit('exec') } })
+    }
     for (const l of stackLinesIn(text)) if (!run.stack.includes(l)) run.stack.push(l)
     for (const h of handoversIn(text, run.ids)) run.handovers = [...(run.handovers ?? []).filter((x) => x.id !== h.id), h]
   }

@@ -24,7 +24,7 @@ import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
-import { defaultBranch, tokenChanged, getMe, gh, ghBudget, ghCall, githubTraffic, outside, poll, pollPrs, prHealth, prHealthMany, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
+import { defaultBranch, runOwns, tokenChanged, getMe, gh, ghBudget, ghCall, githubTraffic, outside, poll, pollPrs, prHealth, prHealthMany, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
 import { coalescer, hookLive, hookStats, listen, listening, newSecret, targetsOf, type Handler as HookHandler, type Target as HookTarget } from './hooks.ts'
 import { askDoor, connectRepo, doorAnswer, doorResult, funnelBlocker, funnelError, FUNNEL_PORT, hookUrl, pingHook, removeHook, scopesAllowHooks, type Self } from './hookSetup.ts'
 import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
@@ -477,7 +477,10 @@ function settleHandover(t: Ticket, quiet = false) {
   const run = latestRun(t.id)
   if (run?.ids.some((id) => id.startsWith('STACK-'))) return false
   const was = state.handed?.[t.id]
-  const prs = prsOf(t, run).map((p) => ({ repo: p.repo, number: p.number, open: isOpen(p), agentAt: state.prs[prKey(p)]?.job?.queuedAt }))
+  // open only when known to be (tracked, or on the board): a PR Concierge knows nothing of is never handed to
+  const known = (p: PrRef) => !!(state.prs[prKey(p)] || execBoard.health[prKey(p)])
+  if (was && !was.to.some(known)) { delete state.handed![t.id]; return true } // handed to PRs Concierge knows nothing of (a run's mere mention): taken back
+  const prs = prsOf(t, run).map((p) => ({ repo: p.repo, number: p.number, open: known(p) && isOpen(p), agentAt: state.prs[prKey(p)]?.job?.queuedAt }))
   const steps = run ? withoutCiWatch(run.next)?.steps : undefined
   const due = handoverDue({ run: run && { ...run, outcome: run.outcomes[t.id]?.outcome }, prs, steps, was })
   if (!due) return false
@@ -503,6 +506,18 @@ function settleHandovers(ids?: string[], quiet = false) {
   if (changed) { save(); ticketCache = undefined; bus.emit('exec') }
 }
 let settleSoon: ReturnType<typeof setTimeout> | undefined
+// once at start: the PRs earlier runs claimed only by mentioning them (an old revert they cited) checked with GitHub,
+// and dropped when they aren't the run's (runOwns); their tickets' hand-overs follow on the next settle
+setTimeout(() => void (async () => {
+  const week = Date.now() - 7 * 86400_000
+  for (const run of Object.values(state.execs).filter((r) => Date.parse(r.queuedAt) > week && r.prs.length)) {
+    const keep = []
+    for (const p of run.prs) keep.push(state.prs[prKey(p)] || execBoard.health[prKey(p)] || await runOwns(run, p) ? p : undefined)
+    const own = keep.filter((p): p is (typeof run.prs)[number] => !!p)
+    if (own.length !== run.prs.length) { console.log(`exec ${run.id}: dropped PRs it only mentioned: ${run.prs.filter((p) => !own.includes(p)).map((p) => `#${p.number}`).join(', ')}`); run.prs = own }
+  }
+  save(); settleHandovers(undefined, true); bus.emit('exec')
+})().catch((e) => console.warn(`run PR check: ${(e as Error).message}`)), 30_000)
 const settleLater = () => { settleSoon ??= setTimeout(() => { settleSoon = undefined; settleHandovers() }, 2000) }
 // a PR's agent started (a review, a fix, your words there): its ticket's words are older than what it knows now
 bus.on('started', (id: string) => { if (state.prs[id]) settleLater() })
