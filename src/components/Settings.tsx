@@ -426,10 +426,22 @@ function Repositories({ setup, health, toast, saveConfig, reload }: { setup?: Se
   // the workspaces: the organizations Concierge works with, each with the repositories watched in it
   const owners = orgsQ.data?.map((o) => o.owner) ?? [...new Set(Object.keys(repos).map((r) => r.split('/')[0]))]
   const changed = () => { refresh('/orgs'); refresh('/workspaces/offers'); return reload() }
+  // one workspace at a time, each a tab (kept per browser): every organization's settings, teams and repositories at
+  // once made one long page to scroll through
+  const [wsPick, setWsPick] = useState(() => { try { return localStorage.getItem('settings:workspace') ?? '' } catch { return '' } })
+  const shown = owners.includes(wsPick) ? wsPick : owners[0]
+  const pickWs = (w: string) => { setWsPick(w); try { localStorage.setItem('settings:workspace', w) } catch { /* private window */ } }
   return (
     <>
       <p className="px-0.5 text-small text-fg-3">Your workspaces are the organizations Concierge works with, and in each the repositories it watches: reviews, your PRs, plans, compliance and Ship act on these, never on every organization your GitHub account belongs to. Each machine keeps the repositories in its own working directory ({setup?.workDir ? home(setup.workDir) : 'its CODE_DIR'} here), and clones only the ones you allow on it.</p>
-      {owners.map((owner) => { const o = orgsQ.data?.find((x) => x.owner === owner), mine = Object.entries(repos).filter(([r]) => r.split('/')[0] === owner), org = setup?.cloneOn?.[`${owner}/*`] ?? [], orgVis = (vis.orgs?.[owner] ?? 'off') as VisMode; return (
+      {owners.length > 0 && (
+        <div className="overflow-x-auto [scrollbar-width:none]">
+          <Tabs as="tab" label="Workspaces" value={shown ?? ''} onChange={pickWs}
+                options={owners.map((owner) => { const n = Object.keys(repos).filter((r) => r.split('/')[0] === owner).length, o = orgsQ.data?.find((x) => x.owner === owner)
+                  return { id: owner, title: `${owner}: ${n} repositor${n === 1 ? 'y' : 'ies'} watched`, label: <span className="inline-flex items-center gap-1.5 font-mono">{owner}{o?.personal && <span className="font-sans text-micro text-fg-4">you</span>}<span className="font-sans text-micro tabular-nums text-fg-4">{n}</span></span> } })} />
+        </div>
+      )}
+      {owners.filter((owner) => owner === shown).map((owner) => { const o = orgsQ.data?.find((x) => x.owner === owner), mine = Object.entries(repos).filter(([r]) => r.split('/')[0] === owner), org = setup?.cloneOn?.[`${owner}/*`] ?? [], orgVis = (vis.orgs?.[owner] ?? 'off') as VisMode; return (
         <section key={owner} className="card overflow-hidden">
           <WorkspaceHead owner={owner} personal={!!o?.personal} count={mine.length} onRemoved={changed} toast={toast} />
           {/* what every repository here gets unless it says otherwise */}
