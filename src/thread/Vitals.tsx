@@ -98,7 +98,7 @@ export type Attach = { count: number; chips: ReactNode; words: () => string; run
  * copied; a part of Explain opens (where there is none, it is asked for in words).
  */
 const SHOWN = 3
-export function useLaneActions({ d, target, onChange, onSteer, onView, toast }: { d?: Discussions; target: string; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast }): Attach | undefined {
+export function useLaneActions({ d, target, onChange, onSteer, onView, toast, mine }: { mine?: boolean; d?: Discussions; target: string; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast }): Attach | undefined {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [more, setMore] = useState(false)
   const items = (['intent', 'understanding'] as const).flatMap((topic) => {
@@ -119,7 +119,7 @@ export function useLaneActions({ d, target, onChange, onSteer, onView, toast }: 
           <button key={key} type="button" aria-pressed={on} title={a.text ?? a.label} onClick={() => toggle(key)} style={{ '--lane': `var(--vital-${topic})` } as React.CSSProperties}
                   className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-left text-small transition-colors ${on ? 'bg-[color-mix(in_oklch,var(--lane)_22%,transparent)] text-fg-1 ring-1 ring-[var(--lane)]' : 'bg-[color-mix(in_oklch,var(--lane)_8%,transparent)] text-fg-2 ring-1 ring-[color-mix(in_oklch,var(--lane)_25%,transparent)] hover:text-fg-1'}`}>
             {on ? <CheckCircle2 className="size-3.5 shrink-0" /> : a.kind === 'steer' ? <Send className="size-3.5 shrink-0" /> : a.kind.startsWith('ask') ? <Copy className="size-3.5 shrink-0" /> : <Compass className="size-3.5 shrink-0" />}
-            <span className="truncate">{a.kind === 'steer' ? `For the agent: ${a.label}` : a.label}</span>
+            <span className="truncate">{a.kind === 'steer' ? `${mine === undefined ? 'For the agent' : mine ? 'Revise' : 'Review again'}: ${a.label}` : a.label}</span>
           </button>
         )
       })}
@@ -132,7 +132,10 @@ export function useLaneActions({ d, target, onChange, onSteer, onView, toast }: 
   )
   return {
     count: chosen.length, chips,
-    words: () => chosen.filter((x) => x.a.kind === 'steer').map((x) => x.a.text!).join('\n\n'),
+    // a different approach the discussion settled on: on your PR its agent revises to it; on someone else's, its review
+    // runs another round with it, left as a finding for the author
+    words: () => chosen.filter((x) => x.a.kind === 'steer').map((x) => mine === undefined ? x.a.text!
+      : mine ? `Revise this PR to this, then /revise it again: ${x.a.text}` : `Review this PR again with this in mind, and leave it as a finding for the author (not a blocker unless it is one): ${x.a.text}`).join('\n\n'),
     run: async () => {
       const fail = (e: Error) => toast(e.message, 'error')
       // the steers went in the message: the discussions they came from mark theirs sent
