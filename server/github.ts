@@ -27,6 +27,10 @@ async function gate<T>(f: () => Promise<T>): Promise<T> {
 }
 const cool = { until: 0, strikes: 0 }
 export const slowedUntil = () => (Date.now() < cool.until ? cool.until : 0)
+// search has a limit of its own (about 30 a minute for the account, your agents' gh searches included): a refused
+// search pauses searching only, with its last answer kept, while everything else syncs on
+const searchCool = { until: 0, strikes: 0 }
+const isSearch = (path: string) => path.startsWith('/search/')
 const slowNotice = () => `GitHub asked Concierge to slow down (too many requests at once): it syncs again at ${new Date(cool.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
 // what Concierge asked GitHub, minute by minute, and what GitHub refused last: its secondary limit counts every client of
 // the account (your agents' gh too), so this says whether Concierge's own share is what tripped it
@@ -38,9 +42,10 @@ export const githubTraffic = () => (prune(), { lastMinute: asked.length, refused
 function slowDown(retryAfter: string | null, what = '', status = 0, text = '') {
   refused = { at: new Date().toISOString(), what, status, text: text.slice(0, 200) }
   console.warn(`github: refused ${what} (${status}), ${asked.length} requests in the last minute: ${text.slice(0, 160)}`)
-  cool.strikes = Math.min(cool.strikes + 1, 5)
-  const wait = Math.max(Number(retryAfter) * 1000 || 0, Math.min(15 * 60_000, 60_000 * 2 ** (cool.strikes - 1)))
-  cool.until = Date.now() + wait
+  const c = isSearch(what.replace(/^GET /, '')) ? searchCool : cool
+  c.strikes = Math.min(c.strikes + 1, 5)
+  const wait = Math.max(Number(retryAfter) * 1000 || 0, Math.min(15 * 60_000, 60_000 * 2 ** (c.strikes - 1)))
+  c.until = Date.now() + wait
   console.warn(`github: secondary rate limit, waiting ${Math.round(wait / 1000)}s`)
 }
 const secondary = (status: number, text: string, retryAfter: string | null) => (status === 403 || status === 429) && (/secondary rate limit|abuse/i.test(text) || !!retryAfter)
@@ -90,9 +95,9 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
     if (cached) return cached.body as T // what it said last is better than nothing
     throw new Error(`GitHub REST quota spent: resets at ${new Date(rest.resetAt).toISOString().slice(11, 16)} UTC`)
   }
-  if (slowedUntil()) {
+  if (slowedUntil() || (isSearch(path) && Date.now() < searchCool.until)) {
     if (cached) return cached.body as T
-    throw new Error(slowNotice())
+    throw new Error(isSearch(path) && !slowedUntil() ? `GitHub's search is paused until ${new Date(searchCool.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (too many searches)` : slowNotice())
   }
   const res = await gate(async () => fetch(`https://api.github.com${path}`, {
     headers: {
@@ -108,14 +113,18 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
   if ((res.status === 403 || res.status === 429) && (left === 0 || res.headers.get('retry-after'))) {
     Object.assign(rest, { remaining: 0, resetAt: reset ? reset * 1000 : Date.now() + Number(res.headers.get('retry-after') ?? 60) * 1000 })
   }
-  if (res.status === 304 && cached) { cool.strikes = 0; return cached.body as T }
+  if (res.status === 304 && cached) { (isSearch(path) ? searchCool : cool).strikes = 0; return cached.body as T }
   if (res.status === 401) token = '' // re-read gh's token next time
   if (!res.ok) {
     const text = await res.text()
-    if (secondary(res.status, text, res.headers.get('retry-after'))) { slowDown(res.headers.get('retry-after'), `GET ${path}`, res.status, text); if (cached) return cached.body as T; throw new Error(slowNotice()) }
+    if (secondary(res.status, text, res.headers.get('retry-after'))) {
+      slowDown(res.headers.get('retry-after'), `GET ${path}`, res.status, text)
+      if (cached) return cached.body as T
+      throw new Error(isSearch(path) ? `GitHub's search is paused until ${new Date(searchCool.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (too many searches)` : slowNotice())
+    }
     throw new Error(`GitHub ${res.status} on ${path}: ${text.slice(0, 200)}`)
   }
-  cool.strikes = 0
+  ;(isSearch(path) ? searchCool : cool).strikes = 0
   const body = await res.json()
   const etag = res.headers.get('etag')
   if (etag) etags.set(path, { etag, body })

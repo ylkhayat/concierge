@@ -1537,6 +1537,7 @@ app.post('/update', async (c) => {
 
 // --- exec mode: your Linear tickets, shipped by the configured exec command ---------------------
 type PrHealth = Awaited<ReturnType<typeof prHealth>>
+let issuesAt = 0 // when your GitHub issues were last searched (the ticket sync)
 const execBoard: { tickets: Ticket[]; health: Record<string, PrHealth>; at?: string; error?: string; polling: boolean } = { tickets: [], health: {}, polling: false }
 
 type TicketPr = Ticket['prs'][number] & Partial<PrHealth>
@@ -1714,7 +1715,10 @@ async function pollTickets() {
     const prs = Object.values(state.prs).map((p) => ({ repo: p.repo, number: p.number, url: p.url, title: p.title, body: p.body, head: p.head }))
     const login = (await getMe().catch(() => undefined))?.login?.toLowerCase()
     const own = Object.keys(config.repos).filter((r) => !!login && r.split('/')[0].toLowerCase() === login) // your own repositories: their unassigned issues are yours
-    const issues = await myIssues(Object.keys(config.repos), (k) => taken.has(k), prs, (q) => gh(`/search/issues?q=${encodeURIComponent(q)}&per_page=100`), own)
+    // two searches each time, and GitHub's search allowance is small (shared with your agents' gh): every 5 minutes
+    const fresh = Date.now() - issuesAt > 5 * 60_000
+    const issues = !fresh ? execBoard.tickets.filter((t) => t.source === 'github') : await myIssues(Object.keys(config.repos), (k) => taken.has(k), prs, (q) => gh(`/search/issues?q=${encodeURIComponent(q)}&per_page=100`), own)
+      .then((x) => { issuesAt = Date.now(); return x })
       .catch((e: Error) => { console.error('github issues:', e.message); return execBoard.tickets.filter((t) => t.source === 'github') })
     const tickets = [...linear, ...issues]
     // PR health for tickets in review: red CI or open threads mean "tend"
