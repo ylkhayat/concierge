@@ -12,6 +12,8 @@ import { statusMeta, StatusBadge } from './StatusBadge.tsx'
 import { short } from '../time.ts'
 import { plain } from './StackNav.tsx'
 import { useFlip } from '../flip.ts'
+import { minePrOrder, reviewPrOrder } from '../listOrder.ts'
+import { pending, shapeKey, useSettled } from '../settle.ts'
 import { recent, useTouch } from '../recent.ts'
 
 export type Tab = 'review' | 'mine'
@@ -53,9 +55,7 @@ export function grouped(prs: PrView[], q: string, tab: Tab): { group: Group; uni
   const needle = q.trim().toLowerCase()
   const gi = (p: PrView) => GROUPS[tab].findIndex((g) => g.statuses.includes(p.status))
   const hits = prs.filter((p) => tabOf(p) === tab && gi(p) >= 0 && (!needle || `${p.title} ${p.repo}#${p.number} ${p.author.login}`.toLowerCase().includes(needle)))
-    .sort((a, b) => tab === 'mine'
-      ? (b.awaiting ?? b.unresolved ?? 0) - (a.awaiting ?? a.unresolved ?? 0) || b.updatedAt.localeCompare(a.updatedAt) // most waiting on you, then most recent
-      : a.firstSeenAt.localeCompare(b.firstSeenAt))
+    .sort(tab === 'mine' ? minePrOrder : reviewPrOrder)
   const units = new Map<string, PrView[]>() // in the order of each unit's first (most pressing) member
   for (const p of hits) { const k = stackKey(p) ?? p.id; units.set(k, [...(units.get(k) ?? []), p]) }
   const every = [...units.values()].map((u) => { if (u.length < 2) return u; const at = new Map(treeOf(u).map((x, i) => [x.number, i])); return u.sort((a, b) => (at.get(a.number) ?? 0) - (at.get(b.number) ?? 0)) })
@@ -64,6 +64,8 @@ export function grouped(prs: PrView[], q: string, tab: Tab): { group: Group; uni
   const pinned = every.filter((u) => u.some((p) => p.pinned)), all = every.filter((u) => !pinned.includes(u))
   return [...(pinned.length ? [{ group: PINNED, units: pinned }] : []), ...GROUPS[tab].map((group, i) => ({ group, units: all.filter((u) => Math.min(...u.map(gi)) === i) }))]
 }
+
+const prId = (p: PrView) => p.id, groupTitle = (g: { group: Group }) => g.group.title
 
 /** List order for one tab, also used for j/k navigation. */
 export const ordered = (prs: PrView[], q: string, tab: Tab): PrView[] => grouped(prs, q, tab).flatMap((g) => g.units.flat())
@@ -81,12 +83,11 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
   query: string; onQuery: (q: string) => void; now: number
   picked: string[]; onPick: (ids: string[]) => void; toast: (m: string, tone?: 'ok' | 'error') => void
 }) {
-  // a bookmark or hide clicked here shows at once (the row moves or goes); the server's next update agrees
+  // a bookmark or hide clicked here shows at once (the row moves or goes), and stays until the server agrees (settle.ts)
   const [over, setOver] = useState<Record<string, { pinned?: boolean; dismissed?: boolean }>>({})
-  useEffect(() => setOver({}), [given])
+  useEffect(() => setOver((o) => pending(o, given)), [given])
   const prs = given.map((p) => (over[p.id] ? { ...p, ...over[p.id] } : p)).filter((p) => !p.dismissed)
   const nav = useRef<HTMLElement>(null)
-  useFlip(nav)
   const act: Act = (p, what) => {
     const name = `${p.repo.split('/')[1]}#${p.number}`
     if (what === 'hide') {
@@ -99,7 +100,9 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
     api('/pins', { key: `pr:${p.id}`, on }).then(() => toast(on ? `${name} bookmarked: it stays on top` : `${name}: bookmark removed`),
       (e: Error) => { setOver((o) => ({ ...o, [p.id]: { ...o[p.id], pinned: !on } })); toast(e.message, 'error') })
   }
-  const groups = grouped(prs, query, tab), list = groups.flatMap((g) => g.units.flat())
+  // a burst of updates moves rows once, when it settles (settle.ts); the filter, the tab and your clicks at once
+  const groups = useSettled(grouped(prs, query, tab), prId, groupTitle, `${tab}|${query}|${JSON.stringify(over)}`), list = groups.flatMap((g) => g.units.flat())
+  useFlip(nav, `${tab}|${shapeKey(groups, prId, groupTitle)}`, prs.map(prId))
   // folded groups, kept per browser; what's finished starts folded
   const [shut, setShut] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('prlist-shut') ?? '') } catch { return { 'Reviewed by you': true, Closed: true, Done: true } } })
   const fold = (t: string) => setShut((s) => { const n = { ...s, [t]: !s[t] }; try { localStorage.setItem('prlist-shut', JSON.stringify(n)) } catch {} return n })

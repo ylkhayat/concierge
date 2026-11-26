@@ -37,13 +37,20 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
   // the newest chapter is open, earlier ones folded; a click flips one from its default
   const [flipped, setFlipped] = useState<Set<string>>(new Set())
   const toggle = (k: string) => setFlipped((s) => { const n = new Set(s); if (!n.delete(k)) n.add(k); return n })
-  const open = (ch: Chapter, i: number) => (i === chapters.length - 1) !== flipped.has(ch.key)
-  const end = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLDivElement>(null)
-  // pinned to the newest line from the start, through loading and new lines; scrolling up unpins, back down repins
+  // pinned to the newest line from the start, through loading and new lines; scrolling up unpins, back down repins.
+  // The box that scrolls is the nearest one that does: its parent is not (in a thread it is the chat's column), so
+  // scrolling up never unpinned, and every new line pulled you back down to the bottom
   const pinned = useRef(true)
+  // a new run folds the one before it, unless you are up there reading it: it stays open, so what you read doesn't
+  // fold away from under you
+  const kept = useRef(new Set<string>()), lastKey = useRef(chapters.at(-1)?.key)
+  const newest = chapters.at(-1)?.key
+  if (newest !== lastKey.current) { if (lastKey.current && !pinned.current) kept.current.add(lastKey.current); lastKey.current = newest }
+  const open = (ch: Chapter, i: number) => (i === chapters.length - 1 || kept.current.has(ch.key)) !== flipped.has(ch.key)
+  const pane = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    const b = box.current?.parentElement // the panel that scrolls
+    const b = pane.current = scroller(box.current)
     if (!b) return
     const on = () => { pinned.current = b.scrollHeight - b.scrollTop - b.clientHeight < 80 }
     b.addEventListener('scroll', on, { passive: true })
@@ -51,9 +58,11 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
   }, [feed.length > 0])
   useLayoutEffect(() => {
     if (!pinned.current || !pin) return // pin: off where the page around keeps its own place (more follows the feed)
-    // after layout and once more next frame: markdown and code blocks can grow after the first paint
-    end.current?.scrollIntoView({ block: 'end' })
-    const id = requestAnimationFrame(() => end.current?.scrollIntoView({ block: 'end' }))
+    // only that box, to its end (scrollIntoView moved every box around it too); after layout and once more next
+    // frame: markdown and code blocks can grow after the first paint
+    const down = () => { const b = pane.current ?? scroller(box.current); if (b && pinned.current) b.scrollTop = b.scrollHeight }
+    down()
+    const id = requestAnimationFrame(down)
     return () => cancelAnimationFrame(id)
   }, [feed.length, live])
 
@@ -181,9 +190,26 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
         ))}
       </ol>
       {live && bg && <div className="mt-1"><BgNow base={bg.base} count={bg.count} parked={turnOver(feed)} toast={toast} /></div>}
-      <div ref={end} />
     </div>
   )
+}
+
+/** The nearest box around `el` that scrolls. */
+function scroller(el: HTMLElement | null): HTMLElement | null {
+  for (let n = el?.parentElement; n; n = n.parentElement) if (/(auto|scroll)/.test(getComputedStyle(n).overflowY)) return n
+  return null
+}
+
+/** A key for each line that stays its own as lines come and go (the turn's body was keyed by place: a line dropped
+ *  or added earlier in it, as a result replacing the message it repeats, gave every line after it another one's key,
+ *  so they remounted and their entrances played again in place). */
+function keysOf(items: Activity[]): Map<Activity, string> {
+  const seen = new Map<string, number>(), out = new Map<Activity, string>()
+  for (const a of items) {
+    const base = `${a.at}|${a.kind}|${a.tool ?? ''}|${a.lane ?? ''}`, n = seen.get(base) ?? 0
+    seen.set(base, n + 1); out.set(a, n ? `${base}#${n}` : base)
+  }
+  return out
 }
 
 type SkillDoc = { name: string; description?: string; body?: string; company?: boolean; missing?: boolean }
@@ -358,6 +384,7 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
   const body: (Activity | Activity[])[] = []
   // a failed step mid-run (an exit code) is part of the work; only an error that ends the run stands on its own
   for (const a of rest) { if (matters(a) && (a.kind !== 'error' || a === ch.outcome)) body.push(a); else if (Array.isArray(body.at(-1))) (body.at(-1) as Activity[]).push(a); else body.push([a]) }
+  const keys = keysOf(ch.items)
   const label = h.text === 'Your reply' ? (trigger ? 'You asked' : 'Your reply') : h.text
   return (
     <li className={`list-none ${live ? '' : 'cv'}`}>
@@ -379,8 +406,8 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry }: {
       <ol className="space-y-1.5">
         {trigger && <YouSaid a={trigger} clamp={!open} />}
         {open ? body.map((g, i) => Array.isArray(g)
-          ? <Worked key={`w${i}`} items={g} open={details} live={live && i === body.length - 1} until={(body[i + 1] as Activity | undefined)?.at ?? (live ? undefined : stop)} render={(a, j) => entry(a, `${i}:${j}`)} />
-          : entry(g, String(i)))
+          ? <Worked key={`w:${keys.get(g[0])}`} items={g} open={details} live={live && i === body.length - 1} until={(body[i + 1] as Activity | undefined)?.at ?? (live ? undefined : stop)} render={(a) => entry(a, keys.get(a)!)} />
+          : entry(g, keys.get(g)!))
           : (ch.outcome || steps > 0) && (
             <li className="list-none">
               <button onClick={onToggle} className="flex w-full items-start gap-1.5 text-left text-small text-fg-3 transition-colors hover:text-fg-1">

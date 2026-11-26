@@ -115,7 +115,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           {/* wide: the vitals head the chat, the frame for reading it (narrow: they are above, for both) */}
           {vitals && <div className="relative z-30 hidden shrink-0 border-b border-line @[1100px]/thread:block">{vitals}</div>}
           <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <Transcript follow={follow}>{children}</Transcript>
+            <Transcript follow={follow} subject={subject}>{children}</Transcript>
           </section>
           {/* its box, or (no box: the agent asks) the next step: at most about half the height, scrolling inside. Narrow,
               a share of the column (not of the screen): stacked over the next step's dock, two halves of the screen
@@ -182,16 +182,18 @@ function Quotable({ children, onAsk, fill }: { children: ReactNode; onAsk?: (q: 
   )
 }
 
-/** The scrolling conversation: oldest at the top, following what arrives while you are at the bottom. */
-function Transcript({ children, follow }: { children: ReactNode; follow?: unknown }) {
+/** The scrolling conversation: oldest at the top, following what arrives while you are at the bottom; scrolled up,
+ *  it stays where you are. */
+function Transcript({ children, follow, subject }: { children: ReactNode; follow?: unknown; subject?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const onScroll = () => { const el = ref.current!; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
   const end = () => { const el = ref.current; if (el && pinned.current) el.scrollTop = el.scrollHeight }
-  useLayoutEffect(end, [follow])
-  // what renders late (markdown, a folded chapter opening) grows it after the fact: still at the newest, it follows.
-  // So does the docks under it growing (a working bar opened, background tasks listed): the newest stays in sight
-  // instead of sliding under them
+  // another PR or ticket opens at its newest, wherever you had scrolled to in the last one
+  useLayoutEffect(() => { pinned.current = true }, [subject])
+  useLayoutEffect(end, [follow, subject])
+  // what renders late (markdown, a folded chapter opening) grows it after the fact, and the docks under it growing
+  // (a working bar opened, background tasks listed) make it shorter: still at the newest, it follows
   const inner = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const o = new ResizeObserver(end)

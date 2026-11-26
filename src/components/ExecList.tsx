@@ -9,7 +9,7 @@ import { Bookmark, History, Moon,
   SignalLow, SignalMedium, Wrench, type LucideIcon,
   Users, GitMerge,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api, prefetchFeed, type TicketView } from '../lib.ts'
 import { Missing } from './Missing.tsx'
 import { ciLabel, ciTone } from './PrStack.tsx'
@@ -17,6 +17,8 @@ import { short } from '../time.ts'
 import { useDragPick } from '../pick.ts'
 import { recent, takeRecent, useTouch } from '../recent.ts'
 import { useFlip } from '../flip.ts'
+import { ticketOrder } from '../listOrder.ts'
+import { pending, shapeKey, useSettled } from '../settle.ts'
 import { move, noStacks, oneStack, shapeOf, shift, stacksOf, type Shape } from '../stackEdit.ts'
 
 export type Group = { id: string; title: string; hint: string; icon: LucideIcon; tone: string; card: string; match: (t: TicketView) => boolean; dot?: string; badge?: string }
@@ -73,10 +75,9 @@ export function groupedTickets(tickets: TicketView[], q: string): { tier: Tier; 
     // a closed one only while it's freshly done (else it's kept just for what names it), or while a run works on it (a
     // handover to a ticket that was already Done: it shows under Agents on it, never hidden)
     && (t.bucket !== 'closed' || isDone(t) || t.busy)
-  const prio = (p: number) => (p === 0 ? 5 : p)
   const gi = (t: TicketView) => ORDER.indexOf(groupOf(t).id)
   const units = new Map<string, TicketView[]>()
-  for (const t of tickets.filter(hit).sort((a, b) => gi(a) - gi(b) || prio(a.priority) - prio(b.priority) || a.createdAt.localeCompare(b.createdAt))) {
+  for (const t of tickets.filter(hit).sort((a, b) => gi(a) - gi(b) || ticketOrder(a, b))) {
     const k = runKey(t) ?? t.id
     units.set(k, [...(units.get(k) ?? []), t])
   }
@@ -92,6 +93,8 @@ export function groupedTickets(tickets: TicketView[], q: string): { tier: Tier; 
   const tiers = TIERS.map((tier, i) => ({ tier, units: (i ? rest : open).filter((u) => tierOf(u) === i).sort((a, b) => tier.id === 'done' ? doneAt(b).localeCompare(doneAt(a)) : dim(a) - dim(b)) }))
   return [...(pinned.length ? [{ tier: PINNED, units: pinned }] : []), tiers[0], ...(rec.length ? [{ tier: RECENT, units: rec }] : []), ...tiers.slice(1)]
 }
+
+const ticketId = (t: TicketView) => t.id, tierId = (g: { tier: Tier }) => g.tier.id
 
 /** List order, also used for j/k. */
 export const orderedTickets = (tickets: TicketView[], q: string): TicketView[] => groupedTickets(tickets, q).flatMap((g) => g.units.flat())
@@ -134,12 +137,12 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
 }) {
   const away = useAway() // repositories not on this machine: their tickets are shown, not opened
   const held = useHeld() // no machine can work on their application now: dimmed, opened to read, not picked
-  // a bookmark or dim clicked here shows at once (the row moves to where it now belongs); the server's next update agrees
+  // a bookmark or dim clicked here shows at once (the row moves to where it now belongs), and stays until the server
+  // agrees (settle.ts)
   const [over, setOver] = useState<Record<string, { pinned?: boolean; dimmed?: boolean }>>({})
-  useEffect(() => setOver({}), [given])
+  useEffect(() => setOver((o) => pending(o, given)), [given])
   const tickets = given.map((t) => (over[t.id] ? { ...t, ...over[t.id] } : t))
   const nav = useRef<HTMLElement>(null)
-  useFlip(nav)
   const quick = (t: TicketView, what: 'pinned' | 'dimmed') => {
     const on = !t[what]
     setOver((o) => ({ ...o, [t.id]: { ...o[t.id], [what]: on } }))
@@ -148,21 +151,33 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
       : api(`/exec/tickets/${encodeURIComponent(t.id)}/dim`, { on }).then(() => toast(on ? `${t.id} dimmed until its state changes` : `${t.id} back to normal`))
     done.catch((e: Error) => { setOver((o) => ({ ...o, [t.id]: { ...o[t.id], [what]: !on } })); toast(e.message, 'error') })
   }
-  const groups = groupedTickets(tickets, query), list = groups.flatMap((g) => g.units.flat())
+  // a burst of updates moves rows once, when it settles (settle.ts); the filter and your clicks at once
+  const groups = useSettled(groupedTickets(tickets, query), ticketId, tierId, `${query}|${JSON.stringify(over)}`), list = groups.flatMap((g) => g.units.flat())
+  useFlip(nav, shapeKey(groups, ticketId, tierId), tickets.map(ticketId))
   useTouch('exec', selected)
   const seen = recent('exec', 5, now)
   const byId = new Map(tickets.map((t) => [t.id, t]))
   const activeRef = useRef<HTMLDivElement>(null)
-  const openGroup = list.find((t) => t.id === selected) && groupOf(list.find((t) => t.id === selected)!).id // its colour moving shows too
+  // the section the open ticket shows in (as shown: once a burst has settled, so it glows once, where it landed)
+  const openTier = groups.find((g) => g.units.some((u) => u.some((t) => t.id === selected)))?.tier.id
   const was = useRef('')
   const [moved, setMoved] = useState(false)
+  // whether the open ticket was in sight before this render: a move follows it only if you were looking at it (else
+  // every move of it pulled the list away from where you were reading)
+  const inSight = useRef(false), sawIt = useRef(false)
+  const sight = () => { const r = activeRef.current?.getBoundingClientRect(), b = nav.current?.getBoundingClientRect(); return !!r && !!b && r.bottom > b.top && r.top < b.bottom }
+  useLayoutEffect(() => { sawIt.current = inSight.current; inSight.current = sight() })
+  useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [selected])
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    // same ticket, new group: a sync or a run moved it; show where it went
+    // same ticket, another section: a sync or a run moved it; show where it went
     const [id, g] = was.current.split('|')
-    if (id === selected && g && openGroup && g !== openGroup) { setMoved(true); setTimeout(() => setMoved(false), 1600) }
-    was.current = `${selected}|${openGroup ?? ''}`
-  }, [selected, openGroup])
+    was.current = `${selected}|${openTier ?? ''}`
+    if (id !== selected || !g || !openTier || g === openTier) return
+    setMoved(true)
+    if (sawIt.current) activeRef.current?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    const t = setTimeout(() => setMoved(false), 1600)
+    return () => { clearTimeout(t); setMoved(false) }
+  }, [selected, openTier])
   // folded sections, per browser (stored as flips of the default: Later and Handed over start folded); a filter shows everything,
   // and a folded section still shows the open ticket
   const [folded, setFolded] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('exec-folded-tiers') ?? '[]') } catch { return [] } })
@@ -259,7 +274,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
         </label>
       </div>
 
-      <nav ref={nav} className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-4" aria-label="Tickets">
+      <nav ref={nav} onScroll={() => { inSight.current = sight() }} className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-4" aria-label="Tickets">
         {list.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-6 py-20 text-center">
             <span className="flex size-12 items-center justify-center rounded-2xl bg-fill"><Inbox className="size-6 text-fg-3" aria-hidden /></span>
