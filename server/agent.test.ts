@@ -33,7 +33,10 @@ test('one agent run end to end: its log, its result, the feed, and how it ended'
   assert.equal(ended.resulted, true); assert.equal(ended.turns, 4); assert.equal(ended.code, 0); assert.equal(ended.cancelled, false)
   assert.match(ended.stderr, /a warning/)
   // every line went to the log, stamped with when it arrived
-  const log = readFileSync(join(LOG_DIR, 'a_b_9.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  // (the log is a stream: its last line can still be on its way when the run ends, so wait for it whole)
+  let text = ''
+  for (let i = 0; i < 100; i++) { text = readFileSync(join(LOG_DIR, 'a_b_9.jsonl'), 'utf8'); if (text.endsWith('\n') && text.trim().split('\n').length >= 4) break; await new Promise((r) => setTimeout(r, 20)) }
+  const log = text.trim().split('\n').map((l) => JSON.parse(l))
   assert.equal(log.length, 4); assert.ok(log.every((l) => l.timestamp))
   // the feed: the failed connector, the tool, the refusal where it happened, the result
   const feed = (await loadActivity('a/b#9')).map((a) => a.kind)
