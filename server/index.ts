@@ -24,7 +24,7 @@ import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
-import { defaultBranch, tokenChanged, getMe, gh, ghBudget, ghCall, outside, poll, pollPrs, prHealth, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
+import { defaultBranch, tokenChanged, getMe, gh, ghBudget, ghCall, githubTraffic, outside, poll, pollPrs, prHealth, prHealthMany, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
 import { coalescer, hookLive, hookStats, listen, listening, newSecret, targetsOf, type Handler as HookHandler, type Target as HookTarget } from './hooks.ts'
 import { askDoor, connectRepo, doorAnswer, doorResult, funnelBlocker, funnelError, FUNNEL_PORT, hookUrl, pingHook, removeHook, scopesAllowHooks, type Self } from './hookSetup.ts'
 import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
@@ -106,7 +106,7 @@ const whyFailed = (e: unknown) => {
 const health: { lastPollAt?: string; pollError?: string; polling: boolean } = { polling: false }
 const healthView = () => ({
   ...health, autoStart: state.autoStart, running: running(), waiting: waitReason(), settings: state.settings,
-  spentToday: spentToday(), overBudget: overBudget(), base: state.base, github: ghBudget, routing: routing(), now: accountNow(),
+  spentToday: spentToday(), overBudget: overBudget(), base: state.base, github: ghBudget, traffic: githubTraffic(), routing: routing(), now: accountNow(),
   // the last 7 days of agent spend, oldest first, for the sidebar meter
   spendDays: Array.from({ length: 7 }, (_, i) => {
     const day = new Date(Date.now() - (6 - i) * 86400_000).toLocaleDateString('en-CA')
@@ -1718,17 +1718,17 @@ async function pollTickets() {
       .catch((e: Error) => { console.error('github issues:', e.message); return execBoard.tickets.filter((t) => t.source === 'github') })
     const tickets = [...linear, ...issues]
     // PR health for tickets in review: red CI or open threads mean "tend"
-    await Promise.all(tickets.filter((t) => t.state.toLowerCase().includes('review') && prsOf(t).length).map(async (t) => {
-      // every linked PR (a ticket can ship as a stack), up to 12
-      await Promise.all(prsOf(t).slice(-12).map(async (pr) => {
-        // CI and threads move slowly: re-read each PR at most every 5 minutes (GitHub's budget is shared with your gh)
-        const key = `${pr.repo}#${pr.number}`
-        if (Date.now() - (healthAt.get(key) ?? 0) < 5 * 60_000) return
-        // a failed read (rate limit, network) is retried on the next poll, not 5 minutes later
-        const h = await prHealth(pr.repo, pr.number).catch(() => undefined)
-        if (h) { execBoard.health[key] = h; healthAt.set(key, Date.now()) }
-      }))
-    }))
+    // every linked PR (a ticket can ship as a stack, up to 12) whose CI and threads weren't read for 5 minutes (they move
+    // slowly, and GitHub's budget is shared with your gh): the 60 read longest ago, 20 a query, never all at once. A PR
+    // tried and not answered waits its 5 minutes too: retrying them all every minute was the burst that kept GitHub
+    // asking Concierge to slow down
+    const due = [...new Map(tickets.filter((t) => t.state.toLowerCase().includes('review')).flatMap((t) => prsOf(t).slice(-12))
+      .map((pr) => [`${pr.repo}#${pr.number}`, { repo: pr.repo, number: pr.number }] as const)).entries()]
+      .filter(([key]) => Date.now() - (healthAt.get(key) ?? 0) >= 5 * 60_000)
+      .sort(([a], [b]) => (healthAt.get(a) ?? 0) - (healthAt.get(b) ?? 0)).slice(0, 60)
+    for (const [key] of due) healthAt.set(key, Date.now())
+    const read = await prHealthMany(due.map(([, p]) => p)).catch((e: Error) => { console.error('PR health:', e.message); return new Map<string, PrHealth>() })
+    for (const [key, h] of read) execBoard.health[key] = h
     execBoard.tickets = [...tickets, ...(hasKey() ? await offList(linear) : [])]
     execBoard.error = undefined
     settleHandovers() // a PR newly linked on Linear, or merged since

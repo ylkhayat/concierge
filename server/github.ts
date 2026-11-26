@@ -22,12 +22,22 @@ const queue: (() => void)[] = []
 async function gate<T>(f: () => Promise<T>): Promise<T> {
   if (running >= AT_ONCE) await new Promise<void>((r) => queue.push(r))
   running++
+  count()
   try { return await f() } finally { running--; queue.shift()?.() }
 }
 const cool = { until: 0, strikes: 0 }
 export const slowedUntil = () => (Date.now() < cool.until ? cool.until : 0)
 const slowNotice = () => `GitHub asked Concierge to slow down (too many requests at once): it syncs again at ${new Date(cool.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-function slowDown(retryAfter: string | null) {
+// what Concierge asked GitHub, minute by minute, and what GitHub refused last: its secondary limit counts every client of
+// the account (your agents' gh too), so this says whether Concierge's own share is what tripped it
+const asked: number[] = []
+let refused: { at: string; what: string; status: number; text: string } | undefined
+const prune = () => { while (asked.length && Date.now() - asked[0] > 60_000) asked.shift() }
+const count = () => { asked.push(Date.now()); prune() }
+export const githubTraffic = () => (prune(), { lastMinute: asked.length, refused, slowedUntil: slowedUntil() || undefined })
+function slowDown(retryAfter: string | null, what = '', status = 0, text = '') {
+  refused = { at: new Date().toISOString(), what, status, text: text.slice(0, 200) }
+  console.warn(`github: refused ${what} (${status}), ${asked.length} requests in the last minute: ${text.slice(0, 160)}`)
   cool.strikes = Math.min(cool.strikes + 1, 5)
   const wait = Math.max(Number(retryAfter) * 1000 || 0, Math.min(15 * 60_000, 60_000 * 2 ** (cool.strikes - 1)))
   cool.until = Date.now() + wait
@@ -67,7 +77,7 @@ export async function ghCall<T = unknown>(method: 'GET' | 'POST' | 'PATCH' | 'DE
   }))
   noteScopes(res.headers)
   const text = await res.text()
-  if (!res.ok && secondary(res.status, text, res.headers.get('retry-after'))) { slowDown(res.headers.get('retry-after')); throw new Error(slowNotice()) }
+  if (!res.ok && secondary(res.status, text, res.headers.get('retry-after'))) { slowDown(res.headers.get('retry-after'), `${method} ${path}`, res.status, text); throw new Error(slowNotice()) }
   let json = {} as T & { message?: string }
   try { if (text) json = JSON.parse(text) } catch { /* a 204, or not JSON */ }
   return { status: res.status, json }
@@ -102,7 +112,7 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
   if (res.status === 401) token = '' // re-read gh's token next time
   if (!res.ok) {
     const text = await res.text()
-    if (secondary(res.status, text, res.headers.get('retry-after'))) { slowDown(res.headers.get('retry-after')); if (cached) return cached.body as T; throw new Error(slowNotice()) }
+    if (secondary(res.status, text, res.headers.get('retry-after'))) { slowDown(res.headers.get('retry-after'), `GET ${path}`, res.status, text); if (cached) return cached.body as T; throw new Error(slowNotice()) }
     throw new Error(`GitHub ${res.status} on ${path}: ${text.slice(0, 200)}`)
   }
   cool.strikes = 0
@@ -240,7 +250,7 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
   const json = await res.json().catch(() => ({})) as { data?: T & { rateLimit?: { remaining: number; resetAt: string } }; errors?: { message: string }[] }
   if (!json.data) {
     const msg = json.errors?.[0]?.message ?? (json as { message?: string }).message ?? String(res.status)
-    if (secondary(res.status, msg, res.headers.get('retry-after')) || /secondary rate limit/i.test(msg)) { slowDown(res.headers.get('retry-after')); throw new Error(slowNotice()) }
+    if (secondary(res.status, msg, res.headers.get('retry-after')) || /secondary rate limit/i.test(msg)) { slowDown(res.headers.get('retry-after'), `GraphQL ${query.match(/^\s*(?:query|mutation)?\s*(?:\([^)]*\))?\s*\{\s*(?:rateLimit\{[^}]*\}\s*)?(\w+)/)?.[1] ?? 'query'}`, res.status, msg); throw new Error(slowNotice()) }
     // refused for rate: GitHub's hourly counter can still read high (another limit on the account), so treat it as empty
     if (/rate limit/i.test(msg)) Object.assign(ghBudget, { remaining: 0, resetAt: new Date(Date.now() + 15 * 60_000).toISOString() })
     throw new Error(`GitHub GraphQL: ${msg}`)
@@ -662,6 +672,31 @@ export async function refreshOne(id: string) {
   const { login } = await getMe()
   await refreshPr(pr.repo, pr.number, pr.requested, login)
   save()
+}
+
+export type PrHealth = { ci: 'success' | 'failure' | 'pending' | 'none'; openThreads: number; actionable: boolean; state: string; merged: boolean; base: string; head: string }
+const HEALTH_FIELDS = `state merged author{login} baseRefName headRefName
+        commits(last:1){nodes{commit{statusCheckRollup{state}}}}
+        reviewThreads(first:100){nodes{isResolved comments(last:1){nodes{author{login}}}}}`
+function healthOf(pr: any): PrHealth {
+  const rollup: string | undefined = pr.commits.nodes[0]?.commit.statusCheckRollup?.state
+  const ci = !rollup ? 'none' : rollup === 'SUCCESS' ? 'success' : rollup === 'FAILURE' || rollup === 'ERROR' ? 'failure' : 'pending'
+  const openThreads = pr.reviewThreads.nodes.filter((t: any) => !t.isResolved && t.comments.nodes[0]?.author?.login !== pr.author?.login).length
+  return { ci, openThreads, actionable: ci === 'failure' || openThreads > 0, state: pr.state, merged: pr.merged, base: pr.baseRefName, head: pr.headRefName }
+}
+/**
+ * Many PRs' health in a few GraphQL reads (20 a query, one after another): a read per PR, all at once, is the burst
+ * GitHub's secondary limit punishes. A PR it can't see is left out of the answer.
+ */
+export async function prHealthMany(prs: { repo: string; number: number }[]): Promise<Map<string, PrHealth>> {
+  const out = new Map<string, PrHealth>()
+  for (let k = 0; k < prs.length; k += 20) {
+    const part = prs.slice(k, k + 20)
+    const q = part.map((p, i) => { const [owner, name] = p.repo.split('/'); return `p${i}: repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){pullRequest(number:${Number(p.number)}){ ${HEALTH_FIELDS} }}` }).join(' ')
+    const d = await graphql<Record<string, { pullRequest?: any } | null>>(`query{ rateLimit{remaining resetAt} ${q} }`, {})
+    part.forEach((p, i) => { const pr = d[`p${i}`]?.pullRequest; if (pr) out.set(`${p.repo}#${p.number}`, healthOf(pr)) })
+  }
+  return out
 }
 
 /** Does this PR need its author? Red CI, or an unresolved thread whose last comment isn't the author's. */

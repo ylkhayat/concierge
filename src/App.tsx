@@ -1,4 +1,4 @@
-import { ClipboardList, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap, Palette as Swatch } from 'lucide-react'
+import { ClipboardList, Clock, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Zap, Palette as Swatch } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
@@ -312,10 +312,13 @@ export function App() {
       {n} waiting on you
     </span>
   )
+  const paused = !!health?.traffic?.slowedUntil && health.traffic.slowedUntil > Date.now()
   const syncState = (
     // a phone: its icon or dot alone (the words for the screen reader), never a word cut in half
-    <span className="flex min-w-0 items-center gap-1.5 truncate" title={health?.pollError}>
+    <span className="flex min-w-0 items-center gap-1.5 truncate" title={paused ? `${health?.pollError ?? 'GitHub asked Concierge to slow down'}. GitHub counts every client of your account (your agents' gh too); Concierge asked it ${health?.traffic?.lastMinute ?? 0} times in the last minute${health?.traffic?.refused ? `, and it refused ${health.traffic.refused.what}` : ''}.` : health?.pollError}>
       {!connected ? <><WifiOff className="size-3.5 shrink-0 text-fail" /><span className="max-sm:sr-only">reconnecting</span></>
+        // GitHub asked to slow down: a pause that ends by itself, not a failure
+        : paused ? <><Clock className="size-3.5 shrink-0 text-wait" /><span className="max-sm:sr-only">GitHub paused until {new Date(health!.traffic!.slowedUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
         : health?.pollError ? <><TriangleAlert className="size-3.5 shrink-0 text-fail" /><span className="max-sm:sr-only">GitHub sync failed</span></>
         : health?.polling ? <><LoaderCircle className="size-3.5 shrink-0 animate-spin" /><span className="max-sm:sr-only">syncing</span></>
         : <><span className="size-1.5 shrink-0 rounded-full bg-ok shadow-[0_0_0_3px_rgb(16_185_129/0.15)]" /><span className="max-sm:sr-only">synced {ago(mode === 'exec' ? exec?.at : health?.lastPollAt, now)}</span></>}
