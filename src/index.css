@@ -124,6 +124,10 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 /* the one selected look: an even accent wash, no bar, no outline; hover is the same wash, fainter */
 /* the one selected look: the chosen row lifts off the page as a card (the landing page's look), its text full strength */
 .sel { background: var(--surface-1); box-shadow: var(--e1); color: var(--fg-1); }
+/* the open item of a list (PRs, tickets, repos): it has to read at a glance, from across the room, not only as a slight
+   lift: an accent wash, an accent bar on its leading edge and an accent hairline, over the card's lift */
+.sel-row { background: color-mix(in oklch, var(--accent) 13%, var(--surface-1)); color: var(--fg-1);
+  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent), var(--e1); }
 /* every card is the same material: a surface with a hairline, a soft drop and a lit top edge, not a bare outline */
 .bg-surface-1.ring-1.ring-line:not(:focus-within), .bg-white.ring-1.ring-line:not(:focus-within) { box-shadow: var(--e1); }
 :root.dark .bg-white.ring-1.ring-line { background: var(--surface-1); }

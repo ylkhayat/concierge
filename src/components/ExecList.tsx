@@ -207,7 +207,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
       <div key={t.id} data-flip={t.id} ref={active ? activeRef : undefined} onClick={() => !(t.repo && away.has(t.repo)) && onSelect(t.id)} data-away={(t.repo && away.has(t.repo)) || undefined} data-held={(!!t.repo && !!held[t.repo] && !away.has(t.repo)) || undefined} title={t.repo && held[t.repo] ? `Actions off: ${held[t.repo]}` : undefined} aria-disabled={(t.repo && away.has(t.repo)) || undefined} onMouseEnter={() => prefetchFeed(`ticket:${t.id}`)} {...drag(t.id, pickable)} role="button" tabIndex={0} aria-current={active} style={t.repo ? appColor(t.repo).style : undefined}
            onKeyDown={(e) => e.key === 'Enter' && !(t.repo && away.has(t.repo)) && onSelect(t.id)}
            className={`group relative ${up || down ? '' : 'mb-0.5'} flex w-full cursor-pointer ${active && moved ? 'animate-[moved_1.6s_ease-out]' : ''} items-center gap-2.5 overflow-hidden rounded-ctl px-2.5 py-2 text-left -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${
-             active ? 'sel' : on ? 'bg-accent/6 ring-1 ring-accent/25' : 'hov'}`}>
+             active ? 'sel-row' : on ? 'bg-accent/6 ring-1 ring-accent/25' : 'hov'}`}>
         {up && <span className="absolute left-[22px] top-0 h-1/2 w-px bg-fill-strong" aria-hidden />}
         {down && <span className="absolute bottom-0 left-[22px] h-1/2 w-px bg-fill-strong" aria-hidden />}
         {t.busy && <span className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-run/10"><span className="block h-full w-1/3 animate-[shimmer_1.4s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-run to-transparent" /></span>}

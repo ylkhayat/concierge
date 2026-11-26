@@ -323,7 +323,7 @@ function Stack({ prs, here, byNumber, selected, onSelect, now, activeRef, pick, 
   )
 }
 
-const ACTIVE = 'sel'
+const ACTIVE = 'sel-row'
 const PICKED = 'bg-accent/6 ring-1 ring-accent/25'
 const IDLE = 'hov'
 
