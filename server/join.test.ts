@@ -75,9 +75,9 @@ test('whois: your own login is yours; another person or a tagged node is not', a
   await new Promise<void>((r) => ts.listen(sock, r))
   process.env.TAILSCALE_SOCKET = sock
   try {
-    assert.deepEqual(await join_.whoIs('100.1.2.3'), { login: 'me@x.com', mine: true, link: false })
-    assert.deepEqual(await join_.whoIs('100.9.9.9'), { login: 'someone@y.com', mine: false, link: false })
-    assert.deepEqual(await join_.whoIs('100.5.5.5'), { login: 'me@x.com', mine: false, link: true })
+    assert.deepEqual(await join_.whoIs('100.1.2.3'), { login: 'me@x.com', mine: true, link: false, node: 'laptop' })
+    assert.deepEqual(await join_.whoIs('100.9.9.9'), { login: 'someone@y.com', mine: false, link: false, node: 'theirs' })
+    assert.deepEqual(await join_.whoIs('100.5.5.5'), { login: 'me@x.com', mine: false, link: true, node: 'concierge-mac' })
     // a Concierge link (what a new machine's standby joins from by itself) on a tailnet with only you on it: only you
     // could have tagged it, so it joins at once; with someone else on the tailnet, it waits for you
     assert.equal((await join_.ask({ name: 'newmac' }, '100.5.5.5') as { state: string }).state, 'approved')
