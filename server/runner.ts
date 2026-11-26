@@ -1210,6 +1210,9 @@ function start(pr: Pr, on?: string) {
         job.leftNothing = job.next?.source === 'agent' && !job.next.steps.length
         // it saw what waited and found nothing to do: those comments, by id, aren't offered for another Fix on their own
         if (job.leftNothing && pr.mine) pr.settledIds = [...(pr.waitingIds ?? [])]
+        // a task it was asked to hand to a ticket's own agent (HANDOVER <id>: brief): that ticket's run starts (index.ts)
+        const hs = handoversIn(String(r.result), [])
+        if (hs.length) bus.emit('pr-handovers', pr, hs)
       }
     },
     onEnd: (e) => {

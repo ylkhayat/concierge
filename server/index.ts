@@ -24,11 +24,11 @@ import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
-import { defaultBranch, runOwns, tokenChanged, getMe, gh, ghBudget, ghCall, githubTraffic, outside, poll, pollPrs, prHealth, prHealthMany, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
+import { defaultBranch, ghSend, runOwns, tokenChanged, getMe, gh, ghBudget, ghCall, githubTraffic, outside, poll, pollPrs, prHealth, prHealthMany, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
 import { coalescer, hookLive, hookStats, listen, listening, newSecret, targetsOf, type Handler as HookHandler, type Target as HookTarget } from './hooks.ts'
 import { askDoor, connectRepo, doorAnswer, doorResult, funnelBlocker, funnelError, FUNNEL_PORT, hookUrl, pingHook, removeHook, scopesAllowHooks, type Self } from './hookSetup.ts'
-import { assignIssue, commentOnIssue, issueOf, myIssues } from './issues.ts'
-import { assignToMe, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
+import { assignIssue, commentOnIssue, issueKeys, issueOf, keyFor, myIssues } from './issues.ts'
+import { assignToMe, gql, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
 import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, togetherPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
 import { cachedStackTour, makeStackTour, writingStackTour } from './stackTour.ts'
@@ -451,8 +451,8 @@ function batchStep(run: ExecRun) {
  * A run handed work to another ticket: that ticket is assigned to you and gets its own run with the brief, so its
  * progress is tracked there; the handing run's activity says where it went.
  */
-async function handOver(from: ExecRun, h: Handover) {
-  const src = from.ids.join(', '), key = `exec:${from.id}`, at = () => new Date().toISOString()
+async function handOver(from: ExecRun | { src: string; key: string }, h: Handover) {
+  const src = 'src' in from ? from.src : from.ids.join(', '), key = 'src' in from ? from.key : `exec:${from.id}`, at = () => new Date().toISOString()
   const repo = repoFor(h.id, config.exec.repoByPrefix)
   if (!repo) { note(key, { at: at(), kind: 'error', text: `Not handed over to ${h.id}: no repository is mapped for ${h.id.split('-')[0]} (Settings › Workflows).` }); return }
   if (ticketBusy(h.id)) { note(key, { at: at(), kind: 'event', text: `${h.id} already has a run going; the handover waits for you there.` }); return }
@@ -463,6 +463,10 @@ async function handOver(from: ExecRun, h: Handover) {
   if (next) alert(ticketTarget(h.id), `Handed over from ${src}: its run started`, 'info')
   void pollTickets()
 }
+
+// a PR's agent handing a task to a ticket's own agent (its HANDOVER lines, runner.ts): that ticket's run starts, and
+// the PR's feed says so, as a Ship run's hand-overs do
+bus.on('pr-handovers', (p: Pr, hs: Handover[]) => { for (const h of hs) void handOver({ src: `#${p.number}`, key: p.id }, h) })
 
 // --- a ticket hands over to its PRs (handover.ts): from then on their agents own its next steps ---------------
 const prKey = (p: PrRef) => `${p.repo}#${p.number}`
@@ -3365,7 +3369,7 @@ async function stepsOf(holder: { summary?: string; next?: NextSteps; state: stri
   return holder.next
 }
 // each PR has its own agent: one never changes another PR's branch, it names the work and Concierge hands it over
-const OWN_PR = 'Change only this PR\'s branch. Work that belongs to another of my PRs goes to that PR\'s own agent: name it as a next step for that PR (with its #number) instead of doing it here. Work on someone else\'s PR is never an agent\'s: offer to draft a comment to its author instead. Never suggest again a step that was already handed over. '
+const OWN_PR = 'Change only this PR\'s branch. Work that belongs to another of my PRs goes to that PR\'s own agent: name it as a next step for that PR (with its #number) instead of doing it here. Work on someone else\'s PR is never an agent\'s: offer to draft a comment to its author instead. A task I ask you to hand to a ticket\'s agent (or one that belongs to a ticket, not to a PR): write a line HANDOVER <TICKET-ID>: <what to do>, the brief going on over the next lines until a blank one, and Concierge starts that ticket\'s own run with it; never say you can\'t hand over. Never suggest again a step that was already handed over. '
 const REPLY_NOTE = '\n\n(Sent from Concierge: this is my answer to your last message. Carry on from where you stopped. '
   + OWN_PR + 'Push, post or submit only if I said so above.)'
 const AFTER_NOTE = '\n\n(Sent from Concierge while you were finishing that run: carry on from where you ended, with this in mind. '
@@ -3397,6 +3401,43 @@ app.get('/prs/:id/next', async (c) => {
     return c.json({ steps: n && gone.size ? { ...n, steps: (n.steps ?? []).filter((x) => !handed(x.text)) } : n })
   } catch (e) { return c.json({ error: (e as Error).message }, 502) }
 })
+// --- a task handed to another agent from a PR's discussion or chat: onto the ticket it names, or a new ticket made in
+// the workspace's tracker (Linear for an organization that manages its work there, else the repo's GitHub issues),
+// assigned to you; then its own Ship run starts with the brief, and the PR's feed says where it went
+app.post('/handover/new', async (c) => {
+  const { prId, label, brief, ticket } = await c.req.json<{ prId: string; label: string; brief: string; ticket?: string }>()
+  const p = pr(prId)
+  if (!p || !brief?.trim()) return c.json({ error: 'Say which PR, and what to hand over' }, 400)
+  const repo = p.repo, title = (label || brief.split('\n')[0]).slice(0, 120)
+  const body = `${brief.trim()}\n\nHanded over from ${p.url ?? `${repo}#${p.number}`}.`
+  let id = ticket?.trim().toUpperCase()
+  try {
+    if (!id) {
+      const org = (await orgs()).find((o) => o.owner === repo.split('/')[0])
+      if (org?.tracker === 'linear') {
+        const prefix = Object.entries(config.exec.repoByPrefix).find(([, r]) => r === repo)?.[0]
+        if (!prefix) return c.json({ error: `No Linear team works in ${repo}: give it one under Settings › Workspaces` }, 400)
+        const team = (await linearTeams()).find((t) => t.key === prefix)
+        if (!team) return c.json({ error: `Linear has no team ${prefix} your key can see` }, 400)
+        const me = await gql<{ viewer: { id: string } }>('{ viewer { id } }')
+        const r = await gql<{ issueCreate: { issue: { identifier: string } } }>('mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { identifier } } }',
+          { i: { teamId: team.id, title, description: body, assigneeId: me.viewer.id } })
+        id = r.issueCreate.issue.identifier
+      } else {
+        const key = [...issueKeys].find(([, r]) => r === repo)?.[0] ?? keyFor(repo, (k) => k in config.exec.repoByPrefix)
+        const r = await ghSend<{ number: number }>('POST', `/repos/${repo}/issues`, { title, body, assignees: [await getMe()] })
+        id = `${key}-${r.number}`
+      }
+    }
+  } catch (e) { return c.json({ error: `Couldn't make its ticket: ${(e as Error).message.split('\n')[0]}` }, 502) }
+  if (ticketBusy(id)) { logged(p.id, `Handed over to ${id}, which already has a run going: the brief waits for you there`); return c.json({ id, started: false }) }
+  const cmd = slot('exec') ? execCommand(slot('exec'), [id]) : ''
+  const run = enqueueExec([id], repo, false, { label: `Handed over from #${p.number}`, prompt: `${cmd}\n\nHanded over from ${repo}#${p.number}, whose discussion decided this:\n${brief.trim()}`.trim() })
+  logged(p.id, run ? `Handed over to ${id}: its own run started, and its progress shows on ${id}` : `Made ${id}, but its run couldn't start: start it from Ship`)
+  void pollTickets()
+  return c.json({ id, started: !!run })
+})
+
 // hand linked work from one agent to the other: the source's latest word goes to the target's own session, which
 // continues; the source stops being the one that acts. Refused while either is working (stop it first).
 app.post('/handoff', async (c) => {

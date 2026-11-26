@@ -84,6 +84,13 @@ export const Meter = ({ of, at, color, pulse }: { of: number; at: number; color:
 export function actOn(a: Action, { target, topic, onChange, onSteer, onView, toast }: { target: string; topic: Topic; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast }) {
   const fail = (e: Error) => toast(e.message, 'error')
   if (a.kind === 'steer') return a.text && onSteer(a.text).then(() => toast('Sent to the agent'), fail)
+  // a task for another agent: onto the ticket it names, or a new one in the workspace's tracker, and its own run starts
+  if (a.kind === 'handover') {
+    const prId = target.startsWith('pr:') ? target.slice(3) : undefined
+    if (!prId) return toast('Open the PR itself to hand a task over from it', 'error')
+    return api('/handover/new', { prId, label: a.label, brief: a.text ?? a.label, ticket: a.ticket })
+      .then((r: { id: string; started: boolean }) => toast(r.started ? `Handed over to ${r.id}: its run started` : `Handed over to ${r.id}: it already has a run, the brief waits there`), fail)
+  }
   if (a.kind === 'ask-author' || a.kind === 'ask-community') return navigator.clipboard.writeText(a.text ?? a.label).then(() => toast(`Copied: paste it to ${a.kind === 'ask-author' ? 'the author' : 'your team'}`), fail)
   if (onView) { onView(a.kind); toast(`Opened ${a.kind === 'tour' ? 'the tour' : `the ${a.kind} view`} in Explain`); return }
   return api('/discussions/say', { target, topic, text: a.label }).then(onChange, fail)
@@ -119,7 +126,7 @@ export function useLaneActions({ d, target, onChange, onSteer, onView, toast, mi
           <button key={key} type="button" aria-pressed={on} title={a.text ?? a.label} onClick={() => toggle(key)} style={{ '--lane': `var(--vital-${topic})` } as React.CSSProperties}
                   className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-left text-small transition-colors ${on ? 'bg-[color-mix(in_oklch,var(--lane)_22%,transparent)] text-fg-1 ring-1 ring-[var(--lane)]' : 'bg-[color-mix(in_oklch,var(--lane)_8%,transparent)] text-fg-2 ring-1 ring-[color-mix(in_oklch,var(--lane)_25%,transparent)] hover:text-fg-1'}`}>
             {on ? <CheckCircle2 className="size-3.5 shrink-0" /> : a.kind === 'steer' ? <Send className="size-3.5 shrink-0" /> : a.kind.startsWith('ask') ? <Copy className="size-3.5 shrink-0" /> : <Compass className="size-3.5 shrink-0" />}
-            <span className="truncate">{a.kind === 'steer' ? `${mine === undefined ? 'For the agent' : mine ? 'Revise' : 'Review again'}: ${a.label}` : a.label}</span>
+            <span className="truncate">{a.kind === 'steer' ? `${mine === undefined ? 'For the agent' : mine ? 'Revise' : 'Review again'}: ${a.label}` : a.kind === 'handover' ? `Hand over: ${a.label}${a.ticket ? ` (${a.ticket})` : ''}` : a.label}</span>
           </button>
         )
       })}

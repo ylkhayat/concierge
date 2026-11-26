@@ -46,12 +46,12 @@ export type Diagram =
 /** What a discussion over several PRs settled for one of them: the decision as it applies there, and its agent's steer. */
 export type PerPr = { number: number; decision: string; steer?: string | null; sentAt?: string }
 export type Adr = { title: string; status: 'proposed' | 'accepted'; context: string; decision: string; consequences: string; alternatives?: string }
-export type Action = { kind: 'tour' | 'business' | 'technical' | 'norms' | 'ask-author' | 'ask-community' | 'steer'; label: string; text?: string }
+export type Action = { kind: 'tour' | 'business' | 'technical' | 'norms' | 'ask-author' | 'ask-community' | 'steer' | 'handover'; label: string; text?: string; ticket?: string }
 
 
 const ACTIONS = { type: 'array', items: { type: 'object', properties: {
-  kind: { type: 'string', enum: ['tour', 'business', 'technical', 'norms', 'ask-author', 'ask-community', 'steer'] },
-  label: { type: 'string' }, text: { type: 'string' },
+  kind: { type: 'string', enum: ['tour', 'business', 'technical', 'norms', 'ask-author', 'ask-community', 'steer', 'handover'] },
+  label: { type: 'string' }, text: { type: 'string' }, ticket: { type: 'string' },
 }, required: ['kind', 'label'] } }
 const ADR = { type: 'object', properties: {
   title: { type: 'string' }, status: { type: 'string', enum: ['proposed', 'accepted'] },
@@ -86,6 +86,10 @@ const FORMAT: Record<Topic, string> = {
     'Return: reply (markdown, at most 30 words, no headings, at most 3 bullets: the developer reads every reply in a busy chat; detail belongs in the record); stage (concluded once they understand what matters); status (at most 6 words on their grasp, e.g. "knows the flow, not the retries"); summary (what they understand and what is still unclear, 1 to 3 sentences); steer (the changes collected for the coding agent, as one instruction, else null); actions.',
   ].join('\n'),
 }
+
+// either discussion can hand a task to another agent: it never says it can't
+const HANDOVER = 'handover (label: the task in 2-5 words; text: the brief for the agent that takes it: what to do, why, and what was decided here; ticket: an existing ticket id when the task belongs to one, else omit): when the developer asks to hand a task over to another agent, or a piece of work belongs outside this PR. Offering it is how you hand over: never say you cannot.'
+for (const t of ['intent', 'understanding'] as const) FORMAT[t] = FORMAT[t].replace('Every step your reply recommends', `${HANDOVER}\nEvery step your reply recommends`)
 
 const keyOf = (target: string, topic: Topic) => `${target}|${topic}`
 
