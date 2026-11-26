@@ -6,7 +6,7 @@ import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { profile } from './profile.ts'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { watch as fsWatch } from 'node:fs'
+import { unlinkSync, watch as fsWatch } from 'node:fs'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -850,7 +850,7 @@ async function hooksView() {
   const self = (await tsStatus())?.Self as Self | undefined
   const h = state.hooks, stats = hookStats()
   // the door as the fleet's standby last said it stands on this machine (it runs Tailscale, the app doesn't)
-  const door = doorResult(HOSTS_DIR, fleet.machine), on = !!h?.url && !!door?.on
+  const door = doorResult(DOOR_DIR, fleet.machine), on = !!h?.url && !!door?.on
   const scopes = tokenScopes() ?? await readScopes().catch(() => undefined)
   return {
     control: !fleet.elsewhere(), machine: fleet.machine, listening: listening(), port: hookPort(), funnelPort: FUNNEL_PORT,
@@ -862,19 +862,21 @@ async function hooksView() {
   }
 }
 export type HooksView = Awaited<ReturnType<typeof hooksView>>
-const HOSTS_DIR = join(STATE_DIR, 'hosts')
+// the door's ask and answer sit beside update-asked: not in hosts/, where every .json is a machine's heartbeat
+const DOOR_DIR = STATE_DIR
+try { unlinkSync(join(STATE_DIR, 'hosts', 'hooks-funnel.json')) } catch { /* v299 put it there: it read as a machine */ }
 /** Ask the fleet to open or close the webhook door here, and wait for its standby to say it did (Tailscale is the
  *  fleet's: a machine without the fleet has no door to open). */
 async function door(on: boolean) {
   if (!fleet.machine) throw new Error('Live updates need the fleet: Tailscale, which opens the door, runs there (fleet/README.md)')
-  const r = await doorAnswer(HOSTS_DIR, fleet.machine, askDoor(HOSTS_DIR, on, hookPort()))
+  const r = await doorAnswer(DOOR_DIR, fleet.machine, askDoor(DOOR_DIR, on, hookPort()))
   if (!r) throw new Error('The fleet hasn\'t answered yet: its standby runs Tailscale and looks every 10 seconds. Is it running on this machine?')
   if (!r.ok) throw new Error(funnelError(r.error ?? ''))
   if (r.on !== on) throw new Error(on ? 'Funnel didn\'t take' : 'Funnel stayed on')
 }
 // the door follows the control plane: each start says what is wanted now (open, or closed if it was turned off on
 // another machine meanwhile), and the standby opens it only where this machine runs Concierge, closing it anywhere else
-if (fleet.machine) askDoor(HOSTS_DIR, !!state.hooks?.url, hookPort())
+if (fleet.machine) askDoor(DOOR_DIR, !!state.hooks?.url, hookPort())
 const hookFail = (c: Context, e: unknown) => c.json({ error: (e as Error).message }, 400)
 app.get('/hooks', async (c) => c.json(await hooksView()))
 // Step 1: the funnel, for the hook path only (a secret made the first time, the listener started)

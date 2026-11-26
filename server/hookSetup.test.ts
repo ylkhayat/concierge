@@ -10,12 +10,12 @@ const self = { DNSName: 'box.tail123.ts.net.', Capabilities: ['https', 'funnel',
 test('the app asks the fleet for the door and reads its answer, never running Tailscale itself', async () => {
   const hosts = mkdtempSync(join(tmpdir(), 'door-'))
   const at = askDoor(hosts, true, 8790, 1000)
-  assert.deepEqual(JSON.parse(readFileSync(join(hosts, 'hooks-funnel.json'), 'utf8')), { on: true, port: 8790, at: 1000 })
+  assert.deepEqual(JSON.parse(readFileSync(join(hosts, 'hooks-funnel.ask'), 'utf8')), { on: true, port: 8790, at: 1000 })
   assert.equal(doorResult(hosts, 'windows'), undefined) // the standby hasn't said anything yet
   assert.equal(await doorAnswer(hosts, 'windows', at, 50, 10), undefined) // and doesn't in time: no answer
-  writeFileSync(join(hosts, 'hooks-funnel.windows.result.json'), JSON.stringify({ on: false, ok: true, asked: 999, at: 1 })) // an older ask's
+  writeFileSync(join(hosts, 'hooks-funnel.windows.answer'), JSON.stringify({ on: false, ok: true, asked: 999, at: 1 })) // an older ask's
   assert.equal(await doorAnswer(hosts, 'windows', at, 50, 10), undefined)
-  writeFileSync(join(hosts, 'hooks-funnel.windows.result.json'), JSON.stringify({ on: true, ok: true, asked: 1000, at: 2 }))
+  writeFileSync(join(hosts, 'hooks-funnel.windows.answer'), JSON.stringify({ on: true, ok: true, asked: 1000, at: 2 }))
   assert.deepEqual(await doorAnswer(hosts, 'windows', at, 50, 10), { on: true, ok: true, asked: 1000, at: 2 })
   assert.equal(doorResult(hosts, 'mac'), undefined) // each machine's standby answers for itself
   assert.equal(doorResult(hosts, undefined), undefined) // no fleet, no door

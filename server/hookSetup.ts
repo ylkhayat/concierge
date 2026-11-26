@@ -4,8 +4,9 @@
 // tests run them against fakes.
 //
 // Tailscale is the fleet's, not the app's (the app has no tailscale command, only a read-only look at the link's
-// status): the app says whether it wants the door (hosts/hooks-funnel.json) and the fleet's standby, which runs the
-// link, opens or closes it on the control plane and says how it went (hosts/hooks-funnel.<machine>.result.json).
+// status): the app says whether it wants the door (hooks-funnel.ask, beside update-asked) and the fleet's standby,
+// which runs the link, opens or closes it on the control plane and says how it went (hooks-funnel.<machine>.answer).
+// Not in hosts/, where every .json is a machine's heartbeat.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { EVENTS, HOOK_PATH } from './hooks.ts'
@@ -13,23 +14,23 @@ import { EVENTS, HOOK_PATH } from './hooks.ts'
 export const FUNNEL_PORT = 8443 // Funnel allows 443, 8443 and 10000; 443 is the app's (tailnet only)
 
 /** The door as the app wants it, for the fleet's standby to apply: `at` tells this ask from the last. */
-export function askDoor(hosts: string, on: boolean, port: number, at = Date.now()): number {
-  mkdirSync(hosts, { recursive: true })
-  const tmp = join(hosts, '.hooks-funnel.tmp')
+export function askDoor(dir: string, on: boolean, port: number, at = Date.now()): number {
+  mkdirSync(dir, { recursive: true })
+  const tmp = join(dir, '.hooks-funnel.tmp')
   writeFileSync(tmp, JSON.stringify({ on, port, at }))
-  renameSync(tmp, join(hosts, 'hooks-funnel.json'))
+  renameSync(tmp, join(dir, 'hooks-funnel.ask'))
   return at
 }
 export type DoorResult = { on: boolean; ok: boolean; asked: number; at: number; error?: string | null }
 /** What the standby on `machine` last did with the door, if anything. */
-export function doorResult(hosts: string, machine: string | undefined): DoorResult | undefined {
+export function doorResult(dir: string, machine: string | undefined): DoorResult | undefined {
   if (!machine) return undefined
-  try { return JSON.parse(readFileSync(join(hosts, `hooks-funnel.${machine}.result.json`), 'utf8')) as DoorResult } catch { return undefined }
+  try { return JSON.parse(readFileSync(join(dir, `hooks-funnel.${machine}.answer`), 'utf8')) as DoorResult } catch { return undefined }
 }
 /** The standby's answer to the ask made at `at` (it looks every 10 seconds), or undefined after `ms`. */
-export async function doorAnswer(hosts: string, machine: string | undefined, at: number, ms = 45_000, step = 1000): Promise<DoorResult | undefined> {
+export async function doorAnswer(dir: string, machine: string | undefined, at: number, ms = 45_000, step = 1000): Promise<DoorResult | undefined> {
   for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, step))) {
-    const r = doorResult(hosts, machine)
+    const r = doorResult(dir, machine)
     if (r && r.asked >= at) return r
   }
   return undefined
