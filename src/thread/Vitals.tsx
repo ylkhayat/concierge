@@ -4,9 +4,7 @@
 // opens, inside itself, on what is settled, what it has for the agent and what to ask next. One not assessed yet is
 // pale: point at it and it offers to start, with the question that fits where the conversation stands.
 import { CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-const UnderstandingMap = lazy(() => import('./ChangeMap.tsx').then((m) => ({ default: m.UnderstandingMap })))
-const IntentFlow = lazy(() => import('./ChangeMap.tsx').then((m) => ({ default: m.IntentFlow })))
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { Action, Diagram, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
 import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
@@ -24,6 +22,21 @@ const START: Record<Topic, string> = {
 }
 type Toast = (m: string, tone?: 'ok' | 'error') => void
 const STEP: Record<Stage, number> = { new: 0, open: 1, converging: 2, concluded: 3 }
+
+// the boards (ChangeMap: React Flow, ELK) are their own chunk, fetched once and early (the page settling, a pointer on
+// the row) and kept here, so a board renders at once instead of suspending: one lazy per board suspended on each first
+// switch, and its spinner showed between the two
+type MapModule = typeof import('./ChangeMap.tsx')
+let mapModule: MapModule | undefined, mapLoading: Promise<MapModule> | undefined
+const loadMap = () => (mapLoading ??= import('./ChangeMap.tsx').then((m) => (mapModule = m), (e) => { mapLoading = undefined; throw e }))
+const Spinner = () => <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>
+/** Intent's or Understanding's board; the boards' own spinner while their chunk is still on its way. */
+function Board({ topic, prId, path, fork, toast }: { topic: Topic; prId: string; path?: string; fork?: Extract<Diagram, { kind: 'fork' }>; toast: Toast }) {
+  const [m, setM] = useState(mapModule)
+  useEffect(() => { if (!m) loadMap().then(setM, () => toast('Could not load the board: reload the page', 'error')) }, [m])
+  if (!m) return <Spinner />
+  return topic === 'understanding' ? <m.UnderstandingMap prId={prId} path={path} toast={toast} /> : <m.IntentFlow prId={prId} path={path} fork={fork} toast={toast} />
+}
 
 /** A vital: a quiet card that always names itself (its colour dot and name), says in one line what is going on now,
  *  and shows how far along it is on a hairline at its foot. A faint tint of its colour drifts across it, faster while
@@ -155,10 +168,10 @@ const PHASE: Record<NonNullable<D['phase']>, string> = { refreshing: 'Catching u
 
 /** Intent or Understanding: a card that knows one side of the work. Its few words on the tile, its gist on hover, the
  *  whole page when clicked; asked from the chat's box (Send to Intent / Understanding), it lights up and answers here. */
-export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen, prId, explainPath }: {
+export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen, pane = open, prId, explainPath }: {
   target: string; topic: Topic; d?: D; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>
   onSteerPr?: (number: number, text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast; here?: number; prId?: string; explainPath?: string
-  open?: boolean; onOpen?: () => void
+  open?: boolean; onOpen?: () => void; pane?: boolean // pane: its card is drawn (open, or fading out under the next one)
 }): { tile: ReactNode; details: ReactNode } {
   const t = TOPIC[topic], b = d?.brief, started = !!b || !!d?.messages.length, busy = !!d?.busy
   const asked = (d?.messages ?? []).slice(-6)
@@ -204,8 +217,8 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
     </ul>
   ) })
   // the whole card, under the row, when its tile is clicked: what it knows, then what you asked it
-  const details = open ? (
-    <div className={`card flex ${prId ? 'h-full' : ''} flex-col gap-3 p-4 transition-shadow duration-300 animate-[detail-in_200ms_var(--ease-snappy)] ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
+  const details = pane ? (
+    <div className={`card flex ${prId ? 'h-full' : ''} flex-col gap-3 p-4 transition-shadow duration-300 ${busy ? 'shadow-[0_0_0_1.5px_var(--lane),0_0_36px_-8px_var(--lane)]' : ''}`} style={{ '--lane': lane } as React.CSSProperties}>
       <div className="flex flex-wrap items-center gap-2">
         <t.icon className="size-4" style={{ color: lane }} />
         <span className="text-small font-semibold text-fg-1">{t.label}</span>
@@ -221,9 +234,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
       {/* on a PR: the change as a picture, the whole height (ChangeMap); elsewhere (a ticket), the card's slides */}
       {prId ? (
         <div className="min-h-0 flex-1">
-          <Suspense fallback={<div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>}>
-            {topic === 'understanding' ? <UnderstandingMap prId={prId} path={explainPath} toast={toast} /> : <IntentFlow prId={prId} path={explainPath} fork={b?.diagram?.kind === 'fork' ? b.diagram : undefined} toast={toast} />}
-          </Suspense>
+          <Board topic={topic} prId={prId} path={explainPath} fork={b?.diagram?.kind === 'fork' ? b.diagram : undefined} toast={toast} />
         </div>
       ) : b || d?.messages.length ? <Slides slides={[...slidesOf(b, d?.messages ?? []), ...perPrSlides]} /> : !busy && <p className="text-small text-fg-3">{t.question}</p>}
       {prId && (() => { const m = d?.messages.at(-1); return m?.who === 'agent' && <Answered text={m.text.replace(/[#*_`>]/g, '')} /> })()}
@@ -247,7 +258,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
   return { tile, details }
 }
 
-type TopicProps = Omit<Parameters<typeof topicVital>[0], 'topic' | 'd' | 'open' | 'onOpen'> & { d?: Discussions }
+type TopicProps = Omit<Parameters<typeof topicVital>[0], 'topic' | 'd' | 'open' | 'onOpen' | 'pane'> & { d?: Discussions }
 /** The row over the panel: the three boxes; under them what a clicked one holds, and (a PR in a stack) whether Intent
  *  and Understanding are about this PR or all of them. A click on one not assessed yet starts it. */
 export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNode; topics: TopicProps; scope?: { size: number; stack: boolean; set: (stack: boolean) => void }; inline?: boolean }) {
@@ -276,11 +287,19 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
     addEventListener('resize', fit)
     return () => { ro.disconnect(); removeEventListener('resize', fit) }
   }, [open, inline])
+  // one card to the other: the overlay stays and the card it leaves stays drawn (under the new one, still whole) until
+  // the new one has faded in, so the chat under it never shows. Set while rendering, so the old card never unmounts
+  const [was, setWas] = useState<{ now?: Topic; was?: Topic }>({})
+  if (was.now !== open) setWas({ now: open, was: open && was.now ? was.now : undefined })
+  useEffect(() => { if (!was.was) return; const t = setTimeout(() => setWas((x) => ({ now: x.now })), 220); return () => clearTimeout(t) }, [was])
+  // the boards' chunk: fetched once the page has settled, or at once when a pointer or the focus comes to the row
+  const pre = () => { if (topics.prId) loadMap().catch(() => {}) }
+  useEffect(() => { if (!topics.prId) return; const t = setTimeout(pre, 1200); return () => clearTimeout(t) }, [topics.prId])
   const { d, ...rest } = topics
-  const v = (['intent', 'understanding'] as const).map((tp) => topicVital({ ...rest, topic: tp, d: d?.[tp], open: open === tp, onOpen: () => setOpen(open === tp ? undefined : tp) }))
+  const v = (['intent', 'understanding'] as const).map((tp) => topicVital({ ...rest, topic: tp, d: d?.[tp], open: open === tp, pane: open === tp || was.was === tp, onOpen: () => setOpen(open === tp ? undefined : tp) }))
   return (
     <div ref={box} className={`relative space-y-2.5 ${inline ? '' : 'p-3'}`}>
-      <div className="grid grid-cols-3 gap-2">{shipping}{v[0].tile}{v[1].tile}</div>
+      <div className="grid grid-cols-3 gap-2" onPointerEnter={pre} onFocus={pre}>{shipping}{v[0].tile}{v[1].tile}</div>
       {scope && (
         <div className="flex items-center gap-2 px-1 text-small">
           <span className="text-fg-3">Intent and Understanding of</span>
@@ -288,9 +307,15 @@ export function Vitals({ shipping, topics, scope, inline }: { shipping: ReactNod
                 options={[{ id: 'pr', label: 'This PR' }, { id: 'stack', label: `The stack (${scope.size})` }]} />
         </div>
       )}
-      {/* what a clicked one holds: floating over the panel under the row, so nothing below it moves */}
-      {(v[0].details || v[1].details) && (
-        <div className={inline ? '' : `absolute inset-x-3 top-full z-30 -mt-1 overflow-hidden rounded-card shadow-[var(--e3)] ${rest.prId ? '' : 'max-h-[min(70vh,560px)] overflow-y-auto'}`} style={inline || !rest.prId ? undefined : { height: room }}>{v[0].details}{v[1].details}</div>
+      {/* what a clicked one holds: floating over the panel under the row, so nothing below it moves. One container for
+          both cards: it rises in when one opens and stays while you switch, the two cards stacked in its one cell */}
+      {open && (
+        <div className={`grid animate-[detail-in_200ms_var(--ease-snappy)] ${inline ? '' : `absolute inset-x-3 top-full z-30 -mt-1 overflow-hidden rounded-card bg-surface-1 shadow-[var(--e3)] ${rest.prId ? 'grid-rows-[minmax(0,1fr)]' : 'max-h-[min(70vh,560px)] overflow-y-auto'}`}`} style={inline || !rest.prId ? undefined : { height: room }}>
+          {(['intent', 'understanding'] as const).map((tp, i) => v[i].details && (
+            <div key={tp} inert={tp !== open} aria-hidden={tp !== open || undefined}
+                 className={`col-start-1 row-start-1 min-h-0 min-w-0 ${tp === open ? `relative z-[1] ${was.was ? 'animate-[fade-in_180ms_var(--ease-out)]' : ''}` : 'pointer-events-none'}`}>{v[i].details}</div>
+          ))}
+        </div>
       )}
     </div>
   )
