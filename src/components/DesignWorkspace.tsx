@@ -467,39 +467,94 @@ export function pageHtml(doc: Document, base: string): string {
 }
 
 /**
- * The one live page the board ever runs: off screen, it renders the screens that have no HTML kept yet, one after
- * another (a page is dropped before the next loads), waits until Storybook shows the story and it holds still, and
- * keeps its HTML. Each screen once, for every visit and every machine after.
+ * The live pages the board runs to keep its screens: one per Storybook, off screen, side by side. Each loads its
+ * Storybook once and goes from story to story over Storybook's own channel (no reload: a screen in about half a
+ * second), waits until the story has rendered and holds still, and keeps its HTML, for every visit and every machine
+ * after. A story that reloads the page or takes it elsewhere (a redirect to sign in) gets a page of its own once, then is
+ * let go.
  */
-function Renderer({ base, slug, sha, jobs, onDone }: { base: string; slug: string; sha: string; jobs: Shot[]; onDone: (key: string) => void }) {
-  const job = jobs[0], frame = useRef<HTMLIFrameElement>(null)
+function Renderer({ base, slug, sha, jobs, onDone }: { base: string; slug: string; sha: string; jobs: Shot[]; onDone: (key: string, ok: boolean) => void }) {
+  const books = [...new Set(jobs.map((j) => j.book!))]
+  return <>{books.map((b) => <BookRenderer key={b} base={base} slug={slug} sha={sha} book={b} jobs={jobs.filter((j) => j.book === b)} onDone={onDone} />)}</>
+}
+
+type Channel = { on: (e: string, f: () => void) => void; off: (e: string, f: () => void) => void; emit: (e: string, a: unknown) => void }
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+function BookRenderer({ base, slug, sha, book, jobs, onDone }: { base: string; slug: string; sha: string; book: string; jobs: Shot[]; onDone: (key: string, ok: boolean) => void }) {
+  const frame = useRef<HTMLIFrameElement>(null), pending = useRef(jobs), done = useRef(onDone)
+  pending.current = jobs; done.current = onDone
+  const tried = useRef(new Set<string>()), loads = useRef(0), now = useRef<string | undefined>(undefined), again = useRef(new Set<string>())
+  const [start, setStart] = useState(() => ({ story: jobs[0]?.story, n: 0 })) // the story the page is loaded at, and which load
+  const next = () => pending.current.find((j) => !tried.current.has(j.story!))
   useEffect(() => {
-    if (!job) return
-    let stop = false, last = '', still = 0
-    const t0 = Date.now(), key = `${job.book}/${job.story}`
-    const tick = async () => {
-      if (stop) return
-      const d = frame.current?.contentDocument, body = d?.body
-      if (!d || !body || body.classList.contains('sb-show-errordisplay') || Date.now() - t0 > 30_000) return void (stop || onDone(key))
-      const shown = body.classList.contains('sb-show-main') || (!/\bsb-show/.test(body.className) && Date.now() - t0 > 1500 && !!body.innerText.trim())
-      if (shown) {
-        const root = d.querySelector('#storybook-root') ?? body, sig = `${root.innerHTML.length}:${root.querySelectorAll('*').length}`
-        still = sig === last ? still + 1 : 0; last = sig
-        if (still >= 3) {
-          await d.fonts?.ready
-          if (stop) return
-          await api(`/visuals/snaps/${slug}/${sha}`, { book: job.book, story: job.story, html: pageHtml(d, `${base}/${job.book}/`) }).catch(() => {})
-          return void (stop || onDone(key))
-        }
+    if (!start.story) return
+    let stop = false
+    loads.current = 0
+    const doc = () => frame.current?.contentDocument
+    const ready = async () => { // the page's Storybook is up and showing its first story (or its error)
+      for (let t = 0; t < 150 && !stop; t++) {
+        const d = doc(), w = frame.current?.contentWindow as (Window & { __STORYBOOK_ADDONS_CHANNEL__?: Channel }) | null
+        if (d?.body?.classList.contains('sb-show-errordisplay')) return { ch: w?.__STORYBOOK_ADDONS_CHANNEL__, ok: false }
+        if (w?.__STORYBOOK_ADDONS_CHANNEL__ && d?.body?.classList.contains('sb-show-main') && d.querySelector('#storybook-root')?.firstElementChild) return { ch: w.__STORYBOOK_ADDONS_CHANNEL__, ok: true }
+        await wait(100)
       }
-      setTimeout(() => void tick(), 350)
+      return undefined
     }
-    const t = setTimeout(() => void tick(), 600)
-    return () => { stop = true; clearTimeout(t) }
-  }, [job?.book, job?.story])
-  if (!job) return null
-  return <iframe key={`${job.book}/${job.story}`} ref={frame} aria-hidden tabIndex={-1} title="" src={`${base}/${job.book}/iframe.html?id=${encodeURIComponent(job.story!)}&viewMode=story`}
-                 style={{ position: 'fixed', left: -20000, top: 0, width: job.width ?? 1280, height: job.height ?? 800, border: 0, opacity: 0, pointerEvents: 'none' }} />
+    const still = async () => { // the story's markup holds still for a moment (data arriving, effects settling)
+      let last = '', same = 0
+      for (let t = 0; t < 40 && !stop; t++) {
+        const r = doc()?.querySelector('#storybook-root'), sig = r ? `${r.innerHTML.length}:${r.querySelectorAll('*').length}` : ''
+        same = sig && sig === last ? same + 1 : 0; last = sig
+        if (same >= 2) break
+        await wait(120)
+      }
+      await doc()?.fonts?.ready
+    }
+    const keep = async (job: Shot) => {
+      const d = doc(); if (!d || stop) return false
+      return api(`/visuals/snaps/${slug}/${sha}`, { book, story: job.story, html: pageHtml(d, `${base}/${book}/`) }).then(() => true, () => false)
+    }
+    const show = (ch: Channel, story: string) => new Promise<boolean>((res) => { // Storybook's own switch, and its word that it drew it
+      const evs: Record<string, () => void> = {}
+      const end = (ok: boolean) => () => { for (const k in evs) ch.off(k, evs[k]); clearTimeout(t); res(ok) }
+      // a play function that fails still leaves the story drawn
+      for (const [k, ok] of [['storyRendered', true], ['playFunctionThrewException', true], ['storyErrored', false], ['storyThrewException', false], ['storyMissing', false]] as const) { evs[k] = end(ok); ch.on(k, evs[k]) }
+      const t = setTimeout(end(false), 12_000)
+      ch.emit('setCurrentStory', { storyId: story, viewMode: 'story' })
+    })
+    void (async () => {
+      const up = await ready()
+      if (stop) return
+      const first = pending.current.find((j) => j.story === start.story) // the one it was loaded at (a retry, too)
+      if (first) { tried.current.add(first.story!); now.current = first.story; if (up?.ok) await still(); if (stop) return; done.current(`${book}/${first.story}`, !!up?.ok && await keep(first)) }
+      if (!up?.ch) { const n = next(); if (n && !stop) setStart({ story: n.story, n: start.n + 1 }); return }
+      for (let job = next(); job && !stop; job = next()) {
+        tried.current.add(job.story!); now.current = job.story
+        const ok = await show(up.ch, job.story!)
+        if (stop) return
+        if (ok) await still()
+        if (stop) return
+        done.current(`${book}/${job.story}`, ok && await keep(job))
+      }
+    })()
+    return () => { stop = true }
+  }, [start])
+  // more to do after the page went quiet (the list arrived later): start again where it stands
+  useEffect(() => { const n = next(); if (n && !start.story) setStart({ story: n.story, n: start.n + 1 }) }, [jobs])
+  if (!start.story) return null
+  return <iframe key={start.n} ref={frame} aria-hidden tabIndex={-1} title="" src={`${base}/${book}/iframe.html?id=${encodeURIComponent(start.story)}&viewMode=story`}
+                 onLoad={() => {
+                   // loaded a second time: the story took the page elsewhere; it is let go, the page starts again at the next
+                   if (++loads.current < 2) return
+                   // loaded again: the story reloaded the page or took it elsewhere. It gets one page of its own; a
+                   // second time it is let go, and the page starts again at the next
+                   const cur = now.current; now.current = undefined
+                   if (cur && !again.current.has(cur)) { again.current.add(cur); return setStart({ story: cur, n: start.n + 1 }) }
+                   if (cur) done.current(`${book}/${cur}`, false)
+                   const n = next(); setStart({ story: n?.story, n: start.n + 1 })
+                 }}
+                 style={{ position: 'fixed', left: -20000, top: 0, width: 1280, height: 800, border: 0, opacity: 0, pointerEvents: 'none' }} />
 }
 
 /** A page while it loads: the shape of a screen (its rail, its title, a few blocks), softly pulsing, never a picture of it. */
@@ -662,6 +717,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
   const failed = useRef(new Set<string>()) // screens the renderer couldn't keep: left as skeletons, not tried again here
   const kept = useApi<string[]>(canLive ? `/visuals/snaps/${slug}/${set.sha}` : undefined)
   const [done, setDone] = useState<Set<string>>(new Set())
+  const [, setFailures] = useState(0) // a screen let go: the list to render is worked out again without it
   const keyOf = (sh: Shot) => `${sh.book}/${sh.story}`
   const isKept = (sh: Shot) => kept.data?.includes(keyOf(sh)) || done.has(keyOf(sh))
   const pageOf = (sh: Shot) => (!canLive || !sh.book || !sh.story ? undefined : isKept(sh) ? `${sbBase}/${sh.book}/__snap__/${sh.story}.html?v=${done.has(keyOf(sh)) ? 1 : 0}` : '')
@@ -803,7 +859,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
           </>}
         </div>
 
-        {canLive && <Renderer base={sbBase} slug={slug} sha={set.sha} jobs={toRender} onDone={(key) => setDone((d) => { if (!d.has(key) && !kept.data?.includes(key)) failed.current.add(key); const n = new Set(d); n.add(key); return n })} />}
+        {canLive && <Renderer base={sbBase} slug={slug} sha={set.sha} jobs={toRender} onDone={(key, ok) => { if (ok) setDone((d) => new Set(d).add(key)); else { failed.current.add(key); setFailures((n) => n + 1) } }} />}
         {open && <Focus key={open.shot.name} pr={pr} sha={set.sha} shot={open.shot} origin={open.from} live={liveOf(open.shot)} target={aim} onPart={pick} onClose={() => { setOpen(undefined); setAim(undefined) }} onStep={step} />}
       </div>
     </div>

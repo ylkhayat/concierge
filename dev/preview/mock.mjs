@@ -86,7 +86,7 @@ const prSet = { head: 'abc1234', sha: 'abc1234', at: new Date(now - 600e3).toISO
 const vTask = undefined
 const prView = { id: 'ylkhayat/elbuffeh#21', repo: 'ylkhayat/elbuffeh', number: 21, title: 'feat(rumanna): courses, fast fitted corrections and learner choices', url: 'https://github.com/ylkhayat/elbuffeh/pull/21', author: 'ylkhayat', mine: true, draft: false, headSha: 'abc1234', mode: 'auto', ui: { is: true, why: '14 files people see: CourseCard.tsx, LevelChip.tsx, page.tsx…', files: [], head: 'abc1234', at: new Date().toISOString() }, wanted: true, task: vTask, tickets: ['ELBU-3'] }
 const json = (res, v, code = 200) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(v)) }
-http.createServer((req, res) => {
+http.createServer(async (req, res) => {
   const p = new URL(req.url, 'http://x').pathname.replace(/^\/api/, '')
   if (p === '/events') { res.writeHead(204); return res.end() }
   // settings saved: kept in memory (the company profile and the rest of config)
@@ -103,6 +103,21 @@ http.createServer((req, res) => {
   ] } })
   // MOCK_FIXTURES: a folder of real answers (providers.json, setup.json, plans_teams.json…) to preview a page with them
   if (process.env.MOCK_FIXTURES) { const fx = `${process.env.MOCK_FIXTURES}/${p.slice(1).replace(/\//g, '_') || 'index'}.json`; if (existsSync(fx)) return json(res, JSON.parse(readFileSync(fx, 'utf8'))) }
+  // MOCK_REAL: a real baseline's folder (…/visuals/repo-<owner>-<name>/<sha>): its map, its built Storybooks and kept screens
+  if (process.env.MOCK_REAL) {
+    const R = process.env.MOCK_REAL, sha = R.replace(/\/$/, '').split('/').pop(), sb = /^\/visuals\/sb\/[^/]+\/[0-9a-f]+\/(.+)$/.exec(p)
+    if (p === '/visuals/repos/ylkhayat/elbuffeh') { const m = JSON.parse(readFileSync(`${R}/manifest.json`, 'utf8')); return json(res, { repo: 'ylkhayat/elbuffeh', mode: 'auto', sets: [{ ...m, sha }], task: { state: 'done' } }) }
+    if (p === '/mockServiceWorker.js') { const b = /\/visuals\/sb\/[^/]+\/[0-9a-f]+\/([^/]+)\//.exec(req.headers.referer ?? '')?.[1] ?? 'rumanna'; res.writeHead(200, { 'content-type': 'text/javascript' }); return res.end(readFileSync(`${R}/storybook/${b}/mockServiceWorker.js`)) }
+    if (/^\/visuals\/snaps\//.test(p) && req.method === 'POST') { let b = ''; req.on('data', (c) => { b += c }); req.on('end', async () => { const j = JSON.parse(b), fs = await import('node:fs'); fs.mkdirSync(`${R}/storybook/${j.book}/__snap__`, { recursive: true }); fs.writeFileSync(`${R}/storybook/${j.book}/__snap__/${j.story}.html`, j.html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')); json(res, { ok: true }) }); return }
+    if (/^\/visuals\/snaps\//.test(p)) { const fs = await import('node:fs'), out = []; for (const b of fs.readdirSync(`${R}/storybook`)) for (const f of (fs.existsSync(`${R}/storybook/${b}/__snap__`) ? fs.readdirSync(`${R}/storybook/${b}/__snap__`) : [])) out.push(`${b}/${f.slice(0, -5)}`); return json(res, out) }
+    if (sb) {
+      const f = `${R}/storybook/${decodeURIComponent(sb[1])}`, ext = f.split('.').pop(), T = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', svg: 'image/svg+xml', woff2: 'font/woff2', png: 'image/png' }
+      if (!existsSync(f)) { res.writeHead(404); return res.end() }
+      if (f.includes('/__snap__/')) { res.writeHead(200, { 'content-type': 'text/html', 'content-security-policy': "script-src 'none'" }); return res.end(readFileSync(f)) }
+      const SW = `(function(){var c=navigator.serviceWorker;if(!c)return;var r=c.register.bind(c),base=location.pathname.replace(/[^/]*$/,'');c.register=function(u,o){try{if(/mockServiceWorker\\.js$/.test(new URL(u,location.href).pathname))o=Object.assign({},o,{scope:base})}catch(e){}return r(u,o)}})()`
+      res.writeHead(200, { 'content-type': T[ext] ?? 'application/octet-stream' }); return res.end(ext === 'html' ? readFileSync(f, 'utf8').replace(/<head[^>]*>/i, (h) => `${h}<script>${SW}</script>`) : readFileSync(f))
+    }
+  }
   // Design: the list, a repository's baseline, a PR's capture, and the made-up screens themselves
   if (p === '/visuals') return json(res, { joined: true, repos: [{ repo: 'ylkhayat/elbuffeh', mode: 'auto', baseline: { sha: baseline.sha, at: baseline.at, count: PARTS.length, thumb: 'board-s1.png', screens: SCREENS.length, domains: 3 }, fromApp: false }], prs: [{ ...prView, latest: { sha: prSet.sha, at: prSet.at, summary: prSet.summary, count: prSet.shots.length, thumb: 'board-s1.png' } }], tickets: [{ id: 'ELBU-3', title: 'Learner creates a course with a language and level', labels: ['design'], url: '#', prs: [prView.id] }] })
   // MOCK_MAP: the blueprint's page before its map: none (nothing set up), stories (its components, no screens), running (the map being made)

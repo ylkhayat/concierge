@@ -12,7 +12,7 @@ let tabs; for (let i = 0; i < 40 && !tabs; i++) { await sleep(250); tabs = await
 const ws = new WebSocket(tabs.find((t) => t.type === 'page').webSocketDebuggerUrl)
 await new Promise((r) => ws.addEventListener('open', r))
 let id = 0; const wait4 = new Map(), logs = []
-ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id && wait4.has(m.id)) { wait4.get(m.id)(m.result); wait4.delete(m.id) } else if (m.method === 'Runtime.exceptionThrown') logs.push('EXC ' + m.params.exceptionDetails.exception?.description?.slice(0, 300)) })
+ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.id && wait4.has(m.id)) { wait4.get(m.id)(m.result); wait4.delete(m.id) } else if (process.env.SHOT_CONSOLE && m.method === 'Runtime.consoleAPICalled') logs.push(m.params.args.map((a) => a.value ?? a.description).join(' ').slice(0, 300)); else if (m.method === 'Runtime.exceptionThrown') logs.push('EXC ' + m.params.exceptionDetails.exception?.description?.slice(0, 300)) })
 const send = (method, params = {}) => new Promise((r) => { const i = ++id; wait4.set(i, r); ws.send(JSON.stringify({ id: i, method, params })) })
 await send('Runtime.enable'); await send('Page.enable')
 await send('Page.addScriptToEvaluateOnNewDocument', { source: `try { localStorage.setItem('role', ${JSON.stringify(role)}); for (const [k, v] of Object.entries(${process.env.SHOT_LS ?? '{}'})) localStorage.setItem(k, v); for (const [k, v] of Object.entries(${process.env.SHOT_SS ?? '{}'})) sessionStorage.setItem(k, v) } catch {}` })
@@ -42,5 +42,5 @@ if (process.env.SHOT_PRESS) for (const label of process.env.SHOT_PRESS.split(';'
 }
 const shot = await send('Page.captureScreenshot', { format: 'png' })
 writeFileSync(out, Buffer.from(shot.data, 'base64'))
-console.log(logs.slice(0, 8).join('\n') || 'no errors')
+console.log(logs.slice(0, process.env.SHOT_CONSOLE ? 400 : 8).join('\n') || 'no errors')
 chrome.kill(); process.exit(0)
