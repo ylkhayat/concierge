@@ -164,14 +164,15 @@ function stagesOf(p: Plan, fits: boolean | undefined, github = false): Stage[] {
 function StageBar({ stages, onStep }: { stages: Stage[]; onStep: (s: Stage) => void }) {
   const current = stages.findIndex((s) => !s.done)
   return (
-    <ol aria-label="Where the plan stands" className="flex items-center gap-1">
+    // a phone: the steps by number, only the current one named (their names are the buttons' titles and labels)
+    <ol aria-label="Where the plan stands" className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
       {stages.map((s, i) => (
         <li key={s.id} className="flex items-center gap-1">
-          {i > 0 && <span aria-hidden className={`h-px w-4 ${stages[i - 1].done ? 'bg-accent/60' : 'bg-line'}`} />}
-          <button onClick={() => onStep(s)} title={s.hint} aria-current={i === current ? 'step' : undefined}
+          {i > 0 && <span aria-hidden className={`h-px w-4 max-sm:w-2 ${stages[i - 1].done ? 'bg-accent/60' : 'bg-line'}`} />}
+          <button onClick={() => onStep(s)} title={s.hint} aria-label={s.label} aria-current={i === current ? 'step' : undefined}
                   className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-meta font-medium transition-colors ${i === current ? 'bg-accent text-on-accent shadow-[0_6px_16px_-8px_var(--accent)]' : s.done ? 'text-accent-text hover:bg-accent-soft' : 'text-fg-3 hover:bg-hover hover:text-fg-1'}`}>
             <span className={`flex size-4 items-center justify-center rounded-full text-micro ${i === current ? 'bg-white/25' : s.done ? 'bg-accent-soft' : 'ring-1 ring-fg-4/40'}`}>{s.done ? <Check className="size-3" /> : i + 1}</span>
-            {s.label}
+            <span className={i === current ? '' : 'max-sm:hidden'}>{s.label}</span>
           </button>
         </li>
       ))}

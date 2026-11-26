@@ -4,6 +4,7 @@
 // the panel, and a passage selected in it can be quoted into the composer, to ask the agent about that point.
 import { ChevronRight, CloudOff, LoaderCircle, MessageSquareQuote, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { usePhone } from '../components/NextPanel.tsx'
 
 export type Tone = 'ok' | 'wait' | 'fail' | 'run' | 'quiet'
 const TONE: Record<Tone, string> = {
@@ -56,7 +57,13 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
   useLayoutEffect(() => { setStill(true); const t = setTimeout(() => setStill(false), 500); return () => clearTimeout(t) }, [subject])
   // narrow: the chat takes the width and the panel slides over it while a tab is open; wide: both, side by side
   const [open, setOpen] = useState(false)
-  const pick = (t: Id) => { onTab(t); setOpen(true) }
+  // a phone: the whole thread is one page that scrolls (the header and the vitals scroll away, the tabs stay at the top
+  // and the box at the bottom) instead of a chat squeezed into what four fixed bars leave of the screen
+  const phone = usePhone()
+  const page = useRef<HTMLDivElement>(null), tabsAt = useRef<HTMLDivElement>(null)
+  // a tab opened further down the page starts at its top, under the tabs
+  const toTabs = () => requestAnimationFrame(() => { const el = page.current, at = tabsAt.current?.offsetTop ?? 0; if (phone && el && el.scrollTop > at) el.scrollTop = at })
+  const pick = (t: Id) => { onTab(t); setOpen(true); toTabs() }
   const current = tabs.find((t) => t.id === tab) ?? tabs[0]
   const ask = onAsk && ((q: string) => { onAsk(q); setOpen(false) })
 
@@ -94,33 +101,37 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
   const box = held ? <p className="flex items-start gap-2 rounded-xl bg-fill px-3 py-2.5 text-small text-fg-3"><CloudOff className="mt-0.5 size-3.5 shrink-0 text-wait-text" /><span>Actions are off here: no machine can work on this application now ({held}). Everything stays to read; they come back when a machine it is allowed on is online.</span></p> : composer
   const step = held && nextShown ? <Off why={held} layout="flex min-h-0 flex-col justify-end">{nextShown}</Off> : nextShown
   const left = box || step, under = box ? step : undefined
+  // a phone: only the box stays docked at the bottom (while the chat shows: a tab open has the screen to read in); the
+  // next step reads in the page, after the conversation
+  const dockLeft = phone && !box
   const reset = () => { const { [key]: _, ...rest } = savedSplits(); setSplits(rest); try { localStorage.setItem('thread-split', JSON.stringify(rest)) } catch { /* private window */ } }
 
   return (
-    <div data-still={still ? '' : undefined} className="@container/thread flex h-full min-h-0 flex-col">
+    <div ref={page} data-still={still ? '' : undefined} className={`@container/thread flex h-full flex-col ${phone ? 'overflow-y-auto overscroll-contain' : 'min-h-0'}`}>
       <div className="shrink-0 border-b border-line">{header}</div>
       {/* narrow: the vitals in a slim row, then the tabs above the chat; picking one opens the panel over it */}
       {vitals && <div className="relative z-30 shrink-0 border-b border-line @[1100px]/thread:hidden">{vitals}</div>}
-      <div className="shrink-0 border-b border-line px-3 @[1100px]/thread:hidden sm:px-5">
-        <TabBar tabs={tabs} tab={open ? tab : undefined} onTab={pick} chat onChat={() => setOpen(false)} />
+      <div ref={tabsAt} aria-hidden />
+      <div className={`shrink-0 border-b border-line px-3 @[1100px]/thread:hidden sm:px-5 ${phone ? 'sticky top-0 z-20 bg-bg-app' : ''}`}>
+        <TabBar tabs={tabs} tab={open ? tab : undefined} onTab={pick} chat onChat={() => { setOpen(false); toTabs() }} />
       </div>
       {/* wide: a grid, the chat and the panel side by side and under each its own part of the bottom row (the box under
           the chat, the next step under the panel); the panel runs to the bottom when nothing sits under it. Narrow: one
           column, the panel over the chat while a tab is open, the bottom row stacked */}
       <div ref={body} style={{ '--split': px ? `${px}px` : '50%' } as React.CSSProperties}
-           className={`relative flex min-h-0 flex-1 flex-col @[1100px]/thread:grid @[1100px]/thread:[grid-template-columns:var(--split)_1px_minmax(0,1fr)] @[1100px]/thread:[grid-template-rows:minmax(0,1fr)_auto] ${dragging ? '' : 'transition-[grid-template-columns] duration-300 ease-[var(--ease-snappy)]'}`}>
+           className={`relative flex ${phone ? 'flex-1' : 'min-h-0 flex-1'} flex-col @[1100px]/thread:grid @[1100px]/thread:[grid-template-columns:var(--split)_1px_minmax(0,1fr)] @[1100px]/thread:[grid-template-rows:minmax(0,1fr)_auto] ${dragging ? '' : 'transition-[grid-template-columns] duration-300 ease-[var(--ease-snappy)]'}`}>
         {/* the chat's own column, top to bottom: the conversation, then its box on the floor. One piece, so the height of
             what sits under the panel (the next step can be tall) never pushes the box up or takes room from the chat */}
-        <div data-chat-column className="flex min-h-0 min-w-0 flex-1 flex-col @[1100px]/thread:col-start-1 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1">
+        <div data-chat-column className={`${phone ? 'contents' : 'flex min-h-0 min-w-0 flex-1 flex-col'} @[1100px]/thread:col-start-1 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1`}>
           {/* wide: the vitals head the chat, the frame for reading it (narrow: they are above, for both) */}
           {vitals && <div className="relative z-30 hidden shrink-0 border-b border-line @[1100px]/thread:block">{vitals}</div>}
-          <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <Transcript follow={follow} subject={subject}>{children}</Transcript>
+          <section aria-label="Chat" className={phone ? `order-1 flex-1 ${open ? 'hidden' : ''}` : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
+            <Transcript follow={follow} subject={subject} outer={phone ? page : undefined}>{children}</Transcript>
           </section>
           {/* its box, or (no box: the agent asks) the next step: at most about half the height, scrolling inside. Narrow,
               a share of the column (not of the screen): stacked over the next step's dock, two halves of the screen
               left the conversation nothing */}
-          {left && <div className="flex max-h-[min(55%,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4 @[1100px]/thread:max-h-[min(46vh,560px)]">{left}</div>}
+          {left && <div className={`flex min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-5 sm:pb-4 @[1100px]/thread:max-h-[min(46vh,560px)] ${!phone ? 'max-h-[min(55%,560px)]' : dockLeft ? `order-2 ${open ? 'hidden' : ''}` : open ? 'order-3' : 'sticky bottom-0 z-20 order-3'}`}>{left}</div>}
         </div>
         {/* the handle between the two: drag to share the width, double-click to go back to this chat's own split */}
         <div role="separator" aria-orientation="vertical" aria-label="Resize the chat and the panel" title="Drag to resize · double-click to reset"
@@ -128,13 +139,13 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
              className={`group relative hidden w-px cursor-col-resize bg-line @[1100px]/thread:col-start-2 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1 @[1100px]/thread:block ${dragging ? 'bg-accent' : ''}`}>
           <span className="absolute inset-y-0 -left-1.5 -right-1.5 group-hover:bg-accent/20" />
         </div>
-        <section aria-label={current.label} className={`${open ? 'flex' : 'hidden'} absolute inset-0 z-20 min-h-0 min-w-0 flex-col bg-bg-app @[1100px]/thread:static @[1100px]/thread:z-auto @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-1 @[1100px]/thread:flex @[1100px]/thread:bg-surface-2/40 ${under ? '' : '@[1100px]/thread:row-span-2'}`}>
+        <section aria-label={current.label} className={`${open ? 'flex' : 'hidden'} ${phone ? 'relative order-1 flex-1' : 'absolute inset-0 z-20'} min-h-0 min-w-0 flex-col bg-bg-app @[1100px]/thread:static @[1100px]/thread:z-auto @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-1 @[1100px]/thread:flex @[1100px]/thread:bg-surface-2/40 ${under ? '' : '@[1100px]/thread:row-span-2'}`}>
           <div className="hidden shrink-0 border-b border-line px-4 @[1100px]/thread:block"><TabBar tabs={tabs} tab={tab} onTab={onTab} /></div>
-          <Quotable onAsk={ask} fill={current.fill} key={current.id}>{pane}</Quotable>
+          <Quotable onAsk={ask} fill={current.fill} key={current.id} page={phone}>{pane}</Quotable>
         </section>
         {/* under the panel: the next step, beside the box. Narrow, under the box: at most a third of what is left, so the
             conversation, the box and it (a working bar opened to its details) all keep a place */}
-        {under && <div className="flex max-h-[min(36%,560px)] min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-4 sm:pb-4 @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-2 @[1100px]/thread:max-h-[min(46vh,560px)]">{under}</div>}
+        {under && <div className={`flex min-h-0 shrink-0 flex-col justify-end border-t border-line bg-bg-app px-3 pb-3 pt-2 sm:px-4 sm:pb-4 ${phone ? `order-2 ${open ? 'hidden' : ''}` : 'max-h-[min(36%,560px)]'} @[1100px]/thread:col-start-3 @[1100px]/thread:row-start-2 @[1100px]/thread:max-h-[min(46vh,560px)]`}>{under}</div>}
       </div>
     </div>
   )
@@ -154,7 +165,7 @@ function TabBar<Id extends string>({ tabs, tab, onTab, chat, onChat }: { tabs: P
 }
 
 /** The open tab's content, faded in; select a passage in it and a button quotes it into the composer. */
-function Quotable({ children, onAsk, fill }: { children: ReactNode; onAsk?: (q: string) => void; fill?: boolean }) {
+function Quotable({ children, onAsk, fill, page }: { children: ReactNode; onAsk?: (q: string) => void; fill?: boolean; page?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const [sel, setSel] = useState<{ text: string; top: number; left: number }>()
   const read = () => {
@@ -170,7 +181,8 @@ function Quotable({ children, onAsk, fill }: { children: ReactNode; onAsk?: (q: 
     requestAnimationFrame(() => [...document.querySelectorAll<HTMLTextAreaElement>('textarea[data-composer]')].find((el) => el.offsetParent)?.focus()) // the shown page's box (others are kept hidden)
   }
   return (
-    <div ref={ref} onMouseUp={read} onKeyUp={read} className={`relative min-h-0 flex-1 animate-[detail-in_180ms_var(--ease-snappy)] ${fill ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
+    // page (a phone): it reads in the thread's own scroll; one that fills (a graph) gets most of the screen to pan in
+    <div ref={ref} onMouseUp={read} onKeyUp={read} className={`relative min-h-0 flex-1 animate-[detail-in_180ms_var(--ease-snappy)] ${fill ? `flex flex-col overflow-hidden ${page ? 'h-[70dvh] flex-none' : ''}` : page ? '' : 'overflow-y-auto'}`}>
       {children}
       {sel && (
         <button onMouseDown={(e) => e.preventDefault()} onClick={quote} style={{ top: sel.top, left: sel.left }}
@@ -184,11 +196,14 @@ function Quotable({ children, onAsk, fill }: { children: ReactNode; onAsk?: (q: 
 
 /** The scrolling conversation: oldest at the top, following what arrives while you are at the bottom; scrolled up,
  *  it stays where you are. */
-function Transcript({ children, follow, subject }: { children: ReactNode; follow?: unknown; subject?: string }) {
+function Transcript({ children, follow, subject, outer }: { children: ReactNode; follow?: unknown; subject?: string; outer?: React.RefObject<HTMLDivElement | null> }) {
   const ref = useRef<HTMLDivElement>(null)
+  // what scrolls: the conversation itself, or (outer, a phone) the whole thread it reads in
+  const box = () => outer?.current ?? ref.current
   const pinned = useRef(true)
-  const onScroll = () => { const el = ref.current!; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
-  const end = () => { const el = ref.current; if (el && pinned.current) el.scrollTop = el.scrollHeight }
+  const onScroll = () => { const el = box(); if (el && inner.current?.offsetParent) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }
+  // hidden (a tab open over it on a phone): the page is the tab's, it isn't moved
+  const end = () => { const el = box(); if (el && pinned.current && inner.current?.offsetParent) el.scrollTop = el.scrollHeight }
   // another PR or ticket opens at its newest, wherever you had scrolled to in the last one
   useLayoutEffect(() => { pinned.current = true }, [subject])
   useLayoutEffect(end, [follow, subject])
@@ -196,13 +211,13 @@ function Transcript({ children, follow, subject }: { children: ReactNode; follow
   // (a working bar opened, background tasks listed) make it shorter: still at the newest, it follows
   const inner = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const o = new ResizeObserver(end)
+    const o = new ResizeObserver(end), el = box()
     if (inner.current) o.observe(inner.current)
-    if (ref.current) o.observe(ref.current)
-    return () => o.disconnect()
-  }, [])
+    if (el) { o.observe(el); el.addEventListener('scroll', onScroll, { passive: true }) }
+    return () => { o.disconnect(); el?.removeEventListener('scroll', onScroll) }
+  }, [outer]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={ref} className={outer ? '' : 'min-h-0 flex-1 overflow-y-auto'}>
       <div ref={inner} className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-3 py-5 sm:px-5">{children}</div>
     </div>
   )

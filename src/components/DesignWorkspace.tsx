@@ -1,7 +1,7 @@
 // Design: what the pull requests look like, before and after, without opening them. Built like Plans: the list on the
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
-import { ArrowUp, Check, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowLeft, ArrowUp, Check, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
 import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
@@ -65,16 +65,20 @@ export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo,
   useEffect(() => { if (list.data && current !== selected) onSelect(current) }, [list.data, current, selected]) // eslint-disable-line react-hooks/exhaustive-deps
   const ticket = current?.startsWith('ticket:') ? tickets.find((t) => `ticket:${t.id}` === current) : undefined
   const feed = current ? feedOf(current) : []
+  // a phone: the list is a screen of its own (the full width), opened from the bar over the item; picking one closes it
+  const [listing, setListing] = useState(false)
+  const pickItem = (id: string) => { onSelect(id); setListing(false) }
+  const name = current?.startsWith('repo:') ? `${current.slice(5).split('/')[1]} · blueprint` : ticket ? ticket.title : prs.find((p) => p.id === current)?.title
   return (
     <div className="flex h-full min-h-0">
-      <nav aria-label="Design" className="hidden w-60 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex">
+      <nav aria-label="Design" className={`${listing ? 'flex w-full' : 'hidden'} shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex md:w-60`}>
         <p className="label px-2.5 pb-1 pt-2 text-fg-4">Pull requests</p>
         {!list.data && <Skeleton rows={3} />}
         {list.data && !prs.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Repositories, or for one PR from its page.</p>}
         {prs.map((p) => {
           const s = standing(p, p.latest?.sha)
           return (
-            <button key={p.id} onClick={() => onSelect(p.id)} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === p.id ? 'sel-row' : 'hover:bg-hover'}`}>
+            <button key={p.id} onClick={() => pickItem(p.id)} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === p.id ? 'sel-row' : 'hover:bg-hover'}`}>
               <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
                 {p.latest?.thumb ? <img src={shotUrl(p.id, p.latest.sha, p.latest.thumb)} alt="" loading="lazy" className="size-full object-cover object-top" /> : <Images className="size-4 text-fg-4" />}
               </span>
@@ -88,7 +92,7 @@ export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo,
         })}
         {repos.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Blueprints</p>}
         {repos.map((r) => (
-          <button key={r.repo} onClick={() => onSelect(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
+          <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
             <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
               {r.baseline?.thumb ? <img src={shotUrl(baselineKey(r.repo), r.baseline.sha, r.baseline.thumb)} alt="" loading="lazy" className="size-full object-cover object-top" /> : <LayoutTemplate className="size-4 text-fg-4" />}
             </span>
@@ -100,17 +104,24 @@ export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo,
         ))}
         {tickets.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Tickets</p>}
         {tickets.map((t) => (
-          <button key={t.id} onClick={() => onSelect(`ticket:${t.id}`)} className={`rounded-lg px-2.5 py-1.5 text-left ${current === `ticket:${t.id}` ? 'sel-row' : 'hover:bg-hover'}`}>
+          <button key={t.id} onClick={() => pickItem(`ticket:${t.id}`)} className={`rounded-lg px-2.5 py-1.5 text-left ${current === `ticket:${t.id}` ? 'sel-row' : 'hover:bg-hover'}`}>
             <span className="block truncate text-small text-fg-1">{t.title}</span>
             <span className="block truncate text-micro text-fg-3">{t.id}{t.prs.length ? ` · ${t.prs.length} PR${t.prs.length === 1 ? '' : 's'}` : ' · no PR yet'}</span>
           </button>
         ))}
       </nav>
-      <div className="min-w-0 flex-1">
+      <div className={`min-w-0 flex-1 flex-col ${listing ? 'hidden md:flex' : 'flex'}`}>
+        {current && (
+          <button onClick={() => setListing(true)} className="flex min-h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-left text-small text-fg-2 md:hidden">
+            <ArrowLeft className="size-4 shrink-0 text-fg-3" /><span className="shrink-0 font-medium text-fg-1">All designs</span><span className="min-w-0 flex-1 truncate text-fg-3">{name}</span>
+          </button>
+        )}
+        <div className="min-h-0 flex-1">
         {current?.startsWith('repo:') ? <Baseline key={current} repo={current.slice(5)} feed={feed} toast={toast} />
           : ticket ? <TicketVisuals t={ticket} prs={prs} onSelect={onSelect} />
           : current && !current.startsWith('ticket:') ? <VisualsView key={current} id={current} feed={feed} toast={toast} />
           : <Empty />}
+        </div>
       </div>
     </div>
   )
@@ -170,7 +181,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
                     : 'Not set up yet'}
                 </p>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
                 {set && <Tabs size="sm" label="What to look at" value={view} onChange={setView} options={[{ id: 'map' as const, label: 'Map' }, { id: 'components' as const, label: `Components · ${parts.length}` }]} />}
                 <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
                 {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
@@ -787,8 +798,9 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
   const step = (d: number) => setOpen((o) => { if (!o) return o; const i = flat.indexOf(o.shot); const n = flat[(i + d + flat.length) % flat.length]; return { shot: n } })
 
   return (
-    <div className="relative flex overflow-hidden rounded-[6px] bg-surface-1 ring-1 ring-line" style={{ height: fill ? 'max(24rem, calc(100vh / var(--z, 1) - 11rem))' : 'clamp(24rem, calc(100vh / var(--z, 1) - 17.5rem), 64rem)' }}>
-      <aside aria-label="Components" className="flex w-56 shrink-0 flex-col border-r border-line">
+    <div className="relative flex overflow-hidden rounded-[6px] bg-surface-1 ring-1 ring-line" style={{ height: fill ? 'max(24rem, calc(100dvh / var(--z, 1) - 11rem))' : 'clamp(24rem, calc(100dvh / var(--z, 1) - 17.5rem), 64rem)' }}>
+      {/* a phone or a tablet has no room for the list beside the board: the board alone (Components lists them, a tab away) */}
+      <aside aria-label="Components" className="flex w-56 shrink-0 flex-col border-r border-line max-lg:hidden">
         <label className="m-2 flex items-center gap-1.5 rounded-[4px] bg-fill px-2 py-1"><Search className="size-3.5 shrink-0 text-fg-4" />
           <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`${names.length} components`} aria-label="Find a component" className="w-full bg-transparent text-small outline-none placeholder:text-fg-4" /></label>
         <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2" onMouseLeave={() => onHover(undefined, 0)}>

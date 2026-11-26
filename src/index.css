@@ -33,6 +33,13 @@ html { font-feature-settings: "cv11", "ss01"; font-optical-sizing: auto; }
 @media (max-width: 767px) { input, textarea, select { font-size: 16px !important; } }
 /* taps act at once on touch screens, without the grey flash */
 html { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+/* a phone: the app is one fixed frame whose panes scroll, so a pull past an end never drags the whole app (rubber band,
+   pull-to-refresh), nothing ever scrolls the page sideways, and iOS doesn't enlarge text on a turn to landscape */
+html, body { overscroll-behavior: none; overflow-x: clip; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@media (max-width: 767px) {
+  /* a pane that scrolls keeps its pull to itself and glides on (momentum) */
+  .overflow-y-auto, .overflow-auto { overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
+}
 @keyframes rise-in { from { opacity: 0; transform: translateY(6px); } }
 @keyframes detail-in { from { opacity: 0.35; transform: translateY(3px); } }
 /* the open ticket landed in another group: a brief glow where it is now */

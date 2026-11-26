@@ -5,6 +5,7 @@ import {
 import { ReviewIn } from './ReviewIn.tsx'
 import { useMachineName } from '../machineNames.ts'
 import { Tabs } from './Tabs.tsx'
+import { usePhone } from './NextPanel.tsx'
 import { label, sha, VERSION } from '../version.ts'
 import { Field, Pick, PickPill } from '../ui/Pick.tsx'
 import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
@@ -150,6 +151,12 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
   const loadSetup = (tries = 0): void => { setSetupFailed(undefined); api('/setup').then(setSetup, (e: Error) => (tries < 10 ? void setTimeout(() => loadSetup(tries + 1), 3000) : setSetupFailed(e.message))) }
   // the server may be restarting (an update): asked again every 3s for half a minute before it says so
   useEffect(() => { if (open) { setTabState(ALIAS[initial] ?? initial); loadSetup() } }, [open, initial]) // eslint-disable-line react-hooks/exhaustive-deps
+  // a phone: the sections are a list of their own (opened from the tab bar), a page is a screen with its way back to
+  // them; not a strip of tabs to scroll sideways over a page. A page asked for by name (Adjust, Open Ship settings) opens
+  const phone = usePhone()
+  const [sections, setSections] = useState(false)
+  useEffect(() => { if (open) setSections(initial === 'general' || initial === 'overview') }, [open, initial])
+  const list = phone && sections
   useEffect(() => {
     if (!open) return
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector(':popover-open, dialog[open]')) { e.preventDefault(); onClose() } }
@@ -157,7 +164,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
     return () => removeEventListener('keydown', k)
   }, [open, onClose])
   if (!open) return null
-  const go = (t: SettingsTab) => { setTabState(t); onTab?.(t); setQ('') }
+  const go = (t: SettingsTab) => { setTabState(t); onTab?.(t); setQ(''); setSections(false) }
   const save: Save = (path, body, msg) => api(path, body).then((r) => { toast(msg); return r }, (e: Error) => { toast(e.message, 'error'); throw e })
   const saveConfig: SaveConfig = (body, msg) => save('/config', body, msg).then((s) => setSetup(s as SetupView)).catch(() => {})
   const uses = (w: 'review' | 'exec') => !setup || setup.config.workspaces.includes(w)
@@ -166,7 +173,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
   const hits = words.length ? INDEX.filter(([label]) => words.every((w) => label.toLowerCase().includes(w))).slice(0, 8) : []
 
   return (
-    <div role="dialog" aria-label="Settings" className="grain fixed inset-0 z-50 flex animate-[fade-in_160ms] flex-col text-fg-1">
+    <div role="dialog" aria-label="Settings" className="grain fixed inset-0 z-50 flex animate-[fade-in_160ms] flex-col pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-fg-1">
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:px-6">
         <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1"><ArrowLeft className="size-4" />Back</button>
         <h1 className="flex items-center gap-2 text-title font-semibold"><Settings2 className="size-4 text-fg-4" />Settings</h1>
@@ -190,21 +197,22 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav aria-label="Settings sections" className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-3 py-2 md:w-60 md:flex-col md:gap-4 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5">
+        <nav aria-label="Settings sections" className={`${phone ? (list ? 'flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-4' : 'hidden') : 'flex shrink-0 gap-1 overflow-x-auto border-b border-line px-3 py-2'} md:w-60 md:flex-col md:gap-4 md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-5`}>
           {NAV.map((g) => (
-            <div key={g.group} className="flex gap-1 md:flex-col md:gap-0.5">
-              <p className="hidden px-2.5 pb-1 text-meta font-medium text-fg-4 md:block">{g.group}</p>
+            <div key={g.group} className={`flex shrink-0 gap-1 md:flex-col md:gap-0.5 ${list ? 'flex-col' : ''}`}>
+              <p className={`px-2.5 pb-1 text-meta font-medium text-fg-4 md:block ${list ? '' : 'hidden'}`}>{g.group}</p>
               {g.pages.filter((t) => t.id !== 'workflows' || uses('review') || uses('exec')).map((t) => (
                 <button key={t.id} onClick={() => go(t.id)} aria-current={tab === t.id} title={t.hint}
-                        className={`flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-body transition-colors ${tab === t.id ? 'sel font-medium' : 'text-fg-2 hov hover:text-fg-1'}`}>
+                        className={`flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-body transition-colors ${list ? 'min-h-11' : ''} ${tab === t.id && !list ? 'sel font-medium' : 'text-fg-2 hov hover:text-fg-1'}`}>
                   <t.icon className={`size-4 shrink-0 ${tab === t.id ? 'text-accent-text' : 'text-fg-4'}`} />{t.label}
                 </button>
               ))}
             </div>
           ))}
         </nav>
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <main className={`min-h-0 min-w-0 flex-1 overflow-y-auto ${list ? 'hidden' : ''}`}>
           <div key={tab} className="mx-auto max-w-[880px] animate-[rise-in_220ms_var(--ease-snappy)] space-y-6 px-4 pb-16 pt-6 md:px-8">
+            {phone && <button onClick={() => setSections(true)} className="btn-ghost -mx-2.5 -my-2 inline-flex min-h-10 items-center gap-1.5"><ArrowLeft className="size-4" />All settings</button>}
             <header>
               <h2 className="text-display font-semibold">{current.label}</h2>
               <p className="mt-1 text-body text-fg-3">{current.hint}</p>
