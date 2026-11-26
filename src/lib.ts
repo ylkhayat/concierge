@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { chosen, useScope } from './scope.ts'
 import type { Me } from '../server/github.ts'
 import type { ExecView, Health, PrView, TicketView } from '../server/index.ts'
@@ -172,6 +172,14 @@ export function prefetchFeed(key: string) {
   if (feedCache.has(key) || prefetching.has(key)) return
   prefetching.add(key)
   api(feedUrl(key)).then((f: Activity[]) => { if (!feedCache.has(key)) cacheFeed(key, f) }).catch(() => {}).finally(() => prefetching.delete(key))
+}
+
+/** One function for the component's whole life that always runs the newest `f`: a list's rows, memoized on their props,
+ *  don't all draw again because the parent made a new closure (a click re-renders the two rows it changes, not 40). */
+export function useStable<A extends unknown[], R>(f: (...a: A) => R): (...a: A) => R {
+  const at = useRef(f)
+  at.current = f
+  return useCallback((...a: A) => at.current(...a), [])
 }
 
 // dates and times live in time.ts (date-fns); re-exported here for the callers that import them from lib
