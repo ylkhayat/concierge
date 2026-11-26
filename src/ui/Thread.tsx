@@ -28,6 +28,7 @@ export type PaneTab<Id extends string = string> = {
 // Understanding is mostly Explain. Dragged widths are kept per chat; a double-click on the handle forgets them.
 const SPLIT: Record<string, number> = { main: 0.58, 'main:fill': 0.42, 'main:rail': 0.62 } // rail: a supporting pane, about a third
 const MIN = 360 // px, for either column
+let lastWidth = 0 // the last width a thread measured: where the next one starts
 const savedSplits = (): Record<string, number> => { try { return JSON.parse(localStorage.getItem('thread-split') ?? '{}') } catch { return {} } }
 
 /** Actions that can't run now (`why`: no machine can work on this application): dimmed, and every control in them off.
@@ -63,20 +64,25 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
   const page = useRef<HTMLDivElement>(null), tabsAt = useRef<HTMLDivElement>(null)
   // a tab opened further down the page starts at its top, under the tabs
   const toTabs = () => requestAnimationFrame(() => { const el = page.current, at = tabsAt.current?.offsetTop ?? 0; if (phone && el && el.scrollTop > at) el.scrollTop = at })
-  const pick = (t: Id) => { onTab(t); setOpen(true); toTabs() }
+  const pick = (t: Id) => { onTab(t); setOpen(true); toTabs(); setGlide(true) }
   const current = tabs.find((t) => t.id === tab) ?? tabs[0]
   const ask = onAsk && ((q: string) => { onAsk(q); setOpen(false) })
 
   // the split: the body's width, the chat's share of it for the chat you are in, and a handle to drag it
   const body = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(0)
+  // every thread starts at the width the last one measured, and a hidden one (a page kept alive behind the open one)
+  // measures 0: taken as is, its split fell back to 50% and slid the panel back out when it showed again
+  const [width, setWidth] = useState(lastWidth)
+  const measure = (w: number) => { if (w > 0) { lastWidth = w; setWidth(w) } }
   // measured before the first paint, so the split starts where it belongs instead of sliding there from 50%
-  useLayoutEffect(() => { if (body.current) setWidth(body.current.getBoundingClientRect().width) }, [])
+  useLayoutEffect(() => { if (body.current) measure(body.current.getBoundingClientRect().width) }, [])
   useEffect(() => {
-    const o = new ResizeObserver(([e]) => setWidth(e.contentRect.width))
+    const o = new ResizeObserver(([e]) => measure(e.contentRect.width))
     if (body.current) o.observe(body.current)
     return () => o.disconnect()
   }, [])
+  // the split glides only when you change it (a tab that wants another share): never as a page shows or resizes
+  const [glide, setGlide] = useState(false)
   // per chat, and per kind of tab: one that fills the panel (Explain's map) gets the larger share; each kept as dragged
   const key = `main${current.fill ? ':fill' : current.rail ? ':rail' : ''}`
   const [splits, setSplits] = useState(savedSplits)
@@ -119,7 +125,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           the chat, the next step under the panel); the panel runs to the bottom when nothing sits under it. Narrow: one
           column, the panel over the chat while a tab is open, the bottom row stacked */}
       <div ref={body} style={{ '--split': px ? `${px}px` : '50%' } as React.CSSProperties}
-           className={`relative flex ${phone ? 'flex-1' : 'min-h-0 flex-1'} flex-col @[1100px]/thread:grid @[1100px]/thread:[grid-template-columns:var(--split)_1px_minmax(0,1fr)] @[1100px]/thread:[grid-template-rows:minmax(0,1fr)_auto] ${dragging ? '' : 'transition-[grid-template-columns] duration-300 ease-[var(--ease-snappy)]'}`}>
+           className={`relative flex ${phone ? 'flex-1' : 'min-h-0 flex-1'} flex-col @[1100px]/thread:grid @[1100px]/thread:[grid-template-columns:var(--split)_1px_minmax(0,1fr)] @[1100px]/thread:[grid-template-rows:minmax(0,1fr)_auto] ${glide && !dragging ? 'transition-[grid-template-columns] duration-300 ease-[var(--ease-snappy)]' : ''}`} onTransitionEnd={() => setGlide(false)}>
         {/* the chat's own column, top to bottom: the conversation, then its box on the floor. One piece, so the height of
             what sits under the panel (the next step can be tall) never pushes the box up or takes room from the chat */}
         <div data-chat-column className={`${phone ? 'contents' : 'flex min-h-0 min-w-0 flex-1 flex-col'} @[1100px]/thread:col-start-1 @[1100px]/thread:row-span-2 @[1100px]/thread:row-start-1`}>
