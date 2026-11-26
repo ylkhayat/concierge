@@ -62,6 +62,19 @@ function route(a: Pt, b: Pt, gapY: number | undefined): Pt[] {
 /** Lanes stacked down the board, cards left to right in each; a click opens a card's whole story on the side. */
 /** A card as a short user story: written with the board; a card from before that, on its first click (server: /prs/:id/story), and kept. */
 const told = new Map<string, string>()
+// a board's cards without a sentence yet, asked for together as the board opens (server: /prs/:id/stories)
+const asked = new Map<string, Promise<void>>()
+function askAll(prId: string, board: 'understanding' | 'intent', cards: Card[]) {
+  const missing = cards.filter((c) => !c.story && !told.has(`v2:${prId}:${board}:${c.id}`) && !waiting.has(`v2:${prId}:${board}:${c.id}`))
+  if (!missing.length) return
+  const k = `${prId}:${board}:${missing.map((c) => c.id).join()}`
+  if (asked.has(k)) return
+  const all = api(`/prs/${enc(prId)}/stories`, { board, cards: missing.map(({ id, title, line, before, why }) => ({ id, title, line, before, why })) })
+    .then((r: { stories: Record<string, string> }) => { for (const [id, t] of Object.entries(r.stories)) told.set(`v2:${prId}:${board}:${id}`, t) }, () => { asked.delete(k); for (const c of missing) waiting.delete(`v2:${prId}:${board}:${c.id}`) })
+  asked.set(k, all)
+  for (const c of missing) waiting.set(`v2:${prId}:${board}:${c.id}`, all)
+}
+const waiting = new Map<string, Promise<void>>()
 function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'intent'; c: Card }) {
   const key = `v2:${prId}:${board}:${c.id}`
   const [text, setText] = useState(c.story ?? told.get(key)), [failed, setFailed] = useState(false)
@@ -69,8 +82,13 @@ function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'int
     setText(c.story ?? told.get(key)); setFailed(false)
     if (c.story || told.has(key)) return
     let live = true
+    // asked for with the rest of its board: that answer, else on its own
+    void (waiting.get(key) ?? Promise.resolve()).then(() => {
+    if (!live) return
+    if (told.has(key)) return setText(told.get(key))
     api(`/prs/${enc(prId)}/story`, { board, card: { id: c.id, title: c.title, line: c.line, before: c.before, why: c.why } })
       .then((r: { story: string }) => { told.set(key, r.story); if (live) setText(r.story) }, () => { if (live) setFailed(true) })
+    })
     return () => { live = false }
   }, [key, c.story]) // eslint-disable-line react-hooks/exhaustive-deps
   if (failed) return null
@@ -82,9 +100,11 @@ function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'int
   )
 }
 
-export function LaneBoard({ prId, board, lanes, links, top, children }: { prId: string; board: 'understanding' | 'intent'; lanes: Lane[]; links: [string, string][]; top?: React.ReactNode; children?: React.ReactNode }) {
+export function LaneBoard({ prId, board, lanes, links, top, children, ask }: { prId: string; board: 'understanding' | 'intent'; lanes: Lane[]; links: [string, string][]; top?: React.ReactNode; children?: React.ReactNode; ask?: Card[] }) {
   const [on, setOn] = useState<string>()
   const drawn = lanes.filter((l) => l.cards.length)
+  const every = ask ?? lanes.flatMap((l) => l.cards) // ask: every card at every depth, not only those shown
+  useEffect(() => askAll(prId, board, every), [prId, board, every.map((c) => c.id).join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const { nodes, edges } = useMemo(() => {
     const x0 = LABEL_W + GAP
     const width = x0 + Math.min(COLS, Math.max(...drawn.map((l) => l.cards.length), 1)) * (W + GAP) - GAP
@@ -199,7 +219,8 @@ export function LevelsBoard({ prId, levels }: { prId: string; levels: Levels }) 
     })) }))
     return { lanes, links: linksAt(levels, level) }
   }, [levels, level])
+  const ask = useMemo(() => levels.nodes.map((n) => ({ id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, story: n.story })), [levels])
   const unchanged = lanes.filter((l) => !l.cards.length).map((l) => l.label)
   const top = unchanged.length ? <p className="px-1 text-meta text-fg-3"><span className="text-fg-4">Unchanged:</span> {unchanged.join(' · ')}</p> : undefined
-  return <LaneBoard prId={prId} board="understanding" lanes={lanes} links={links} top={top}><Meter level={level} set={set} /></LaneBoard>
+  return <LaneBoard prId={prId} board="understanding" lanes={lanes} links={links} top={top} ask={ask}><Meter level={level} set={set} /></LaneBoard>
 }

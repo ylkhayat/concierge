@@ -52,6 +52,7 @@ import { areaOf, suggestPr } from './links.ts'
 import { cancelSetup, cancelVisuals, enqueueSetup, enqueueVisuals } from './runner.ts'
 import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
+import { STORY_RULE } from './levels.ts'
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
 import { azureLoginState, azureNote, azureStatus, startAzureLogin } from './azure.ts'
@@ -3004,6 +3005,29 @@ app.post('/prs/:id/story', async (c) => {
     `You add context to one card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}. Write ONE sentence of at most 30 words, plain words, no code names, about this card only (not the rest of the PR): "As <who meets it>, when <the situation>, <what happens now>, so that <why it matters>." Use only what the input says.`,
     'haiku', p.repo).then((r) => { addSpend(r.cost, r.provider, r.tokens); return r.result.story }).catch((e) => { stories.delete(key); throw e }))
   try { return c.json({ story: await stories.get(key)! }) } catch (e) { return c.json({ error: (e as Error).message.split('\n')[0] }, 502) }
+})
+
+// a board's cards in context, all at once, when it opens: for an explanation written before the cards came with their
+// sentence (or a card the pass left without one), so a click finds it ready instead of asking then
+const batches = new Map<string, Promise<Record<string, string>>>()
+const STORIES_SCHEMA = { type: 'object', additionalProperties: false, required: ['cards'], properties: { cards: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'story'], properties: { id: { type: 'string' }, story: { type: 'string' } } } } } }
+app.post('/prs/:id/stories', async (c) => {
+  const p = pr(c.req.param('id'))
+  const o = p && loadOverlay(p)
+  if (!p || !o) return c.json({ error: 'not explained yet' }, 404)
+  const { board, cards } = await c.req.json<{ board: 'understanding' | 'intent'; cards: { id: string; title: string; line?: string; before?: string; why?: string }[] }>()
+  const list = (cards ?? []).slice(0, 80)
+  const key = `${p.id}@${o.headSha}:${board}:${list.map((x) => x.id).sort().join(',')}`
+  if (!batches.has(key)) batches.set(key, callClaude<{ cards: { id: string; story: string }[] }>(JSON.stringify({ pr: o.business, story: o.tour?.story && { push: o.tour.story.push, solution: o.tour.story.solution }, cards: list }), tmpdir(), undefined, () => {}, STORIES_SCHEMA, 0.3,
+    `You add context to each card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}. For every card given, by its id: ${STORY_RULE}`,
+    'haiku', p.repo).then((r) => {
+      addSpend(r.cost, r.provider, r.tokens)
+      const out = Object.fromEntries(r.result.cards.filter((x) => list.some((k) => k.id === x.id)).map((x) => [x.id, x.story]))
+      // a click on one of them later is answered from here
+      for (const k of list) if (out[k.id]) stories.set(`v2:${p.id}@${o.headSha}:${board}:${k.id}`, Promise.resolve(out[k.id]))
+      return out
+    }).catch((e) => { batches.delete(key); throw e }))
+  try { return c.json({ stories: await batches.get(key)! }) } catch (e) { return c.json({ error: (e as Error).message.split('\n')[0] }, 502) }
 })
 
 app.post('/prs/:id/explain', async (c) => {
