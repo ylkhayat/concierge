@@ -2146,7 +2146,7 @@ function Machines() {
     <Group title="Control plane" hint="The primary runs Concierge; the standby takes over while it is offline.">
       {v.beats.filter((b) => !b.name.includes('.sync-conflict-')).map((b) => (
         <Row key={b.name} icon={Server} title={`${b.name}${b.name === v.machine ? ' (this one)' : ''} · ${b.role ?? '?'}`}
-             hint={`${b.handing ? 'handing over' : b.active ? 'runs Concierge' : 'waiting'} · heartbeat ${b.agoS != null ? `${b.agoS}s ago` : 'never'}${b.name === v.machine ? ` · ${since}` : ''}`} />
+             hint={`${b.handing ? 'handing over' : b.active ? 'runs Concierge' : 'waiting'} · heartbeat ${b.agoS != null ? `${b.agoS}s ago` : 'never'}${b.name === v.machine ? ` · ${since}` : ''}${v.fleetCode && b.agoS != null && b.agoS < 60 && (b.code ?? '') !== v.fleetCode ? ' · its standby runs an older script: the next update restarts it' : ''}`} />
       ))}
       {r && <Row icon={PlugZap}
            title={r.following ? (r.stateError ? `Not following ${r.following}` : r.caughtUp ? `In step with ${r.following}` : `Catching up with ${r.following}`) : 'Others follow this one'}

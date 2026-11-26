@@ -47,6 +47,33 @@ name=$(envv DECK_NAME)
 # one's Settings read the other's progress. Every line in UTC. (Cron's or the standby's own redirect still gets a copy.)
 # (one machine: cron already writes update.log, so only a run by hand in a terminal adds its copy)
 if [[ -n $name || -t 1 ]]; then exec > >(tee -a "$state/update${name:+.$name}.log") 2>&1; fi
+# the fleet's standby picks up a pulled bin/standby by restarting itself; one that didn't (it missed the change, its
+# restart failed) runs the old script for good. Its heartbeat says which script it runs (its content's hash): a fresh
+# heartbeat with another one, 3 minutes after the file changed, gets it restarted from here, by whatever runs it (its
+# container, or systemd on WSL). Every run, before anything waits: the standby runs this every 10 seconds
+heal_standby() {
+  [[ -n $name && -f .env.fleet && -f fleet/bin/standby ]] || return 0
+  local want have age
+  want=$(python3 -c 'import hashlib,sys; print(hashlib.sha1(open(sys.argv[1],"rb").read()).hexdigest()[:12])' fleet/bin/standby 2>/dev/null) || return 0
+  # "": a standby from before heartbeats said this (old by now); "gone": not beating, nothing to restart here
+  have=$(python3 -c 'import json,sys,time; b=json.load(open(sys.argv[1])); print(b.get("code","") if time.time()-b.get("at",0)<60 else "gone")' "$state/hosts/$name.json" 2>/dev/null) || return 0
+  [[ $have == gone || $have == "$want" ]] && return 0
+  age=$(( $(date +%s) - $(stat -c %Y fleet/bin/standby 2>/dev/null || stat -f %m fleet/bin/standby) ))
+  (( age > 180 )) || return 0
+  if [[ -n $(docker ps -q -f name='^concierge-standby$' 2>/dev/null) ]]; then
+    # inside that container itself (it runs this): it restarts itself once this run is over, and a restart from here
+    # would cut this run short
+    [[ -f /.dockerenv && $(hostname) == $(docker inspect -f '{{.Config.Hostname}}' concierge-standby 2>/dev/null) ]] && return 0
+    echo "$(date -u): the standby runs an older bin/standby (${have:-from before it said}, not $want): restarting it"
+    docker restart concierge-standby >/dev/null
+  elif systemctl --user is-active -q review-deck-standby 2>/dev/null; then
+    echo "$(date -u): the standby runs an older bin/standby (${have:-from before it said}, not $want): restarting it"
+    # this may be its own run (systemd stops what it started with it): it's the last thing this does, then the
+    # restarted standby runs bin/update again
+    systemctl --user restart review-deck-standby
+  fi
+}
+heal_standby
 handled="$state/update-handled${name:+.$name}"
 ask=$(cat "$state/update-asked" 2>/dev/null || true)
 if [[ $asked == 1 ]]; then [[ -n $ask && $ask != "$(cat "$handled" 2>/dev/null)" ]] || exit 0; fi

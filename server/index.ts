@@ -37,7 +37,7 @@ import { hashOf, nextSteps, stepHash, toSteps, withoutCiWatch, type NextSteps } 
 import { pendingOf, routeSteps } from './reply.ts'
 import { alert, alerts, condition, seeAlerts, whenAlerts } from './alerts.ts'
 import { pin, pins, prText, prYours, ticketText, ticketYours, watch, type Seen } from './pins.ts'
-import { infraView } from './infra.ts'
+import { behind as standbyBehind, fleetCode, infraView } from './infra.ts'
 import { runs, totals } from './lifecycle.ts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { freemem, homedir, tmpdir } from 'node:os'
@@ -870,7 +870,12 @@ try { unlinkSync(join(STATE_DIR, 'hosts', 'hooks-funnel.json')) } catch { /* v29
 async function door(on: boolean) {
   if (!fleet.machine) throw new Error('Live updates need the fleet: Tailscale, which opens the door, runs there (fleet/README.md)')
   const r = await doorAnswer(DOOR_DIR, fleet.machine, askDoor(DOOR_DIR, on, hookPort()))
-  if (!r) throw new Error('The fleet hasn\'t answered yet: its standby runs Tailscale and looks every 10 seconds. Is it running on this machine?')
+  if (!r) {
+    // most often a standby still on a script from before the door: bin/update restarts it once the new one is 3 minutes old
+    const [{ beats }, code] = await Promise.all([infraView(), fleetCode()]), mine = beats.find((b) => b.name === fleet.machine)
+    if (mine && standbyBehind(mine, code)) throw new Error(`This machine's standby still runs an older bin/standby: the next update restarts it (within a few minutes), then try again.`)
+    throw new Error('The fleet hasn\'t answered yet: its standby runs Tailscale and looks every 10 seconds. Is it running on this machine?')
+  }
   if (!r.ok) throw new Error(funnelError(r.error ?? ''))
   if (r.on !== on) throw new Error(on ? 'Funnel didn\'t take' : 'Funnel stayed on')
 }
