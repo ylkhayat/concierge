@@ -3322,9 +3322,9 @@ app.post('/prs/:id/story', async (c) => {
   const o = p && loadOverlay(p)
   if (!p || !o) return c.json({ error: 'not explained yet' }, 404)
   const { board, card } = await c.req.json<{ board: 'understanding' | 'intent'; card: { id: string; title: string; line?: string; before?: string; why?: string } }>()
-  const key = `v2:${p.id}@${o.headSha}:${board}:${card.id}` // v2: one sentence
+  const key = `v3:${p.id}@${o.headSha}:${board}:${card.id}` // v3: a real example, not a user story
   if (!stories.has(key)) stories.set(key, callClaude<{ story: string }>(JSON.stringify({ pr: o.business, story: o.tour?.story && { push: o.tour.story.push, solution: o.tour.story.solution }, card }), tmpdir(), undefined, () => {}, STORY_SCHEMA, 0.1,
-    `You add context to one card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}. Write ONE sentence of at most 30 words, plain words, no code names, about this card only (not the rest of the PR): "As <who meets it>, when <the situation>, <what happens now>, so that <why it matters>." Use only what the input says.`,
+    `You add context to one card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}: ${STORY_RULE}`,
     'haiku', p.repo).then((r) => { addSpend(r.cost, r.provider, r.tokens); return r.result.story }).catch((e) => { stories.delete(key); throw e }))
   try { return c.json({ story: await stories.get(key)! }) } catch (e) { return c.json({ error: (e as Error).message.split('\n')[0] }, 502) }
 })
@@ -3339,14 +3339,14 @@ app.post('/prs/:id/stories', async (c) => {
   if (!p || !o) return c.json({ error: 'not explained yet' }, 404)
   const { board, cards } = await c.req.json<{ board: 'understanding' | 'intent'; cards: { id: string; title: string; line?: string; before?: string; why?: string }[] }>()
   const list = (cards ?? []).slice(0, 80)
-  const key = `${p.id}@${o.headSha}:${board}:${list.map((x) => x.id).sort().join(',')}`
+  const key = `v3:${p.id}@${o.headSha}:${board}:${list.map((x) => x.id).sort().join(',')}`
   if (!batches.has(key)) batches.set(key, callClaude<{ cards: { id: string; story: string }[] }>(JSON.stringify({ pr: o.business, story: o.tour?.story && { push: o.tour.story.push, solution: o.tour.story.solution }, cards: list }), tmpdir(), undefined, () => {}, STORIES_SCHEMA, 0.3,
     `You add context to each card of a pull request's ${board === 'intent' ? 'Intent board (how the problem was fixed)' : 'Understanding board (what the solution is)'}. For every card given, by its id: ${STORY_RULE}`,
     'haiku', p.repo).then((r) => {
       addSpend(r.cost, r.provider, r.tokens)
       const out = Object.fromEntries(r.result.cards.filter((x) => list.some((k) => k.id === x.id)).map((x) => [x.id, x.story]))
       // a click on one of them later is answered from here
-      for (const k of list) if (out[k.id]) stories.set(`v2:${p.id}@${o.headSha}:${board}:${k.id}`, Promise.resolve(out[k.id]))
+      for (const k of list) if (out[k.id]) stories.set(`v3:${p.id}@${o.headSha}:${board}:${k.id}`, Promise.resolve(out[k.id]))
       return out
     }).catch((e) => { batches.delete(key); throw e }))
   try { return c.json({ stories: await batches.get(key)! }) } catch (e) { return c.json({ error: (e as Error).message.split('\n')[0] }, 502) }

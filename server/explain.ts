@@ -3,7 +3,7 @@
 //   atlas/<repo>/nodes.json     what a folder is, keyed by path and the git tree sha it was written for
 //   explain/<repo>-<n>/<head>   the PR overlay; a new push only re-explains files changed since the last head
 import { tmpdir } from 'node:os'
-import { LEVELS_SCHEMA, LEVELS_SYSTEM, STORY_RULE, levelsOf, levelsPrompt } from './levels.ts'
+import { LEVELS_SCHEMA, LEVELS_SYSTEM, STORY_RULE, levelsOf, levelsPrompt, type Term } from './levels.ts'
 import { method } from './method.ts'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
@@ -402,7 +402,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   const prev = opts.fresh ? undefined : loadOverlay(pr)
   // nothing changed: keep it, unless its tour is missing or predates the story slides; then files carry over and the tour is written
   if (prev && prev.headSha === pr.headSha && prev.baseSha === base && prev.tour?.story) {
-    if (prev.levels?.nodes.every((n) => n.level < 5 || n.title)) return prev // files without a title of their own: drawn again
+    if (prev.levels?.v === 2) return prev // drawn before the newcomer ladder (v2): drawn again
     // explained before the levels existed: only they are written, from the explanation it has
     const o = await withLevels(prev, pr, opts.signal, progress)
     writeJson(join(OVERLAYS(pr), `${pr.headSha}.json`), o)
@@ -458,7 +458,7 @@ export async function explain(pr: Pr, opts: { fresh?: boolean; signal?: AbortSig
   }
   // the levels come with the explanation; an answer without them (an old skill, a cut-off) gets them on their own
   const lv = (result.overlay as { levels?: Parameters<typeof levelsOf>[0] }).levels
-  const done = lv?.nodes.length ? { ...overlay, levels: levelsOf(lv, overlay) } : await withLevels(overlay, pr, opts.signal, progress)
+  const done = lv?.nodes.length ? await newcomer({ ...overlay, levels: levelsOf(lv, overlay) }, pr) : await withLevels(overlay, pr, opts.signal, progress)
   writeJson(join(OVERLAYS(pr), `${pr.headSha}.json`), done)
   writeJson(join(OVERLAYS(pr), 'latest.json'), { head: pr.headSha })
   return overlay
@@ -469,8 +469,27 @@ async function withLevels(o: Overlay, pr: Pr, signal: AbortSignal | undefined, p
   progress('Drawing the levels')
   try {
     const { result, cost } = await callClaude<Parameters<typeof levelsOf>[0]>(levelsPrompt(o), tmpdir(), signal, progress, LEVELS_SCHEMA, 0.6, LEVELS_SYSTEM, undefined, pr.repo)
-    return { ...o, costUsd: o.costUsd + cost, levels: levelsOf(result, o) }
+    return await newcomer({ ...o, costUsd: o.costUsd + cost, levels: levelsOf(result, o) }, pr)
   } catch (e) { console.warn(`levels ${pr.repo}#${pr.number}: ${(e as Error).message.split('\n')[0]}`); return o }
+}
+
+/**
+ * The newcomer pass: the ladder read by someone with no context, by the small model, for the project words it uses that
+ * the glossary doesn't define; each gets a plain meaning from the explanation. A failure leaves the glossary as written.
+ */
+const NEWCOMER_SCHEMA = { type: 'object', additionalProperties: false, required: ['terms'], properties: { terms: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['term', 'means'], properties: { term: { type: 'string' }, means: { type: 'string' } } } } } }
+async function newcomer(o: Overlay, pr: Pr): Promise<Overlay> {
+  const lv = o.levels
+  if (!lv) return o
+  try {
+    const text = lv.nodes.filter((n) => n.level <= 3).map((n) => `${n.title}: ${n.before ? `${n.before} → ` : ''}${n.after}${n.why ? ` (${n.why})` : ''}`).join('\n')
+    const { result, cost } = await callClaude<{ terms: Term[] }>(JSON.stringify({ text, glossary: (lv.glossary ?? []).map((t) => t.term), explanation: { business: o.business, story: o.tour?.story?.push } }), tmpdir(), undefined, () => {}, NEWCOMER_SCHEMA, 0.1,
+      'You read this text as a capable engineer who has never seen this project. List the project or domain words in it (a component name, an acronym, jargon like "gated" or "held-out") that are not in the glossary given and that a newcomer could not follow the text without, exactly as written in the text, each with a plain meaning in at most 15 words taken from the explanation. At most 6; never a code identifier or an everyday engineering word. None missing: an empty list.',
+      'haiku', pr.repo)
+    // its cost goes on the explanation's, as the levels' does (the run that wrote it records the spend)
+    const have = new Set((lv.glossary ?? []).map((t) => t.term.toLowerCase()))
+    return { ...o, costUsd: o.costUsd + cost, levels: { ...lv, glossary: [...(lv.glossary ?? []), ...result.terms.filter((t) => t.term.trim() && !have.has(t.term.toLowerCase()))] } }
+  } catch (e) { console.warn(`newcomer ${pr.repo}#${pr.number}: ${(e as Error).message.split('\n')[0]}`); return o }
 }
 
 export function callClaude<T = Result>(prompt: string, cwd: string, signal: AbortSignal | undefined, progress: Progress, schema: object = SCHEMA, budget = config.explainBudgetUsd ?? 1.5, system = FORMAT, model?: string, repo?: string): Promise<{ result: T; cost: number; provider: ProviderId; tokens?: { input: number; output: number } }> {

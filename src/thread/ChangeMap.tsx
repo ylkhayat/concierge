@@ -13,7 +13,8 @@ import type { Diagram } from '../../server/discussions.ts'
 import type { Overlay, Shape, Touched } from '../../server/explain.ts'
 import { api, enc } from '../lib.ts'
 import { stepsOf } from './flowSteps.ts'
-import { LaneBoard, LevelsBoard, STORY_ICONS, type Lane } from './LevelsBoard.tsx'
+import { Glossary, LaneBoard, LevelsBoard, STORY_ICONS, type Lane } from './LevelsBoard.tsx'
+import { SearchCheck as ListChecksIcon } from 'lucide-react'
 import { keepSame, useApi } from '../query.ts'
 
 type Explained = { overlay?: Overlay; stale?: boolean; task?: { state: string } }
@@ -48,7 +49,7 @@ function Missing({ prId, busy, toast }: { prId: string; busy: boolean; toast: (m
 /** Explained before the levels existed: asked for once (only the levels are written), the old map shown meanwhile. */
 function Leveling({ prId, busy }: { prId: string; busy: boolean }) {
   useEffect(() => { if (busy || started.has(`lv:${prId}`)) return; started.add(`lv:${prId}`); api(`/prs/${enc(prId)}/explain`, {}).catch(() => started.delete(`lv:${prId}`)) }, [prId, busy])
-  return <p className="flex items-center gap-1.5 text-micro text-fg-3"><LoaderCircle className="size-3 animate-spin" />Drawing it at five levels, from general to the code: it updates by itself.</p>
+  return <p className="flex items-center gap-1.5 text-micro text-fg-3"><LoaderCircle className="size-3 animate-spin" />Rewriting it for someone new to it, from what this is at all down to the code: it updates by itself.</p>
 }
 
 // --- Understanding: the change as a mind map -----------------------------------------------------------------
@@ -256,7 +257,7 @@ export function UnderstandingMap({ prId, path, toast }: { prId: string; path?: s
     <ReactFlowProvider>
       <div className="flex h-full min-h-0 flex-col gap-3">
         {q.data?.stale && <p className="text-micro text-wait-text">Drawn for an earlier push: Explain catches it up.</p>}
-        {o.levels ? <>{o.levels.nodes.some((n) => n.level === 5 && !n.title) && <Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} />}<LevelsBoard prId={prId} levels={o.levels} /></> : <><Story o={o} /><Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} /><MapCanvas o={o} /></>}
+        {o.levels ? <>{o.levels.v !== 2 && <Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} />}<LevelsBoard prId={prId} levels={o.levels} /></> : <><Story o={o} /><Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} /><MapCanvas o={o} /></>}
       </div>
     </ReactFlowProvider>
   )
@@ -269,6 +270,26 @@ export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: s
   if (q.isLoading) return <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-4" /></div>
   if (q.isError) return <div className="flex h-full items-center justify-center px-6 text-center text-small text-fg-3">This PR isn’t tracked any more (closed, or never opened here), so there is no explanation to draw from.</div>
   if (!o) return <Missing prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} toast={toast} />
+  // the reviewer's guide (levels v2): what it promises, how and why this way, what must be true for it to be right, each
+  // wired to where in the diff to check it, and its risks. An explanation from before keeps the story board below
+  const r = o.levels?.review
+  if (r) {
+    const repo = prId.split('#')[0]
+    const at = (path: string, lines?: string) => { const [a, b] = (lines ?? '').split(/[-–]/).map((x) => Number(x.trim())); return `https://github.com/${repo}/blob/${o.headSha}/${path}${a ? `#L${a}${b ? `-L${b}` : ''}` : ''}` }
+    const risk = (l: string) => (l === 'high' ? 'bad' as const : l === 'medium' ? 'wait' as const : 'ok' as const)
+    const lanes: Lane[] = [
+      { id: 'claim', label: 'Claim', hint: 'what this PR promises', icon: STORY_ICONS.why, cards: [{ id: 'claim', title: 'What it promises', line: r.claim, tone: 'strong' }] },
+      { id: 'approach', label: 'Approach', hint: 'how, and why this way over the others', icon: STORY_ICONS.decided, cards: [
+        { id: 'approach', title: 'How it does it', line: r.approach, why: r.why, tone: 'strong' },
+        ...r.alternatives.map((x, i) => ({ id: `alt:${i}`, title: x.label, line: x.why, tone: 'faded' as const })),
+      ] },
+      { id: 'assume', label: 'Must be true', hint: 'what it relies on to be right', icon: STORY_ICONS.change, cards: r.assumptions.map((x) => ({ id: `as:${x.id}`, title: x.text, line: `Checked in ${x.path.split('/').pop()}${x.lines ? `, lines ${x.lines}` : ''}` })) },
+      { id: 'check', label: 'Check here', hint: 'the lines that prove each one', icon: ListChecksIcon, cards: r.assumptions.map((x) => ({ id: `ck:${x.id}`, title: `${x.path.split('/').pop()}${x.lines ? `:${x.lines}` : ''}`, mono: true, line: x.look, why: x.path, href: at(x.path, x.lines) })) },
+      { id: 'risks', label: 'Risks', hint: 'what could still go wrong', icon: STORY_ICONS.watch, skip: true, cards: r.risks.map((x, i) => ({ id: `rk:${i}`, title: `${x.level[0].toUpperCase()}${x.level.slice(1)} risk`, line: x.text, tone: risk(x.level) })) },
+    ]
+    const links: [string, string][] = [['claim', 'approach'], ...r.assumptions.map((x) => [`as:${x.id}`, `ck:${x.id}`] as [string, string])]
+    return <ReactFlowProvider><Glossary.Provider value={o.levels?.glossary ?? []}><div className="flex h-full min-h-0 flex-col"><LaneBoard prId={prId} board="intent" lanes={lanes} links={links} /></div></Glossary.Provider></ReactFlowProvider>
+  }
   // the same board as Understanding: lanes read top to bottom as the story (why → what was decided → before and now
   // → what to watch → quick answers), the map's cards in them
   // Intent is how it was fixed (Understanding is the solution itself): the problem, the approach taken over the ones set
@@ -291,5 +312,5 @@ export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: s
     ] },
     { id: 'answers', label: 'Quick answers', hint: 'what a reviewer asks first', icon: STORY_ICONS.answers, skip: true, cards: (s?.questions ?? []).slice(0, 4).map((x, i) => ({ id: `q:${i}`, title: x.q, line: x.a })) },
   ]
-  return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col"><LaneBoard prId={prId} board="intent" lanes={lanes} links={[['problem', 'approach'], ['approach', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
+  return <ReactFlowProvider><div className="flex h-full min-h-0 flex-col gap-2"><Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} /><LaneBoard prId={prId} board="intent" lanes={lanes} links={[['problem', 'approach'], ['approach', s ? 'now' : 'who'], ['before', 'now']]} /></div></ReactFlowProvider>
 }

@@ -6,20 +6,55 @@
 // the next): it never depends on where the browser measured a card, so it sits right at any window size and zoom.
 import { Background, BackgroundVariant, Handle, MarkerType, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Check, Cloud, Cpu, Database, Lightbulb, ListChecks, MessageCircleQuestion, Radio, ShieldAlert, TriangleAlert, UserRound, X, type LucideIcon } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { DIMS, linksAt, visibleAt, type Dim, type Levels } from '../../server/levels.ts'
+import { ArrowRight, Check, Cloud, Cpu, Database, ExternalLink, Lightbulb, ListChecks, MessageCircleQuestion, Radio, ShieldAlert, TriangleAlert, UserRound, X, type LucideIcon } from 'lucide-react'
+import { createContext, Fragment, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { DIMS, linksAt, visibleAt, type Dim, type Levels, type Term } from '../../server/levels.ts'
 import { edgeTypes } from '../components/Explain.tsx'
 import { Tabs } from '../components/Tabs.tsx'
 import { api, enc } from '../lib.ts'
 
 /** A card on a board: a change said in words. strong: the one the lane is about; faded: set aside. */
-export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[]; story?: string } // story: its "In context", written with the board
+export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[]; story?: string; href?: string; mono?: boolean } // story: its example, written with the board; href: where to check it (a file at the PR's head)
 export type Lane = { id: string; label: string; hint: string; icon: LucideIcon; cards: Card[]; skip?: boolean } // skip: left out when empty, unnamed
 
 const W = 260, H = 124, GAP = 24, LABEL_W = 168, LANE_GAP = 28, COLS = 4
 const said = (x?: string) => x?.replace(/`([^`]+)`/g, '$1')
 type Pt = { x: number; y: number }
+
+// --- the glossary: a project word, underlined with dots wherever it shows, its plain meaning on hover or focus ----------
+export const Glossary = createContext<Term[]>([])
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/** Text with its project words marked (the first time each shows in it); without a glossary, the text as it is. */
+export function Termed({ text }: { text?: string }) {
+  const terms = useContext(Glossary)
+  const t = said(text) ?? ''
+  if (!terms.length || !t) return <>{t}</>
+  const sorted = [...terms].filter((x) => x.term.trim()).sort((a, b) => b.term.length - a.term.length)
+  const re = new RegExp(`(?<![\\w-])(${sorted.map((x) => esc(x.term)).join('|')})(?![\\w-])`, 'gi')
+  const seen = new Set<string>()
+  return <>{t.split(re).map((part, i) => {
+    const m = i % 2 ? sorted.find((x) => x.term.toLowerCase() === part.toLowerCase()) : undefined
+    if (!m || seen.has(m.term)) return <Fragment key={i}>{part}</Fragment>
+    seen.add(m.term)
+    return <TermTip key={i} t={m} shown={part} />
+  })}</>
+}
+function TermTip({ t, shown }: { t: Term; shown: string }) {
+  const name = '--t' + useId().replace(/[^a-zA-Z0-9]/g, '')
+  const tip = useRef<HTMLSpanElement>(null)
+  const show = (on: boolean) => { try { if (on) tip.current?.showPopover(); else tip.current?.hidePopover() } catch { /* already so */ } }
+  return (
+    <>
+      <span tabIndex={0} onMouseEnter={() => show(true)} onMouseLeave={() => show(false)} onFocus={() => show(true)} onBlur={() => show(false)} style={{ anchorName: name } as CSSProperties}
+            className="nodrag cursor-help underline decoration-fg-4 decoration-dotted underline-offset-[3px] outline-none focus-visible:decoration-accent">{shown}</span>
+      <span ref={tip} popover="manual" role="tooltip" style={{ positionAnchor: name, positionArea: 'bottom span-right', positionTryFallbacks: 'flip-block, flip-inline', inset: 'auto' } as CSSProperties}
+            className="pointer-events-none m-0 mt-1 w-[260px] rounded-card border-0 bg-surface-1 px-3 py-2 text-left shadow-[var(--e2)] ring-1 ring-line-strong">
+        <span className="block text-small font-semibold text-fg-1">{t.term}</span>
+        <span className="mt-0.5 block text-small leading-snug text-fg-2">{t.means}</span>
+      </span>
+    </>
+  )
+}
 
 const In = () => <Handle type="target" position={Position.Left} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
 const Out = () => <Handle type="source" position={Position.Right} className="!size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
@@ -31,9 +66,9 @@ function CardNode({ data: { c, on } }: NodeProps<Node<{ c: Card; on: boolean }>>
       <In /><Out />
       <p className="flex min-w-0 items-start gap-1.5">
         {c.tone && c.tone in TONE && <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${TONE[c.tone as keyof typeof TONE]}`} />}
-        <span className={`line-clamp-2 text-small font-semibold leading-snug text-fg-1 ${c.tone === 'faded' ? 'line-through decoration-fg-4/50' : ''}`}>{said(c.title)}</span>
+        <span className={`line-clamp-2 text-small font-semibold leading-snug text-fg-1 ${c.mono ? 'font-mono' : ''} ${c.tone === 'faded' ? 'line-through decoration-fg-4/50' : ''}`}>{c.mono ? said(c.title) : <Termed text={c.title} />}</span>
       </p>
-      {c.line && <p className="mt-1 line-clamp-2 text-meta leading-snug text-fg-2">{said(c.line)}</p>}
+      {c.line && <p className="mt-1 line-clamp-2 text-meta leading-snug text-fg-2"><Termed text={c.line} /></p>}
       {!!c.more?.length && <p className="mt-auto text-micro tabular-nums text-fg-4">{c.more.length} inside</p>}
     </div>
   )
@@ -65,18 +100,18 @@ const told = new Map<string, string>()
 // a board's cards without a sentence yet, asked for together as the board opens (server: /prs/:id/stories)
 const asked = new Map<string, Promise<void>>()
 function askAll(prId: string, board: 'understanding' | 'intent', cards: Card[]) {
-  const missing = cards.filter((c) => !c.story && !told.has(`v2:${prId}:${board}:${c.id}`) && !waiting.has(`v2:${prId}:${board}:${c.id}`))
+  const missing = cards.filter((c) => !c.story && !told.has(`v3:${prId}:${board}:${c.id}`) && !waiting.has(`v3:${prId}:${board}:${c.id}`))
   if (!missing.length) return
   const k = `${prId}:${board}:${missing.map((c) => c.id).join()}`
   if (asked.has(k)) return
   const all = api(`/prs/${enc(prId)}/stories`, { board, cards: missing.map(({ id, title, line, before, why }) => ({ id, title, line, before, why })) })
-    .then((r: { stories: Record<string, string> }) => { for (const [id, t] of Object.entries(r.stories)) told.set(`v2:${prId}:${board}:${id}`, t) }, () => { asked.delete(k); for (const c of missing) waiting.delete(`v2:${prId}:${board}:${c.id}`) })
+    .then((r: { stories: Record<string, string> }) => { for (const [id, t] of Object.entries(r.stories)) told.set(`v2:${prId}:${board}:${id}`, t) }, () => { asked.delete(k); for (const c of missing) waiting.delete(`v3:${prId}:${board}:${c.id}`) })
   asked.set(k, all)
-  for (const c of missing) waiting.set(`v2:${prId}:${board}:${c.id}`, all)
+  for (const c of missing) waiting.set(`v3:${prId}:${board}:${c.id}`, all)
 }
 const waiting = new Map<string, Promise<void>>()
 function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'intent'; c: Card }) {
-  const key = `v2:${prId}:${board}:${c.id}`
+  const key = `v3:${prId}:${board}:${c.id}`
   const [text, setText] = useState(c.story ?? told.get(key)), [failed, setFailed] = useState(false)
   useEffect(() => {
     setText(c.story ?? told.get(key)); setFailed(false)
@@ -94,8 +129,8 @@ function Story({ prId, board, c }: { prId: string; board: 'understanding' | 'int
   if (failed) return null
   return (
     <div className="rounded-ctl bg-fill px-2.5 py-2">
-      <p className="label text-fg-4">In context</p>
-      {text ? <p className="mt-0.5 text-small leading-relaxed text-fg-1">{text}</p> : <p className="mt-1 space-y-1"><span className="block h-3 w-full animate-pulse rounded bg-fill-strong" /><span className="block h-3 w-4/5 animate-pulse rounded bg-fill-strong" /></p>}
+      <p className="label text-fg-4">Example</p>
+      {text ? <p className="mt-0.5 text-small leading-relaxed text-fg-1"><Termed text={text} /></p> : <p className="mt-1 space-y-1"><span className="block h-3 w-full animate-pulse rounded bg-fill-strong" /><span className="block h-3 w-4/5 animate-pulse rounded bg-fill-strong" /></p>}
     </div>
   )
 }
@@ -161,13 +196,14 @@ export function LaneBoard({ prId, board, lanes, links, top, children, ask }: { p
       {sel && (
         // a phone has no room beside the board: the card rises over its lower part instead, the board still there above it
         <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-card bg-surface-1 ring-1 ring-line max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:max-h-[60%] max-md:w-auto max-md:shadow-e3">
-          <p className="flex items-center gap-2 border-b border-line px-3 py-2 text-small font-semibold text-fg-1"><span className="min-w-0 flex-1">{said(sel.title)}</span>
+          <p className="flex items-center gap-2 border-b border-line px-3 py-2 text-small font-semibold text-fg-1"><span className={`min-w-0 flex-1 ${sel.mono ? 'font-mono' : ''}`}>{sel.mono ? said(sel.title) : <Termed text={sel.title} />}</span>
             <button onClick={() => setOn(undefined)} aria-label="Close" className="text-fg-4 hover:text-fg-1 max-md:-m-2 max-md:p-2.5"><X className="size-3.5" /></button></p>
           <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-2.5">
-            <Story prId={prId} board={board} c={sel} />
-            {sel.before && <div><p className="label text-fg-4">Before</p><p className="text-small leading-snug text-fg-3">{said(sel.before)}</p></div>}
-            {sel.line && <div><p className="label text-accent-text">{sel.before ? 'Now' : 'What'}</p><p className="text-small leading-snug text-fg-1">{said(sel.line)}</p></div>}
-            {sel.why && <div><p className="label text-fg-4">Why</p><p className="text-small leading-snug text-fg-2">{said(sel.why)}</p></div>}
+            {!sel.href && <Story prId={prId} board={board} c={sel} />}
+            {sel.before && <div><p className="label text-fg-4">Before</p><p className="text-small leading-snug text-fg-3"><Termed text={sel.before} /></p></div>}
+            {sel.line && <div><p className="label text-accent-text">{sel.href ? 'What to check' : sel.before ? 'Now' : 'What'}</p><p className="text-small leading-snug text-fg-1"><Termed text={sel.line} /></p></div>}
+            {sel.why && <div><p className="label text-fg-4">Why</p><p className="text-small leading-snug text-fg-2"><Termed text={sel.why} /></p></div>}
+            {sel.href && <a href={sel.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-small font-medium text-accent-text hover:underline">Open these lines on GitHub<ExternalLink className="size-3" /></a>}
             {!!sel.more?.length && <div><p className="label text-fg-4">Inside, one level deeper</p><ul className="mt-0.5 space-y-0.5">{sel.more.map((m) => <li key={m} className="text-small text-fg-2">{said(m)}</li>)}</ul></div>}
           </div>
         </aside>
@@ -181,7 +217,9 @@ export const STORY_ICONS = { why: Lightbulb, decided: ListChecks, change: Radio,
 
 // --- Understanding: the levels ----------------------------------------------------------------------------------
 
-const STOPS = [['Purpose', 'what it is for'], ['Capabilities', 'what it makes possible'], ['Parts', 'what changed'], ['Mechanics', 'how it works'], ['Code', 'each file']] as const
+// the ladder (server/levels.ts v2): from what this is at all to each file; an explanation drawn before it keeps its own
+const STOPS = [['Context', 'what this part of the product is'], ['The problem', 'what went wrong, with an example'], ['What changes', 'what is possible or different now'], ['How it works', 'the mechanisms'], ['Code', 'each file']] as const
+const STOPS_V1 = [['Purpose', 'what it is for'], ['Capabilities', 'what it makes possible'], ['Parts', 'what changed'], ['Mechanics', 'how it works'], ['Code', 'each file']] as const
 const DIM: Record<Dim, { label: string; hint: string; icon: LucideIcon }> = {
   behaviour: { label: 'Behaviour', hint: 'what a user or caller notices', icon: UserRound },
   data: { label: 'Data', hint: 'what is stored or sent', icon: Database },
@@ -191,24 +229,85 @@ const DIM: Record<Dim, { label: string; hint: string; icon: LucideIcon }> = {
   security: { label: 'Security', hint: 'access, secrets, privacy', icon: ShieldAlert },
   safety: { label: 'Safety net', hint: 'tests and checks', icon: Check },
 }
-const remembered = (prId: string) => { try { const v = Number(localStorage.getItem(`levels:${prId}`)); return v >= 1 && v <= 5 ? v : 3 } catch { return 3 } }
+// a PR first opened starts at the obvious end (its context); after that, where you left it
+const remembered = (prId: string, first: number) => { try { const v = Number(localStorage.getItem(`levels:${prId}`)); return v >= 1 && v <= 5 ? v : first } catch { return first } }
 /** A file's card is titled by what it is, never its name: the model's words, else the start of what it does now. */
 const titleOf = (n: Levels['nodes'][number]) => n.path && (!n.title || n.title.includes('.') || n.title === n.path.split('/').pop()) ? (said(n.after) ?? '').split(/[.:;,(]/)[0].split(' ').slice(0, 6).join(' ') : n.title
 
-/** The meter: the app's own segmented control, floating at the board's foot; how deep the board goes. */
-function Meter({ level, set }: { level: number; set: (l: number) => void }) {
+/** The meter: the app's own segmented control, floating at the foot; how deep it goes. */
+function Meter({ level, set, stops }: { level: number; set: (l: number) => void; stops: readonly (readonly [string, string])[] }) {
   return (
-    <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-surface-1 px-2 py-1 shadow-[var(--e2)]">
-      <span className="pl-1 text-micro text-fg-4">General</span>
+    <div className="absolute bottom-3 left-1/2 z-10 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto rounded-xl bg-surface-1 px-2 py-1 shadow-[var(--e2)]">
+      <span className="pl-1 text-micro text-fg-4 max-md:hidden">General</span>
       <Tabs label="How deep to explain" value={String(level)} onChange={(v) => set(Number(v))}
-            options={STOPS.map(([name, hint], k) => ({ id: String(k + 1), label: name, title: hint }))} />
-      <span className="pr-1 text-micro text-fg-4">Detailed</span>
+            options={stops.map(([name, hint], k) => ({ id: String(k + 1), label: name, title: hint }))} />
+      <span className="pr-1 text-micro text-fg-4 max-md:hidden">Detailed</span>
+    </div>
+  )
+}
+
+/** Where you are: a line for each level above this one, its gist; a click goes back to it. */
+function Trail({ levels, level, set }: { levels: Levels; level: number; set: (l: number) => void }) {
+  const rows = STOPS.slice(0, level - 1).map(([name], k) => ({ k: k + 1, name, gist: levels.nodes.filter((n) => n.level === k + 1).map((n) => titleOf(n)).join(' · ') })).filter((r) => r.gist)
+  if (!rows.length) return null
+  return (
+    <div className="flex flex-col gap-px" aria-label="So far">
+      {rows.map((r) => (
+        <button key={r.k} onClick={() => set(r.k)} className="flex min-w-0 items-baseline gap-2 rounded-ctl px-2 py-0.5 text-left text-meta transition-colors hover:bg-hover">
+          <span className="w-24 shrink-0 text-fg-4"><span className="tabular-nums">{r.k}</span> {r.name}</span>
+          <span className="min-w-0 truncate text-fg-2">{r.gist}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Context and the problem, read like a short article: one column of cards, the example in each, the words you'll meet. */
+function Reading({ levels, level, set }: { levels: Levels; level: number; set: (l: number) => void }) {
+  const nodes = levels.nodes.filter((n) => n.level === level)
+  const terms = levels.glossary ?? []
+  const row = (label: string, text: string | undefined, tone: string) => text ? (
+    <div className="grid gap-x-4 gap-y-0.5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+      <p className="label pt-0.5 text-fg-4">{label}</p>
+      <p className={`text-body leading-relaxed ${tone}`}><Termed text={text} /></p>
+    </div>
+  ) : null
+  return (
+    <div className="mx-auto flex w-full max-w-[680px] flex-col gap-3 px-4 pb-24 pt-5">
+      {nodes.map((n) => (
+        <article key={n.id} className="card p-5">
+          <h3 className="text-reading font-semibold leading-snug text-fg-1"><Termed text={n.title} /></h3>
+          {level === 1 ? <p className="mt-2 text-body leading-relaxed text-fg-2"><Termed text={n.after} /></p> : (
+            <div className="mt-3 flex flex-col gap-2.5">
+              {row('Before', n.before, 'text-fg-3')}
+              {row('Once this lands', n.after, 'text-fg-1')}
+              {row('Why it matters', n.why, 'text-fg-2')}
+            </div>
+          )}
+          {n.story && (
+            <div className="mt-4 rounded-ctl bg-fill px-3.5 py-3">
+              <p className="label text-fg-4">Example</p>
+              <p className="mt-1 text-small leading-relaxed text-fg-1"><Termed text={n.story} /></p>
+            </div>
+          )}
+        </article>
+      ))}
+      {level === 1 && terms.length > 0 && (
+        <section className="card p-5">
+          <h3 className="label text-fg-4">Words you'll meet</h3>
+          <dl className="mt-2.5 grid gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]">
+            {terms.map((t) => <Fragment key={t.term}><dt className="text-small font-semibold text-fg-1">{t.term}</dt><dd className="text-small leading-snug text-fg-2">{t.means}</dd></Fragment>)}
+          </dl>
+        </section>
+      )}
+      <button onClick={() => set(level + 1)} className="btn-quiet btn-sm self-end">Next: {STOPS[level][0]}<ArrowRight className="size-3.5" /></button>
     </div>
   )
 }
 
 export function LevelsBoard({ prId, levels }: { prId: string; levels: Levels }) {
-  const [level, setLevel] = useState(() => remembered(prId))
+  const v2 = levels.v === 2
+  const [level, setLevel] = useState(() => remembered(prId, v2 ? 1 : 3))
   const set = (l: number) => { setLevel(l); try { localStorage.setItem(`levels:${prId}`, String(l)) } catch { /* not kept */ } }
   const { lanes, links } = useMemo(() => {
     const shown = visibleAt(levels, level)
@@ -222,6 +321,23 @@ export function LevelsBoard({ prId, levels }: { prId: string; levels: Levels }) 
   }, [levels, level])
   const ask = useMemo(() => levels.nodes.map((n) => ({ id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, story: n.story })), [levels])
   const unchanged = lanes.filter((l) => !l.cards.length).map((l) => l.label)
-  const top = unchanged.length ? <p className="px-1 text-meta text-fg-3"><span className="text-fg-4">Unchanged:</span> {unchanged.join(' · ')}</p> : undefined
-  return <LaneBoard prId={prId} board="understanding" lanes={lanes} links={links} top={top} ask={ask}><Meter level={level} set={set} /></LaneBoard>
+  const stops = v2 ? STOPS : STOPS_V1
+  const trail = v2 ? <Trail levels={levels} level={level} set={set} /> : null
+  const meter = <Meter level={level} set={set} stops={stops} />
+  return (
+    <Glossary.Provider value={levels.glossary ?? []}>
+      {v2 && level <= 2 ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          {trail}
+          <div className="relative min-h-0 flex-1 overflow-y-auto rounded-card bg-[var(--bg-app)] ring-1 ring-line">
+            <Reading levels={levels} level={level} set={set} />
+            <div className="sticky bottom-0 h-0">{meter}</div>
+          </div>
+        </div>
+      ) : (
+        <LaneBoard prId={prId} board="understanding" lanes={lanes} links={links} ask={ask}
+                   top={<>{trail}{unchanged.length > 0 && <p className="px-2 text-meta text-fg-3"><span className="text-fg-4">Unchanged:</span> {unchanged.join(' · ')}</p>}</>}>{meter}</LaneBoard>
+      )}
+    </Glossary.Provider>
+  )
 }
