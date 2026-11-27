@@ -768,6 +768,18 @@ app.use('*', async (c, next) => {
   if (c.req.method === 'GET') return next() // the main server didn't answer: this machine's own view, as before
   return c.json({ error: fleet.whyNot?.() ?? `${fleet.elsewhere() ?? 'Another machine'} runs Concierge now: nothing done here is kept. Reload in a moment.` }, 409)
 })
+// one click sent twice (a double click, a slow network, two tabs): the same words to the same agent within a few seconds
+// go once; the second is answered as if sent. On the machine that acts (a follower hands it on above)
+const SENDS = /^\/api\/(prs\/[^/]+\/(reply|steer)|exec\/[^/]+\/(reply|steer)|exec\/tickets\/[^/]+\/(steer|actions|route)|exec\/action|handover\/new|handoff)$/
+const recentSends = new Map<string, number>()
+app.use('*', async (c, next) => {
+  if (c.req.method !== 'POST' || !SENDS.test(c.req.path)) return next()
+  const now = Date.now(), key = `${c.req.path}|${await c.req.raw.clone().text()}`
+  for (const [k, at] of recentSends) if (now - at > 8000) recentSends.delete(k)
+  if (recentSends.has(key)) return c.json({ ok: true, duplicate: true })
+  recentSends.set(key, now)
+  return next()
+})
 // an application no machine can work on now (machines.ts heldWhy): its pull requests and tickets are there to read, but
 // nothing is started for them (a run, a reply, an explanation, an action, a post), so nothing lands where it can't go.
 // What only reads or tidies stays open: marking read, dismissing, cancelling or stopping what runs, its domain

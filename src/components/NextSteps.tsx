@@ -113,7 +113,14 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   }
   // words to a lane: the agent (as a reply), or a discussion beside it
   const deliver = (lane: Lane, words: string) => (lane === 'ship' ? ship(words) : route!.send(lane, words))
+  // a second click while the first is still on its way does nothing: state can't say so in time (both clicks read it before it changes)
+  const inFlight = useRef(false)
   const send = async () => {
+    if (inFlight.current) return
+    inFlight.current = true
+    try { await sendNow() } finally { inFlight.current = false }
+  }
+  const sendNow = async () => {
     const words = text.trim()
     // suggestions picked over the box: their steers and your words (and the checklist, if any) go to the agent as one
     // message, and the rest of them (a question copied, a view opened) happen at once
