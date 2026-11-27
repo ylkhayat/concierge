@@ -36,6 +36,10 @@ if (process.env.SHOT_CLICK) for (const one of process.env.SHOT_CLICK.split(';'))
   const r = await send('Runtime.evaluate', { expression: 'JSON.stringify(window.__calls)', returnByValue: true }); console.log('calls after click:', r.result.value)
 }
 // SHOT_PRESS="Label[;Label…]": press the button with that text (the last one on the page that has it), one after another
+// SHOT_THEN_HOVER="x,y": rest the pointer there after the clicks
+if (process.env.SHOT_THEN_HOVER) { const [x, y] = process.env.SHOT_THEN_HOVER.split(',').map(Number); await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }); await sleep(Number(process.env.SHOT_HOVER_MS) || 900) }
+// SHOT_EVAL="expr": evaluate it in the page (after the hover) and print what it returns
+if (process.env.SHOT_EVAL) { const r = await send('Runtime.evaluate', { expression: process.env.SHOT_EVAL, returnByValue: true }); console.log('eval:', JSON.stringify(r.result?.value ?? r.result?.description ?? r)) }
 if (process.env.SHOT_PRESS) for (const label of process.env.SHOT_PRESS.split(';')) {
   const r = await send('Runtime.evaluate', { expression: `(() => { const b = [...document.querySelectorAll('button, label')].filter((x) => x.textContent.trim().startsWith(${JSON.stringify(label)}) && !x.disabled).at(-1); if (!b) return 'no button: ' + ${JSON.stringify(label)}; b.scrollIntoView({ block: 'center' }); b.click(); return 'pressed ' + ${JSON.stringify(label)} })()`, returnByValue: true })
   console.log(r.result.value); await sleep(2500)

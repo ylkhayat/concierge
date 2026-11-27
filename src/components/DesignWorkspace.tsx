@@ -483,6 +483,64 @@ const away = (d: number) => (d <= 1 ? 'uses it directly' : `${d} imports away`)
 /** Where a mark sits on its image, as the style of a box over it. */
 const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, width: `${m.w}%`, height: `${m.h}%` })
 
+/** A lit place on a screen: in percent of the screen's width and height, and its corners' radius in the page's own px. */
+type Lit = { x: number; y: number; w: number; h: number; r: number }
+/**
+ * Where a mark really is on the page drawn: the element whose box matches the mark best (the agent measured it on a
+ * screenshot, a few pixels off), with its own rounded corners; the mark itself when the page has none that fits.
+ * `W` and `H` are the page's own size the marks are in percent of.
+ */
+function snap(d: Document | null | undefined, marks: Mark[], W: number, H: number): Lit[] {
+  marks = marks.filter((m) => m.y < 99 && m.x < 99 && m.y + m.h > 1) // what is drawn: not a part below the screen's fold
+  const plain = marks.map((m) => ({ x: m.x, y: m.y, w: m.w, h: m.h, r: 4 }))
+  if (!d?.body) return plain
+  try {
+    const root = d.documentElement.getBoundingClientRect()
+    if (!root.width) return plain
+    const k = W / root.width // the page's px per drawn px
+    const els = [...d.body.querySelectorAll<HTMLElement>('*')].filter((e) => !e.classList.contains('bp-t'))
+    const boxes = els.map((e) => { const r = e.getBoundingClientRect(); return { e, x: ((r.left - root.left) * k / W) * 100, y: ((r.top - root.top) * k / H) * 100, w: (r.width * k / W) * 100, h: (r.height * k / H) * 100 } })
+    return marks.map((m, i) => {
+      let best: (typeof boxes)[number] | undefined, score = 0.55
+      for (const b of boxes) {
+        if (b.w < 0.3 || b.h < 0.3) continue
+        const ix = Math.max(0, Math.min(m.x + m.w, b.x + b.w) - Math.max(m.x, b.x)), iy = Math.max(0, Math.min(m.y + m.h, b.y + b.h) - Math.max(m.y, b.y))
+        const inter = ix * iy, iou = inter / (m.w * m.h + b.w * b.h - inter)
+        if (iou > score) { score = iou; best = b }
+      }
+      if (!best) return plain[i]
+      if (best.y >= 99) return undefined
+      const r = parseFloat(d.defaultView!.getComputedStyle(best.e).borderTopLeftRadius) || 0
+      return { x: best.x, y: best.y, w: best.w, h: best.h, r }
+    }).filter((b): b is Lit => !!b)
+  } catch { return plain }
+}
+
+/**
+ * The component lit on a screen: everything else falls back under a veil of the board's own surface, and the component
+ * stays as drawn, at full strength, with a soft glow in the accent around its own shape. `scale`: drawn px per page px.
+ */
+function Spotlight({ lit, W, H, scale, on }: { lit: Lit[]; W: number; H: number; scale: number; on: boolean }) {
+  const mask = `s${useId().replace(/\W/g, '')}`
+  const g = Math.min(1, Math.max(0.3, scale * 2.2)) // the glow's size: small on a miniature, full on a large screen
+  return (
+    <div aria-hidden className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ease-[var(--ease-out)] ${on ? 'opacity-100' : 'opacity-0'}`}>
+      {lit.length > 0 && <>
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 size-full">
+          <mask id={mask}><rect width={W} height={H} fill="white" />{lit.map((b, i) => <rect key={i} x={(b.x / 100) * W} y={(b.y / 100) * H} width={(b.w / 100) * W} height={(b.h / 100) * H} rx={b.r} fill="black" />)}</mask>
+          <rect width={W} height={H} mask={`url(#${mask})`} style={{ fill: 'color-mix(in oklch, var(--surface-1) 80%, transparent)' }} />
+        </svg>
+        {lit.map((b, i) => (
+          <span key={i} className="absolute" style={{
+            left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%`, borderRadius: b.r * scale,
+            boxShadow: `0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent), 0 0 ${10 * g}px ${1 * g}px color-mix(in oklch, var(--accent) 50%, transparent), 0 ${6 * g}px ${36 * g}px ${6 * g}px color-mix(in oklch, var(--accent) 28%, transparent)`,
+          }} />
+        ))}
+      </>}
+    </div>
+  )
+}
+
 /**
  * A screen on the board, small: the page itself when the baseline has its Storybook (`live`: the story's own page,
  * rendered at its real size and scaled down), else its screenshot. A click opens it large.
@@ -495,7 +553,7 @@ const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, wi
 /** Below this scale a page's text is a grey haze: the miniature draws it as a blueprint instead. */
 export const BLUEPRINT_BELOW = 0.42
 const BLUEPRINT_CSS = `
-html.bp, html.bp body { background: transparent !important; color-scheme: normal !important; scrollbar-width: none !important; }
+html.bp, html.bp body { background: transparent !important; scrollbar-width: none !important; }
 html.bp ::-webkit-scrollbar { display: none !important; }
 html.bp *, html.bp *::before, html.bp *::after { border-color: transparent !important; outline-color: transparent; box-shadow: none !important; text-shadow: none !important; transition: none !important; animation: none !important; }
 html.bp [data-bp-s] { background: color-mix(in srgb, var(--bp-ink) 5%, transparent) !important; }
@@ -535,7 +593,7 @@ const tone = (() => {
  * title or a bold word darker; coloured text keeps its hue), every edge a line one screen pixel wide, fields empty.
  * The layout and its places stay as drawn. Marking the page is done once; `on`, the scale `k` and `ink` switch it.
  */
-export function blueprint(d: Document, k: number, on: boolean, ink: string) {
+export function blueprint(d: Document, k: number, on: boolean, ink: string, dark = false) {
   const root = d.documentElement
   if (!root.dataset.bp) {
     root.dataset.bp = '1'
@@ -567,6 +625,8 @@ export function blueprint(d: Document, k: number, on: boolean, ink: string) {
     }
   }
   root.classList.toggle('bp', on)
+  // the frame's canvas in the board's own scheme: one that differs is painted opaque (white behind a light page on a dark board)
+  if (on) root.style.setProperty('color-scheme', dark ? 'dark' : 'light', 'important'); else root.style.removeProperty('color-scheme')
   root.style.setProperty('--bp-px', `${(1 / k).toFixed(2)}px`)
   root.style.setProperty('--bp-ink', ink)
 }
@@ -727,10 +787,11 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
       if (!d) return
       d.documentElement.style.zoom = String(k)
       // from afar: the layout in the board's own ink, not a haze of text in the page's theme
-      if (ready && frame.current) blueprint(d, k, k < BLUEPRINT_BELOW, getComputedStyle(frame.current).color)
+      if (ready && frame.current) blueprint(d, k, k < BLUEPRINT_BELOW, getComputedStyle(frame.current).color, dark)
     } catch { /* another origin: as drawn */ }
   }, [k, ready, dark])
-  const mask = `m${useId().replace(/\W/g, '')}`
+  // the lit component, on the page's own element when the page is there
+  const lit = useMemo(() => (shown.length ? snap(ready ? page.current?.contentDocument : undefined, shown, W, H) : []), [shown.map((m) => `${m.x},${m.y}`).join(), ready, W, H]) // eslint-disable-line react-hooks/exhaustive-deps
   const at = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }) => {
     const r = e.currentTarget.getBoundingClientRect()
     return partAt(marks, ((e.clientX - r.left) / r.width) * 100, ((e.clientY - r.top) / r.height) * 100)
@@ -746,15 +807,7 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
                   style={{ width: '100%', height: '100%' }}
                   className={`pointer-events-none absolute inset-0 border-0 bg-surface-1 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
         )}
-        <div aria-hidden className={`pointer-events-none absolute inset-0 transition-opacity duration-500 ease-[var(--ease-out)] ${litPart ? 'opacity-100' : 'opacity-0'}`}>
-          {shown.length > 0 && <>
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full">
-              <mask id={mask}><rect width="100" height="100" fill="white" />{shown.map((m, i) => <rect key={i} x={m.x} y={m.y} width={m.w} height={m.h} fill="black" />)}</mask>
-              <rect width="100" height="100" mask={`url(#${mask})`} style={{ fill: 'color-mix(in oklch, var(--surface-1) 55%, transparent)' }} />
-            </svg>
-            {shown.map((m, i) => <span key={i} style={boxOf(m)} className="absolute rounded-[1px] ring-[1.5px] ring-accent" />)}
-          </>}
-        </div>
+        <Spotlight lit={lit} W={W} H={H} scale={k} on={!!litPart} />
       </div>
       <figcaption className="mt-1.5 flex items-baseline gap-1.5 truncate text-micro text-fg-3"><span className="tabular-nums text-fg-4">{step}</span>{shot.variant ?? shot.name}</figcaption>
     </figure>
@@ -766,8 +819,8 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
  * one names it; a click (or picking one in the list) glides the view to it. A component that isn't on this screen
  * takes the view to the first screen that has it.
  */
-function Focus({ pr, sha, shot, origin, live, target, onPart, onClose, onStep }: {
-  pr: string; sha: string; shot: Shot; origin?: DOMRect; live?: string; target?: string; onPart: (part: string) => void; onClose: () => void; onStep?: (d: number) => void
+function Focus({ pr, sha, shot, origin, live, target, lit: litPart, onPart, onClose, onStep }: {
+  pr: string; sha: string; shot: Shot; origin?: DOMRect; live?: string; target?: string; lit?: string; onPart: (part: string) => void; onClose: () => void; onStep?: (d: number) => void
 }) {
   const box = useRef<HTMLDivElement>(null), stage = useRef<HTMLDivElement>(null)
   const [hoverMark, setHoverMark] = useState<Mark>()
@@ -804,6 +857,12 @@ function Focus({ pr, sha, shot, origin, live, target, onPart, onClose, onStep }:
   const R = fw ? Math.round((fw / W) * settled * 1000) / 1000 : 1 // the page's zoom: its layout at full width, drawn at the size it is shown
   const page = useRef<HTMLIFrameElement>(null)
   useEffect(() => { try { const d = page.current?.contentDocument; if (d) d.documentElement.style.zoom = String(R) } catch { /* not the same origin: as drawn */ } }, [R, ready])
+  // the component lit: the one rested on here, else the one pointed at in the list (or pinned, or glided to)
+  const showPart = hoverMark?.part ?? litPart ?? target
+  const lastPart = useRef<string | undefined>(undefined)
+  if (showPart) lastPart.current = showPart
+  const litMarks = useMemo(() => marks.filter((m) => m.part && m.part === lastPart.current), [marks, lastPart.current]) // eslint-disable-line react-hooks/exhaustive-deps
+  const lit = useMemo(() => snap(ready ? page.current?.contentDocument : undefined, litMarks, W, H), [litMarks, ready, W, H])
   const hoverTimer = useRef<number | undefined>(undefined)
   const over = (m?: Mark) => { clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(() => setHoverMark(m), m ? 350 : 150) }
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
@@ -828,9 +887,9 @@ function Focus({ pr, sha, shot, origin, live, target, onPart, onClose, onStep }:
                         className={`pointer-events-none absolute left-0 top-0 border-0 transition-opacity duration-500 ${ready ? 'opacity-100' : 'opacity-0'}`} />
               </span>
             )}
+            <Spotlight lit={lit} W={W} H={H} scale={fw ? (fw / W) * t.s : 1} on={!!showPart && lit.length > 0} />
             {marks.map((m, i) => m.part && (
-              <button key={i} type="button" style={boxOf(m)} onMouseEnter={() => over(m)} onMouseLeave={() => over(undefined)} onClick={() => onPart(m.part!)} aria-label={m.part}
-                      className={`absolute rounded-[1px] transition-[box-shadow,background-color] duration-300 ${m.part === target ? 'shadow-[0_0_0_2px_var(--accent-soft)] ring-[1.5px] ring-accent' : hoverMark === m ? 'bg-accent/6 ring-1 ring-accent/60' : 'ring-0'}`} />
+              <button key={i} type="button" style={boxOf(m)} onMouseEnter={() => over(m)} onMouseLeave={() => over(undefined)} onClick={() => onPart(m.part!)} aria-label={m.part} className="absolute" />
             ))}
           </div>
           {hoverMark && <span className="pointer-events-none absolute left-3 top-3 animate-[fade-in_200ms_var(--ease-out)_both] rounded-[3px] bg-surface-2/95 px-2 py-1 text-micro font-medium text-fg-1 shadow-e2 ring-1 ring-line">{bare(hoverMark.part ?? '')}</span>}
@@ -1002,7 +1061,7 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
         </div>
 
         {canLive && <Renderer base={sbBase} slug={slug} sha={set.sha} jobs={toRender} onDone={(key, ok) => { if (ok) setDone((d) => new Set(d).add(key)); else { failed.current.add(key); setFailures((n) => n + 1) } }} />}
-        {open && <Focus key={open.shot.name} pr={pr} sha={set.sha} shot={open.shot} origin={open.from} live={liveOf(open.shot)} target={aim} onPart={pick} onClose={() => { setOpen(undefined); setAim(undefined) }} onStep={step} />}
+        {open && <Focus key={open.shot.name} pr={pr} sha={set.sha} shot={open.shot} origin={open.from} live={liveOf(open.shot)} target={aim} lit={hot} onPart={pick} onClose={() => { setOpen(undefined); setAim(undefined) }} onStep={step} />}
       </div>
     </div>
   )
