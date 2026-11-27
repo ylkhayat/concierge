@@ -87,6 +87,8 @@ const nodeTypes = { card: CardNode, name: LaneName, rule: Rule }
 
 /** A link's path: out of the source's right side, along the gap beside it, across between the lanes, down the gap before the target, in. */
 function route(a: Pt, b: Pt, gapY: number | undefined): Pt[] {
+  // one right under the other (an assumption over its check): straight down, bottom to top
+  if (Math.abs(a.x - b.x) < 1 && b.y > a.y + H) return [{ x: a.x + W / 2, y: a.y + H }, { x: b.x + W / 2, y: b.y }]
   const s = { x: a.x + W, y: a.y + H / 2 }, t = { x: b.x, y: b.y + H / 2 }
   if (Math.abs(s.y - t.y) < 1 && t.x > s.x && t.x - s.x <= GAP + 1) return [s, t] // side by side
   const x1 = s.x + GAP / 2, x2 = t.x - GAP / 2

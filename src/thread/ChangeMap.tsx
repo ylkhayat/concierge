@@ -283,8 +283,8 @@ export function IntentFlow({ prId, path, fork, toast }: { prId: string; path?: s
         { id: 'approach', title: 'How it does it', line: r.approach, why: r.why, tone: 'strong' },
         ...r.alternatives.map((x, i) => ({ id: `alt:${i}`, title: x.label, line: x.why, tone: 'faded' as const })),
       ] },
-      { id: 'assume', label: 'Must be true', hint: 'what it relies on to be right', icon: STORY_ICONS.change, cards: r.assumptions.map((x) => ({ id: `as:${x.id}`, title: x.text, line: `Checked in ${x.path.split('/').pop()}${x.lines ? `, lines ${x.lines}` : ''}` })) },
-      { id: 'check', label: 'Check here', hint: 'the lines that prove each one', icon: ListChecksIcon, cards: r.assumptions.map((x) => ({ id: `ck:${x.id}`, title: `${x.path.split('/').pop()}${x.lines ? `:${x.lines}` : ''}`, mono: true, line: x.look, why: x.path, href: at(x.path, x.lines) })) },
+      { id: 'assume', label: 'Must be true', hint: 'what it relies on to be right', icon: STORY_ICONS.change, cards: r.assumptions.map((x) => ({ id: `as:${x.id}`, title: x.text })) },
+      { id: 'check', label: 'Check here', hint: 'the lines that prove each one', icon: ListChecksIcon, cards: r.assumptions.map((x) => ({ id: `ck:${x.id}`, title: x.look, line: `${x.path.split('/').pop()}${x.lines ? `, lines ${x.lines}` : ''}`, why: x.path, href: at(x.path, x.lines) })) }, // titled by what to verify: in a one-file PR every file name is the same
       { id: 'risks', label: 'Risks', hint: 'what could still go wrong', icon: STORY_ICONS.watch, skip: true, cards: r.risks.map((x, i) => ({ id: `rk:${i}`, title: `${x.level[0].toUpperCase()}${x.level.slice(1)} risk`, line: x.text, tone: risk(x.level) })) },
     ]
     const links: [string, string][] = [['claim', 'approach'], ...r.assumptions.map((x) => [`as:${x.id}`, `ck:${x.id}`] as [string, string])]
