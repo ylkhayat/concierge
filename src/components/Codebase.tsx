@@ -139,8 +139,8 @@ function Map_({ repo, repos, onRepo, health, toast }: {
         return {
           id: `${l.from}>${l.to}`, source: l.from, target: l.to, label: l.label, zIndex: 5,
           ...(route ? { type: 'elk', data: { points: route.points, label: route.label } } : { type: 'smoothstep' }),
-          style: { stroke: 'rgb(139 92 246 / 0.55)', strokeWidth: Math.min(1 + Math.log2(l.weight + 1) / 2, 2.5) },
-          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'rgb(139 92 246 / 0.7)' },
+          style: { stroke: 'color-mix(in oklch, var(--accent) 55%, transparent)', strokeWidth: Math.min(1 + Math.log2(l.weight + 1) / 2, 2.5) },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'color-mix(in oklch, var(--accent) 70%, transparent)' },
         }
       }))
       requestAnimationFrame(() => {
@@ -263,7 +263,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
                 : plan.complete
                 ? <><span className="font-medium">{plan.toMap} folder{plan.toMap === 1 ? '' : 's'} changed</span> on {d.meta.branch} since this map.</>
                 : <><span className="font-medium">Partly mapped:</span> {plan.known} of {plan.folders} folders, {plan.toMap} to go.</>}</span>
-              <button onClick={() => startMap()} className="ml-auto rounded-ctl bg-accent px-2.5 py-1 font-medium text-on-accent transition-all hover:bg-accent">
+              <button onClick={() => startMap()} className="btn-primary btn-sm ml-auto">
                 {!plan.toMap ? 'Redraw systems' : plan.complete ? 'Update' : 'Finish mapping'} · ~${plan.estimateUsd.toFixed(2)}
               </button>
             </>
@@ -277,7 +277,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
             <div className="flex h-full items-center justify-center gap-2 text-body text-fg-3"><LoaderCircle className="size-4 animate-spin text-accent" />Loading the map…</div>
           ) : d === null ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-              <span className="flex size-14 items-center justify-center rounded-card bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
+              <span className="flex size-14 items-center justify-center rounded-card bg-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
               <div>
                 <p className="font-semibold">{mapping ? 'Mapping this codebase' : `${repo} isn’t mapped yet`}</p>
                 <p className="mt-1 max-w-sm text-body text-fg-3">{mapping ? (task?.step ?? 'Getting started') + (task?.total ? ` · ${task.done}/${task.total} folders` : '') : 'Map its default branch once to browse every system and folder, and to explain PRs against the whole picture.'}</p>
@@ -343,7 +343,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
             </div>
             <footer className="flex gap-2 border-t border-line p-3 ">
               {!business && card.expandPath && (
-                <button onClick={() => toggle(card.id)} className="flex flex-1 items-center justify-center gap-1.5 btn-primary transition-all hover:bg-accent">
+                <button onClick={() => toggle(card.id)} className="flex flex-1 items-center justify-center gap-1.5 btn-primary">
                   {card.expanded ? <><Minimize2 className="size-3.5" />Close box</> : <><ZoomIn className="size-3.5" />Open box</>}
                 </button>
               )}
@@ -375,7 +375,7 @@ function DeeperCard({ repo, path, count, busy, active, onMap }: { repo: string; 
         <p className="flex items-center gap-1.5 text-small text-accent-text"><LoaderCircle className="size-3.5 animate-spin" />Mapping them now…</p>
       ) : (
         <button onClick={onMap} disabled={busy} title={busy ? 'Another map is running; this one can start after it' : undefined}
-                className="inline-flex items-center gap-1.5 btn-primary btn-sm transition-all hover:bg-accent disabled:pointer-events-none disabled:opacity-40">
+                className="inline-flex items-center gap-1.5 btn-primary btn-sm disabled:pointer-events-none disabled:opacity-40">
           <MapIcon className="size-3.5" />Map deeper{est != null && ` · ~$${est.toFixed(2)}`}
         </button>
       )}

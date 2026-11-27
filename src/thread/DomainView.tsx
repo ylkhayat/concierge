@@ -48,7 +48,7 @@ export function DomainView({ path, focus }: { path: string; focus: 'product' | '
 
   const touched = d.contexts.filter((c) => c.touched), around = d.contexts.filter((c) => !c.touched)
   const contextMap = (
-    <Section title="Context map" hint="the parts of the business it touches">
+    <Section title="Areas it touches" hint="the parts of the business this change reaches">
       <div className="flex flex-wrap gap-3">
         {touched.map((c) => (
           <div key={c.name} className="min-w-[220px] flex-1 rounded-panel border-2 border-dashed border-accent/50 bg-accent-soft/40 p-3">
@@ -86,12 +86,12 @@ export function DomainView({ path, focus }: { path: string; focus: 'product' | '
     </Section>
   )
   const events = !!d.events.length && (
-    <Section title="Domain events">
+    <Section title="What happens">
       <div className="flex flex-wrap gap-2">{d.events.map((e) => <Note key={e.name} kind="event" sub={e.when}><b>{e.name}</b></Note>)}</div>
     </Section>
   )
   const rules = !!d.rules.length && (
-    <Section title="Business rules">
+    <Section title="Rules">
       <div className="flex flex-wrap gap-2">{d.rules.map((x, i) => <Note key={i} kind="rule" sub={x.change}><span className={x.change === 'removed' ? 'line-through' : ''}>{x.rule}</span></Note>)}</div>
     </Section>
   )
@@ -103,7 +103,7 @@ export function DomainView({ path, focus }: { path: string; focus: 'product' | '
     </Section>
   )
   const glossary = !!d.glossary.length && (
-    <Section title="Ubiquitous language" hint="the words, as this change uses them">
+    <Section title="Words it uses" hint="what each one means here">
       <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-[max-content_1fr]">
         {d.glossary.map((g) => <div key={g.term} className="contents"><dt className="text-small font-semibold text-fg-1">{g.term}</dt><dd className="text-small text-fg-2">{g.meaning}</dd></div>)}
       </dl>

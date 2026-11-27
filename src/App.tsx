@@ -657,7 +657,7 @@ function ExecSetupHint({ onOpen, hasKey }: { onOpen: () => void; hasKey: boolean
       <span className="flex size-12 items-center justify-center rounded-card bg-accent/10"><Rocket className="size-6 text-accent" /></span>
       <p className="text-body font-medium">Ship your Linear tickets from here</p>
       <p className="text-small text-fg-3">{hasKey ? 'Pick the command that ships a ticket (ship-tickets works out of the box) and the repository each Linear team maps to.' : `Connect Linear with your API key (${inSettings('machines')}), then pick the command that ships a ticket.`}</p>
-      <button onClick={onOpen} className="btn-primary transition-all hover:bg-accent">Open Ship settings</button>
+      <button onClick={onOpen} className="btn-primary">Open Ship settings</button>
     </div>
   )
 }

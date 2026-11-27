@@ -259,7 +259,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         {note.trim() && note.trim() !== (plan.data?.steer ?? steer) && <button onClick={() => { setRaw(false); setSteer(note.trim()) }} disabled={plan.isFetching} title="Read the PRs' suggestions again with your steer: it settles what it can and suggests the rest" className="inline-flex items-center gap-1.5 btn-outline btn-sm"><RefreshCw className="size-3.5" />Reanalyze with this steer</button>}
         <button disabled={sending || unanswered.length > 0 || standing.length > 0} onClick={() => void send()}
                 title={standing.length ? 'Two ticked lines can’t both happen: keep one side of each (marked ⚠)' : unanswered.length ? `Decide ${unanswered.length} first` : undefined}
-                className="relative inline-flex items-center gap-1.5 rounded-ctl bg-accent px-3.5 py-1.5 text-small font-medium text-on-accent transition-all active:scale-[0.98] disabled:bg-fill-strong disabled:text-fg-3">
+                className="relative isolate inline-flex items-center gap-1.5 overflow-hidden btn-primary">
           {sending ? <LoaderCircle className="size-3.5 animate-spin" /> : publishing.length ? <Upload className="size-3.5" /> : <Send className="size-3.5" />}
           {armed === 'send' ? <ArmLabel>{`Confirm: ${publishing.length} public step${publishing.length === 1 ? '' : 's'}`}</ArmLabel> : `Answer the stack · ${waiting.length} PRs`}
           {armed === 'send' && <ArmBar on="color" />}

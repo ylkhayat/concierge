@@ -113,9 +113,9 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
         {switcher && <div className="w-64">{switcher}</div>}
         <span className="flex size-14 items-center justify-center rounded-card bg-accent/10"><Compass className="size-7 text-accent" /></span>
         <h3 className="text-reading font-semibold">A guided tour of this PR</h3>
-        <p className="max-w-md text-body text-fg-3">Step by step through what it brings, in the order that makes it easy to follow, with what to check and the diff right there, and anything that does not belong flagged. This explanation was made before tours existed.</p>
+        <p className="max-w-md text-body text-fg-3">Step by step through what it brings, in the order that makes it easy to follow, with what to check and the diff right there, and anything that does not belong flagged. This explanation has no tour yet.</p>
         <button onClick={onExplain} disabled={busy} className="inline-flex items-center gap-1.5 btn-primary btn-lg shadow-sm transition-all disabled:opacity-50">
-          {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}{busy ? 'Explaining…' : 'Explain again to add the tour'}
+          {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Sparkles className="size-4" />}{busy ? 'Explaining…' : 'Explain again, with the tour'}
         </button>
       </div>
     )
@@ -174,7 +174,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {!t.story && (
           <div className="flex shrink-0 items-center gap-2 border-b border-accent/15 bg-accent/5 px-6 py-1.5 text-small text-accent-text">
-            <Sparkles className="size-3.5" />An earlier tour. The new one opens with the story: why it exists, what was done, before and now.
+            <Sparkles className="size-3.5" />This tour can open with the story: why it exists, what was done, before and now.
             <button onClick={onExplain} disabled={busy} className="font-semibold underline-offset-2 hover:underline disabled:opacity-50">{busy ? 'Explaining…' : 'Refresh it'}</button>
           </div>
         )}
@@ -480,7 +480,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
               <li key={c?.number ?? 'stack'} className="relative flex min-w-0 flex-1 flex-col items-center px-1.5 text-center">
                 <button onClick={() => setI(n)} disabled={!t} aria-current={on} title={c ? `#${c.number} ${c.title} · its explanation: ${st}` : 'The whole stack'}
                         className="group flex flex-col items-center gap-1.5 disabled:opacity-50">
-                  <span className={`relative flex size-[19px] items-center justify-center rounded-full transition-all duration-300 ${on ? 'bg-accent shadow-[0_0_0_5px_rgb(139_92_246/0.15)]' : past ? 'bg-accent/80' : 'bg-surface-1 ring-1 ring-line-strong group-hover:ring-accent'}`}>
+                  <span className={`relative flex size-[19px] items-center justify-center rounded-full transition-all duration-300 ${on ? 'bg-accent shadow-[0_0_0_5px_var(--accent-soft)]' : past ? 'bg-accent/80' : 'bg-surface-1 ring-1 ring-line-strong group-hover:ring-accent'}`}>
                     {c ? <span className={`size-1.5 rounded-full ${on || past ? 'bg-white' : DOT[st]}`} /> : <Layers className={`size-2.5 ${on || past ? 'text-white' : 'text-fg-3'}`} />}
                   </span>
                   {here && <span className="size-1 rounded-full bg-accent" aria-label="you" />}

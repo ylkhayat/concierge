@@ -213,12 +213,12 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-fill/60 p-4 sm:p-8">
-      <div className="pointer-events-none fixed inset-x-0 top-0 h-80 bg-[radial-gradient(60%_100%_at_50%_0%,rgb(139_92_246/0.12),transparent)]" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 h-80 bg-[radial-gradient(60%_100%_at_50%_0%,var(--accent-soft),transparent)]" />
       <div className="relative flex max-h-full w-full max-w-4xl animate-[toast-in_300ms_var(--ease-snappy)] flex-col overflow-hidden rounded-panel bg-surface-1 shadow-2xl ring-1 ring-line md:h-[min(680px,100%)] md:flex-row">
         {/* step rail */}
         <aside className="flex shrink-0 flex-col gap-6 border-b border-line bg-fill/60 p-6 md:w-64 md:border-b-0 md:border-r">
           <div className="flex items-center gap-2.5">
-            <span className="flex size-9 items-center justify-center rounded-ctl bg-gradient-to-br from-accent to-accent text-white shadow-md shadow-accent/30"><GitPullRequestArrow className="size-5" /></span>
+            <span className="flex size-9 items-center justify-center rounded-ctl bg-accent text-white shadow-md shadow-accent/30"><GitPullRequestArrow className="size-5" /></span>
             <div>
               <div className="font-semibold tracking-tight">Concierge</div>
               <div className="text-meta text-fg-3">{onClose ? 'Settings' : 'Let’s get you set up'}</div>

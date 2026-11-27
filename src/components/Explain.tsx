@@ -310,7 +310,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<Card>
   const hot = !!data.mark, warm = !!data.impacted
   return (
     <div className={`group relative h-full w-full animate-[pop-in_260ms_var(--ease-snappy)] overflow-hidden rounded-card bg-surface-1 p-3 text-left ring-1 transition-all duration-200 
-      ${hot ? 'shadow-[0_0_0_1px_rgb(139_92_246/0.5),0_8px_30px_-6px_rgb(139_92_246/0.45)] ring-accent/60'
+      ${hot ? 'shadow-[0_0_0_1px_var(--accent),0_8px_30px_-6px_var(--glow)] ring-accent/60'
         : warm ? 'ring-2 ring-dashed ring-wait/80 [outline:2px_dashed_rgb(251_191_36/0.7)] [outline-offset:3px] ring-transparent'
         : data.unmapped ? 'bg-fill/80 ring-1 ring-dashed ring-line-strong [outline:1.5px_dashed_rgb(161_161_170/0.6)] [outline-offset:-1.5px] ring-transparent'
         : data.plain ? 'ring-line hover:ring-line-strong' : 'opacity-70 ring-line hover:opacity-100 '}
@@ -582,8 +582,8 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
         return {
           id: `${l.from}>${l.to}`, source: l.from, target: l.to, label: l.label, animated: lit, zIndex: 5,
           ...(routes.get(`${l.from}>${l.to}`) ? { type: 'elk', data: { points: routes.get(`${l.from}>${l.to}`)!.points, label: routes.get(`${l.from}>${l.to}`)!.label } } : { type: 'smoothstep' }),
-          style: { stroke: lit ? 'rgb(139 92 246)' : 'rgb(161 161 170 / 0.7)', strokeWidth: lit ? 2 : 1.25 },
-          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: lit ? 'rgb(139 92 246)' : 'rgb(161 161 170)' },
+          style: { stroke: lit ? 'var(--accent)' : 'rgb(161 161 170 / 0.7)', strokeWidth: lit ? 2 : 1.25 },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: lit ? 'var(--accent)' : 'rgb(161 161 170)' },
           labelStyle: { fontSize: 10, fill: 'rgb(113 113 122)' }, labelBgStyle: { fillOpacity: 0.9 }, labelBgPadding: [4, 2] as [number, number], labelBgBorderRadius: 4,
         }
       }))
@@ -658,18 +658,18 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
             <>
               <TriangleAlert className="size-8 text-fail-text" />
               <p className="max-w-md text-reading text-fg-2 ">{task.error}</p>
-              <button onClick={() => run()} className="rounded-ctl bg-accent px-3.5 py-2 text-reading font-medium text-on-accent transition-all hover:bg-accent">Try again</button>
+              <button onClick={() => run()} className="btn-primary btn-lg">Try again</button>
             </>
           ) : (!mapped || mappingNow) && pr.repoPath ? (
             <MapFirst task={mapTask} plan={plan} waiting={waiting} onMapThenExplain={afterMap} onExplainNow={() => run()} />
           ) : (
             <>
-              <span className="flex size-14 items-center justify-center rounded-card bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><Sparkles className="size-7" /></span>
+              <span className="flex size-14 items-center justify-center rounded-card bg-accent text-white shadow-lg shadow-accent/30"><Sparkles className="size-7" /></span>
               <div>
                 <p className="font-semibold">See this PR as a map</p>
                 <p className="mt-1 max-w-sm text-body text-fg-3">What it means for the business, and how the system and code change, opening each part down to the file.</p>
               </div>
-              <button onClick={() => run()} disabled={!pr.repoPath} className="group inline-flex items-center gap-1.5 rounded-ctl bg-accent px-3.5 py-2 text-reading font-medium text-on-accent shadow-sm transition-all disabled:opacity-40">
+              <button onClick={() => run()} disabled={!pr.repoPath} className="group inline-flex items-center gap-1.5 btn-primary btn-lg">
                 <Sparkles className="size-4 transition-transform group-hover:rotate-12" />Explain this PR
               </button>
             </>
@@ -706,9 +706,9 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
           {onTurns && <button onClick={onTurns} className={ghost} title="How the PR changed direction, push by push"><GitCommitVertical className="size-3" />Turns</button>}
           {!business && !tour && !norms && !codePath && (
             <>
-              <button onClick={openAllChanged} className={ghost} title="Open every box that has changes inside"><Maximize2 className="size-3" /><span className="hidden 2xl:inline">Open all changes</span></button>
-              {anyOpen && <button onClick={() => setOpen(new Set())} className={ghost} title="Close every box"><Minimize2 className="size-3" /><span className="hidden 2xl:inline">Close all</span></button>}
-              <button onClick={() => setAllFiles(!allFiles)} aria-pressed={allFiles} className={ghost} title="Show unchanged files inside open boxes">{allFiles ? <EyeOff className="size-3" /> : <Eye className="size-3" />}<span className="hidden 2xl:inline">{allFiles ? 'Hide' : 'Show'} unchanged files</span></button>
+              <button onClick={openAllChanged} className={ghost} title="Open every box that has changes inside"><Maximize2 className="size-3" /><span className="hidden xl:inline">Open all changes</span></button>
+              {anyOpen && <button onClick={() => setOpen(new Set())} className={ghost} title="Close every box"><Minimize2 className="size-3" /><span className="hidden xl:inline">Close all</span></button>}
+              <button onClick={() => setAllFiles(!allFiles)} aria-pressed={allFiles} className={ghost} title="Show unchanged files inside open boxes">{allFiles ? <EyeOff className="size-3" /> : <Eye className="size-3" />}<span className="hidden xl:inline">{allFiles ? 'Hide' : 'Show'} unchanged files</span></button>
             </>
           )}
           {codePath && (
@@ -865,7 +865,7 @@ function MapFirst({ task, plan, waiting, onMapThenExplain, onExplainNow }: {
   const running = task?.state === 'running' || task?.state === 'queued'
   return (
     <div className="w-full max-w-md space-y-5">
-      <span className="mx-auto flex size-14 items-center justify-center rounded-card bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
+      <span className="mx-auto flex size-14 items-center justify-center rounded-card bg-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
       <div>
         <p className="font-semibold">{running ? 'Mapping the codebase' : 'Map the codebase first'}</p>
         <p className="mt-1 text-body leading-relaxed text-fg-3">
@@ -1028,7 +1028,7 @@ function Inspector({ card, o, d, pr, business, onPrimary, onClose }: { card: Car
       </div>
       <footer className="flex gap-2 border-t border-line p-3 ">
         {(card.expandPath || card.code) && (
-          <button onClick={onPrimary} className="flex flex-1 items-center justify-center gap-1.5 btn-primary transition-all hover:bg-accent">
+          <button onClick={onPrimary} className="flex flex-1 items-center justify-center gap-1.5 btn-primary">
             {business ? <><Cpu className="size-3.5" />See it technically</> : card.expandPath ? (card.expanded ? <><Minimize2 className="size-3.5" />Close box</> : <><ZoomIn className="size-3.5" />Open box</>) : <><Workflow className="size-3.5" />Before &amp; after</>}
           </button>
         )}

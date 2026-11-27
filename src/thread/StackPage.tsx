@@ -96,7 +96,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
           </button>
           {!driving && driveEnd && <span className={`max-w-[28rem] truncate text-meta ${driveEnd === 'done' ? 'text-ok-text' : 'text-wait-text'}`} title={driveRun?.summary?.slice(-600)}>{driveEnd === 'done' ? 'Last run: done' : `Last run ${driveEnd}`}</span>}
           {fresh.length > 0 && (
-            <button onClick={run} disabled={starting} className="inline-flex items-center gap-1.5 btn-primary btn-sm" title="Each starts once the one below it is done, so it reads what that one found">
+            <button onClick={run} disabled={starting} className="inline-flex items-center gap-1.5 btn-outline btn-sm" title="Each starts once the one below it is done, so it reads what that one found">
               {starting ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}{fresh.length === 1 ? `Start #${fresh[0].number}` : `Start the ${fresh.length} not started`}
             </button>
           )}

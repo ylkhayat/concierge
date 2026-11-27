@@ -62,7 +62,7 @@ export function Today({ missing = [], onSkills, me, prs, tickets, health, now, o
 
         {first ? (
           <button onClick={() => go(first)}
-                  className="group flex w-full items-center gap-4 rounded-panel bg-gradient-to-br from-accent to-accent p-5 text-left text-white transition-all hover:-translate-y-0.5">
+                  className="group flex w-full items-center gap-4 rounded-panel bg-accent p-5 text-left text-white transition-all hover:-translate-y-0.5">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-card bg-white/15"><Sparkles className="size-5" /></span>
             <span className="min-w-0 flex-1">
               <span className="block text-small font-semibold text-white/70">Do this first · {first.what}</span>

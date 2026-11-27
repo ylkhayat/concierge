@@ -34,7 +34,7 @@ export const STATUS: Record<PrView['status'], Meta> = {
 // on your own PRs a few states read differently
 const MINE: Partial<Record<PrView['status'], Meta>> = {
   'new': m('Feedback waiting', CircleDot, 'wait'),
-  'ready': m('In crit', CircleDot, 'run'),
+  'ready': m('Ready for you', CircleDot, 'run'),
   'posting': m('Publishing', LoaderCircle, 'run', true),
 }
 export const statusMeta = (status: PrView['status'], mine?: boolean): Meta => (mine && MINE[status]) || STATUS[status]

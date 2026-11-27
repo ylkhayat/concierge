@@ -25,16 +25,16 @@ const ASIDE: Group = { title: 'Set aside', statuses: [], aside: true }
 const GROUPS: Record<Tab, Group[]> = {
   review: [
     { title: 'Needs you', statuses: ['ready', 'in-review', 'failed', 'interrupted'] },
-    { title: 'Working', statuses: ['preparing', 'posting', 'queued'] },
-    { title: 'To review', statuses: ['new', 'no-checkout'] },
+    { title: 'Running', statuses: ['preparing', 'posting', 'queued'] },
+    { title: 'Not started', statuses: ['new', 'no-checkout'] },
     { title: 'Reviewed by you', statuses: ['reviewed'] },
     { title: 'Closed', statuses: ['closed'] },
   ],
   mine: [
     { title: 'Approved · ready to merge', statuses: ['approved'] },
     { title: 'Feedback waiting', statuses: ['new', 'failed', 'interrupted', 'no-checkout'] },
-    { title: 'Working', statuses: ['preparing', 'posting', 'queued'] },
-    { title: 'In crit', statuses: ['ready', 'in-review'] },
+    { title: 'Running', statuses: ['preparing', 'posting', 'queued'] },
+    { title: 'Ready for you', statuses: ['ready', 'in-review'] },
     { title: 'Waiting on reviewers', statuses: ['answered'] },
     { title: 'All clear', statuses: ['clear'] },
     { title: 'Done', statuses: ['closed'] }, // merged or closed in the last few days, then they leave
@@ -126,7 +126,7 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
   const byNumber = new Map(prs.map((p) => [`${p.repo}#${p.number}`, p]))
   const tabs: { id: Tab; label: string; icon: typeof Inbox }[] = [
     { id: 'review', label: 'To review', icon: GitPullRequestDraft },
-    { id: 'mine', label: 'My PRs', icon: UserRound },
+    { id: 'mine', label: 'Mine', icon: UserRound },
   ]
   const activeRef = useRef<HTMLButtonElement>(null)
   useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', behavior: smooth() }) }, [selected])
@@ -211,7 +211,8 @@ const pickable = (p: PrView) => !p.closed && p.status !== 'preparing' && p.statu
 function PickMark({ p, pick, children, small = false }: { p: PrView; pick: Pick; children: ReactNode; small?: boolean }) {
   const at = pick.picked.indexOf(p.id), ok = pickable(p)
   return (
-    <span role="checkbox" aria-checked={at >= 0} aria-disabled={!ok} title={!ok ? 'Already running' : at >= 0 ? `Picked #${at + 1}` : 'Add to the next batch of reviews (or drag across rows)'}
+    <span role="checkbox" tabIndex={ok ? 0 : -1} aria-checked={at >= 0} aria-disabled={!ok} aria-label={`Pick #${p.number} for the next batch of reviews`}
+          onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (ok) pick.toggle(p.id) } }} title={!ok ? 'Already running' : at >= 0 ? `Picked #${at + 1}` : 'Add to the next batch of reviews (or drag across rows)'}
           onClick={(e) => { e.stopPropagation(); if (ok) pick.toggle(p.id) }} className="relative flex shrink-0 items-center justify-center">
       {at >= 0 ? <span className={`flex ${small ? 'size-4 text-[9px]' : 'size-6 text-micro'} items-center justify-center rounded-full bg-accent font-semibold text-on-accent`}>{at + 1}</span>
         : <>

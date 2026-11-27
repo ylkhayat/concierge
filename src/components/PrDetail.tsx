@@ -42,7 +42,7 @@ function Stat({ icon: Icon, label, value, accent }: { icon: LucideIcon; label: s
 }
 
 const STEPS = ['Requested', 'Preparing', 'Ready', 'In review', 'Reviewed']
-const STEPS_MINE = ['Feedback', 'Preparing', 'In crit', 'Fixing', 'All clear']
+const STEPS_MINE = ['Feedback', 'Preparing', 'With you', 'Fixing', 'All clear']
 
 /** The pipeline: where the flow (server/flow.ts) says this PR is. The last step reached means every step is done. */
 
@@ -129,7 +129,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
       {/* crit, once it is part of this PR's flow: "not started" on an untouched PR says nothing */}
       {!pr.critOff && (crit?.port || crit?.live || job) && (
       <Chip icon={critDown ? CircleAlert : Radio} pulse={crit?.live} tone={crit?.live ? 'emerald' : critDown ? 'amber' : 'zinc'}
-            label={crit?.live ? <>crit :{crit.port}{crit.unresolved ? ` · ${crit.unresolved} unresolved` : ''}</> : critDown ? 'crit' : crit?.port ? 'crit stopped' : 'crit not started'}>
+            label={crit?.live ? <>crit{crit.unresolved ? ` · ${crit.unresolved} unresolved` : ''}</> : critDown ? 'crit' : crit?.port ? 'crit stopped' : 'crit not started'}>
         <div className="grid grid-cols-2 gap-2">
           <Stat icon={Bot} label="AI findings" value={crit?.aiComments ?? 0} accent="text-accent-text" />
           <Stat icon={MessageSquare} label="Your notes" value={crit?.myComments ?? 0} accent="text-run-text" />
@@ -298,7 +298,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
             })()
   const parentLinks = <>
               <LinkedPills linked={pr.linked} onOpen={onOpenLinked} />
-              <a href={pr.url} target="_blank" rel="noreferrer" title="Open on GitHub (g)" className="group/link inline-flex items-center gap-0.5 font-mono transition-colors hover:text-accent-text">
+              <a href={pr.url} target="_blank" rel="noreferrer" title="Open on GitHub (g h)" className="group/link inline-flex items-center gap-0.5 font-mono transition-colors hover:text-accent-text">
                 {pr.repo.split('/')[1]}#{pr.number}<ArrowUpRight className="size-3.5 -translate-x-0.5 opacity-0 transition-all group-hover/link:translate-x-0 group-hover/link:opacity-100" />
               </a>
               {pr.draft && <span className="rounded-full bg-fill px-2 py-0.5 text-meta font-medium text-fg-2 ">Draft</span>}
@@ -310,8 +310,8 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
                    className={`${mini} ${url ? '' : 'pointer-events-none opacity-40'}`}><MessagesSquare className="size-3.5" /><span className="hidden sm:inline">crit</span></a>}
                 <button className={mini} disabled={!resumeCmd} onClick={() => act('resume-terminal', 'Opened the session in Terminal')}
                         title={resumeCmd ? 'Open the agent session in Terminal (r)' : 'No agent session yet'}><SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Resume</span></button>
-                <a href={pr.url} target="_blank" rel="noreferrer" className={mini} title="Open on GitHub (g)"><GitPullRequest className="size-3.5" /><span className="hidden sm:inline">GitHub</span></a>
-                <button className={`${mini} px-1.5`} onClick={() => act('dismiss', 'Hidden until requested again')} title="Hide until it is requested again" aria-label="Dismiss"><EyeOff className="size-3.5" /></button>
+                <a href={pr.url} target="_blank" rel="noreferrer" className={mini} title="Open on GitHub (g h)"><GitPullRequest className="size-3.5" /><span className="hidden sm:inline">GitHub</span></a>
+                <button className={`${mini} px-1.5`} onClick={() => act('dismiss', 'Hidden until requested again')} title="Hide it until your review is requested again" aria-label="Hide until requested again"><EyeOff className="size-3.5" /></button>
             </>
   const people = <People pr={pr} />
   return { statusField, parentLinks, stackNav, headerActions, people, pr, feed, onBack, toast, prs, onOpenLinked, act, url, job, busy, critDown, restartCrit, submit, setSubmit, flow, next, asks, askFirst, fixThreads, resumeCmd, below, smartRebase, chips, runFinalize, markRead, BIG, alsoLine, doNext }
