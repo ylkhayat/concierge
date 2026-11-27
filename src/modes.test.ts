@@ -11,6 +11,8 @@ test('the feed read is the open item\'s, in each view', () => {
   assert.equal(deckKey('read', 'ENG-1', isTicket), 'ticket:ENG-1')
   assert.equal(deckKey('read', 'o/app#1', isTicket), 'o/app#1')
   assert.equal(deckKey('design', 'repo:o/web', isTicket), 'setup:o/web')
+  assert.equal(deckKey('design', 'repo:o/web', isTicket, 'tokens'), 'design-tokens:o/web')
+  assert.equal(deckKey('design', 'pr-1', isTicket, 'components'), undefined)
   assert.equal(deckKey('design', 'o/web#2', isTicket), 'visuals:o/web#2')
   assert.equal(deckKey('design', 'ticket:ENG-1', isTicket), undefined)
   assert.equal(deckKey('skills', undefined, isTicket), undefined)

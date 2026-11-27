@@ -1,12 +1,14 @@
 // Design: what the pull requests look like, before and after, without opening them. Built like Plans: the list on the
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
-import { ArrowLeft, ArrowUp, Check, ChevronRight, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { ArrowLeft, ArrowUp, Check, ChevronRight, Component, SwatchBook, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
 import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'
 import { api, enc, useIsDark } from '../lib.ts'
+import type { DesignView } from '../modes.ts'
+import type { Token, TokenBook } from '../../server/tokens.ts'
 import { refresh, useApi } from '../query.ts'
 import { bare, byApp, focusOn, layout, partAt } from '../board.ts'
 import { ActivityFeed } from './ActivityFeed.tsx'
@@ -49,8 +51,8 @@ const TONE = { run: 'text-run-text', ok: 'text-ok-text', wait: 'text-wait-text',
  * `focus`: the workspace (a repository) Design shows, else every one; `ticketRepo`: a ticket's repository, as the board
  * knows it. `feedOf`: an item's conversation, never the item open before it (its key: a PR id, `repo:`, `ticket:`).
  */
-export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo, toast }: {
-  selected?: string; onSelect: (id?: string) => void; feedOf: (item: string) => Activity[]; focus?: string; ticketRepo: (id: string) => string | undefined; toast: Toast
+export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focus, ticketRepo, toast }: {
+  view?: DesignView; selected?: string; onSelect: (id?: string) => void; feedOf: (item: string) => Activity[]; focus?: string; ticketRepo: (id: string) => string | undefined; toast: Toast
 }) {
   const list = useApi<List>('/visuals', { refetchInterval: 30_000 })
   const mine = (repo?: string) => !focus || repo === focus
@@ -60,7 +62,13 @@ export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo,
   // what is open: the item picked, while it is in this workspace; else its first PR, then its first blueprint (another
   // workspace's item, kept from before a switch, is never drawn)
   const listed = (id: string) => prs.some((p) => p.id === id) || repos.some((r) => baselineKey(r.repo) === id) || tickets.some((t) => `ticket:${t.id}` === id)
-  const current = !list.data ? selected : selected && listed(selected) ? selected : prs[0]?.id ?? (repos[0] && baselineKey(repos[0].repo))
+  // the Components and Tokens views are a project's (a repository's): the one the item open is in, else the first
+  const aspect = view !== 'map'
+  const repoOf = (id?: string) => id?.startsWith('repo:') ? id.slice(5) : id?.startsWith('ticket:') ? ticketRepo(id.slice(7)) : prs.find((p) => p.id === id)?.repo
+  const own = repoOf(selected)
+  const current = !list.data ? selected
+    : aspect ? (own && repos.some((r) => r.repo === own) ? baselineKey(own) : repos[0] && baselineKey(repos[0].repo))
+    : selected && listed(selected) ? selected : prs[0]?.id ?? (repos[0] && baselineKey(repos[0].repo))
   // and it is the selection: its feed is read, and the place Design keeps is it
   useEffect(() => { if (list.data && current !== selected) onSelect(current) }, [list.data, current, selected]) // eslint-disable-line react-hooks/exhaustive-deps
   const ticket = current?.startsWith('ticket:') ? tickets.find((t) => `ticket:${t.id}` === current) : undefined
@@ -72,6 +80,22 @@ export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo,
   return (
     <div className="flex h-full min-h-0">
       <nav aria-label="Design" className={`${listing ? 'flex w-full' : 'hidden'} shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex md:w-60`}>
+        {aspect ? <>
+          <p className="label px-2.5 pb-1 pt-2 text-fg-4">Projects</p>
+          {!list.data && <Skeleton rows={2} />}
+          {list.data && !repos.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Repositories.</p>}
+          {repos.map((r) => (
+            <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
+              <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
+                {view === 'tokens' ? <SwatchBook className="size-4 text-fg-3" /> : <Component className="size-4 text-fg-3" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-small font-medium text-fg-1">{r.repo.split('/')[1]}</span>
+                <span className="block truncate text-micro text-fg-3">{r.repo.split('/')[0]}</span>
+              </span>
+            </button>
+          ))}
+        </> : <>
         <p className="label px-2.5 pb-1 pt-2 text-fg-4">Pull requests</p>
         {!list.data && <Skeleton rows={3} />}
         {list.data && !prs.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Repositories, or for one PR from its page.</p>}
@@ -109,6 +133,7 @@ export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo,
             <span className="block truncate text-micro text-fg-3">{t.id}{t.prs.length ? ` · ${t.prs.length} PR${t.prs.length === 1 ? '' : 's'}` : ' · no PR yet'}</span>
           </button>
         ))}
+        </>}
       </nav>
       <div className={`min-w-0 flex-1 flex-col ${listing ? 'hidden md:flex' : 'flex'}`}>
         {current && (
@@ -117,7 +142,8 @@ export function DesignWorkspace({ selected, onSelect, feedOf, focus, ticketRepo,
           </button>
         )}
         <div className="min-h-0 flex-1">
-        {current?.startsWith('repo:') ? <Baseline key={current} repo={current.slice(5)} feed={feed} toast={toast} />
+        {aspect ? (current ? <Aspect key={`${view}:${current}`} view={view} repo={current.slice(5)} feed={feed} toast={toast} /> : <Empty />)
+          : current?.startsWith('repo:') ? <Baseline key={current} repo={current.slice(5)} feed={feed} toast={toast} />
           : ticket ? <TicketVisuals t={ticket} prs={prs} onSelect={onSelect} />
           : current && !current.startsWith('ticket:') ? <VisualsView key={current} id={current} feed={feed} toast={toast} />
           : <Empty />}
@@ -145,7 +171,6 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   const path = `/visuals/repos/${repo}`
   const [ticking, setTicking] = useState(false)
   const [talk, setTalk] = useState<boolean>()
-  const [view, setView] = useState<'map' | 'components'>('map')
   const q = useApi<{ repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; sets: VisualSet[] }>(path, { refetchInterval: ticking ? 3000 : 30_000 })
   const b = q.data, t = b?.task
   useEffect(() => setTicking(busy(t)), [t?.state])
@@ -155,7 +180,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   // the blueprint: the map of the project, its screens by domain and step. It is the baseline; the components' own
   // shots (each one's stories) are beside it, a tab away
   const screens = set?.shots.filter((x) => x.domain && (x.after ?? x.before)) ?? []
-  const mapped = screens.length > 0, onMap = mapped && view === 'map'
+  const mapped = screens.length > 0, onMap = mapped
   const parts = set?.impact?.changed ?? []
   const numbers = new Map(parts.map((c, i) => [c.name, i + 1]))
   // the conversation: a click away (the onboarding and the map say where things stand)
@@ -163,6 +188,8 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   // what the agent last said, for the onboarding's progress (the whole of it is the conversation)
   const said = busy(t) ? [...feed].reverse().find((x) => x.kind === 'text' || x.kind === 'result')?.text : undefined
   const making = !!(t as { board?: boolean } | undefined)?.board || !!set
+  // a component's states: the Components view, a click on the rail away
+  const goComponents = () => { history.pushState(null, '', `/design/components${location.search}${location.hash}`); dispatchEvent(new PopStateEvent('popstate')) }
   return (
     <div className="flex h-full min-h-0">
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
@@ -182,7 +209,6 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
                 </p>
               </div>
               <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
-                {set && <Tabs size="sm" label="What to look at" value={view} onChange={setView} options={[{ id: 'map' as const, label: 'Map' }, { id: 'components' as const, label: `Components · ${parts.length}` }]} />}
                 <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
                 {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
                 {busy(t)
@@ -191,11 +217,10 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
               </div>
             </div>
           </header>
-          {onMap ? <Blueprint pr={baselineKey(repo)} set={set!} screens={screens} parts={parts} numbers={numbers} onStates={() => setView('components')} fill />
-            : set && view === 'components' ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} noBoard />
+          {onMap ? <Blueprint pr={baselineKey(repo)} set={set!} screens={screens} parts={parts} numbers={numbers} onStates={goComponents} fill />
             : <MapOnboarding name={repo.split('/')[1]} has={set ? parts.length : 0} task={t} said={said}
                              onStart={() => (set ? post({ board: true }, 'Making the map: its screens, the built Storybook, every component marked') : post({ setup: true }, 'Setting its Storybook up, then its map'))}
-                             onStop={() => post({ cancel: true }, 'Stopped')} onComponents={set ? () => setView('components') : undefined} onTalk={() => setTalk(true)} />}
+                             onStop={() => post({ cancel: true }, 'Stopped')} onComponents={set ? goComponents : undefined} onTalk={() => setTalk(true)} />}
         </div>
       </div>
       {showTalk && <Conversation id={baselineKey(repo)} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast} />}
@@ -1100,7 +1125,139 @@ function Impact({ pr, set, noBoard }: { pr: string; set: VisualSet; noBoard?: bo
 }
 
 /** The conversation with the agent that captures: your words go on in its own session, and it captures again. */
-function Conversation({ id, feed, live, onSay, toast }: { id: string; feed: Activity[]; live: boolean; onSay: (text: string) => Promise<unknown>; toast: Toast }) {
+/**
+ * Design's Components or Tokens view of a project: what Design read of it, and a conversation of its own beside it
+ * (runner.ts enqueueChat): ask about a component or a token, or for a change, which comes back as a PR.
+ */
+function Aspect({ view, repo, feed, toast }: { view: 'components' | 'tokens'; repo: string; feed: Activity[]; toast: Toast }) {
+  const name = repo.split('/')[1]
+  const base = useApi<{ sets: VisualSet[] }>(`/visuals/repos/${repo}`)
+  const tokens = useApi<{ sha?: string; books: TokenBook[] }>(view === 'tokens' ? `/visuals/tokens/${repo}` : undefined)
+  const chatPath = `/visuals/chat/${view}/${repo}`
+  const [ticking, setTicking] = useState(false)
+  const chat = useApi<{ task?: VisualsTask & { prUrl?: string } }>(chatPath, { refetchInterval: ticking ? 3000 : 30_000 })
+  const t = chat.data?.task
+  useEffect(() => setTicking(busy(t)), [t?.state])
+  const talkKey = `design-talk:${view}`
+  const [talk, setTalkNow] = useState(() => { try { return localStorage.getItem(talkKey) !== '0' } catch { return true } })
+  const setTalk = (on: boolean) => { setTalkNow(on); try { localStorage.setItem(talkKey, on ? '1' : '0') } catch { /* private window */ } }
+  const post = (body: object, msg?: string) => api(chatPath, body).then(() => { void refresh(chatPath); if (msg) toast(msg) }, (e: Error) => toast(e.message, 'error'))
+  const set = base.data?.sets[0], parts = set?.impact?.changed ?? []
+  const books = tokens.data?.books ?? []
+  const count = view === 'tokens' ? books.reduce((n, b) => n + b.tokens.length, 0) : parts.length
+  return (
+    <div className="flex h-full min-h-0">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div className="space-y-3 p-4">
+          <header className="card px-4 py-3.5">
+            <div className="flex flex-wrap items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-meta text-fg-3">{repo} · {view}</p>
+                <h2 className="text-title font-semibold text-fg-1">{view === 'tokens' ? `The design tokens of ${name}` : `The components of ${name}`}</h2>
+                <p className={`mt-0.5 text-meta ${t?.state === 'failed' ? 'text-wait-text' : busy(t) ? 'text-run-text' : 'text-fg-3'}`}>
+                  {t?.state === 'running' ? `Answering${t.machine ? ` on ${t.machine}` : ''}…` : t?.state === 'queued' ? 'Waiting for a machine with its checkout'
+                    : t?.state === 'failed' ? `It didn't finish: ${t.error ?? 'it failed'}`
+                    : view === 'tokens' ? (books.length ? `${count} tokens in ${books.length} app${books.length === 1 ? '' : 's'}, read from its built Storybook` : tokens.data ? 'No tokens read yet' : 'Reading its tokens…')
+                    : set ? `${count} components, from its Storybook · ${new Date(set.at).toLocaleString()}` : base.data ? 'No components read yet' : 'Reading its components…'}
+                </p>
+              </div>
+              <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
+                <button onClick={() => setTalk(!talk)} aria-pressed={talk} title={talk ? 'Hide the conversation' : `Talk about its ${view}`} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${talk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
+                {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
+                {busy(t) && <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>}
+              </div>
+            </div>
+          </header>
+          {view === 'tokens' ? (!tokens.data ? <Skeleton rows={6} /> : books.length ? books.map((b) => <TokenSheet key={b.book} book={b} />)
+              : <p className="card px-4 py-3 text-small text-fg-3">No tokens yet: they are read from the Storybook its map is built with. Make its map (the Map view), or ask in the conversation.</p>)
+            : !base.data ? <Skeleton rows={6} /> : set ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} noBoard />
+              : <p className="card px-4 py-3 text-small text-fg-3">No components yet: they are read with its map. Make its map (the Map view), or ask in the conversation.</p>}
+        </div>
+      </div>
+      {talk && <Conversation id={`design-${view}:${repo}`} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast}
+                             hint={view === 'tokens' ? 'Ask about a token (where it is set, what uses it), or for a change: a new colour, a type scale, a dark theme. A change comes back as a PR.' : 'Ask about a component (its states, its props, where it is used), or for a change: a new state, a story, a fix. A change comes back as a PR.'}
+                             placeholder={view === 'tokens' ? 'Which components use --accent?' : 'Which states does RuleCard have?'} />}
+    </div>
+  )
+}
+
+const TOKEN_GROUPS: { kinds: Token['kind'][]; label: string }[] = [
+  { kinds: ['color'], label: 'Colour' }, { kinds: ['font', 'text', 'weight', 'leading', 'tracking'], label: 'Type' }, { kinds: ['spacing', 'size'], label: 'Space and size' },
+  { kinds: ['radius'], label: 'Radius' }, { kinds: ['shadow'], label: 'Shadow' }, { kinds: ['motion'], label: 'Motion' }, { kinds: ['other'], label: 'Other' },
+]
+/** A token's value as the page reads it: bare channels wrapped the way the app uses them. */
+const cssOf = (t: Token) => (t.rgb ? `rgb(var(${t.name}))` : t.hsl ? `hsl(var(${t.name}))` : `var(${t.name})`)
+
+/**
+ * One app's tokens, drawn as what they are: colours as swatches (a column per theme), type as samples at its size,
+ * radii and shadows on a tile, space as a bar. Each is drawn inside its theme's own values, so a token made of another
+ * (var(--accent)) shows as the page shows it.
+ */
+function TokenSheet({ book }: { book: TokenBook }) {
+  const themes = book.themes
+  const scope = (th: string) => Object.fromEntries(book.tokens.flatMap((t) => { const v = t.values[th] ?? t.values.default; return v === undefined ? [] : [[t.name, v]] })) as CSSProperties
+  const base = scope('default')
+  return (
+    <section className="card overflow-hidden">
+      <header className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-2.5">
+        <h3 className="text-body font-semibold capitalize text-fg-1">{book.book}</h3>
+        <span className="text-meta text-fg-3">{book.tokens.length} tokens{themes.length > 1 ? ` · ${themes.join(', ')}` : ''}</span>
+      </header>
+      <div className="space-y-5 px-4 py-4">
+        {TOKEN_GROUPS.map((g) => {
+          const ts = book.tokens.filter((t) => g.kinds.includes(t.kind))
+          if (!ts.length) return null
+          return (
+            <div key={g.label}>
+              <h4 className="label mb-2 text-fg-4">{g.label} · {ts.length}</h4>
+              {g.kinds[0] === 'color' ? (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
+                  {ts.map((t) => (
+                    <div key={t.name} className="overflow-hidden rounded-ctl ring-1 ring-line" title={Object.entries(t.values).map(([th, v]) => `${th}: ${v}`).join('\n')}>
+                      <div className="flex h-12">
+                        {themes.filter((th) => th === 'default' || th in t.values).map((th) => <span key={th} style={{ ...scope(th), background: cssOf(t) }} className="flex-1" />)}
+                      </div>
+                      <div className="px-2 py-1.5">
+                        <p className="truncate font-mono text-micro text-fg-1">{t.name}</p>
+                        <p className="truncate font-mono text-micro text-fg-4">{t.values.default ?? Object.values(t.values)[0]}{t.uses ? ` · ${t.uses}×` : ''}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="divide-y divide-line rounded-ctl ring-1 ring-line">
+                  {ts.map((t) => <TokenRow key={t.name} t={t} scope={base} />)}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// the app's own values only on the sample: on the row they would replace Concierge's tokens of the same name (--font-mono)
+function TokenRow({ t, scope }: { t: Token; scope: CSSProperties }) {
+  const v = `var(${t.name})`
+  const sample = t.kind === 'font' ? <span style={{ ...scope, fontFamily: v }} className="text-body text-fg-1">Aa Bb Cc 123</span>
+    : t.kind === 'text' ? <span style={{ ...scope, fontSize: v }} className="leading-none text-fg-1">Aa</span>
+    : t.kind === 'weight' ? <span style={{ ...scope, fontWeight: v }} className="text-body text-fg-1">Aa Bb</span>
+    : t.kind === 'tracking' ? <span style={{ ...scope, letterSpacing: v }} className="text-small text-fg-1">TRACKING</span>
+    : t.kind === 'radius' ? <span style={{ ...scope, borderRadius: v }} className="block size-9 bg-accent/15 ring-1 ring-accent/40" />
+    : t.kind === 'shadow' ? <span style={{ ...scope, boxShadow: v }} className="block h-9 w-14 rounded-ctl bg-surface-1" />
+    : t.kind === 'spacing' || t.kind === 'size' ? <span style={{ ...scope, width: `min(100%, ${v})` }} className="block h-2 min-w-px rounded-full bg-accent/50" />
+    : null
+  return (
+    <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_7rem] items-center gap-3 px-3 py-2">
+      <span className="truncate font-mono text-micro text-fg-1" title={t.name}>{t.name}</span>
+      <span className="flex min-w-0 items-center overflow-hidden">{sample ?? <span className="truncate font-mono text-micro text-fg-3">{t.values.default ?? Object.values(t.values)[0]}</span>}</span>
+      <span className="truncate text-right font-mono text-micro text-fg-4" title={Object.entries(t.values).map(([th, x]) => `${th}: ${x}`).join('\n')}>{t.values.default ?? Object.values(t.values)[0]}</span>
+    </div>
+  )
+}
+
+function Conversation({ id, feed, live, onSay, toast, hint, placeholder }: { id: string; feed: Activity[]; live: boolean; onSay: (text: string) => Promise<unknown>; toast: Toast; hint?: string; placeholder?: string }) {
   const [text, setText] = useState('')
   const box = useRef<HTMLTextAreaElement>(null)
   const shown = useMemo(() => feed, [feed])
@@ -1110,11 +1267,11 @@ function Conversation({ id, feed, live, onSay, toast }: { id: string; feed: Acti
       <p className="label border-b border-line px-4 py-2.5 text-fg-4">Conversation</p>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {shown.length ? <ActivityFeed key={id} feed={shown} live={live} toast={toast} />
-          : <p className="px-4 py-3 text-small text-fg-3">Say what to look at: a screen, a state, a width. The agent captures it, and keeps what you said for the next commits.</p>}
+          : <p className="px-4 py-3 text-small text-fg-3">{hint ?? 'Say what to look at: a screen, a state, a width. The agent captures it, and keeps what you said for the next commits.'}</p>}
       </div>
       <div className="p-2.5">
         <div className="flex items-end gap-2 rounded-2xl bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
-          <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="Also at phone width, the empty state…"
+          <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder={placeholder ?? 'Also at phone width, the empty state…'}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
                     className="max-h-[160px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
           <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>

@@ -13,7 +13,8 @@ import { issueNote, issueOf, shipIssuesPrompt } from './issues.ts'
 import { execCommand, furthest, goalSettings, handGoalSettings, handoversIn, MULTI_NOTE, outcomesIn, phaseOf, prLinksIn, stackLinesIn, type Phase } from './exec.ts'
 import { defaultBranch, runOwns } from './github.ts'
 import { fill } from './config.ts'
-import { baselineId, boardPrompt, capturePrompt, hasSet, setsOf, setupPrompt, shotsDir, slugOf, VISUALS_DIR } from './visuals.ts'
+import { baselineId, boardPrompt, capturePrompt, chatPrompt, hasSet, setsOf, setupPrompt, shotsDir, slugOf, VISUALS_DIR, type ChatView } from './visuals.ts'
+import { tokensFor } from './tokens.ts'
 import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend } from './store.ts'
 import { authFailed, cantPay, checkClaudeAuth } from './claudeLogin.ts'
 import { planNote } from './router.ts'
@@ -620,6 +621,9 @@ export function pump() {
     // a repository's Storybook set up (Design): on a machine with its checkout, like a run of its tickets
     ...Object.entries(state.visualsSetup ?? {}).filter(([repo, t]) => t.state === 'queued' && !children.has(`setup:${repo}`) && available(t.provider ?? providerFor('exec', repo)))
       .map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: (on?: string) => void startSetup(repo, on), place: { repo, provider: t.provider ?? providerFor('exec', repo), prefer: t.machine } })),
+    // Design's Components and Tokens conversations: like the setup's, on a machine with the checkout
+    ...Object.entries(state.designChats ?? {}).filter(([k, t]) => t.state === 'queued' && !children.has(`design-${k}`) && available(t.provider ?? providerFor('exec', k.slice(k.indexOf(':') + 1))))
+      .map(([k, t]) => { const repo = k.slice(k.indexOf(':') + 1); return { prio: 1, at: t.queuedAt, go: (on?: string) => void startChat(k.slice(0, k.indexOf(':')) as ChatView, repo, on), place: { repo, provider: t.provider ?? providerFor('exec', repo), prefer: t.machine } } }),
     ...Object.values(state.execs).filter((r) => r.state === 'queued' && !r.planning && canRun(r, 'exec', r.repo) && waited(r)).map((r) => ({ prio: 0, at: r.queuedAt, go: (on?: string) => startExec(r, on), exec: r })),
     ...Object.entries(state.base).filter(([repo, t]) => t.state === 'queued' && available(providerFor('review', repo)) && hereHas(repo)).map(([repo, t]) => ({ prio: 1, at: t.queuedAt, go: () => startBase(repo) })),
   ].sort((a, b) => a.prio - b.prio || a.at.localeCompare(b.at))
@@ -917,6 +921,75 @@ async function startSetup(repo: string, on?: string) {
     },
     onError: (err) => {
       Object.assign(t, { state: 'failed', error: err.message, endedAt: new Date().toISOString() })
+      save(); bus.emit('change'); pump()
+    },
+  })
+}
+
+/** What you say in Design's Components or Tokens view: its own conversation about the repository; your words reach a running one at once. */
+export function enqueueChat(view: ChatView, repo: string, said: string): 'queued' | 'told' | 'busy' | 'no' {
+  if (!config.repos[repo]) return 'no'
+  const all = (state.designChats ??= {}), id = `${view}:${repo}`, t = all[id], key = `design-${id}`
+  if (t?.state === 'running') return tell(key, said, () => { enqueueChat(view, repo, said) }) === 'idle' ? 'busy' : 'told'
+  if (t?.state === 'queued') { t.said = t.said ? `${t.said}\n\n${said}` : said; note(key, { at: new Date().toISOString(), kind: 'you', text: said }); save(); return 'told' }
+  all[id] = { state: 'queued', headSha: '', queuedAt: new Date().toISOString(), said, ...(t?.sessionId && { sessionId: t.sessionId }), ...(t?.machine && { machine: t.machine }), ...(t?.prUrl && { prUrl: t.prUrl }) }
+  note(key, { at: all[id].queuedAt, kind: 'you', text: said })
+  save(); bus.emit('change'); pump()
+  return 'queued'
+}
+export function cancelChat(view: ChatView, repo: string) {
+  const t = state.designChats?.[`${view}:${repo}`]
+  if (t?.state === 'queued') { t.state = 'cancelled'; save(); bus.emit('change'); return }
+  children.get(`design-${view}:${repo}`)?.kill('SIGTERM')
+}
+/** What Design read of a repository, for its Components or Tokens conversation: the components the map found, or each app's tokens. */
+async function chatContext(view: ChatView, repo: string): Promise<string> {
+  if (view === 'tokens') {
+    const { books } = await tokensFor(repo)
+    if (!books.length) return 'No tokens read yet (no built Storybook with a stylesheet): read them from the code.'
+    return books.map((b) => `${b.book} (themes: ${b.themes.join(', ')}):\n${b.tokens.map((t) => `  ${t.name} [${t.kind}] ${Object.entries(t.values).map(([th, v]) => `${th}=${v}`).join(' ')} · read ${t.uses}×`).join('\n')}`).join('\n\n').slice(0, 12_000)
+  }
+  const set = (await setsOf(baselineId(repo)).catch(() => []))[0]
+  const parts = set?.impact?.changed ?? []
+  if (!parts.length) return 'No components read yet: find them in the code and its stories.'
+  const on = (name: string) => set!.shots.filter((x) => x.domain && x.marks?.some((m) => m.part === name)).length
+  return parts.map((c) => `  ${c.name} (${c.kind}) ${c.file} · on ${on(c.name)} of the map's screens`).join('\n').slice(0, 12_000)
+}
+async function startChat(view: ChatView, repo: string, on?: string) {
+  const id = `${view}:${repo}`, t = state.designChats![id], key = `design-${id}`, now = new Date().toISOString(), where = on ?? fleet.machine
+  const again = !!t.sessionId && t.machine === where
+  const said = t.said ?? ''
+  const sid = again ? t.sessionId! : randomUUID()
+  Object.assign(t, { state: 'running', startedAt: now, endedAt: undefined, error: undefined, costUsd: undefined, summary: undefined, sessionId: sid, machine: where, provider: t.provider ?? providerFor('exec', repo) })
+  if (on) note(key, { at: now, kind: 'event', text: `Runs on ${on}.` })
+  save(); bus.emit('change')
+  const prompt = again ? said : chatPrompt({ view, repo, said, context: await chatContext(view, repo) })
+  runAgent({
+    key, label: `${view === 'tokens' ? 'Tokens' : 'Components'} ${repo}`, cwd: config.repos[repo], repo, on, provider: t.provider,
+    onSession: (x) => { if (t.sessionId !== x) { t.sessionId = x; save() } },
+    args: [
+      '-p', prompt, ...(again ? ['--resume', sid] : ['--session-id', sid]),
+      '--output-format', 'stream-json', '--verbose', '--allowedTools', ...config.exec.allowedTools, 'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Skill',
+      '--add-dir', VISUALS_DIR, '--max-budget-usd', '10',
+    ],
+    onResult: (m) => {
+      t.costUsd = m.total_cost_usd ?? 0
+      const text = String(m.result ?? '').trim()
+      if (m.is_error) t.error = short(text || m.subtype, 400); else if (text) t.summary = text.slice(0, 2000)
+      const pr = text.match(/^PR (https:\/\/\S+)/m)?.[1]
+      if (pr) t.prUrl = pr
+    },
+    onEnd: (e) => {
+      t.endedAt = new Date().toISOString()
+      addSpend(t.costUsd ?? 0, t.provider)
+      delete t.said
+      t.state = e.cancelled ? 'cancelled' : t.error ? 'failed' : 'done'
+      if (t.state !== 'done') note(key, { at: t.endedAt, kind: t.state === 'failed' ? 'error' : 'event', text: t.state === 'cancelled' ? 'You stopped it.' : `It didn't finish: ${t.error}` })
+      save(); bus.emit('change'); pump()
+    },
+    onError: (err) => {
+      Object.assign(t, { state: 'failed', error: err.message, endedAt: new Date().toISOString() })
+      note(key, { at: t.endedAt!, kind: 'error', text: `It didn't start: ${err.message}` })
       save(); bus.emit('change'); pump()
     },
   })

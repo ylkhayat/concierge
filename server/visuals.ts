@@ -277,3 +277,23 @@ Save into ${p.out} (make it): the images as PNG, named like before-<name>-<viewp
  "shots":[${SHOT}]}
 End with the summary in one short paragraph.`
 }
+
+/** Design's views that each have a conversation of their own besides the map's (the setup's): what each is about. */
+export const CHAT_VIEWS = { components: 'its components: what each is, its states and stories, where it is used', tokens: 'its design tokens: the colours, type, spacing, radii, shadows and motion each app defines, and their themes' } as const
+export type ChatView = keyof typeof CHAT_VIEWS
+/**
+ * A designer talking with an agent about one side of a repository's design (`view`), in its own session: answers from
+ * the code, its Storybook and what Design read of it (`context`); a change asked for goes in a PR of its own, never on
+ * the checkout's branch.
+ */
+export function chatPrompt(p: { view: ChatView; repo: string; said: string; context: string }): string {
+  return `You talk with a designer about ${p.repo}: ${CHAT_VIEWS[p.view]}. The repository is the folder you are in; its Storybook is in it, and its built copy, with the screens Design rendered, is under ${join(VISUALS_DIR, slugOf(baselineId(p.repo)))}.
+
+What Design read of it:
+${p.context}
+
+Answer what they ask from the code itself, briefly, in plain words a designer reads: names as the code has them, where each lives (file and line), and what uses it. When they ask for a change, make it in a git worktree of your own on a new branch from the default branch (never the checkout's own branch): change it, keep the stories and their tests passing (vitest --project=storybook) and the Storybook building, commit (conventional commits), push, open a PR, and end with a line "PR <its url>". When something is unclear, ask before changing it.
+
+Their words:
+${p.said}`
+}

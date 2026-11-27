@@ -1,4 +1,4 @@
-import { ClipboardList, Clock, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Palette as Swatch } from 'lucide-react'
+import { ClipboardList, Clock, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Component, SwatchBook, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Palette as Swatch } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
@@ -39,7 +39,7 @@ import { stackAt, type Rules } from './desk.ts'
 import { StackPage } from './thread/StackPage.tsx'
 import { focusBlock, useDeskTime } from './deskTime.ts'
 import { useNewVersion } from './fresh.ts'
-import { deckKey, designOn, readPlace, workspaceFor, type DesignFrom, type Mode, type Place, type Visuals } from './modes.ts'
+import { deckKey, designOn, designViewOf, readPlace, workspaceFor, type DesignFrom, type DesignView, type Mode, type Place, type Visuals } from './modes.ts'
 
 // the graph libraries load only when the codebase view opens
 const CodebaseView = lazy(() => import('./components/Codebase.tsx'))
@@ -85,6 +85,7 @@ const firstMode = (): Mode => {
 if (location.pathname.startsWith('/exec')) history.replaceState(history.state, '', `/ship${location.pathname.slice(5)}${location.search}${location.hash}`)
 // the Desk is gone: its old links open Review
 if (location.pathname.startsWith('/desk')) history.replaceState(history.state, '', `/review${location.search}${location.hash}`)
+const designPath = (v: DesignView) => (v === 'map' ? '/design' : `/design/${v}`)
 const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans', design: '/design' }
 // the list's own rules (Focus and Read group by them)
 const RULES: Rules = { waiting, ticketGroup: (t) => groupOf(t).id }
@@ -98,8 +99,10 @@ export function App() {
   const [query, setQueryState] = useState(() => param('q') ?? '')
   const setQuery = (q: string) => { setQueryState(q); setParam('q', q) }
   const [refreshing, setRefreshing] = useState(false)
+  // Design's view (its map, its components, its tokens), from the address
+  const [designView, setDesignView] = useState<DesignView>(() => designViewOf(location.pathname))
   // the open item's feed, known from this render's board (modes.ts)
-  const { me, prs: allPrs, health, connected, feedOf, exec, alerts } = useDeck((b) => deckKey(mode, selected, (id) => !!b?.tickets.some((t) => t.id === id)))
+  const { me, prs: allPrs, health, connected, feedOf, exec, alerts } = useDeck((b) => deckKey(mode, selected, (id) => !!b?.tickets.some((t) => t.id === id), designView))
   const now = useNow()
   const [theme, setTheme] = useTheme()
   const role = useRole()
@@ -167,16 +170,21 @@ export function App() {
   // from the rail: going back finds the item you last had open, not an older one
   const codebaseNow = mode === 'review' && selected?.startsWith('codebase:')
   useEffect(() => { keepPlace(codebaseNow ? 'codebase' : mode, { selected, query }) }, [mode, codebaseNow, selected, query])
-  const setMode = (m: Mode) => {
+  const setMode = (m: Mode, view?: DesignView) => {
     try { localStorage.setItem(`mode:${role}`, m) } catch {}
+    // Design's views share its place (the project open), each its own address
+    if (m === 'design' && view && view !== designView) {
+      setDesignView(view)
+      if (m === mode) { history.pushState(null, '', designPath(view) + location.search + location.hash); return }
+    }
     if (m === mode && !codebaseRepo) return
     const back = placeOf(m), sel = backTo(m)
-    history.pushState(null, '', PATH[m] + location.search + (sel ? `#${enc(sel)}` : ''))
+    history.pushState(null, '', (m === 'design' ? designPath(view ?? designView) : PATH[m]) + location.search + (sel ? `#${enc(sel)}` : ''))
     // at once, in one render: the view, its item and its filter together. A crossfade (a view transition) held the
     // old view on screen while the new one drew; the new view has its own entrance (below)
     setModeState(m); setSelected(sel); setQuery(back.query ?? '')
   }
-  useEffect(() => { const f = () => { setModeState(modeOf()); setSelected(readHash()) }; addEventListener('popstate', f); return () => removeEventListener('popstate', f) }, [])
+  useEffect(() => { const f = () => { setModeState(modeOf()); setDesignView(designViewOf(location.pathname)); setSelected(readHash()) }; addEventListener('popstate', f); return () => removeEventListener('popstate', f) }, [])
 
   // exec mode: the selected ticket and the feed of its latest run
   const tickets = (exec?.tickets ?? []).filter((t) => !t.repo || !away.has(t.repo) || t.id === selected)
@@ -262,7 +270,7 @@ export function App() {
   useEffect(() => { document.documentElement.dataset.mode = codebaseRepo ? 'codebase' : mode }, [mode, codebaseRepo])
   useEffect(() => {
     const n = mode === 'exec' ? execWaiting : needsYou
-    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans', design: 'Design' }[mode]} · Concierge`
+    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans', design: { map: 'Map', components: 'Components', tokens: 'Tokens' }[designView] }[mode]} · Concierge`
   }, [needsYou, execWaiting, mode])
 
   // g then r / e / s / c: to a workspace. g alone (no second key within a moment) still opens the PR on GitHub
@@ -390,10 +398,17 @@ export function App() {
       <Head>Views</Head>
       {/* the workspaces; one accent pill slides to the active one (railPill) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
-      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear'], ['design', Swatch, 'Design', 0, 'What the pull requests look like, before and after, without opening them']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || m === 'design' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0])).map(([m, Icon, label, n, hint]) => {
-        const on = mode === m && !(m === 'review' && codebaseRepo)
+      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear'], ['design', Swatch, 'Design', 0, 'What the pull requests look like, before and after, without opening them']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || m === 'design' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0]))
+        // Design is the mode already: on the rail it is its views, each its own place
+        // Design is the mode already: on the rail it is its views, each its own place
+        .flatMap(([m, Icon, label, n, hint]): { m: Mode; Icon: typeof MapIcon; label: string; n: number; hint: string; view?: DesignView }[] => m !== 'design' ? [{ m, Icon, label, n, hint }]
+          : [{ m, Icon: MapIcon, label: 'Map', n: 0, hint: 'The screens of each app, by domain and step, and what each PR changes', view: 'map' },
+             { m, Icon: Component, label: 'Components', n: 0, hint: 'Every component: its states and where it is used', view: 'components' },
+             { m, Icon: SwatchBook, label: 'Tokens', n: 0, hint: 'Each app\u2019s design tokens: colours, type, spacing, radii, shadows', view: 'tokens' }])
+        .map(({ m, Icon, label, n, hint, view }) => {
+        const on = mode === m && !(m === 'review' && codebaseRepo) && (!view || view === designView)
         return (
-          <button key={m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}`} aria-current={on}
+          <button key={view ? `design:${view}` : m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m, view); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}`} aria-current={on}
                   className={`group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 transition-[background-color,scale] duration-150 active:scale-[0.96] md:flex-none md:py-0 ${W('md:size-10', 'md:h-9 md:w-full md:flex-row md:justify-start md:gap-2.5 md:px-1')} ${on ? '' : 'md:hover:bg-hover'}`}>
             <span data-rail-icon className={`relative flex size-8 items-center justify-center transition-colors duration-150 ${on ? 'text-accent-text' : 'text-fg-3 group-hover:text-fg-1'}`}>
               <Icon className="size-[18px]" />
@@ -552,7 +567,7 @@ export function App() {
                           onRead={(id) => { history.pushState(null, '', `/read${location.search}#${enc(id)}`); setModeState('read'); setSelected(id) }} />
               : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}
           </main>
-        ) : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : mode === 'read' ? (
+        ) : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace view={designView} selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false, designView) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : mode === 'read' ? (
           <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             {prs ? <Read prs={focusedPrs ?? prs} tickets={scoped} rules={RULES} selected={selected} onSelect={select} toast={toast} />
               : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}

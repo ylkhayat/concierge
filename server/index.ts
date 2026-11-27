@@ -2882,6 +2882,34 @@ app.post('/visuals/repos/:owner/:name', async (c) => {
   stale('/visuals')
   return c.json({ repo, task: state.visualsSetup?.[repo], how })
 })
+// Design's Tokens view: each app's tokens from the baseline's built Storybook (tokens.ts)
+app.get('/visuals/tokens/:owner/:name', async (c) => {
+  const repo = `${c.req.param('owner')}/${c.req.param('name')}`
+  if (!config.repos[repo]) return c.json({ error: 'Not a watched repository' }, 404)
+  const { tokensFor } = await import('./tokens.ts')
+  return c.json({ repo, ...(await tokensFor(repo)) })
+})
+// Design's Components and Tokens views: each its own conversation about the repository (runner.ts enqueueChat)
+const chatOf = (c: { req: { param: (k: string) => string } }) => {
+  const view = c.req.param('view'), repo = `${c.req.param('owner')}/${c.req.param('name')}`
+  return (view === 'components' || view === 'tokens') && config.repos[repo] ? { view: view as 'components' | 'tokens', repo } : undefined
+}
+app.get('/visuals/chat/:view/:owner/:name', (c) => {
+  const x = chatOf(c)
+  return x ? c.json({ task: state.designChats?.[`${x.view}:${x.repo}`] }) : c.json({ error: 'Not a watched repository' }, 404)
+})
+app.post('/visuals/chat/:view/:owner/:name', async (c) => {
+  const x = chatOf(c)
+  if (!x) return c.json({ error: 'Not a watched repository' }, 404)
+  const b = await c.req.json() as { say?: string; cancel?: boolean }
+  const { enqueueChat, cancelChat } = await import('./runner.ts')
+  if (b.cancel) cancelChat(x.view, x.repo)
+  const said = typeof b.say === 'string' ? b.say.trim().slice(0, 4000) : ''
+  const how = said ? enqueueChat(x.view, x.repo, said) : undefined
+  if (how === 'no') return c.json({ error: `${x.repo} has no checkout set up` }, 400)
+  return c.json({ task: state.designChats?.[`${x.view}:${x.repo}`], how })
+})
+app.get('/visuals/chat/:view/:owner/:name/activity', async (c) => c.json(await loadActivity(`design-${c.req.param('view')}:${c.req.param('owner')}/${c.req.param('name')}`)))
 app.get('/visuals/setup/:owner/:name/activity', async (c) => c.json(await loadActivity(`setup:${c.req.param('owner')}/${c.req.param('name')}`)))
 app.get('/visuals/:id/activity', async (c) => c.json(await loadActivity(`visuals:${decodeURIComponent(c.req.param('id'))}`)))
 // a baseline's built Storybook, file by file, for the board's live screens (visuals.ts storybookFile: baselines only)

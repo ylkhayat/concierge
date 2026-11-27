@@ -242,6 +242,7 @@ type State = {
   settings: Settings
   spend: Record<string, number> // YYYY-MM-DD → USD spent by agent runs that day
   base: Record<string, BaseTask> // "owner/repo" → the codebase-map job
+  designChats?: Record<string, VisualsTask & { prUrl?: string }> // "components:owner/repo", "tokens:owner/repo": Design's Components and Tokens views, each its own conversation (runner.ts enqueueChat)
   visualsSetup?: Record<string, VisualsTask & { prUrl?: string; board?: boolean }> // board: this run adds only the blueprint to a baseline that has its stories // "owner/repo" → its Storybook set up and first shot (Design)
   execs: Record<string, ExecRun>
   batches: Record<string, import('./exec.ts').Batch>
@@ -421,7 +422,7 @@ for (const [repo, t] of Object.entries(state.base)) {
 }
 // Design's runs (a PR's capture, a repository's Storybook and map) don't outlive this process: one caught mid-run by
 // a restart says so, so its page offers it again instead of showing it running forever. A queued one starts as usual
-for (const t of [...Object.values(state.prs).map((p) => p.visuals), ...Object.values(state.visualsSetup ?? {})]) {
+for (const t of [...Object.values(state.prs).map((p) => p.visuals), ...Object.values(state.visualsSetup ?? {}), ...Object.values(state.designChats ?? {})]) {
   if (t?.state === 'running') Object.assign(t, { state: 'failed', error: 'A restart interrupted it: start it again (it goes on where it was)', endedAt: new Date().toISOString() })
 }
 

@@ -2,14 +2,21 @@
 // in. Pure, so it is tested on its own (modes.test.ts); App.tsx keeps the state and the storage.
 
 export type Mode = 'review' | 'exec' | 'read' | 'focus' | 'standup' | 'skills' | 'plans' | 'design'
+/** Design's own views, each a place on the rail: the map of the screens, the components, the design tokens. */
+export type DesignView = 'map' | 'components' | 'tokens'
+export const DESIGN_VIEWS: DesignView[] = ['map', 'components', 'tokens']
+/** Which of Design's views an address is (/design, /design/components, /design/tokens). */
+export const designViewOf = (path: string): DesignView => { const v = path.split('/')[2]; return v === 'components' || v === 'tokens' ? v : 'map' }
 
 /**
  * Whose activity feed the open item reads, from the same render that opens it (a key set in an effect lagged a render
  * behind, so the item opened before was read, and shown, first). Design's items are captures and baselines.
  */
-export function deckKey(mode: Mode, selected: string | undefined, isTicket: (id: string) => boolean): string | undefined {
+export function deckKey(mode: Mode, selected: string | undefined, isTicket: (id: string) => boolean, view: DesignView = 'map'): string | undefined {
   if (!selected) return undefined
   if (mode === 'review') return selected
+  // Design's Components and Tokens views: the project's own conversation about each (the map's is its setup's)
+  if (mode === 'design' && view !== 'map') return selected.startsWith('repo:') ? `design-${view}:${selected.slice(5)}` : undefined
   if (mode === 'design') return selected.startsWith('ticket:') ? undefined : selected.startsWith('repo:') ? `setup:${selected.slice(5)}` : `visuals:${selected}`
   if (isTicket(selected)) return `ticket:${selected}`
   return mode === 'exec' ? undefined : selected // Ship's open stack has no feed of its own

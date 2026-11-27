@@ -164,7 +164,8 @@ function cacheFeed(id: string, f: Activity[]) { feedCache.delete(id); feedCache.
 // "visuals:<pr>" is the conversation about a PR's screens (Design)
 const feedUrl = (key: string) => key.startsWith('ticket:') ? `/exec/tickets/${key.slice(7)}/activity`
   : key.startsWith('exec:') ? `/exec/${key.slice(5)}/activity` : key.startsWith('visuals:') ? `/visuals/${enc(key.slice(8))}/activity`
-  : key.startsWith('setup:') ? `/visuals/setup/${key.slice(6)}/activity` : `/prs/${enc(key)}/activity`
+  : key.startsWith('setup:') ? `/visuals/setup/${key.slice(6)}/activity`
+  : /^design-(components|tokens):/.test(key) ? `/visuals/chat/${key.slice(7, key.indexOf(':'))}/${key.slice(key.indexOf(':') + 1)}/activity` : `/prs/${enc(key)}/activity`
 const prefetching = new Set<string>()
 /** An item's feed into the cache before it opens (a pointer resting on its row), so it opens whole instead of blank
  * for the time the fetch takes. Opening still fetches it fresh. */
