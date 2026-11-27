@@ -8,7 +8,7 @@ import { api } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
 import { ROLES, useRole, type Role, type RolesView } from '../role.ts'
 import { Tabs } from './Tabs.tsx'
-import { Pick } from '../ui/Pick.tsx'
+import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 type Owner = Role | 'shared'
 
 type Row = SkillRow & { before: number; source: Source; tokens?: number; mode?: string }
@@ -256,10 +256,10 @@ export function SkillsWorkspace({ toast }: { toast: Toast }) {
             <span className="ml-auto"><Tabs size="sm" label="Period" value={String(days)} onChange={(d) => setDays(Number(d))} options={['7', '30', '90'].map((d) => ({ id: d, label: `${d}d` }))} /></span>
           </div>
           <Tabs as="tab" size="sm" full label="Skills to show" value={scope} onChange={setScope}
-                options={(['all', 'mine', 'company', 'others'] as const).map((s) => ({ id: s, title: s === 'others' ? 'Other roles\' skills: you can use them, not change them' : undefined, label: s === 'all' ? ROLES[role].label : s === 'mine' ? 'Mine' : s === 'company' ? 'Org' : 'Others' }))} />
+                options={(['all', 'mine', 'company', 'others'] as const).map((s) => ({ id: s, title: s === 'others' ? 'Other roles\' skills: you can use them, not change them' : s === 'all' ? `Every skill you can use as ${ROLES[role].label}` : undefined, label: s === 'all' ? 'All' : s === 'mine' ? 'Mine' : s === 'company' ? 'Org' : 'Others' }))} />
           <div className="flex items-center gap-1 text-meta">
             <span className="text-fg-4">Sort</span>
-            <Pick label="Sort" value={sort} onChange={setSort} options={([['used', 'Runs'], ['trending', 'Trend'], ['work', 'Needs work'], ['tokens', 'Tokens']] as const).map(([k, l]) => ({ value: k, label: l }))} />
+            <Tabs size="sm" label="Sort" value={sort} onChange={setSort} options={([['used', 'Runs'], ['trending', 'Trend'], ['work', 'Needs work'], ['tokens', 'Tokens']] as const).map(([k, l]) => ({ id: k, label: l }))} />
           </div>
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_56px_2.5rem_2.25rem] gap-3 border-y border-line px-4 py-1.5 label text-fg-4"><span>Skill</span><span>{days}d</span><span className="text-right">Runs</span><span className="text-right">Score</span></div>
@@ -374,10 +374,9 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
   const kept = useApi<Kept<Improve>>(`/skills/advice?name=${encodeURIComponent(r.name)}`, { refetchInterval: (q) => (q.state.data?.busy ? 3000 : false) })
   const imp = kept.data?.result, asking = !!kept.data?.busy
   useEffect(() => { if (kept.data?.error) toast(kept.data.error, 'error') }, [kept.data?.error])
-  const [armed, setArmed] = useState(false)
+  const { armed, arm } = useArm() // removing takes a second click, the same way everywhere
   const improve = () => api('/skills/improve', { name: r.name, days }).then(() => refresh('/skills/advice'), (e: Error) => toast(e.message, 'error'))
   const remove = () => {
-    if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 4000); return }
     api('/skills/remove', { name: r.name }).then((x: { said: string }) => { toast(x.said); onRemoved() }, (e: Error) => toast(e.message, 'error'))
   }
   const canRemove = mine && r.source !== 'plugin' && r.mode !== 'off'
@@ -389,7 +388,7 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
         <h2 className="truncate font-mono text-title font-semibold text-fg-1">{r.name}</h2>
         <p className="mt-0.5 text-small text-fg-3">{SOURCE[r.source]}{r.mode === 'off' ? ' · turned off here' : ''} · {OWNER_LABEL(owner)}{feature ? ` · Concierge runs it for ${feature}` : ''}{r.lastAt ? ` · last used ${new Date(r.lastAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ' · no run loaded it in this period'}</p>
       </div>
-      {canRemove && <button onClick={remove} className={`inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-small font-medium ${armed ? 'bg-fail text-white' : 'bg-hover text-fg-2 hover:text-fail-text'}`}><Trash2 className="size-3.5" />{armed ? 'Click again to confirm' : r.source === 'company' ? 'Turn off here' : 'Remove'}</button>}
+      {canRemove && <button onClick={() => arm('remove', remove)} className="btn-outline relative isolate inline-flex items-center gap-1.5 overflow-hidden hover:text-fail-text"><Trash2 className="size-3.5" />{armed === 'remove' ? <><ArmLabel>{r.source === 'company' ? 'Confirm: turn off' : 'Confirm: remove'}</ArmLabel><ArmBar on="plain" /></> : r.source === 'company' ? 'Turn off here' : 'Remove'}</button>}
     </div>
     {mine ? (
       <div className="flex flex-wrap items-center gap-2 text-small text-fg-3">
@@ -422,7 +421,7 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
     {r.runs > 0 && <DayChart perDay={r.perDay} days={days} label="Runs per day" />}
     <div className="card p-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-0 flex-1"><p className="text-body font-medium text-fg-1">What to change</p><p className="text-small text-fg-3">Sonnet reads the skill, how its runs went and what you told the agents in them: edits for the goal, and how to spend fewer tokens.</p></div>
+        <div className="min-w-0 flex-1"><p className="text-body font-medium text-fg-1">What to change</p><p className="text-small text-fg-3">A model reads the skill, how its runs went and what you told the agents in them: edits for the goal, and how to spend fewer tokens.</p></div>
         <button onClick={improve} disabled={asking || !mine} title={mine ? undefined : `Switch to ${OWNER_LABEL(owner)} to change it`} className="inline-flex items-center gap-1.5 btn-primary disabled:opacity-60">{asking ? <LoaderCircle className="size-3.5 animate-spin" /> : <Wand className="size-3.5" />}{asking ? 'Reading… you can leave' : imp ? 'Again' : 'Suggest improvements'}</button>
       </div>
       {imp && <div className="mt-3 space-y-3 border-t border-line pt-3">

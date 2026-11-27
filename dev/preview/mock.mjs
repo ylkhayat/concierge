@@ -181,6 +181,13 @@ http.createServer(async (req, res) => {
     }
   }
   // Design: the list, a repository's baseline, a PR's capture, and the made-up screens themselves
+  // Standup: three projects, one that skips "blocked" (its line crosses the empty stage), one with something in each
+  if (p === '/standup') return json(res, { since: new Date(Date.now() - 86_400_000).toISOString(), text: '', notes: { did: ['Call with billing about proration'] },
+    did: [{ id: 'AC-200', title: 'Read the diff and checked how billing handles a paused seat', lead: 'Opened the PR for', project: 'Seat pausing' }, { id: 'AC-201', title: 'Proration path before it changes', lead: 'Merged', project: 'Seat pausing' },
+      { id: 'AC-310', title: 'Desktop: admin view of members', lead: 'Reviewed', project: 'Acme for Desktop', review: true }, { id: 'AC-405', title: 'Flaky checkout test', lead: 'Fixed' }],
+    blockers: [{ id: 'AC-205', title: 'Paused member still gets product emails?', why: 'An answer is owed on Linear', kind: 'answer', project: 'Seat pausing' }],
+    next: [{ kind: 'continue', id: 'AC-206', title: 'Owner pauses their own seat', project: 'Seat pausing' }, { kind: 'pickup', id: 'AC-311', title: 'Desktop: invite flow', project: 'Acme for Desktop' }, { kind: 'review', id: 'AC-312', title: 'Desktop: settings page', project: 'Acme for Desktop' }] })
+  if (p === '/standup/days') return json(res, { at: [] })
   if (p === '/visuals') return json(res, { joined: true, repos: [{ repo: 'ylkhayat/elbuffeh', mode: 'auto', baseline: { sha: baseline.sha, at: baseline.at, count: PARTS.length, thumb: 'board-s1.png', screens: SCREENS.length, domains: 3 }, fromApp: false }], prs: [{ ...prView, latest: { sha: prSet.sha, at: prSet.at, summary: prSet.summary, count: prSet.shots.length, thumb: 'board-s1.png' } }], tickets: [{ id: 'ELBU-3', title: 'Learner creates a course with a language and level', labels: ['design'], url: '#', prs: [prView.id] }] })
   // MOCK_MAP: the blueprint's page before its map: none (nothing set up), stories (its components, no screens), running (the map being made)
   if (p === '/visuals/repos/ylkhayat/elbuffeh') {

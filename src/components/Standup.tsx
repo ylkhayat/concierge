@@ -83,9 +83,9 @@ export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (
             <h1 className="text-display font-semibold tracking-tight">Standup</h1>
             <p className="text-small text-fg-3">{since ? `${day === key(new Date()) ? 'Today' : dayName(day)} · since ${since}` : 'Gathering what you did…'}</p>
           </div>
-          <button onClick={copy} disabled={!s} title={picked.length ? `Copy the standup for ${picked.join(', ')}` : 'Copy the three parts as a message'}
+          <button onClick={copy} disabled={!s} title={picked.length ? `Copy the three parts for ${picked.join(', ')} as a message` : 'Copy the three parts (did, blocked, next) as a message. The written summary has its own Copy'}
                   className="ml-auto inline-flex items-center gap-1.5 btn-primary disabled:opacity-40">
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}Copy{picked.length > 0 && ` ${picked.join(', ')}`}
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}Copy the facts{picked.length > 0 && `: ${picked.join(', ')}`}
           </button>
         </header>
         {teams.length > 1 && s && <TeamPills teams={teams} picked={picked} onToggle={toggle} onClear={() => setPicked([])} count={(t) => [...s.did, ...s.blockers, ...s.next].filter((x) => x.id.startsWith(`${t}-`)).length} />}
@@ -157,13 +157,13 @@ function Own({ title, own = [], onOwn, placeholder }: { title: string; own?: str
       {own.map((x, i) => (
         <p key={i} className="group mt-1 flex items-baseline gap-2 text-small text-fg-1">
           <span className="min-w-0 flex-1">{x}</span>
-          <button onClick={() => onOwn(own.filter((_, j) => j !== i))} aria-label="Remove" className="shrink-0 text-fg-4 opacity-0 transition-opacity hover:text-fg-1 group-hover:opacity-100 focus:opacity-100"><X className="size-3.5" /></button>
+          <button onClick={() => onOwn(own.filter((_, j) => j !== i))} aria-label={`Remove: ${x}`} title="Remove" className="-my-1 shrink-0 rounded-chip p-1 text-fg-4 transition-colors hover:bg-hover hover:text-fg-1"><X className="size-3.5" /></button>
         </p>
       ))}
       <div className="mt-1.5 flex items-center gap-2">
         <Plus className="size-3.5 shrink-0 text-fg-4" />
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add() }} maxLength={300} placeholder={placeholder} aria-label={`${title}: ${placeholder}`}
-               className="min-w-0 flex-1 bg-transparent text-small text-fg-1 outline-none placeholder:text-fg-4" />
+               className="-mx-1 min-w-0 flex-1 rounded-chip bg-transparent px-1 py-0.5 text-small text-fg-1 outline-none placeholder:text-fg-4 focus-visible:bg-surface-2 focus-visible:ring-1 focus-visible:ring-accent/50" />
       </div>
     </section>
   )
@@ -241,7 +241,7 @@ function WrittenPanel({ w, day, writing, onWrite, onCopy, onOpen, titles, empty 
     <section className="min-w-0 card p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-small font-semibold text-fg-3">Written summary</h2>
-        {w && <button onClick={onCopy} title="Copy this version" className="text-fg-4 transition-colors hover:text-fg-1"><Copy className="size-3.5" /></button>}
+        {w && <button onClick={onCopy} title="Copy the written summary" className="btn-ghost btn-sm inline-flex items-center gap-1"><Copy className="size-3.5" />Copy the summary</button>}
         {w && <span className="text-meta text-fg-3">{new Date(w.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · {ago(w.at, Date.now())} · from {w.tickets} ticket{w.tickets === 1 ? '' : 's'}</span>}
         <button onClick={onWrite} disabled={writing || empty} title="Write it now from the facts as they are (a small model call)"
                 className={`${btn} ml-auto ${w && !w.stale ? 'text-fg-2 ring-1 ring-line-strong hover:text-fg-1' : 'bg-accent text-on-accent hover:bg-accent'}`}>
