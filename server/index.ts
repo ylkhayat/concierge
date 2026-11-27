@@ -30,7 +30,7 @@ import { defaultBranch, ghSend, runOwns, tokenChanged, getMe, gh, ghBudget, ghCa
 import { coalescer, hookLive, hookStats, listen, listening, newSecret, targetsOf, type Handler as HookHandler, type Target as HookTarget } from './hooks.ts'
 import { askDoor, connectRepo, doorAnswer, doorResult, funnelBlocker, funnelError, FUNNEL_PORT, hookUrl, pingHook, removeHook, scopesAllowHooks, type Self } from './hookSetup.ts'
 import { assignIssue, commentOnIssue, issueKeys, issueOf, keyFor, myIssues } from './issues.ts'
-import { assignToMe, gql, bucketOf, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
+import { assignToMe, gql, bucketOf, forgetTickets, handedBack, DONE_DAYS, hasKey, myTickets, postComment, ticketsById, type Bucket, type Ticket } from './linear.ts'
 import { execCommand, gate, prepOf, prepPrompt, repoFor, settledIn, submitPrompt, togetherPrompt, workNote, type Batch, stackOrder, ticketStacks, type Handover, type TicketStack } from './exec.ts'
 import { sentryEnv, sentryRef, textEnv, type Env } from './envOf.ts'
 import { cachedStackTour, makeStackTour, writingStackTour } from './stackTour.ts'
@@ -1783,7 +1783,8 @@ app.post('/exec/:run/steer', async (c) => {
 })
 app.get('/exec/:run/activity', async (c) => c.json(await loadActivity(`exec:${c.req.param('run')}`)))
 app.get('/exec/tickets/:id/activity', async (c) => c.json(await ticketActivity(c.req.param('id'))))
-app.post('/exec/poll', async (c) => { await pollTickets(); return c.json(execView()) })
+// you asked for it now: the whole list, not only what Linear says changed
+app.post('/exec/poll', async (c) => { forgetTickets(); await pollTickets(); return c.json(execView()) })
 // picked tickets, checked: every id well-formed, mapped to a repo with a checkout, none already running
 function pickedTickets(ids: unknown): { error: string; code: 400 | 409 } | { id: string; title: string; description: string; repo: string }[] {
   if (!Array.isArray(ids) || !ids.length || ids.some((i) => typeof i !== 'string' || !/^[A-Z][A-Z0-9]*-\d+$/.test(i))) return { error: 'Pick one or more tickets', code: 400 }

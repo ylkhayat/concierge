@@ -33,6 +33,7 @@ export async function gql<T>(query: string, variables: object = {}): Promise<T> 
     method: 'POST',
     headers: { Authorization: process.env.LINEAR_API_KEY ?? '', 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(30_000), // a call Linear never answers must not hold the poll after it forever
   })
   const json = await res.json() as { data?: T; errors?: { message: string }[] }
   if (!json.data) throw new Error(`Linear: ${json.errors?.[0]?.message ?? res.status}`)
@@ -66,20 +67,46 @@ function toTicket(n: any): Ticket {
 /** How long a done or cancelled ticket (or a merged or closed PR) stays on the list, under Done. */
 export const DONE_DAYS = 3
 
+// What the last whole read gave, by id: between whole reads a poll asks only which tickets are on the list and when each
+// last changed (a few bytes each), and reads in full only the ones that changed. Every ticket's whole description, last
+// comment and attachments came down every minute before, changed or not.
+const WHOLE_EVERY = 5 * 60_000 // a whole read this often anyway: a new comment doesn't always move a ticket's "updated"
+let known: { at: number; teams: string; byId: Map<string, Ticket> } | undefined
+/** For tests: forget what was read. */
+export const forgetTickets = () => { known = undefined }
+
 /** Issues assigned to you in Triage, Todo or a started state (In Progress, In Review), in the watched teams. */
-export async function myTickets(): Promise<Ticket[]> {
+export async function myTickets(now = Date.now()): Promise<Ticket[]> {
   const teams = config.exec.teams
   if (!hasKey()) throw new Error('Linear isn\'t connected: add your API key in Settings → Machines')
   // the ones done or cancelled lately too: the list keeps them under Done for DONE_DAYS, then lets them go
-  const since = new Date(Date.now() - DONE_DAYS * 86_400_000).toISOString()
+  const since = new Date(now - DONE_DAYS * 86_400_000).toISOString()
   const ask = (filter: string, fields = FIELDS) => gql<{ viewer: { assignedIssues: { nodes: any[] } } }>(`
     query($teams: [String!]) { viewer { assignedIssues(first: 250, filter: { team: { key: { in: $teams } }, ${filter} }) { nodes { ${fields} } } } }`,
     { teams: teams.length ? teams : null })
   const open = 'state: { type: { in: ["triage", "backlog", "unstarted", "started"] } }'
-  // Linear refusing the wider filter must not empty the list: then the open ones only, as before
-  const data = await ask(`or: [{ ${open} }, { completedAt: { gt: "${since}" } }, { canceledAt: { gt: "${since}" } }]`)
-    .catch((e) => { console.warn(`linear: done tickets left out (${(e as Error).message.split('\n')[0]})`); return ask(open, FIELDS.replace(' completedAt canceledAt', '')) })
-  return data.viewer.assignedIssues.nodes.map(toTicket)
+  const listed = `or: [{ ${open} }, { completedAt: { gt: "${since}" } }, { canceledAt: { gt: "${since}" } }]`
+  const whole = async () => {
+    // Linear refusing the wider filter must not empty the list: then the open ones only, as before
+    const data = await ask(listed)
+      .catch((e) => { console.warn(`linear: done tickets left out (${(e as Error).message.split('\n')[0]})`); return ask(open, FIELDS.replace(' completedAt canceledAt', '')) })
+    const list = data.viewer.assignedIssues.nodes.map(toTicket)
+    known = { at: now, teams: teams.join(), byId: new Map(list.map((t) => [t.id, t])) }
+    return list
+  }
+  if (!known || known.teams !== teams.join() || now - known.at >= WHOLE_EVERY) return whole()
+  try {
+    // which are on the list now, and when each last changed
+    const light = (await ask(listed, 'identifier updatedAt')).viewer.assignedIssues.nodes as { identifier: string; updatedAt: string }[]
+    const changed = light.filter((n) => known!.byId.get(n.identifier)?.updatedAt !== n.updatedAt).map((n) => n.identifier)
+    for (let i = 0; i < changed.length; i += 50) for (const t of await ticketsById(changed.slice(i, i + 50))) known.byId.set(t.id, t)
+    const list = light.flatMap((n) => { const t = known!.byId.get(n.identifier); return t ? [t] : [] })
+    known.byId = new Map(list.map((t) => [t.id, t])) // one that left the list is forgotten
+    return list
+  } catch (e) {
+    console.warn(`linear: reading what changed failed (${(e as Error).message.split('\n')[0]}): the whole list instead`)
+    return whole()
+  }
 }
 
 /** Tickets by id, whoever has them and whatever their state; one deleted or out of reach is left out. */
@@ -89,6 +116,7 @@ export async function ticketsById(ids: string[]): Promise<Ticket[]> {
   // a missing one fails only its own field: the rest still come back
   const res = await fetch('https://api.linear.app/graphql', {
     method: 'POST', headers: { Authorization: process.env.LINEAR_API_KEY ?? '', 'Content-Type': 'application/json' }, body: JSON.stringify({ query: `{ ${q} }` }),
+    signal: AbortSignal.timeout(30_000),
   })
   const json = await res.json() as { data?: Record<string, any>; errors?: { message: string }[] }
   if (!json.data) throw new Error(`Linear: ${json.errors?.[0]?.message ?? res.status}`)
