@@ -440,6 +440,14 @@ export function addSpend(usd: number, provider: import('./providers.ts').Provide
   s.usd += usd; s.input += tokens?.input ?? 0; s.output += tokens?.output ?? 0; s.runs++
 }
 export const overBudget = () => state.settings.dailyBudgetUsd != null && spentToday() >= state.settings.dailyBudgetUsd
+/** What is left of today's budget, in dollars (undefined: no budget is set). */
+export const budgetLeft = (): number | undefined => (state.settings.dailyBudgetUsd == null ? undefined : Math.max(0, state.settings.dailyBudgetUsd - spentToday()))
+/**
+ * The most one run started now may spend: what is left of the day, and never less than $2 (a run that starts must be
+ * able to do something; the day goes over by that at most, where a started run was never stopped at all before).
+ * For a run on a conversation of its own (the tools count a conversation's whole cost). No budget: no cap.
+ */
+export const runCap = (): string[] => { const left = budgetLeft(); return left === undefined ? [] : ['--max-budget-usd', String(Math.round(Math.max(left, 2) * 100) / 100)] }
 
 // A run that was going when the server stopped (a deploy, a crash) picks up where it left off: its agent session is on
 // disk (~/.claude), so it goes back in the queue to continue that session, ahead of newer work (it keeps its queuedAt).

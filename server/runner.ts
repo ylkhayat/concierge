@@ -15,7 +15,7 @@ import { defaultBranch, runOwns } from './github.ts'
 import { fill } from './config.ts'
 import { baselineId, boardPrompt, capturePrompt, chatPrompt, hasSet, setsOf, setupPrompt, shotsDir, slugOf, VISUALS_DIR, type ChatView } from './visuals.ts'
 import { tokensFor } from './tokens.ts'
-import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend } from './store.ts'
+import { STATE_DIR, config, isFollowUp, type BaseTask, type ExecRun, type ExplainTask, type Job, type JobState, LOG_DIR, MAX_CONTINUES, overBudget, save, slow, spentToday, state, type JobKind, type Pr, addSpend, runCap } from './store.ts'
 import { authFailed, cantPay, checkClaudeAuth } from './claudeLogin.ts'
 import { planNote } from './router.ts'
 import { missingOn } from './connections.ts'
@@ -1249,7 +1249,11 @@ function start(pr: Pr, on?: string) {
       '--output-format', 'stream-json', '--verbose',
       // a reply: capped for its route, and the mid-size model for a small edit (replyRoute.ts)
       ...(job.kind === 'reply' && job.route ? ['--max-budget-usd', String((job.resumed === false && !job.continuing ? 0 : job.sessionCostBefore ?? 0) + capOf(job.route)),
-        ...(modelOf(job.route) && accountOf(job.provider ?? 'claude').kind === 'claude' ? ['--model', modelOf(job.route)!] : [])] : []),
+        ...(modelOf(job.route) && accountOf(job.provider ?? 'claude').kind === 'claude' ? ['--model', modelOf(job.route)!] : [])]
+        // a run on a conversation of its own: what is left of today's budget (store.ts runCap), which was checked only
+        // before a start. One that continues a conversation isn't capped here: the tools count the whole
+        // conversation's cost, and a figure for "before" that is a little off would stop it as it starts
+        : !job.continuing && !job.resumed && !isFollowUp(job.kind) ? runCap() : []),
       '--allowedTools', ...config.agent.allowedTools, ...(pr.mine ? RUN_TESTS : []),
       // its goal: reach you (crit up with its findings or replies, and next steps for you), not stop on the way
       ...((job.kind === 'review' || job.kind === 'revise') && accountOf(job.provider ?? 'claude').kind === 'claude' ? ['--settings', handGoalSettings(job.kind)] : []),
@@ -1611,7 +1615,7 @@ function startExec(run: ExecRun, on?: string) {
     args: [
       ...(run.continuing ? ['-p', continuePrompt(asked), '--resume', run.sessionId]
         : ['-p', asked, ...(run.resume ? ['--resume', run.resume] : ['--session-id', run.sessionId])]),
-      '--output-format', 'stream-json', '--verbose', '--allowedTools', ...(run.allowedTools ?? config.exec.allowedTools),
+      '--output-format', 'stream-json', '--verbose', ...(!run.continuing && !run.resume ? runCap() : []), '--allowedTools', ...(run.allowedTools ?? config.exec.allowedTools),
       // the exec command keeps its worktrees next to the repo (<clones>/worktrees/<repo>/<ticket>): outside the working
       // directory, so without this every read in the agent's own worktree is refused
       ...(existsSync(execWorktrees(run.repo)) ? ['--add-dir', execWorktrees(run.repo)] : []),

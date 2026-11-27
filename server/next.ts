@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { providerFor, spawnAgent, tokensOf, type ProviderId } from './providers.ts'
 import { watchesCi, type Step } from './reply.ts'
+import { overBudget } from './store.ts'
 
 export type Decision = {
   topic: string; question: string
@@ -151,9 +152,21 @@ function ask(message: string): Promise<Omit<NextSteps, 'for'>> {
 }
 
 /** One lean, tool-less small-model call that returns structured output: no tools, MCP, skills, hooks or settings. */
+// At most four small calls at once: each is a whole agent process, and a page that opens many things at once started
+// as many (they don't count against the parallel runs, nor the memory kept free for those).
+let going = 0
+const queued: (() => void)[] = []
+function small<T>(run: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const start = () => { going++; run().then(resolve, reject).finally(() => { going--; queued.shift()?.() }) }
+    if (going < 4) start(); else queued.push(start)
+  })
+}
 export function haiku<T>(prompt: string, schema: object, system: string, budget = 0.2, model = 'haiku', provider: ProviderId = providerFor('small')): Promise<{ out: T; costUsd: number; provider: ProviderId; tokens?: { input: number; output: number } }> {
   // the small model of whichever provider does the quick calls (or the one a repository is kept to)
-  return new Promise((resolve, reject) => {
+  // today's budget holds for these too: reached, a small call is refused like a run is held (it was never checked)
+  if (overBudget()) return Promise.reject(new Error('Today’s budget is reached: this waits until tomorrow or a higher budget'))
+  return small(() => new Promise((resolve, reject) => {
     const child = spawnAgent(provider, [
       '-p', prompt, '--json-schema', JSON.stringify(schema), '--output-format', 'stream-json', '--verbose',
       // Haiku: no tools at all. A larger model writing a long answer (a whole skill file) never gets its structured
@@ -177,7 +190,7 @@ export function haiku<T>(prompt: string, schema: object, system: string, budget 
     child.stderr.on('data', (c: Buffer) => { err = (err + c).slice(-500) })
     child.on('error', reject)
     child.on('close', () => (done ? resolve(done) : reject(new Error(err || 'the small model returned nothing'))))
-  })
+  }))
 }
 
 
