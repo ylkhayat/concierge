@@ -1,9 +1,7 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { lazy, StrictMode, Suspense, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './query.ts'
-import { App } from './App.tsx'
-import { MobileApp } from './mobile/MobileApp.tsx'
 import '@fontsource-variable/inter/opsz.css' // Inter 4, variable weight and optical size (its Display cut for big text)
 import './index.css'
 import './slowUi.ts' // the page's slow moments, into the server's log
@@ -27,10 +25,13 @@ addEventListener('resize', fit)
 const PHONE = '(max-width: 767px)'
 try { if (new URLSearchParams(location.search).has('desktop')) sessionStorage.setItem('desktop', '1') } catch { /* private window */ }
 const wantsDesktop = () => { try { return sessionStorage.getItem('desktop') === '1' } catch { return false } }
+// a phone loads the phone's app and a desktop the desktop's: neither carries the other
+const App = lazy(() => import('./App.tsx').then((m) => ({ default: m.App })))
+const MobileApp = lazy(() => import('./mobile/MobileApp.tsx').then((m) => ({ default: m.MobileApp })))
 function Root() {
   const [phone, setPhone] = useState(() => matchMedia(PHONE).matches && !wantsDesktop())
   useEffect(() => { const m = matchMedia(PHONE); const f = () => setPhone(m.matches && !wantsDesktop()); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, [])
-  return <Caught what="Concierge">{phone ? <MobileApp /> : <App />}</Caught>
+  return <Caught what="Concierge"><Suspense fallback={null}>{phone ? <MobileApp /> : <App />}</Suspense></Caught>
 }
 
 // the dev server's gallery of parts (src/dev/Gallery.tsx): never in a build

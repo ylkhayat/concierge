@@ -2,10 +2,6 @@ import { Clock, Coins, GitPullRequestArrow, PanelLeftClose, PanelLeftOpen, Rocke
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
-import { Standup } from './components/Standup.tsx'
-import { SkillsWorkspace } from './components/SkillsWorkspace.tsx'
-import { PlansWorkspace } from './components/PlansWorkspace.tsx'
-import { DesignWorkspace } from './components/DesignWorkspace.tsx'
 import { Today } from './components/Today.tsx'
 import { Palette } from './components/Palette.tsx'
 import { Toaster, toast as sonner } from 'sonner'
@@ -14,8 +10,8 @@ import { usePinNotifications } from './components/PinButton.tsx'
 import type { Alert } from '../server/alerts.ts'
 import type { Prep } from '../server/plan.ts'
 import { label, sha, VERSION } from './version.ts'
-import { SettingsDialog, ThemeButton, UpdateChip, type SettingsTab } from './components/Settings.tsx'
-import { Onboarding } from './components/Onboarding.tsx'
+import type { SettingsTab } from './components/Settings.tsx'
+import { ThemeButton, UpdateChip } from './components/StatusChips.tsx'
 import { ExecList, groupOf, orderedTickets } from './components/ExecList.tsx'
 import { PrThread } from './thread/PrThread.tsx'
 import { TicketThread } from './thread/TicketThread.tsx'
@@ -41,6 +37,15 @@ import { deckKey, designOn, designViewOf, readPlace, workspaceFor, type DesignFr
 
 // the graph libraries load only when the codebase view opens
 const CodebaseView = lazy(() => import('./components/Codebase.tsx'))
+// each view's code comes when the view is first opened, not with the first page: Review opens without Design's, Plans',
+// Skills', Standup's, Settings' and the setup's
+const Standup = lazy(() => import('./components/Standup.tsx').then((m) => ({ default: m.Standup })))
+const SkillsWorkspace = lazy(() => import('./components/SkillsWorkspace.tsx').then((m) => ({ default: m.SkillsWorkspace })))
+const PlansWorkspace = lazy(() => import('./components/PlansWorkspace.tsx').then((m) => ({ default: m.PlansWorkspace })))
+const DesignWorkspace = lazy(() => import('./components/DesignWorkspace.tsx').then((m) => ({ default: m.DesignWorkspace })))
+const Onboarding = lazy(() => import('./components/Onboarding.tsx').then((m) => ({ default: m.Onboarding })))
+const SettingsDialog = lazy(() => import('./components/Settings.tsx').then((m) => ({ default: m.SettingsDialog })))
+const Waiting = () => <div className="flex h-full min-h-40 items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>
 import { ago, api, critUrl, enc, isTyping, param, prefetchFeed, setParam, useDeck, useNow, useTheme, type PrView, type TicketView } from './lib.ts'
 import { inSettings, SAY } from './copy.ts'
 import { viewLabel, viewsFor } from './views.ts'
@@ -530,12 +535,12 @@ export function App() {
   if (configured === undefined) return <Boot />
   if (configured === false || setupOpen) {
     return (
-      <>
+      <Suspense fallback={<Waiting />}>
         <Onboarding health={health} theme={theme} onTheme={setTheme} toast={toast}
                     onDone={() => { setConfigured(true); setSetupOpen(false) }}
                     onClose={configured ? () => setSetupOpen(false) : undefined} />
         <Toaster position="bottom-right" theme={theme} closeButton gap={8} visibleToasts={5} toastOptions={{ className: 'font-sans' }} />
-      </>
+      </Suspense>
     )
   }
 
@@ -566,8 +571,10 @@ export function App() {
         {onPhoneAsDesktop && <button onClick={() => { try { sessionStorage.removeItem('desktop') } catch { /* private window */ } location.assign('/') }} className="shrink-0 border-b border-line bg-accent-soft px-4 py-2 text-left text-small font-medium text-accent-text md:hidden">This is the desktop view. Back to the phone app</button>}
         <div key={mode} className="relative flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_160ms_var(--ease-out)]">
         <Caught key={mode} what={viewLabel(mode, designView)}>
+        <Suspense fallback={<Waiting />}>
         {focus && away.has(focus) && ['review', 'exec', 'focus', 'read'].includes(mode) ? <AwayRepo repo={focus} onAllApps={() => setFocus(undefined)} />
           : mode === 'exec' ? execFrame : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace view={designView} selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false, designView) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : reviewFrame}
+        </Suspense>
         </Caught>
         </div>
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
@@ -586,8 +593,8 @@ export function App() {
         </footer>
       </div>
 
-      <SettingsDialog open={!!settingsOpen} tab={settingsOpen || 'general'} onTab={(t) => { setParam('settings', t); try { localStorage.setItem('settings:last', t) } catch { /* private window */ } }} onClose={() => setSettingsOpen(false)} health={health} theme={theme} onTheme={setTheme} toast={toast}
-                      onSetup={() => setSetupOpen(true)} />
+      {settingsOpen && <Suspense fallback={null}><SettingsDialog open={!!settingsOpen} tab={settingsOpen || 'general'} onTab={(t) => { setParam('settings', t); try { localStorage.setItem('settings:last', t) } catch { /* private window */ } }} onClose={() => setSettingsOpen(false)} health={health} theme={theme} onTheme={setTheme} toast={toast}
+                      onSetup={() => setSetupOpen(true)} /></Suspense>}
       <Palette prs={prs ?? []} tickets={tickets} onPr={goPr} onTicket={goTicket} keys={shortcuts(views, role === 'developer' && repos.length > 0)} commands={[
         ...views.map((v) => ({ id: v.key, label: `Go to ${v.label}`, hint: v.hint, run: () => setMode(v.mode, v.design) })),
         ...(role === 'developer' ? repos.map((r) => ({ id: `map:${r}`, label: `Codebase map: ${r}`, run: () => goCodebase(r) })) : []),
