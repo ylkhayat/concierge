@@ -2182,7 +2182,7 @@ app.post('/bank/add', async (c) => {
   const before = b.was ? readSecrets().bank?.[b.was] : undefined
   if (b.was && !before) return c.json({ error: `${b.was} isn't in the bank any more` }, 400)
   if (b.was !== name && readSecrets().bank?.[name]) return c.json({ error: `${name} is already in the bank${b.was ? '' : ': edit it instead'}` }, 400)
-  let entry: { url?: string; key?: string; command?: string[]; env?: Record<string, string> }
+  let entry: { url?: string; key?: string; open?: boolean; command?: string[]; env?: Record<string, string> }
   if (b.command !== undefined) {
     // a command Concierge starts (an MCP server over stdio): split like a shell would, without one (no pipes, no $), and its
     // values handed to it as it starts (bin/bank-env.mjs), never on its command line
@@ -2194,9 +2194,9 @@ app.post('/bank/add', async (c) => {
   } else {
     const url = String(b.url ?? '').trim(), key = String(b.key ?? '').trim() || before?.key || ''
     if (!/^https:\/\/\S+$/.test(url)) return c.json({ error: 'An https:// address' }, 400)
-    // one without a key signs in in the browser, into one tool's own store: there is no shared sign-in for those
-    if (!key) return c.json({ error: 'It needs a key (an API key or token of that service): a connection that signs in in the browser can’t be shared between tools' }, 400)
-    entry = { url, key }
+    // without a key: a public one, open to anyone (Twilio's docs). One that wants a browser sign-in can't be shared between
+    // tools: add it on claude.ai instead (Connectors below)
+    entry = key ? { url, key } : { url, open: true }
   }
   const { [b.was ?? name]: _, ...rest } = readSecrets().bank ?? {}
   saveSecrets({ bank: { ...rest, [name]: entry } })

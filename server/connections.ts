@@ -76,7 +76,7 @@ export function ownServers(): McpServer[] {
     // is ever on its command line
     if (b.command?.length) out.push({ name, service: name, command: process.execPath, args: [BANK_ENV, SECRETS_FILE, LOCAL_ENV, name, '--', ...b.command], mine: true, shown: b.command.join(' ') })
     // an address and its key: ${NAME} in either is put in from this machine's mcp.env when the bank's files are written
-    else if (b.url) out.push({ name, service: name, url: b.url, ...(b.key ? { headers: { Authorization: `Bearer ${b.key}` } } : { login: true }), mine: true })
+    else if (b.url) out.push({ name, service: name, url: b.url, ...(b.key ? { headers: { Authorization: `Bearer ${b.key}` } } : b.open ? {} : { login: true }), mine: true }) // open: public, nothing to send
   }
   return out
 }

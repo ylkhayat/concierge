@@ -70,7 +70,7 @@ function Bank({ toast }: { toast: Toast }) {
           {form.kind === 'address' ? (
             <div className="flex flex-wrap items-center gap-2">
               <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://… its MCP address" aria-label="MCP address" className={`${field} font-mono`} />
-              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder={form.was ? 'its key, or ${NAME} (empty: keep)' : 'its key, or ${NAME} from mcp.env'} aria-label="Key" className={`${field} max-w-64`} />
+              <input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} type="password" placeholder={form.was ? 'its key, or ${NAME} (empty: keep)' : 'its key, or ${NAME} from mcp.env; empty if it needs none'} aria-label="Key" className={`${field} max-w-64`} />
             </div>
           ) : (
             <div className="space-y-2">
@@ -81,7 +81,7 @@ function Bank({ toast }: { toast: Toast }) {
           )}
           <div className="flex justify-end gap-2">
             <button onClick={() => setForm(undefined)} className="btn-ghost btn-sm">Cancel</button>
-            <button disabled={!form.name.trim() || (form.kind === 'address' ? !form.url.trim() || (!form.key.trim() && !form.was) : !form.command.trim())}
+            <button disabled={!form.name.trim() || (form.kind === 'address' ? !form.url.trim() : !form.command.trim())}
                     onClick={() => void post('/bank/add', form.kind === 'address' ? { name: form.name, url: form.url, key: form.key, was: form.was }
                       : { name: form.name, command: form.command, was: form.was, env: Object.fromEntries(form.env.split('\n').map((l) => l.trim()).filter((l) => l.includes('=')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)])) }, form.was ? `${form.name} saved` : `${form.name} is in the bank`).then((ok) => ok && setForm(undefined))}
                     className="btn-primary btn-sm">{form.was ? 'Save' : 'Add'}</button>

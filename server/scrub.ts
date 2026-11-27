@@ -9,7 +9,7 @@ import { localEnv } from './localEnv.ts'
 export const SECRETS_FILE = join(dirname(CONFIG_FILE), 'secrets.json')
 export type Secrets = {
   sentryToken?: string; sentryHost?: string
-  bank?: Record<string, { url?: string; key?: string; command?: string[]; env?: Record<string, string> }> // connections you put in the bank yourself: an address and its key, or a command and its environment, handed to it as it starts (bin/bank-env.mjs) (bank.ts)
+  bank?: Record<string, { url?: string; key?: string; open?: boolean; command?: string[]; env?: Record<string, string> }> // connections you put in the bank yourself: an address and its key, or a command and its environment, handed to it as it starts (bin/bank-env.mjs) (bank.ts)
   shared?: import('./sharedEnv.ts').Shared // the keys every machine uses (sharedEnv.ts)
   accountTokens?: import('./sharedEnv.ts').AccountTokens // each added Claude account's fallback token (sharedEnv.ts)
   webhookSecret?: string // what GitHub signs each webhook delivery with (hooks.ts): made once, never shown
