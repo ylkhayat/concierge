@@ -247,7 +247,7 @@ function Quick({ p, act }: { p: PrView; act: Act }) {
       {items.map(({ what, Icon, on, label }) => (
         <span key={what} role="button" tabIndex={0} title={label} aria-label={label} aria-pressed={on}
               onClick={(e) => { e.stopPropagation(); act(p, what) }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); act(p, what) } }}
-              className={`rounded p-1 transition-colors ${on ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}>
+              className={`-my-0.5 rounded-chip p-1.5 transition-colors ${on ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}>
           <Icon className={`size-3.5 ${on ? 'fill-current' : ''}`} />
         </span>
       ))}

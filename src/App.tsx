@@ -132,6 +132,7 @@ export function App() {
   const [repos, setRepos] = useState<string[]>([])
   const [visuals, setVisuals] = useState<Visuals>() // where Design is on (Settings → Repositories)
   const [spaces, setSpaces] = useState<Mode[]>(['review', 'exec'])
+  const [onPhoneAsDesktop] = useState(() => { try { return sessionStorage.getItem('desktop') === '1' } catch { return false } })
   const views = viewsFor(role, spaces) // this role's views: the rail, ⌘K and the g keys all read it
   const [linearApp, setLinearApp] = useState(false)
   const [missing, setMissing] = useState<string[]>([]) // skills the settings run that this machine lacks
@@ -561,6 +562,8 @@ export function App() {
         )}
         {/* one view at a time, drawn afresh on a switch (its entrance a short fade-in, never the old view fading out
             over it); Review and Ship share a shape, so without the key one was patched into the other */}
+        {/* the desktop app asked for on a phone (the phone app's menu): the way back to the phone's own */}
+        {onPhoneAsDesktop && <button onClick={() => { try { sessionStorage.removeItem('desktop') } catch { /* private window */ } location.assign('/') }} className="shrink-0 border-b border-line bg-accent-soft px-4 py-2 text-left text-small font-medium text-accent-text md:hidden">This is the desktop view. Back to the phone app</button>}
         <div key={mode} className="relative flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_160ms_var(--ease-out)]">
         <Caught key={mode} what={viewLabel(mode, designView)}>
         {focus && away.has(focus) && ['review', 'exec', 'focus', 'read'].includes(mode) ? <AwayRepo repo={focus} onAllApps={() => setFocus(undefined)} />

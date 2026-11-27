@@ -262,13 +262,13 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
                    // dimming is gone (Set aside does it): a ticket dimmed before keeps the way back
                    ...(t.dimmed ? [['dimmed', Moon, 'Undim: back to normal in the list'] as const] : [])] as const).map(([what, Icon, label]) => (
                   <button key={what} onClick={(e) => { e.stopPropagation(); quick(t, what) }} title={label} aria-label={label} aria-pressed={!!t[what]}
-                          className={`rounded p-1 transition-colors ${t[what] ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}>
+                          className={`-my-0.5 rounded-chip p-1.5 transition-colors ${t[what] ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}>
                     <Icon className={`size-3.5 ${t[what] ? 'fill-current' : ''}`} />
                   </button>
                 ))}
                 {!t.stack && <button onClick={(e) => { e.stopPropagation(); setAside(t, false) }} title={t.aside ? 'Bring it back into the list' : 'Set aside: out of the way until you bring it back'}
                                      aria-label={t.aside ? 'Bring it back into the list' : 'Set aside'} aria-pressed={!!t.aside}
-                                     className={`rounded p-1 transition-colors ${t.aside ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}><Archive className="size-3.5" /></button>}
+                                     className={`-my-0.5 rounded-chip p-1.5 transition-colors ${t.aside ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}><Archive className="size-3.5" /></button>}
               </span>
             </span>
           </span>

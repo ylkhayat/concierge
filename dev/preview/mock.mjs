@@ -49,7 +49,10 @@ const big = { id: 'p2', title: 'Acme for Desktop: Administration', method: 'agil
       { priority: ((i + j) % 4) + 1, estimate: [3, 5, 2, 8, undefined, 3][j % 6], ...(i === 0 && j < 2 ? { state: { name: 'Done', type: 'completed' }, created: { id: 'x', identifier: `AC-14${i}${j}`, url: '#' } } : {}), ...(i === 1 && j === 0 ? { state: { name: 'In Progress', type: 'started' }, created: { id: 'y', identifier: 'AC-1473', url: '#' } } : {}) })),
   ])],
 }
-const setupMock = { configured: true, config: { repos: { 'acme/app': '/code/app' }, workspaces: ['review', 'exec'], linearDesktop: false, exec: { command: '', actions: [] } }, needed: [], commands: {} }
+// the setup as the server gives it, enough of it for every page of Settings to draw
+const setupMock = { configured: true, configFile: '/Users/me/.config/review-deck/config.json', reviewIn: 'concierge', critInstalled: true, skills: [], skillSources: [], features: [], needed: [], commands: { review: '/review-pr {number}', revise: '/revise {number}' },
+  config: { repos: { 'acme/app': '/code/app' }, workspaces: ['review', 'exec'], linearDesktop: false, terminal: 'Terminal', review: '/review-pr {number}', revise: '/revise {number}', stack: '', explainBudgetUsd: 1, mergeOnGreen: [], skillSources: [],
+    exec: { command: '/ship-tickets {id}', actions: [], allowedTools: ['Read', 'Edit', 'Bash(npm:*)', 'mcp__linear-key'] } } }
 setupMock.config.company = { regions: ['eu'], certifications: ['soc2'], data: ['personal', 'recordings'], reviews: ['security'], team: [{ name: 'Mira Okafor', role: 'engineer', pace: 6 }, { name: 'Jonas Weber', role: 'engineer' }] }
 // --- Design: a baseline with its board (the blueprint), and a PR's capture through its lenses -------------------------
 // Each screen is drawn from the same boxes its marks name, so what lights up on the board is what is drawn there.

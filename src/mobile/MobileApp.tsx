@@ -108,7 +108,7 @@ export function MobileApp() {
       {ticket && <TicketSheet key={ticket.id} t={ticket} prs={prs ?? []} feed={feed} now={now} toast={toast} onClose={() => setOpen(undefined)} onPr={(id) => setOpen({ kind: 'pr', id })} />}
       {tourPr && <TourSheet pr={tourPr} prs={prs ?? []} toast={toast} onClose={() => setTour(undefined)} />}
       {menu && <Menu health={health} toast={toast} onClose={() => setMenu(false)} />}
-      <Toaster position="top-center" theme="system" offset={56} toastOptions={{ className: 'font-sans' }} />
+      <Toaster position="top-center" theme={document.documentElement.classList.contains('dark') ? 'dark' : 'light'} offset={56} toastOptions={{ className: 'font-sans' }} />
     </div>
   )
 }
@@ -510,7 +510,7 @@ function Menu({ health, toast, onClose }: { health: ReturnType<typeof useDeck>['
   const item = 'flex h-14 w-full items-center gap-3 px-4 text-left text-reading active:bg-hover'
   return (
     <Sheet onClose={onClose} title={<p className="pt-1 text-title font-semibold">Concierge</p>}>
-      <ol className="overflow-hidden rounded-card bg-fill/60 ring-1 ring-line [&>li+li]:border-t [&>li+li]:border-zinc-100 dark:[&>li+li]:border-zinc-800">
+      <ol className="overflow-hidden rounded-card bg-fill/60 ring-1 ring-line [&>li+li]:border-t [&>li+li]:border-line">
         <li><button className={item} onClick={() => api('/poll', {}).then(() => toast('Checking GitHub now'))}><RefreshCw className="size-5 text-fg-3" />Refresh<span className="ml-auto text-body text-fg-3">{health?.lastPollAt ? `synced ${ago(health.lastPollAt, Date.now())}` : ''}</span></button></li>
         <li><button className={item} onClick={() => health && api('/auto-start', { on: !health.autoStart }).then((h: { autoStart: boolean }) => toast(h.autoStart ? 'Auto-review on' : 'Auto-review off'))}><Zap className={`size-5 ${health?.autoStart ? 'fill-accent text-accent' : 'text-fg-3'}`} />Auto-review<span className="ml-auto text-body text-fg-3">{health?.autoStart ? 'on' : 'off'}</span></button></li>
         <li><button className={item} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun className="size-5 text-fg-3" /> : <Moon className="size-5 text-fg-3" />}{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button></li>

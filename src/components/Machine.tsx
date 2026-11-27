@@ -20,12 +20,12 @@ export function Machine({ me, className = '' }: { me?: Me; className?: string })
   const v = me?.viewer, s = me?.serving
   const you = v && !v.here ? called(v.device ?? '') || v.ip || 'another device' : undefined
   return (
-    <span className={`group/m relative inline-flex ${className}`}>
+    <span tabIndex={0} aria-label={`This machine: ${serving}. Details`} className={`group/m relative inline-flex rounded-full ${className}`}>
       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-px text-meta font-semibold ring-1 ring-inset ${os.tone}`}>
         {you && <><span className="max-w-32 truncate font-medium">{you}</span><ArrowRight className="size-3 opacity-60" /></>}
         <os.icon className="size-3" />{serving}{!you && v?.here && <span className="font-normal opacity-60">here</span>}
       </span>
-      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 hidden w-80 space-y-2 rounded-card bg-surface-1 p-3 text-small text-fg-2 shadow-e2 group-hover/m:block">
+      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 hidden w-80 space-y-2 rounded-card bg-surface-1 p-3 text-small text-fg-2 shadow-e2 group-hover/m:block group-focus-within/m:block">
         <span className="block">
           <span className="block text-meta font-medium text-fg-3">You</span>
           {!v ? 'Not known' : v.here ? <>On {serving} itself (localhost)</>

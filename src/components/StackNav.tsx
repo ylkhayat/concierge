@@ -56,9 +56,9 @@ export function StackNav({ items, current, onOpen, me, toast, keys, noun = 'PR' 
             const on = i === at, wait = /bg-wait|bg-amber/.test(x.dot), run = /bg-run|bg-blue/.test(x.dot)
             return (
               <span key={x.id} role="listitem" className="flex items-center">
-                {i > 0 && <span className={`h-px w-2.5 ${i <= at ? 'bg-fg-4' : 'bg-line-strong'}`} />}
+                {i > 0 && <span className={`-mx-1 h-px w-2.5 ${i <= at ? 'bg-fg-4' : 'bg-line-strong'}`} />}
                 <button onClick={() => go(x)} title={`${x.ref} ${plain(x.title)} · ${x.state}`} aria-current={on}
-                        className={`group/stop relative flex items-center justify-center rounded-full transition-transform duration-150 ${on ? '' : 'hover:scale-125'}`}>
+                        className={`group/stop relative flex size-5 items-center justify-center rounded-full transition-transform duration-150 ${on ? '' : 'hover:scale-125'}`}>
                   <span className={`block rounded-full ${on ? 'size-3 ring-2 ring-accent/35 ring-offset-1 ring-offset-surface-1' : 'size-2'} ${wait && !on ? 'bg-transparent ring-[1.5px] ring-wait' : x.dot} ${run ? 'animate-pulse' : ''}`} />
                 </button>
               </span>

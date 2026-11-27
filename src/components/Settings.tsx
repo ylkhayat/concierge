@@ -71,7 +71,7 @@ type BaseInfo = { repo: string; meta?: { branch: string; sha: string; mappedAt: 
 // --- primitives ------------------------------------------------------------------------------
 
 const hours = (iso: string) => ago(iso)
-const home = (p: string) => p.replace(/^\/Users\/(?!Shared\/)[^/]+/, '~')
+const home = (p?: string) => (p ?? '').replace(/^\/Users\/(?!Shared\/)[^/]+/, '~')
 
 // --- the dialog --------------------------------------------------------------------------------
 
@@ -758,7 +758,7 @@ export function SkillSources({ list, skills, onSave }: { list: string[]; skills:
 function Skills({ setup, toast, saveConfig, reload }: { setup?: SetupView; toast: Toast; saveConfig: SaveConfig; reload: () => void }) {
   if (!setup) return <Skeleton rows={4} />
   const install = () => api('/setup/skills', {}).then(() => { toast('Concierge’s skills are up to date for its agents'); reload(); refresh('/method') }, (e: Error) => toast(e.message, 'error'))
-  const missing = setup.skills.filter((s) => !s.installed)
+  const missing = (setup.skills ?? []).filter((s) => !s.installed)
 
   return (
     <>
@@ -2279,7 +2279,7 @@ export function WorkflowCard({ work, title, icon: Icon, value, trigger, account,
   inherited?: string // what runs when it has none of its own (a role's slot: the developer's)
   suggested?: string // a skill on this machine that looks like the one for this work: offered while it has none
 }) {
-  const [text, setText] = useState(value)
+  const [text, setText] = useState(value ?? '')
   const [all, setAll] = useState<FoundSkill[]>()
   const [editing, setEditing] = useState(false)
   const [q, setQ] = useState('')

@@ -212,6 +212,7 @@ function PerAccount({ toast }: { toast: Toast }) {
   useEffect(() => { api('/providers').then((r: { accounts: AccountRow[] }) => setAccounts(r.accounts), () => setAccounts([])) }, [])
   if (!accounts) return <Skeleton rows={3} />
   const a = accounts.find((x) => x.id === tab) ?? accounts[0]
+  if (!a) return <p className="px-0.5 text-small text-fg-3">No account yet: add one under Accounts, and what it can reach shows here.</p>
   return (
     <div className="space-y-2">
       <Tabs as="tab" label="Account" value={a.id} onChange={setTab} options={accounts.map((x) => ({ id: x.id, label: x.label }))} />
