@@ -46,6 +46,8 @@ export const groupOf = (t: TicketView) => GROUPS.find((g) => g.match(t))!
 const DONE_DAYS = 3 // as the server keeps them (linear.ts)
 export type Tier = { id: string; title: string; hint: string; icon: LucideIcon; tone: string; groups: string[] }
 const PINNED: Tier = { id: 'pinned', title: 'Bookmarked', hint: 'Tickets you bookmarked: kept on top until they are done, and every change of their state is an alert', icon: Bookmark, tone: 'text-accent fill-current', groups: [] }
+// what you set aside: out of the sections and the counts, one folded section at the foot until you bring it back
+const ASIDE: Tier = { id: 'aside', title: 'Set aside', hint: 'Tickets and stacks you set aside for now: out of the way until you bring them back', icon: Archive, tone: 'text-fg-3', groups: [] }
 const RECENT: Tier = { id: 'recent', title: 'Recent', hint: 'What you opened in the last day, newest first (Waiting on you stays on top)', icon: History, tone: 'text-fg-3', groups: [] }
 export const TIERS: Tier[] = [
   { id: 'you', title: 'Waiting on you', hint: 'Your move: the agent asked you something (on Linear, or decisions it handed back), or a PR has red CI or open threads', icon: MessageCircleQuestion, tone: 'text-wait-text', groups: ['needs-you', 'tend'] },
@@ -85,13 +87,14 @@ export function groupedTickets(tickets: TicketView[], q: string): { tier: Tier; 
   const tierOf = (u: TicketView[]) => TIERS.findIndex((x) => x.groups.includes(ORDER[Math.min(...u.map(gi))]))
   // what you opened last comes after Waiting on you, which stays first
   // bookmarked ones lead, whatever their state
-  const pinned = all.filter((u) => u.some((t) => t.pinned)), open = all.filter((u) => !pinned.includes(u))
+  const aside = all.filter((u) => u.some((t) => t.aside)), live = all.filter((u) => !aside.includes(u))
+  const pinned = live.filter((u) => u.some((t) => t.pinned)), open = live.filter((u) => !pinned.includes(u))
   const { recent: rec, rest } = takeRecent(open.filter((u) => tierOf(u) > 0), (t) => t.id, recent('exec'))
   // dimmed ones sink to the end of their group
   const dim = (u: TicketView[]) => (u.every((t) => t.dimmed) ? 1 : 0)
   const doneAt = (u: TicketView[]) => u[0].doneAt ?? ''
   const tiers = TIERS.map((tier, i) => ({ tier, units: (i ? rest : open).filter((u) => tierOf(u) === i).sort((a, b) => tier.id === 'done' ? doneAt(b).localeCompare(doneAt(a)) : dim(a) - dim(b)) }))
-  return [...(pinned.length ? [{ tier: PINNED, units: pinned }] : []), tiers[0], ...(rec.length ? [{ tier: RECENT, units: rec }] : []), ...tiers.slice(1)]
+  return [...(pinned.length ? [{ tier: PINNED, units: pinned }] : []), tiers[0], ...(rec.length ? [{ tier: RECENT, units: rec }] : []), ...tiers.slice(1), ...(aside.length ? [{ tier: ASIDE, units: aside }] : [])]
 }
 
 const ticketId = (t: TicketView) => t.id, tierId = (g: { tier: Tier }) => g.tier.id
@@ -139,10 +142,18 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
   const held = useHeld() // no machine can work on their application now: dimmed, opened to read, not picked
   // a bookmark or dim clicked here shows at once (the row moves to where it now belongs), and stays until the server
   // agrees (settle.ts)
-  const [over, setOver] = useState<Record<string, { pinned?: boolean; dimmed?: boolean }>>({})
+  const [over, setOver] = useState<Record<string, { pinned?: boolean; dimmed?: boolean; aside?: boolean }>>({})
   useEffect(() => setOver((o) => pending(o, given)), [given])
   const tickets = given.map((t) => (over[t.id] ? { ...t, ...over[t.id] } : t))
   const nav = useRef<HTMLElement>(null)
+  // set aside: a ticket, or its whole stack (bringing one back brings back whatever set it aside)
+  const setAside = (t: TicketView, whole: boolean) => {
+    const on = !t.aside, ids = whole && t.stack ? t.stack.ids : [t.id]
+    setOver((o) => ({ ...o, ...Object.fromEntries(ids.map((id) => [id, { ...o[id], aside: on }])) }))
+    const keys = on ? [whole && t.stack ? `stack:ticket:${t.stack.key}` : `ticket:${t.id}`] : [...ids.map((id) => `ticket:${id}`), ...(t.stack ? [`stack:ticket:${t.stack.key}`] : [])]
+    Promise.all(keys.map((key) => api('/aside', { key, on }))).then(() => toast(on ? `${whole && t.stack ? `The stack ${t.stack.ids.join(' → ')}` : t.id} set aside: it waits at the foot of the list` : `${whole && t.stack ? 'The stack' : t.id} is back`),
+      (e: Error) => { setOver((o) => ({ ...o, ...Object.fromEntries(ids.map((id) => [id, { ...o[id], aside: !on }])) })); toast(e.message, 'error') })
+  }
   const quick = (t: TicketView, what: 'pinned' | 'dimmed') => {
     const on = !t[what]
     setOver((o) => ({ ...o, [t.id]: { ...o[t.id], [what]: on } }))
@@ -254,6 +265,9 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
                     <Icon className={`size-3.5 ${t[what] ? 'fill-current' : ''}`} />
                   </button>
                 ))}
+                {!t.stack && <button onClick={(e) => { e.stopPropagation(); setAside(t, false) }} title={t.aside ? 'Bring it back into the list' : 'Set aside: out of the way until you bring it back'}
+                                     aria-label={t.aside ? 'Bring it back into the list' : 'Set aside'} aria-pressed={!!t.aside}
+                                     className={`rounded p-1 transition-colors ${t.aside ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}><Archive className="size-3.5" /></button>}
               </span>
             </span>
           </span>
@@ -291,8 +305,8 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
                 </button>
               : <p key={x.id} className="mb-2 mt-1 flex items-center gap-2 px-2.5 py-2 text-small text-fg-3"><CircleCheck className="size-3.5 text-ok" />Nothing waits on you</p>
             : null
-          const n = x.id === 'recent' || x.id === 'pinned' ? units.length : units.flat().filter((t) => inTier(t, x)).length
-          const shut = folded.includes(x.id) !== (x.id === 'later' || x.id === 'handed') && !query
+          const n = x.id === 'recent' || x.id === 'pinned' || x.id === 'aside' ? units.length : units.flat().filter((t) => inTier(t, x)).length
+          const shut = folded.includes(x.id) !== (x.id === 'later' || x.id === 'handed' || x.id === 'aside') && !query
           return (
             <section key={x.id} className={you ? 'mb-2' : 'mb-1.5'}>
               <h2 className="sticky top-0 z-10 backdrop-blur-xl" title={x.hint}>
@@ -303,7 +317,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
                 </button>
               </h2>
               {(shut ? units.filter((u) => u.some((t) => t.id === selected)) : units).map((u) => u.length > 1
-                ? <StackCard key={runKey(u[0])} ids={u[0].stack!.ids} byId={byId} here={x} onOpen={onSelect}
+                ? <StackCard key={runKey(u[0])} ids={u[0].stack!.ids} byId={byId} here={x} onOpen={onSelect} aside={u.some((t) => t.aside)} onAside={() => setAside(u[0], true)}
                              onPickAll={() => onPick([...new Set([...picked, ...u[0].stack!.ids.filter((id) => { const t = byId.get(id); return !!t && !t.busy && !!t.repo })])])}>{u.map((t, i) => row(t, { up: i > 0, down: i < u.length - 1, quiet: x.id !== 'recent' && x.id !== 'pinned' && !inTier(t, x) }))}</StackCard>
                 : row(u[0], { at: x.id === 'recent' ? seen.get(u[0].id) : undefined }))}
             </section>
@@ -445,7 +459,7 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
  * The tickets that ship as one stack, as one card: where they ship, how many, and a strip with each one's group colour in
  * the run's order (the ones that put the stack in this section bright, the others faint); the rows go below.
  */
-function StackCard({ ids, byId, here, onOpen, onPickAll, children }: { ids: string[]; byId: Map<string, TicketView>; here: Tier; onOpen: (id: string) => void; onPickAll?: () => void; children: ReactNode }) {
+function StackCard({ ids, byId, here, onOpen, onPickAll, aside, onAside, children }: { ids: string[]; byId: Map<string, TicketView>; here: Tier; onOpen: (id: string) => void; onPickAll?: () => void; aside?: boolean; onAside?: () => void; children: ReactNode }) {
   const repo = byId.get(ids.find((id) => byId.get(id)?.repo) ?? '')?.repo
   return (
     <div style={repo ? appColor(repo).style : undefined} className="group/stack relative mb-1.5 rounded-xl bg-white/50 p-1 ring-1 ring-line dark:bg-zinc-900/30 ">
@@ -456,7 +470,10 @@ function StackCard({ ids, byId, here, onOpen, onPickAll, children }: { ids: stri
         <Layers className="size-3.5 shrink-0 text-accent" />
         {repo && <span className={`truncate font-mono ${appColor(repo).text}`}>{repo.split('/')[1]}</span>}
         <span className="shrink-0 tabular-nums">{ids.length} tickets</span>
-        <span className="ml-auto flex w-16 shrink-0 gap-0.5">
+        {onAside && <span role="button" tabIndex={0} title={aside ? 'Bring the stack back into the list' : 'Set the stack aside: out of the way until you bring it back'} aria-label={aside ? 'Bring the stack back' : 'Set the stack aside'} aria-pressed={!!aside}
+                          onClick={(e) => { e.stopPropagation(); onAside() }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onAside() } }}
+                          className={`ml-auto shrink-0 rounded p-0.5 transition-colors ${aside ? 'text-accent' : 'invisible text-fg-3 hover:bg-hover hover:text-fg-1 group-hover/stack:visible focus-visible:visible'}`}><Archive className="size-3.5" /></span>}
+        <span className={`${onAside ? '' : 'ml-auto '}flex w-16 shrink-0 gap-0.5`}>
           {ids.map((id) => {
             const t = byId.get(id), g = t && groupOf(t)
             return <span key={id} title={`${id} ${g?.title ?? 'not yours or gone'}`} className={`h-1 flex-1 rounded-full ${g?.dot ?? 'bg-fill-strong'} ${t && !inTier(t, here) ? 'opacity-35' : ''}`} />

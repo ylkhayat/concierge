@@ -207,7 +207,7 @@ export function App() {
   // the focused repo's tickets; the open one always stays listed, even from a link into another repo
   const scoped = focus ? tickets.filter((t) => t.repo === focus || t.id === selected) : tickets
   const execList = mode === 'exec' ? orderedTickets(scoped, query) : []
-  const execWaiting = tickets.filter((t) => !t.dimmed && ['needs-you', 'tend'].includes(groupOf(t).id)).length // dimmed: not now
+  const execWaiting = tickets.filter((t) => !t.dimmed && !t.aside && ['needs-you', 'tend'].includes(groupOf(t).id)).length // dimmed or set aside: not now
   const runPicked = (stacks?: string[][], note?: string, prep?: Prep, mode?: 'one-pr') =>
     api('/exec', { ids: picked, stacks, note, prep, mode }).then((r: { stacks: string[][]; prep?: Prep; merge?: boolean }) => {
       toast(mode ? `One agent works ${picked.length} together into one PR${r.merge ? ', merged once checks pass' : ''}` : r.prep ? `A short prep for ${r.prep.ids.join(', ')} first, then all ${picked.length} at once` : picked.length > 1 ? `Running all ${picked.length} at once: ${r.stacks.map((s) => s.join(' → ')).join('  ·  ')}` : `Running ${picked[0]}`)

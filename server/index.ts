@@ -1573,7 +1573,7 @@ let issuesAt = 0 // when your GitHub issues were last searched (the ticket sync)
 const execBoard: { tickets: Ticket[]; health: Record<string, PrHealth>; at?: string; error?: string; polling: boolean } = { tickets: [], health: {}, polling: false }
 
 type TicketPr = Ticket['prs'][number] & Partial<PrHealth>
-export type TicketView = Omit<Ticket, 'prs'> & { queued?: Queued; waitsOn?: string; background: number; prs: TicketPr[]; closedPrs: TicketPr[]; bucket: Bucket; repo?: string; pr?: TicketPr; run?: ExecRun; busy: boolean; env: Env & { asking?: boolean }; linked: Linked[]; stack?: TicketStack; pinned?: boolean; dimmed?: boolean; handed?: HandedView }
+export type TicketView = Omit<Ticket, 'prs'> & { aside?: boolean; queued?: Queued; waitsOn?: string; background: number; prs: TicketPr[]; closedPrs: TicketPr[]; bucket: Bucket; repo?: string; pr?: TicketPr; run?: ExecRun; busy: boolean; env: Env & { asking?: boolean }; linked: Linked[]; stack?: TicketStack; pinned?: boolean; dimmed?: boolean; handed?: HandedView }
 /** A ticket handed over to its PRs, as the page shows it: which ones (their state), the one new words go to, what went along. */
 export type HandedView = Omit<TicketHandover, 'to'> & { to: (TicketPr & { prState: 'open' | 'merged' | 'closed'; tracked: boolean })[]; main: number; mainId: string; mainState: 'open' | 'merged' | 'closed' }
 // which environment a ticket is about: cached from Sentry, else plain words in the ticket, else unknown
@@ -1648,7 +1648,7 @@ function buildTicketViews(): TicketView[] {
   // the tickets that ship together (their PRs stacked on GitHub, or one run's), for the list to keep as one
   const stacks = ticketStacks(views, (k) => state.prs[k]?.stack)
   // dimmed for now: until its state moves on (another bucket), then it's back to normal by itself
-  return views.map((v) => ({ ...v, stack: stacks.get(v.id), pinned: `ticket:${v.id}` in pins(), dimmed: state.dimmed?.[v.id] === v.bucket }))
+  return views.map((v) => ({ ...v, stack: stacks.get(v.id), aside: !!state.aside?.some((k) => k === `ticket:${v.id}` || (!!stacks.get(v.id) && k === `stack:ticket:${stacks.get(v.id)!.key}`)), pinned: `ticket:${v.id}` in pins(), dimmed: state.dimmed?.[v.id] === v.bucket }))
 }
 const handedView = (h: TicketHandover, all: TicketPr[]): HandedView => {
   const main = mainOf(h, isOpen)!
