@@ -17,6 +17,7 @@ import { ActivityFeed } from './ActivityFeed.tsx'
 import { Skeleton } from './Connections.tsx'
 import { Md } from './Md.tsx'
 import { Tabs } from './Tabs.tsx'
+import { inSettings } from '../copy.ts'
 
 type Toast = (msg: string, tone?: 'ok' | 'error') => void
 type Override = 'on' | 'off' | undefined
@@ -87,7 +88,7 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
         {aspect ? <>
           <p className="label px-2.5 pb-1 pt-2 text-fg-4">Projects</p>
           {!list.data && <Skeleton rows={2} />}
-          {list.data && !repos.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Workspaces.</p>}
+          {list.data && !repos.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in {inSettings('repos')}.</p>}
           {repos.map((r) => (
             <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
               <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
@@ -102,7 +103,7 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
         </> : <>
         <p className="label px-2.5 pb-1 pt-2 text-fg-4">Pull requests</p>
         {!list.data && <Skeleton rows={3} />}
-        {list.data && !prs.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Workspaces, or for one PR from its page.</p>}
+        {list.data && !prs.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in {inSettings('repos')}, or for one PR from its page.</p>}
         {prs.map((p) => {
           const s = standing(p, p.latest?.sha)
           return (
@@ -118,7 +119,7 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
             </button>
           )
         })}
-        {repos.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Blueprints</p>}
+        {repos.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Maps</p>}
         {repos.map((r) => (
           <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
             <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
@@ -162,7 +163,7 @@ function Empty() {
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
       <Palette className="size-6 text-accent-text" />
       <p className="text-body font-medium text-fg-1">What your pull requests look like, before and after</p>
-      <p className="max-w-md text-small text-fg-3">Turn visuals on for a repository (Settings → Workspaces), and each PR that changes what people see gets its screens captured: from its Storybook stories, else from the running app.</p>
+      <p className="max-w-md text-small text-fg-3">Turn visuals on for a repository ({inSettings('repos')}), and each PR that changes what people see gets its screens captured: from its Storybook stories, else from the running app.</p>
     </div>
   )
 }
@@ -214,10 +215,10 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
               </div>
               <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
                 <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
-                {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
+                {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Open the PR</a>}
                 {busy(t)
                   ? <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
-                  : mapped && <button onClick={() => post({ board: true }, 'Drawing the map again, from the code as it is now')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Wand className="size-3.5" />Draw it again</button>}
+                  : mapped && <button onClick={() => post({ board: true }, 'Drawing the map again, from the code as it is now')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Wand className="size-3.5" />Redraw the map</button>}
               </div>
             </div>
           </header>
@@ -941,7 +942,7 @@ function Focus({ pr, sha, shot, origin, live, target, lit: litPart, onPart, onCl
         <span className="min-w-0 flex-1 truncate text-small"><b className="font-semibold text-fg-1">{shot.domain}</b><span className="text-fg-3"> · {shot.variant}</span>{shot.note && <span className="text-fg-4"> · {shot.note}</span>}</span>
         {aim && <button onClick={() => onPart('')} className="btn-ghost btn-sm inline-flex items-center gap-1.5"><ZoomOut className="size-3.5" />Whole screen</button>}
         {onStep && <span className="flex gap-1"><button onClick={() => onStep(-1)} aria-label="The step before" className="btn-ghost btn-sm"><ChevronRight className="size-3.5 rotate-180" /></button><button onClick={() => onStep(1)} aria-label="The next step" className="btn-ghost btn-sm"><ChevronRight className="size-3.5" /></button></span>}
-        <button onClick={onClose} aria-label="Back to the board" className="btn-ghost btn-sm inline-flex items-center gap-1.5"><X className="size-3.5" />Board</button>
+        <button onClick={onClose} aria-label="Back to the map" className="btn-ghost btn-sm inline-flex items-center gap-1.5"><X className="size-3.5" />Back to the map</button>
       </header>
       <div ref={area} className="flex min-h-0 flex-1 items-center justify-center px-3 pb-3 sm:px-5 sm:pb-5" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
         <div ref={stage} style={{ aspectRatio: `${W} / ${H}`, width: fit, transform: from, transformOrigin: '0 0', transition: from ? 'none' : 'transform 420ms var(--ease-out)' }}
@@ -1166,7 +1167,7 @@ function Impact({ pr, set, noBoard }: { pr: string; set: VisualSet; noBoard?: bo
       {set.summary && <div className="card px-4 py-3 text-small text-fg-2"><Md text={set.summary} /></div>}
       <div className="flex flex-wrap items-center gap-2">
         <LensSwitch value={lens} onChange={setLens}
-                    options={[...(screens.length ? [{ id: 'board' as const, label: 'Blueprint', count: screens.length, icon: LayoutGrid }] : []), ...(lensed ? [{ id: 'changed' as const, label: 'Changed', count: changed.length, icon: Crosshair }, { id: 'affected' as const, label: 'Affected', count: affected.length, icon: LayoutTemplate }] : []), { id: 'all' as const, label: 'All', count: set.shots.length, icon: Images }]} />
+                    options={[...(screens.length ? [{ id: 'board' as const, label: 'Map', count: screens.length, icon: LayoutGrid }] : []), ...(lensed ? [{ id: 'changed' as const, label: 'Changed', count: changed.length, icon: Crosshair }, { id: 'affected' as const, label: 'Affected', count: affected.length, icon: LayoutTemplate }] : []), { id: 'all' as const, label: 'All', count: set.shots.length, icon: Images }]} />
         {marked && lens !== 'board' && <button onClick={() => setMarks(!marks)} aria-pressed={marks} title={marks ? 'Hide the annotations' : 'Show where each change sits'}
                            className={`inline-flex items-center gap-1.5 rounded-ctl px-2 py-1 text-meta font-medium transition-colors ${marks ? 'text-accent-text' : 'text-fg-3 hover:text-fg-1'}`}>{marks ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}Marks</button>}
         <span className="ml-auto text-meta text-fg-4">from {set.source === 'storybook' ? 'its Storybook stories' : 'the running app'} · {new Date(set.at).toLocaleString()}</span>
@@ -1319,7 +1320,7 @@ function Aspect({ view, repo, feed, toast }: { view: 'components' | 'tokens'; re
                   <button onClick={() => void postDraft({ discard: true })} className="btn-ghost btn-sm">Discard</button>
                   <button onClick={() => void confirm()} disabled={busy(t)} title={busy(t) ? 'Its agent is still on the last one' : 'The agent changes the code to these values and opens a PR'} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Check className="size-3.5" />Make the PR · {changes.length}</button>
                 </>}
-                {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
+                {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Open the PR</a>}
                 {busy(t) && <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>}
               </div>
             </div>
@@ -1496,7 +1497,7 @@ function DraftPreview({ repo, set, books, changes }: { repo: string; set: Visual
         {n > 0 && (
           <button onPointerDown={() => setBefore(true)} onPointerUp={() => setBefore(false)} onPointerLeave={() => setBefore(false)}
                   onKeyDown={(e) => { if (e.key === ' ') setBefore(true) }} onKeyUp={() => setBefore(false)}
-                  aria-pressed={before} title="Hold to see them as they are" className={`btn-outline btn-sm inline-flex items-center gap-1.5 ${before ? 'text-accent-text' : ''}`}><Eye className="size-3.5" />Hold for before</button>
+                  aria-pressed={before} title="Hold to see them as they are" className={`btn-outline btn-sm inline-flex items-center gap-1.5 ${before ? 'text-accent-text' : ''}`}><Eye className="size-3.5" />Hold to compare</button>
         )}
       </header>
       <div className="flex gap-3 overflow-x-auto p-3">
@@ -1553,7 +1554,7 @@ function DraftChat({ draft, task, onSay, onConfirm, onDiscard }: { draft?: Token
         {draft?.busy && <p className="inline-flex items-center gap-1.5 px-1 text-small text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Drafting…</p>}
         {draft?.error && <p className="px-1 text-small text-wait-text">{draft.error}</p>}
         {busy(task) && <p className="inline-flex items-center gap-1.5 px-1 text-small text-run-text"><LoaderCircle className="size-3.5 animate-spin" />{task?.state === 'queued' ? 'The PR waits for a machine with its checkout' : 'Making the PR…'}</p>}
-        {!busy(task) && task?.prUrl && draft?.sent && <a href={task.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-1 text-small text-accent-text hover:underline"><ExternalLink className="size-3.5" />Its PR</a>}
+        {!busy(task) && task?.prUrl && draft?.sent && <a href={task.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-1 text-small text-accent-text hover:underline"><ExternalLink className="size-3.5" />Open the PR</a>}
         <div ref={end} />
       </div>
       {n > 0 && (

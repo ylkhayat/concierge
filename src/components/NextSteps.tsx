@@ -324,7 +324,7 @@ function RouteBar({ d, open, onGo, onKeep }: { d: Routed; open: boolean; onGo: (
 
 /** Each lane's name and colour: the chip over the box, the box's edge, and the turns in the conversation. */
 export const LANE: Record<Lane, { label: string; hint: string; cls: string; bar: string; ring: string; fill: string; text: string }> = {
-  ship: { label: 'Build', hint: 'An instruction: the coding agent acts on it', cls: 'bg-accent-soft text-accent-text', bar: 'border-accent', ring: 'ring-accent/40 focus:ring-accent/60', fill: 'bg-accent text-on-accent', text: 'text-accent-text' },
+  ship: { label: 'Ship', hint: 'An instruction: the coding agent acts on it', cls: 'bg-accent-soft text-accent-text', bar: 'border-accent', ring: 'ring-accent/40 focus:ring-accent/60', fill: 'bg-accent text-on-accent', text: 'text-accent-text' },
   intent: { label: 'Intent', hint: 'What it is meant to do: a read-only discussion toward a decision record', cls: 'bg-wait/14 text-wait', bar: 'border-wait', ring: 'ring-wait/40 focus:ring-wait/60', fill: 'bg-wait text-white', text: 'text-wait-text' },
   understanding: { label: 'Understanding', hint: 'What it does: a read-only discussion, nothing changes', cls: 'bg-run/12 text-run', bar: 'border-run', ring: 'ring-run/40 focus:ring-run/60', fill: 'bg-run text-white', text: 'text-run-text' },
 }

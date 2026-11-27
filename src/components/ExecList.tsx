@@ -20,6 +20,7 @@ import { useFlip } from '../flip.ts'
 import { ticketOrder } from '../listOrder.ts'
 import { pending, shapeKey, useSettled } from '../settle.ts'
 import { move, noStacks, oneStack, shapeOf, shift, stacksOf, type Shape } from '../stackEdit.ts'
+import { inSettings } from '../copy.ts'
 
 export type Group = { id: string; title: string; hint: string; icon: LucideIcon; tone: string; card: string; match: (t: TicketView) => boolean; dot?: string; badge?: string }
 
@@ -27,7 +28,7 @@ export type Group = { id: string; title: string; hint: string; icon: LucideIcon;
 export const GROUPS: Group[] = [
   { id: 'running', dot: 'bg-run', badge: 'text-run-text bg-run/10 ring-run/30', title: 'Running', hint: 'An exec run is working on it', icon: LoaderCircle, tone: 'text-run-text', card: 'bg-run/5 ring-run/15', match: (t) => t.busy },
   { id: 'needs-you', dot: 'bg-wait', badge: 'text-wait-text bg-wait/10 ring-wait/30', title: 'Needs you', hint: 'The agent asked you something: a question on Linear, or decisions it handed back', icon: MessageCircleQuestion, tone: 'text-wait-text', card: 'bg-wait/6 ring-wait/20', match: (t) => t.bucket === 'needs-you' },
-  { id: 'tend', dot: 'bg-fail', badge: 'text-fail-text bg-fail/10 ring-fail/30', title: 'Tend', hint: 'In review with red CI or open threads', icon: Wrench, tone: 'text-fail-text', card: 'bg-fail/5 ring-fail/15', match: (t) => t.bucket === 'tend' },
+  { id: 'tend', dot: 'bg-fail', badge: 'text-fail-text bg-fail/10 ring-fail/30', title: 'Needs fixing', hint: 'In review with red CI or open threads', icon: Wrench, tone: 'text-fail-text', card: 'bg-fail/5 ring-fail/15', match: (t) => t.bucket === 'tend' },
   { id: 'stalled', dot: 'bg-wait', badge: 'text-wait-text bg-wait/10 ring-wait/30', title: 'Stalled', hint: 'In progress, untouched for a day', icon: Hourglass, tone: 'text-wait-text', card: 'bg-wait/5 ring-wait/15', match: (t) => t.bucket === 'stalled' },
   { id: 'in-progress', dot: 'bg-accent', badge: 'text-accent-text bg-accent-soft ring-accent/30', title: 'In progress', hint: 'Moving', icon: CircleDot, tone: 'text-accent-text', card: 'bg-accent/5 ring-accent/15', match: (t) => t.bucket === 'in-progress' },
   { id: 'todo', dot: 'bg-run', badge: 'text-run-text bg-run/10 ring-run/30', title: 'Todo', hint: 'Ready to pick, by priority', icon: CircleDashed, tone: 'text-run-text', card: 'bg-run/5 ring-run/15', match: (t) => t.bucket === 'todo' },
@@ -445,7 +446,7 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
             <button onClick={() => { onPick([]); setPlan(undefined) }} className="rounded-xl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
           </div>
           {picked.length > 1 && (
-            <button onClick={shipOne} disabled={!!busy || !oneRepo} title={oneRepo ? 'One agent works them together as one piece of work (one shared memory, shown as one group), deciding on its own (no questions), into one pull request: merged once its checks pass if its repository allows (Settings → Repositories)' : 'One PR is one repository: pick tickets of one repository'}
+            <button onClick={shipOne} disabled={!!busy || !oneRepo} title={oneRepo ? `One agent works them together as one piece of work (one shared memory, shown as one group), deciding on its own (no questions), into one pull request: merged once its checks pass if its repository allows (${inSettings('repos')})` : 'One PR is one repository: pick tickets of one repository'}
                     className={`mt-2 flex w-full items-center justify-center gap-1.5 ${quiet} disabled:opacity-40`}>
               {busy === 'one' ? <LoaderCircle className="size-3.5 animate-spin" /> : <GitMerge className="size-3.5" />}Ship {picked.length} as one PR
             </button>

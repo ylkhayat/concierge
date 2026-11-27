@@ -12,7 +12,7 @@ type Toast = (m: string, tone?: 'ok' | 'error') => void
 export function Connections({ toast }: { toast: Toast }) {
   return (
     <div className="space-y-6">
-      <Section title="The bank" hint="Connections Concierge holds itself: every agent run gets them, whichever account or tool does the work.">
+      <Section title="Shared connections" hint="Connections Concierge holds itself: every agent run gets them, whichever account or tool does the work.">
         <Bank toast={toast} />
       </Section>
       <Section title="Connectors" hint="What agents can reach on each account. Set up once; every machine gets them.">
@@ -58,7 +58,7 @@ function Bank({ toast }: { toast: Toast }) {
     <div className="space-y-2">
       <div className="card divide-y divide-line">
         {b.file && <p className="px-3.5 py-2 text-meta text-fg-3">Secrets for these live in <code className="font-mono text-fg-2">{b.file.replace(/^\/(Users|home)\/[^/]+/, '~')}</code> on each machine: one <code className="font-mono">NAME=value</code> per line, named in a connection as <code className="font-mono">{'${NAME}'}</code>.</p>}
-        {b.servers.length === 0 && <p className="px-3.5 py-3 text-small text-fg-3">Nothing in it yet. A service Concierge has a key for (Linear, Sentry) is in it by itself; add any other by its MCP address and key, or by the command that starts it.</p>}
+        {b.servers.length === 0 && <p className="px-3.5 py-3 text-small text-fg-3">No shared connections yet. A service Concierge has a key for (Linear, Sentry) is added by itself; add any other by its MCP address and key, or by the command that starts it.</p>}
         {b.servers.map((s) => (
           <div key={s.name} className="flex items-center gap-2.5 px-3.5 py-2 text-small">
             <span className={`size-1.5 shrink-0 rounded-full ${s.how === 'key' ? 'bg-ok' : 'bg-wait'}`} />
@@ -68,15 +68,15 @@ function Bank({ toast }: { toast: Toast }) {
             <span className="shrink-0 text-meta text-fg-3" title={s.how === 'key' ? 'It signs in with a key Concierge holds: every tool can use it' : 'It signs in in the browser, into a Claude account: Codex and Copilot can’t use it'}>{s.how === 'key' ? 'Every tool' : 'Claude accounts only'}</span>
             {s.mine && s.edit && <button onClick={() => setForm(s.edit!.kind === 'command' ? { kind: 'command', name: s.name, url: '', key: '', command: s.edit!.command, env: s.edit!.env.map((k) => `${k}=`).join('\n'), was: s.name } : { kind: 'address', name: s.name, url: s.edit!.url, key: '', command: '', env: '', was: s.name })} className="shrink-0 text-meta text-fg-3 hover:text-fg-1">Edit</button>}
             {owners.length > 1 && <UsedBy owners={owners} on={scope[s.name] ?? []} onToggle={(o) => keep(s.name, o)} />}
-            {s.mine && <button onClick={() => void post('/bank/remove', { name: s.name }, `${s.name} taken out of the bank`)} className="shrink-0 text-meta text-fg-4 hover:text-fail-text">Remove</button>}
+            {s.mine && <button onClick={() => void post('/bank/remove', { name: s.name }, `${s.name} removed`)} className="shrink-0 text-meta text-fg-4 hover:text-fail-text">Remove</button>}
           </div>
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2 px-0.5">
-        <Tabs size="sm" label="What a run gets" value={b.only ? 'only' : 'gaps'} onChange={(v) => void post('/bank', { only: v === 'only' }, v === 'only' ? 'Every run now gets only the bank' : 'The bank now fills what an account lacks')}
-              options={[{ id: 'gaps', label: 'Fill the gaps', title: 'An account that has a service through its own sign-in keeps that one; the bank adds what it lacks' }, { id: 'only', label: 'Bank only', title: 'Every run gets exactly the bank and nothing of the account’s own, so its tools no longer depend on where it landed' }]} />
-        <span className="min-w-0 flex-1 text-meta text-fg-3">{b.only ? 'Every run gets exactly the bank: nothing from claude.ai or plugins.' : 'An account keeps what its own sign-in brings; the bank adds the rest.'}</span>
-        {!form && <button onClick={() => setForm({ kind: 'address', name: '', url: '', key: '', command: '', env: '' })} className="btn-outline btn-sm"><PlugZap className="mr-1 size-3.5" />Put one in</button>}
+        <Tabs size="sm" label="What a run gets" value={b.only ? 'only' : 'gaps'} onChange={(v) => void post('/bank', { only: v === 'only' }, v === 'only' ? 'Every run now gets only the shared connections' : 'Shared connections now add what an account lacks')}
+              options={[{ id: 'gaps', label: 'Add what’s missing', title: 'An account that has a service through its own sign-in keeps that one; the shared connections add what it lacks' }, { id: 'only', label: 'Shared only', title: 'Every run gets exactly the shared connections and nothing of the account’s own, so its tools no longer depend on where it landed' }]} />
+        <span className="min-w-0 flex-1 text-meta text-fg-3">{b.only ? 'Every run gets exactly the shared connections: nothing from claude.ai or plugins.' : 'An account keeps what its own sign-in brings; the shared connections add the rest.'}</span>
+        {!form && <button onClick={() => setForm({ kind: 'address', name: '', url: '', key: '', command: '', env: '' })} className="btn-outline btn-sm"><PlugZap className="mr-1 size-3.5" />Add a connection</button>}
       </div>
       {form && (
         <div className="card space-y-2 px-3.5 py-3">
@@ -242,7 +242,7 @@ function AccountList({ a, toast }: { a: AccountRow; toast: Toast }) {
               : c.via === 'claude code' && a.kind !== 'openai' && <Login name={c.name} account={a.kind === 'claude' ? a.id : undefined} toast={toast} onDone={() => void read(true)} />)} />
         )} />
       <p className="flex items-center gap-2 px-0.5 text-meta text-fg-4">{how}
-        <button onClick={() => void read(true)} disabled={busy} className="ml-auto shrink-0 font-medium text-fg-3 hover:text-fg-1 disabled:opacity-40">{busy ? 'Checking…' : 'Check again'}</button></p>
+        <button onClick={() => void read(true)} disabled={busy} className="ml-auto shrink-0 font-medium text-fg-3 hover:text-fg-1 disabled:opacity-40">{busy ? 'Checking…' : 'Refresh'}</button></p>
     </div>
   )
 }

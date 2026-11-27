@@ -23,6 +23,7 @@ import { impact } from '../planDiff.ts'
 import { orderOf, planStream, ranksOf } from '../planStream.ts'
 import { areaOf, explore, refineOf } from '../planLook.tsx'
 import type { Gap } from '../../server/planOps.ts'
+import { inSettings } from '../copy.ts'
 
 type Toast = (m: string, tone?: 'ok' | 'error') => void
 // a change to a plan's own fields (its appetite in weeks; none: null)
@@ -400,7 +401,7 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
   const shown = hover ? plays.find((x) => x.id === hover) : undefined
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-small">
-      <span className="label text-fg-4">Plays</span>
+      <span className="label text-fg-4">Moves</span>
       {/* what a play would do floats under it: in the row it pushed Colour to the next line, and the board under the bar
           jumped with every hover */}
       {plays.map((x) => (
@@ -435,7 +436,7 @@ function Readiness({ whatIf, company, checksOff, org, teamKey, people, pace, poi
   const high = risks.filter((n) => n.risk!.likelihood * n.risk!.impact >= 6).length
   const pills = [
     // checks off for its organization: said, not just gone (one place turns them back on)
-    ...(checksOff ? [{ id: 'off', name: 'Compliance', status: 'off', color: 'var(--fg-4)', hint: `Off for ${org ?? 'this organization'}: Settings → Compliance turns it on` }] : []),
+    ...(checksOff ? [{ id: 'off', name: 'Compliance', status: 'off', color: 'var(--fg-4)', hint: `Off for ${org ?? 'this organization'}: ${inSettings('compliance')} turns it on` }] : []),
     ...areas.map((a) => { const done = a.items.filter((x) => x.by).length, all = done === a.items.length
       return { id: a.id, name: a.label, status: `${done}/${a.items.length}`, color: all ? 'var(--st-ok)' : lane(a.hue), hint: all ? 'Every obligation has its ticket' : `Missing: ${a.items.filter((x) => !x.by).map((x) => x.ob.title).join(', ')}` } }),
     { id: 'resources', name: 'Resources', status: res.capacity !== undefined ? `${res.demand}/${res.capacity} pt` : `${res.demand} pt`, color: over ? 'var(--st-fail)' : res.missing.length ? 'var(--st-wait)' : lane(70), hint: res.missing.length ? `No ${res.missing.join(', ')} on the team` : over ? `${res.demand - res.capacity!} pt more than the appetite holds` : 'The team holds the work' },
@@ -462,7 +463,7 @@ function Readiness({ whatIf, company, checksOff, org, teamKey, people, pace, poi
             <div className="space-y-1.5 text-small text-fg-2">
               <p>In scope: <b className="text-fg-1">{res.demand} pt</b>. The team finishes about <b className="text-fg-1">{res.weekly} pt a week</b>{res.capacity !== undefined && <>, <b className="text-fg-1">{res.capacity} pt</b> inside the appetite</>}.</p>
               {res.people.length ? <p className="text-meta text-fg-3">{whatIf.members?.length ? 'The project’s people' : teamKey ? `The ${teamKey} team` : 'Everyone in the profile'}: {res.people.map(({ m, share }) => `${m.name} (${m.role}, ${m.pace ?? pace}/wk${share < 1 ? `, ${Math.round(share * 100)}% here: also on ${(m.teams ?? []).filter((t) => t !== teamKey).join(', ')}` : ''})`).join(' · ')}</p>
-                : <p className="text-meta text-fg-3">No one under Capacity in Settings → Compliance: counted as {people} at {pace} pt a week.</p>}
+                : <p className="text-meta text-fg-3">No one under Capacity in {inSettings('compliance')}: counted as {people} at {pace} pt a week.</p>}
               {res.missing.length > 0 && <p className="text-wait-text">The work needs {res.missing.join(', ')}, and nobody on the team has that role or review.</p>}
             </div>
           ) : open === 'risks' ? (
@@ -579,7 +580,7 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet, gh }: { p: Plan; w
   return (
     <div className="border-b border-line bg-accent-soft/50 px-4 py-2 text-small animate-[detail-in_200ms_var(--ease-out)]">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-accent-text" title={p.scenario?.why}><Sparkles className="size-3.5" />{ops.some((o) => o.turn) ? 'Draft' : 'Trying'}: {ops.length} change{ops.length === 1 ? '' : 's'}</span>
+        <span className="inline-flex items-center gap-1.5 font-semibold text-accent-text" title={p.scenario?.why}><Sparkles className="size-3.5" />Draft: {ops.length} change{ops.length === 1 ? '' : 's'}</span>
         <span className={first ? 'text-fg-2' : days < 0 ? 'font-medium text-ok-text' : days > 0 ? 'font-medium text-wait-text' : 'text-fg-2'}>{first ? `lands ~${landing}` : `${when} (~${landing})`}</span>
         {first && <span className="basis-full text-fg-2 sm:basis-auto">A first draft, drawn on the board: nothing is in the plan until you Apply. Ask below for changes first if you like; Linear only gets it when you Create in Linear.</span>}
         {i.fitsAfter !== undefined && <span className={i.fitsAfter ? 'text-ok-text' : 'text-fail-text'}>{i.fitsAfter ? (i.fitsBefore ? 'fits the appetite' : 'now fits the appetite') : 'over the appetite'}</span>}
@@ -729,7 +730,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
           {(orgsQ.data?.length ?? 0) > 1 && <Chips label="Organization" value={checks.data?.org ?? ''} options={(orgsQ.data ?? []).map((o): [string, string] => [o.owner, o.personal ? `${o.owner} (you)` : o.owner])} onChange={(o) => void set({ org: o })} />}
           <Chips label="Method" value={p.method} options={[['agile', 'Agile: epics of thin slices'], ['waterfall', 'Waterfall: phases in order']]} onChange={(m) => void set({ method: m })} />
           <div><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Planning skill</p>
-            <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'The one in Settings', hint: 'Settings → Workflows → What each feature runs' }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
+            <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'The one in Settings', hint: inSettings('workflows', 'What each feature runs') }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
           {!p.project && !gh && <div onFocus={() => setTeamsOn(true)} onMouseEnter={() => setTeamsOn(true)}><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Linear team</p>
             <InlineList value={p.team} empty={teams.isLoading || !teams.data ? 'Reading your Linear teams…' : 'No teams'} options={(teams.data?.teams ?? []).map((t) => ({ value: t.id, label: t.name, hint: t.key }))} onPick={(v) => { void set({ team: v }); if (cfg === 'team') setCfg(undefined) }} /></div>}
         </div>

@@ -94,9 +94,9 @@ export function Standup({ onOpenTicket, toast, tickets = [] }: { onOpenTicket: (
             <div className="flex min-h-0 flex-col gap-3">
               <StandupFlow lanes={lanesOf(done, blockers, plan, byId)} counts={{ did: done.length + (notes.did?.length ?? 0), blockers: blockers.length + (notes.blockers?.length ?? 0), next: plan.length + (notes.next?.length ?? 0) }} onOpen={onOpenTicket} />
               <div className="grid shrink-0 gap-3 md:grid-cols-3">
-                <Own title="Did" own={notes.did} onOwn={(l) => setNotes('did', l)} placeholder="Something you did (a call, a spike)" />
-                <Own title="Blocked by" own={notes.blockers} onOwn={(l) => setNotes('blockers', l)} placeholder="A blocker (design, an answer, access)" />
-                <Own title="Will do" own={notes.next} onOwn={(l) => setNotes('next', l)} placeholder="A plan for today" />
+                <Own title="Did · your notes" own={notes.did} onOwn={(l) => setNotes('did', l)} placeholder="Something you did (a call, a spike)" />
+                <Own title="Blocked · your notes" own={notes.blockers} onOwn={(l) => setNotes('blockers', l)} placeholder="A blocker (design, an answer, access)" />
+                <Own title="Next · your notes" own={notes.next} onOwn={(l) => setNotes('next', l)} placeholder="A plan for today" />
               </div>
             </div>
             <aside className="min-h-0 space-y-4 overflow-y-auto pb-2">
@@ -153,7 +153,7 @@ function Own({ title, own = [], onOwn, placeholder }: { title: string; own?: str
   const add = () => { const v = draft.trim(); if (v) { onOwn([...own, v]); setDraft('') } }
   return (
     <section className="card px-3 py-2.5">
-      <p className="text-meta font-semibold text-fg-3">{title}, in your words</p>
+      <p className="text-meta font-semibold text-fg-3">{title}</p>
       {own.map((x, i) => (
         <p key={i} className="group mt-1 flex items-baseline gap-2 text-small text-fg-1">
           <span className="min-w-0 flex-1">{x}</span>
@@ -240,7 +240,7 @@ function WrittenPanel({ w, day, writing, onWrite, onCopy, onOpen, titles, empty 
   return (
     <section className="min-w-0 card p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-small font-semibold text-fg-3">In your words</h2>
+        <h2 className="text-small font-semibold text-fg-3">Written summary</h2>
         {w && <button onClick={onCopy} title="Copy this version" className="text-fg-4 transition-colors hover:text-fg-1"><Copy className="size-3.5" /></button>}
         {w && <span className="text-meta text-fg-3">{new Date(w.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · {ago(w.at, Date.now())} · from {w.tickets} ticket{w.tickets === 1 ? '' : 's'}</span>}
         <button onClick={onWrite} disabled={writing || empty} title="Write it now from the facts as they are (a small model call)"

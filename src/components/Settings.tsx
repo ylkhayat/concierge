@@ -25,6 +25,7 @@ import { LiveUpdates } from './LiveUpdates.tsx'
 import { AccountMachinesFor, notReadyOn, useAccountMachines } from './AccountMachines.tsx'
 import { AccountSecurity } from './AccountSecurity.tsx'
 import type { Mode, OrgSkill } from '../../server/orgSkills.ts'
+import { inSettings, SETTINGS } from '../copy.ts'
 
 export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
   // older names, still used by links around the app
@@ -32,22 +33,22 @@ export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spe
 const ALIAS: Partial<Record<SettingsTab, SettingsTab>> = { general: 'workflows', skills: 'workflows', exec: 'workflows', agents: 'accounts', usage: 'spend', company: 'compliance' }
 type Page = { id: SettingsTab; label: string; hint: string; icon: LucideIcon }
 const NAV: { group: string; pages: Page[] }[] = [
-  { group: 'Start', pages: [{ id: 'overview', label: 'How it works', hint: 'What runs when, with which skill, on which account', icon: Workflow }] },
+  { group: 'Start', pages: [{ id: 'overview', label: SETTINGS.overview, hint: 'What runs when, with which skill, on which account', icon: Workflow }] },
   { group: 'Work', pages: [
-    { id: 'roles', label: 'Roles', hint: 'The roles you work as, and what each one runs', icon: UsersRound },
-    { id: 'workflows', label: 'Workflows', hint: 'Triggers, skills and commands for reviews, your PRs and tickets', icon: Wand },
-    { id: 'accounts', label: 'Accounts', hint: 'Claude, OpenAI or Llama, and which one takes what', icon: Bot },
-    { id: 'spend', label: 'Spend', hint: 'Budgets, limits and what the runs cost', icon: Coins },
-    { id: 'compliance', label: 'Compliance', hint: 'What each workspace’s plans are checked against (or not): where its users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
+    { id: 'roles', label: SETTINGS.roles, hint: 'The roles you work as, and what each one runs', icon: UsersRound },
+    { id: 'workflows', label: SETTINGS.workflows, hint: 'Triggers, skills and commands for reviews, your PRs and tickets', icon: Wand },
+    { id: 'accounts', label: SETTINGS.accounts, hint: 'Claude, OpenAI or Llama, and which one takes what', icon: Bot },
+    { id: 'spend', label: SETTINGS.spend, hint: 'Budgets, limits and what the runs cost', icon: Coins },
+    { id: 'compliance', label: SETTINGS.compliance, hint: 'What each workspace’s plans are checked against (or not): where its users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
   ] },
   { group: 'Sources', pages: [
-    { id: 'repos', label: 'Workspaces', hint: 'The organizations Concierge works with and the repositories it watches in each, where they live, their codebase maps', icon: FolderGit2 },
-    { id: 'connections', label: 'Connections', hint: 'Databases and services the agents can reach', icon: PlugZap },
-    { id: 'machines', label: 'Machines', hint: 'Where Concierge runs, your tailnet, sync and updates', icon: Network },
+    { id: 'repos', label: SETTINGS.repos, hint: 'The organizations Concierge works with and the repositories it watches in each, where they live, their codebase maps', icon: FolderGit2 },
+    { id: 'connections', label: SETTINGS.connections, hint: 'Databases and services the agents can reach', icon: PlugZap },
+    { id: 'machines', label: SETTINGS.machines, hint: 'Where Concierge runs, your tailnet, sync and updates', icon: Network },
   ] },
   { group: 'You', pages: [
-    { id: 'appearance', label: 'Appearance', hint: 'Theme, size, links and the terminal', icon: Palette },
-    { id: 'about', label: 'About', hint: 'Setup, the settings file and shortcuts', icon: BookOpen },
+    { id: 'appearance', label: SETTINGS.appearance, hint: 'Theme, size, links and the terminal', icon: Palette },
+    { id: 'about', label: SETTINGS.about, hint: 'Setup, the settings file and shortcuts', icon: BookOpen },
   ] },
 ]
 const PAGES = NAV.flatMap((g) => g.pages)
@@ -267,7 +268,7 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
             const on = setup.config.workspaces.includes(w)
             return (
               <Row key={w} icon={w === 'review' ? GitPullRequestArrow : Rocket} title={w === 'review' ? 'Review' : 'Ship'}
-                   hint={w === 'review' ? 'Review PRs you are asked to, and revise your own from their threads.' : 'Ship your Linear tickets with your exec command.'}>
+                   hint={w === 'review' ? 'Review PRs you are asked to, and revise your own from their threads.' : 'Ship your Linear tickets: an agent works each one and opens its PR.'}>
                 <Toggle label={w} on={on} onChange={(v) => {
                   const next = v ? [...setup.config.workspaces, w] : setup.config.workspaces.filter((x) => x !== w)
                   if (next.length) saveConfig({ workspaces: next }, `${w === 'review' ? 'Review' : 'Ship'} ${v ? 'on' : 'off'}`)
@@ -945,7 +946,7 @@ const SIGN_IN_HINT: Record<Kind, string> = {
 /** Whose plan a Claude account spends, in one line: the login's email and tier, or what is known of a setup token. */
 function whoText(a: AccountView): string {
   const w = a.who
-  if (!w) return a.builtIn ? 'Your claude.ai sign-in (Settings → Connections)' : 'Signed in'
+  if (!w) return a.builtIn ? `Your claude.ai sign-in (${inSettings('connections')})` : 'Signed in'
   const tier = w.tier ? ` · ${w.tier.charAt(0).toUpperCase()}${w.tier.slice(1)}` : ''
   if (a.signedIn === false) return 'Not signed in'
   if (!w.byToken) return w.email ? `${w.email}${tier}` : 'Signed in (no email reported)'
@@ -1229,7 +1230,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
         })}
         {v.accounts.some((a) => !v.fallback.includes(a.id)) && (
           <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5 text-small">
-            <span className="text-fg-3">{v.fallback.length ? 'Add' : 'Stand in with'}</span>
+            <span className="text-fg-3">{v.fallback.length ? 'Add another' : 'Add a fallback'}</span>
             {v.accounts.filter((a) => !v.fallback.includes(a.id)).map((a) => (
               <button key={a.id} onClick={() => set({ fallback: [...v.fallback, a.id] }, `${a.label} stands in when the chosen one can't`)} className={quiet}><Plus className="size-3.5" />{a.label}</button>
             ))}
@@ -1272,7 +1273,7 @@ function AccountConnections({ a, first, onMore }: { a: AccountView; first?: Acco
         <p>{missing.join(', ')}</p>
         <p className="mt-1.5 text-fg-3">A run here works without them, and says so.</p>
       </More></span>}
-      <button onClick={() => void read(true)} disabled={busy} title="Check again" aria-label="Check the connectors again" className="rounded p-0.5 text-fg-4 hover:text-fg-1 disabled:opacity-40"><RotateCcw className={`size-3 ${busy ? 'animate-spin' : ''}`} /></button>
+      <button onClick={() => void read(true)} disabled={busy} title="Refresh" aria-label="Check the connectors again" className="rounded p-0.5 text-fg-4 hover:text-fg-1 disabled:opacity-40"><RotateCcw className={`size-3 ${busy ? 'animate-spin' : ''}`} /></button>
     </div>
   )
 }
@@ -1615,7 +1616,7 @@ function ComplianceSettings({ setup, saveConfig: saveShared }: { setup?: SetupVi
   return (
     <>
       {o && (
-        <Group title="Workspace" hint="Each workspace's plans are checked against its own profile, or not at all (Settings → Workspaces lists them).">
+        <Group title="Workspace" hint="Each workspace's plans are checked against its own profile, or not at all.">
           {orgs.length > 1 && <div className="px-3.5 pt-3"><Tabs size="sm" as="tab" label="Workspace" value={o.owner} onChange={setOwner} options={orgs.map((x) => ({ id: x.owner, label: x.personal ? `${x.owner} (you)` : x.owner }))} /></div>}
           <div className="flex items-center gap-3 px-3.5 py-3">
             <div className="min-w-0 flex-1">
@@ -1689,7 +1690,7 @@ function Access({ toast }: { toast: Toast }) {
       {!v.logins.length && <p className="px-4 py-3 text-small text-fg-3">Nobody yet. Once this machine is on your tailnet, the person whose devices are on it is let in by themselves; on a tailnet several people share, the first to open it through the link becomes its owner.</p>}
       <div className="flex items-center gap-2 px-3.5 py-2.5">
         <input value={add} onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go() }} placeholder="their Tailscale login, e.g. sam@example.com" aria-label="Tailscale login" className={`${input} min-w-0 flex-1`} />
-        <button onClick={go} disabled={!add.trim()} className={primary}><Plus className="size-3.5" />Let them in</button>
+        <button onClick={go} disabled={!add.trim()} className={primary}><Plus className="size-3.5" />Give access</button>
       </div>
     </Group>
   )
@@ -1760,7 +1761,7 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
   return (
     <>
       <Group title="Linear teams" hint="Each workspace that manages its work in Linear sets its own teams: whose tickets show in Ship, and which of its repositories each is worked in">
-        <Row icon={FolderGit2} title="Set in Workspaces" hint="Settings → Workspaces: each Linear workspace's card lists its teams" />
+        <Row icon={FolderGit2} title="Set in Workspaces" hint={`${inSettings('repos')}: each workspace's card lists its Linear teams`} />
       </Group>
 
       <Group title="Allowed tools" hint="What a ticket’s run may use without asking. Anything else is refused, and the ticket shows it.">
@@ -2052,7 +2053,7 @@ export function UpdateChip({ onOpen }: { onOpen?: () => void }) {
   if (stale && !busy) return <button onClick={() => location.reload()} className={`${chip} bg-accent-soft text-accent-text hover:bg-accent/20`} title={`The server runs ${label(u!.version!)}: reload to use it`}><RefreshCw className="size-3.5" />Reload for {label(u!.version!)}</button>
   if (busy || (gone && u?.status?.busy)) {
     const step = gone ? 'Restarting' : asking ? 'Asking' : (STEPS.find(([k]) => k === u?.status?.phase)?.[1] ?? 'Updating')
-    return <button onClick={onOpen} className={`${chip} text-run-text hover:bg-hover`} title={`${u?.status?.text ?? 'Asking this machine to update'} · Settings → Machines shows each step`}><LoaderCircle className="size-3.5 animate-spin" />{step}…</button>
+    return <button onClick={onOpen} className={`${chip} text-run-text hover:bg-hover`} title={`${u?.status?.text ?? 'Asking this machine to update'} · ${inSettings('machines')} shows each step`}><LoaderCircle className="size-3.5 animate-spin" />{step}…</button>
   }
   if (behind) {
     const to = u!.latest!.n ? `v${u!.latest!.n}` : u!.latest!.sha.slice(0, 7)
@@ -2270,7 +2271,7 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
     ] },
     { name: 'Plan a project', icon: Layers, on: role === 'product', steps: [
       { k: 'When', v: 'you write a brief, or pick a Linear project, in Plans', at: 'roles', tip: 'A new project, or one that exists: its vision, tickets and timeline come in.' },
-      { k: 'Runs', v: slot('plan', roles.data?.base.plan ?? '…'), at: 'workflows', mono: true, tip: 'The planning skill: the one in Settings → Workflows → What each feature runs, or another picked per plan.' },
+      { k: 'Runs', v: slot('plan', roles.data?.base.plan ?? '…'), at: 'workflows', mono: true, tip: `The planning skill: the one in ${inSettings('workflows', 'What each feature runs')}, or another picked per plan.` },
       { k: 'On', v: `${who('review')} (Sonnet)`, at: 'accounts', tip: 'The planner streams its reply; each change to the map lands as it writes.' },
       { k: 'Then', v: 'a live map you edit; Create in Linear when you say so. Not its lead: tickets only', at: 'roles', tip: 'If you lead the project, the agent may propose a new vision, applied only when you accept it.' },
     ] },

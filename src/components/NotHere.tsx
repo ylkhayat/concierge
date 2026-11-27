@@ -48,7 +48,7 @@ export function AwayRepo({ repo, onAllApps }: { repo: string; onAllApps: () => v
       <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
         <button onClick={() => setScope('fleet')} className="btn-primary inline-flex items-center gap-1.5"><Network className="size-3.5" />See it in the fleet view</button>
         <button onClick={openRepoSettings} className="btn-outline inline-flex items-center gap-1.5"><Settings2 className="size-3.5" />Allow it on this machine</button>
-        <button onClick={onAllApps} className="btn-outline">All workspaces</button>
+        <button onClick={onAllApps} className="btn-outline">All repositories</button>
       </div>
     </main>
   )

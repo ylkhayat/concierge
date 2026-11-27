@@ -2,6 +2,7 @@ import { ExternalLink, LoaderCircle, PlugZap, RotateCcw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Connection } from '../../server/connections.ts'
 import { api } from '../lib.ts'
+import { inSettings } from '../copy.ts'
 
 const SERVICE: Record<string, string> = { 'linear-key': 'Linear', 'sentry-token': 'Sentry' }
 
@@ -43,7 +44,7 @@ export function ConnectCard({ onRun, toast, compact }: { onRun?: () => void; toa
         <p key={c.name} className="flex items-center gap-2 rounded-lg bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">
           <PlugZap className="size-3.5 shrink-0" /><span className="flex-1">Agents can&apos;t reach {SERVICE[c.fix!] ?? c.name}.</span>
           <button onClick={() => setOpen(c.fix)} className="font-medium underline decoration-wait/40 hover:decoration-current">Connect</button>
-          <button onClick={() => hide(c.fix!)} title="Dismiss (Settings → Connections still has it)" aria-label="Dismiss"><X className="size-3.5" /></button>
+          <button onClick={() => hide(c.fix!)} title={`Dismiss (${inSettings('connections')} still has it)`} aria-label="Dismiss"><X className="size-3.5" /></button>
         </p>
       ) : (
         <Fix key={c.name} c={c} toast={toast} onDone={(l) => { setList(l); setDone((d) => [...new Set([...d, SERVICE[c.fix!] ?? c.name])]) }} />

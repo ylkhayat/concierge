@@ -25,7 +25,7 @@ import { useToolCommands, type Command } from '../ui/Slash.tsx'
 const TITLE: Record<'run' | 'pr' | 'tend' | 'dock', (t: TicketView) => string> = {
   run: (t) => (t.run ? 'Run it again' : 'Run it'),
   pr: (t) => (t.prs.length > 1 ? 'Review its PRs' : 'Review the PR'),
-  tend: () => 'Its PR needs you',
+  tend: () => 'The PR needs you',
   dock: (t) => (t.agentWaiting ? 'Answer the agent on Linear' : 'Tell the agent what next'),
 }
 

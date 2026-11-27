@@ -511,7 +511,7 @@ function Menu({ health, toast, onClose }: { health: ReturnType<typeof useDeck>['
   return (
     <Sheet onClose={onClose} title={<p className="pt-1 text-title font-semibold">Concierge</p>}>
       <ol className="overflow-hidden rounded-2xl bg-fill/60 ring-1 ring-line [&>li+li]:border-t [&>li+li]:border-zinc-100 dark:[&>li+li]:border-zinc-800">
-        <li><button className={item} onClick={() => api('/poll', {}).then(() => toast('Checking GitHub now'))}><RefreshCw className="size-5 text-fg-3" />Sync now<span className="ml-auto text-body text-fg-3">{health?.lastPollAt ? `synced ${ago(health.lastPollAt, Date.now())}` : ''}</span></button></li>
+        <li><button className={item} onClick={() => api('/poll', {}).then(() => toast('Checking GitHub now'))}><RefreshCw className="size-5 text-fg-3" />Refresh<span className="ml-auto text-body text-fg-3">{health?.lastPollAt ? `synced ${ago(health.lastPollAt, Date.now())}` : ''}</span></button></li>
         <li><button className={item} onClick={() => health && api('/auto-start', { on: !health.autoStart }).then((h: { autoStart: boolean }) => toast(h.autoStart ? 'Auto-review on' : 'Auto-review off'))}><Zap className={`size-5 ${health?.autoStart ? 'fill-accent text-accent' : 'text-fg-3'}`} />Auto-review<span className="ml-auto text-body text-fg-3">{health?.autoStart ? 'on' : 'off'}</span></button></li>
         <li><button className={item} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun className="size-5 text-fg-3" /> : <Moon className="size-5 text-fg-3" />}{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button></li>
         <li><a className={item} href="/?desktop=1"><Monitor className="size-5 text-fg-3" />The full desktop view</a></li>

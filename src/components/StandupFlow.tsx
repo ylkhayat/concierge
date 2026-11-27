@@ -13,9 +13,9 @@ type Box = { lane: Lane; stage: Stage; hue?: number; onOpen: (id: string) => voi
 type Label = { stage: (typeof STAGES)[number]; n: number; count: number }
 
 const STAGES: { id: Stage; label: string; tone: string }[] = [
-  { id: 'did', label: 'What I did', tone: 'text-ok-text' },
-  { id: 'blockers', label: 'Blockers', tone: 'text-wait-text' },
-  { id: 'next', label: "What I'll do", tone: 'text-accent-text' },
+  { id: 'did', label: 'Did', tone: 'text-ok-text' },
+  { id: 'blockers', label: 'Blocked', tone: 'text-wait-text' },
+  { id: 'next', label: 'Next', tone: 'text-accent-text' },
 ]
 // a row has a fixed height (two lines of name, one of what happened), so a box's height is known before it is drawn
 // and the lanes below it never run into it

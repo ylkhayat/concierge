@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
 import { ago } from '../time.ts'
+import { inSettings } from '../copy.ts'
 
 type Joining = { state: 'waiting' | 'asking' | 'approval' | 'setting-up' | 'joined' | 'stopped'; at: string; main?: string; name?: string; code?: string; role?: string; why?: string }
 type Nearby = { joined: boolean; machine?: string; joining?: Joining; machines: { name: string; host: string; online: boolean; lastSeen?: string; ours: boolean }[] }
@@ -63,7 +64,7 @@ function JoinProgress({ j, online }: { j: Joining; online: boolean }) {
   const text = {
     waiting: online ? 'One of them is online: joining now.' : 'This machine joins them by itself as soon as one is online: Tailscale says when, hours later is fine. Nothing to run; until then it works on its own, as now.',
     asking: `Asking ${j.main} to let this machine join as ${j.name}…`,
-    approval: `Waiting for you on ${j.main}: approve ${j.name} in its Settings → Machines if it shows the code ${j.code}. It joins as soon as you do.`,
+    approval: `Waiting for you on ${j.main}: approve ${j.name} in its ${inSettings('machines')} if it shows the code ${j.code}. It joins as soon as you do.`,
     'setting-up': `Approved: setting this machine up as the ${j.role} beside ${j.main}. Concierge restarts here in a few minutes, with ${j.main}’s settings.`,
     joined: `Joined as the ${j.role} beside ${j.main}: Concierge restarts here with its settings.`,
     stopped: `The join stopped: ${j.why}. It tries again by itself when your machines online change.`,

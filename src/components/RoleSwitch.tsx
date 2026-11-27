@@ -14,11 +14,11 @@ export function RoleSwitch({ onJoin, wide }: { onJoin: () => void; wide?: boolea
   useEffect(() => { if (q.data && !joined.includes(role)) setRole(joined[0]) }, [q.data, role]) // eslint-disable-line react-hooks/exhaustive-deps
   // closed: every mode you joined as a tile, one click to switch, the one you are in lit; the toggle under them
   if (!wide) return (
-    <div role="radiogroup" aria-label="Mode" className="hidden flex-col items-center gap-1.5 py-1 md:flex">
+    <div role="radiogroup" aria-label="Role" className="hidden flex-col items-center gap-1.5 py-1 md:flex">
       {joined.map((r) => {
         const x = ROLES[r], on = r === role
         return (
-          <button key={r} role="radio" aria-checked={on} onClick={() => !on && setRole(r)} title={on ? `${x.label} mode` : `Switch to ${x.label}`}
+          <button key={r} role="radio" aria-checked={on} onClick={() => !on && setRole(r)} title={on ? `You work as ${x.label}` : `Switch to ${x.label}`}
                   className="group relative flex flex-col items-center gap-0.5">
             {on && <span aria-hidden className="absolute -left-[11px] top-1.5 h-6 w-1 rounded-r-full bg-accent" />}
             <span data-role-tile={r} style={on ? { viewTransitionName: 'role-tile' } : undefined}
@@ -33,7 +33,7 @@ export function RoleSwitch({ onJoin, wide }: { onJoin: () => void; wide?: boolea
   )
   // open: the modes side by side in one row, the one you are in raised; a + adds another
   return (
-    <div role="radiogroup" aria-label="Mode" className="hidden gap-1 rounded-xl bg-fill/60 p-1 md:flex">
+    <div role="radiogroup" aria-label="Role" className="hidden gap-1 rounded-xl bg-fill/60 p-1 md:flex">
       {joined.map((r) => {
         const x = ROLES[r], on = r === role
         return (
@@ -45,7 +45,7 @@ export function RoleSwitch({ onJoin, wide }: { onJoin: () => void; wide?: boolea
         )
       })}
       {joined.length < ready(Object.keys(ROLES) as Role[]).length && (
-        <button onClick={onJoin} title="Add a mode" aria-label="Add a mode" className="flex w-8 shrink-0 items-center justify-center rounded-lg text-fg-4 transition-colors hover:bg-hover hover:text-fg-1"><Plus className="size-3.5" /></button>
+        <button onClick={onJoin} title="Add a role" aria-label="Add a role" className="flex w-8 shrink-0 items-center justify-center rounded-lg text-fg-4 transition-colors hover:bg-hover hover:text-fg-1"><Plus className="size-3.5" /></button>
       )}
     </div>
   )

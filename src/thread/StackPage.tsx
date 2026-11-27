@@ -242,7 +242,7 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
         {c && <span className="min-w-0 truncate text-meta text-fg-4" title={c.stale ? 'Read before the last push or run: check again to read what changed' : undefined}>{c.stale ? 'out of date' : `${c.read.length} of ${members.length} PRs read`}</span>}
         <span className="flex-1" />
         <button onClick={run} disabled={checking || members.length < 2} title={members.length < 2 ? 'Needs two PRs' : 'Read across what each PR’s agent found and decided'} className={`inline-flex shrink-0 items-center gap-1.5 btn-sm ${c && !c.stale ? 'btn-ghost' : 'btn-outline'}`}>
-          {checking ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{checking ? 'Reading…' : c ? 'Check again' : 'Check'}
+          {checking ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{checking ? 'Reading…' : c ? 'Refresh' : 'Check'}
         </button>
       </div>
 

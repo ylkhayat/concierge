@@ -239,7 +239,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
         <span className="text-small text-fg-3">· {status}</span>
         <span className="ml-auto inline-flex items-center gap-3 text-meta text-fg-3">
           {d && d.costUsd > 0 && <span className="tabular-nums text-fg-4" title="What this card has cost so far">${d.costUsd.toFixed(2)}</span>}
-          {(d?.stale || !b) && !busy && <button onClick={write} className="inline-flex items-center gap-1 font-medium text-accent-text hover:underline"><RotateCcw className="size-3" />{b ? 'Catch up' : 'Write it'}</button>}
+          {(d?.stale || !b) && !busy && <button onClick={write} className="inline-flex items-center gap-1 font-medium text-accent-text hover:underline"><RotateCcw className="size-3" />{b ? 'Refresh' : 'Write it'}</button>}
           {started && <button onClick={() => api('/discussions/reset', { target, topic }).then(onChange, fail)} className="inline-flex items-center gap-1 hover:text-fg-1" title="Forget this card and what was asked">Start over</button>}
         </span>
       </div>

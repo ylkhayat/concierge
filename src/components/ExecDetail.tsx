@@ -24,6 +24,7 @@ import { stamp } from '../time.ts'
 import { ConnectCard } from './ConnectCard.tsx'
 import { StatusField, type StatusTone } from './DetailHeader.tsx'
 import type { Linked } from '../../server/index.ts'
+import { inSettings } from '../copy.ts'
 
 const STEPS = ['picked', 'evidence', 'implementing', 'checking', 'self-review', 'opening-pr', 'done'] as const
 const STEP_LABEL: Record<string, string> = { picked: 'Picked', evidence: 'Evidence', implementing: 'Implement', checking: 'Checks', 'self-review': 'Self-review', 'opening-pr': 'PR', done: 'Done' }
@@ -139,7 +140,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
           {!!run.denials?.length && (
             <p title={run.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-xl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-              <span>Denied {run.denials.length}×: {[...new Set(run.denials)].join(', ')}{run.refused?.[0] && <> (first: <code className="font-mono text-meta">{run.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed under Allowed tools in Settings → Workflows.</span>
+              <span>Denied {run.denials.length}×: {[...new Set(run.denials)].join(', ')}{run.refused?.[0] && <> (first: <code className="font-mono text-meta">{run.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed in {inSettings('workflows', 'Allowed tools')}.</span>
             </p>
           )}
         </Chip>

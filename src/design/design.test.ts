@@ -28,3 +28,10 @@ test('no React hook after an early return in the stack card (it crashes the page
   const after = s.slice(s.indexOf('if (waiting.length < 2) return'), s.indexOf('function Flags('))
   assert.deepEqual(after.match(/\buse(?:State|Effect|Query|Queries|Memo|Callback|Ref|Arm|Api)\(/g) ?? [], [])
 })
+
+test('a page of Settings is named through copy.ts (inSettings), so a renamed page leaves no old words behind', () => {
+  const all = (readdirSync(src, { recursive: true }) as string[]).filter((f) => /\.tsx?$/.test(f) && !f.startsWith('dev/') && !/\.test\.ts$/.test(f) && f !== 'copy.ts')
+  const said = all.flatMap((f) => readFileSync(join(src, f), 'utf8').split('\n')
+    .filter((l) => /(?<!Developer |→ )Settings (→|›) /.test(l.replace(/\/\/.*$/, '').replace(/\/\*.*$/, '')) && !/^\s*(\/\/|\*|\/\*)/.test(l)).map((l) => `${f}: ${l.trim().slice(0, 90)}`))
+  assert.deepEqual(said, [], "Write inSettings('repos') (src/copy.ts) instead of the page's name")
+})

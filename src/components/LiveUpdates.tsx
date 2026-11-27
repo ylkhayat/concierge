@@ -97,14 +97,14 @@ export function LiveUpdates({ toast }: { toast: Toast }) {
           })} className={quiet}><Power className="size-3.5" />Turn off</button>}
         </div>
 
-        <Step n={1} title="Open the webhook door" done={v.funnel.on}>
+        <Step n={1} title="Let GitHub reach this machine" done={v.funnel.on}>
           {v.funnel.on
             ? <p className="text-small text-fg-3">GitHub reaches Concierge at <code className="break-all font-mono text-fg-2">{v.funnel.url}</code>, through Tailscale Funnel. Nothing else is reachable there.</p>
             : <>
                 <p className="text-small text-fg-3">Turns on Tailscale Funnel on {v.machine ?? 'this machine'} for the webhook path only, on port {v.funnelPort}{v.funnel.url && <> (<code className="break-all font-mono">{v.funnel.url}</code>)</>}. Every delivery must carry GitHub's signature.</p>
                 {v.funnel.blocker && <Note>{v.funnel.blocker}</Note>}
-                <button disabled={!!busy} onClick={() => void act<HooksView>('funnel', '/hooks/funnel', { on: true }, (x) => { set(x); toast('The webhook door is open') })} className={primary}>
-                  {busy === 'funnel' ? <LoaderCircle className="size-3.5 animate-spin" /> : <DoorOpen className="size-3.5" />}Open the webhook door
+                <button disabled={!!busy} onClick={() => void act<HooksView>('funnel', '/hooks/funnel', { on: true }, (x) => { set(x); toast('GitHub can reach this machine now') })} className={primary}>
+                  {busy === 'funnel' ? <LoaderCircle className="size-3.5 animate-spin" /> : <DoorOpen className="size-3.5" />}Let GitHub in
                 </button>
               </>}
         </Step>
@@ -151,7 +151,7 @@ export function LiveUpdates({ toast }: { toast: Toast }) {
               )
             })}
           </ul>
-          <button disabled={!!busy || !v.funnel.on || !toConnect.length} title={v.funnel.on ? undefined : 'Open the webhook door first'} onClick={() => void connect(toConnect)} className={primary}>
+          <button disabled={!!busy || !v.funnel.on || !toConnect.length} title={v.funnel.on ? undefined : 'Do step 1 first'} onClick={() => void connect(toConnect)} className={primary}>
             {busy === 'connect' ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}Connect {toConnect.length || ''} {toConnect.length === 1 ? 'repository' : 'repositories'}
           </button>
         </Step>

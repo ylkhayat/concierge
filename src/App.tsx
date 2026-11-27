@@ -44,6 +44,7 @@ import { deckKey, designOn, designViewOf, readPlace, workspaceFor, type DesignFr
 // the graph libraries load only when the codebase view opens
 const CodebaseView = lazy(() => import('./components/Codebase.tsx'))
 import { ago, api, critUrl, enc, isTyping, param, prefetchFeed, setParam, useDeck, useNow, useTheme, type PrView, type TicketView } from './lib.ts'
+import { inSettings, SAY } from './copy.ts'
 
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
@@ -392,7 +393,7 @@ export function App() {
       {/* then the focus (which application); the workspaces below are what you do in it */}
       {focusRepos.length > 1 && (
         <span className="hidden md:contents">
-          <Head>Workspaces</Head>
+          <Head>Repositories</Head>
           <RepoPicker wide={wide} value={focus} repos={focusCounts} total={mode === 'exec' ? tickets.length : prs?.length ?? 0} unit={mode === 'exec' ? 'ticket' : 'PR'}
                       onChange={(r) => { setFocus(r); if (codebaseRepo && r) select(`codebase:${r}`); else if (r && selected && repoOfSelected() !== r) select(undefined) }} />
           <span className={`my-2 hidden h-px bg-line md:block ${W('w-10', 'mx-2')}`} />
@@ -601,7 +602,7 @@ export function App() {
         ...(spaces.includes('exec') ? [{ id: 'exec', label: 'Go to Ship', run: () => setMode('exec') }] : []),
         ...repos.map((r) => ({ id: `map:${r}`, label: `Codebase map: ${r}`, run: () => goCodebase(r) })),
         { id: 'today', label: 'Today', hint: 'what waits on you', run: () => { goPr(''); select(undefined) } },
-        { id: 'sync', label: 'Sync now', hint: 'GitHub and Linear', run: refresh },
+        { id: 'sync', label: SAY.refresh, hint: 'GitHub and Linear', run: refresh },
         { id: 'running', label: 'What is running', hint: 'agents, crit servers', run: () => document.getElementById('load')?.showPopover() },
         { id: 'settings', label: 'Settings', run: openSettings },
         { id: 'theme', label: `Switch to ${document.documentElement.classList.contains('dark') ? 'light' : 'dark'} theme`, run: () => setTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark') },
@@ -672,7 +673,7 @@ function ExecSetupHint({ onOpen, hasKey }: { onOpen: () => void; hasKey: boolean
     <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
       <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/10"><Rocket className="size-6 text-accent" /></span>
       <p className="text-body font-medium">Ship your Linear tickets from here</p>
-      <p className="text-small text-fg-3">{hasKey ? 'Pick the command that ships a ticket (ship-tickets works out of the box) and the repository each Linear team maps to.' : 'Connect Linear with your API key (Settings → Machines), then pick the command that ships a ticket.'}</p>
+      <p className="text-small text-fg-3">{hasKey ? 'Pick the command that ships a ticket (ship-tickets works out of the box) and the repository each Linear team maps to.' : `Connect Linear with your API key (${inSettings('machines')}), then pick the command that ships a ticket.`}</p>
       <button onClick={onOpen} className="btn-primary transition-all hover:bg-accent">Open Ship settings</button>
     </div>
   )

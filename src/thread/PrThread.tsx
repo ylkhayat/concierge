@@ -112,7 +112,7 @@ export function PrThread(props: PrThreadProps) {
   // what `/` in the box offers: the flow's steps, the views, and every tool (the Tools menu's list)
   const tools = useToolCommands(`/prs/${enc(pr.id)}`, `${pr.headSha}:${pr.status}:${job?.state}`, toast, 'PR')
   const commands: Command[] = [
-    ...(busy ? [{ id: 'cancel', group: 'Next', label: 'Stop the agent', run: () => act('cancel', 'Cancelled') }] : [
+    ...(busy ? [{ id: 'cancel', group: 'Next', label: 'Stop the agent', run: () => act('cancel', 'Run stopped') }] : [
       { id: 'run', group: 'Next', label: pr.mine ? 'Revise: work through the feedback' : 'Review it', hint: 'Starts an agent run', run: () => act('run', pr.mine ? 'Revise queued' : 'Review queued') },
       ...(pr.mine && (pr.awaiting ?? pr.unresolved) ? [{ id: 'fix', group: 'Next', label: 'Fix the threads', hint: 'Fixes, commits locally and drafts replies; pushes nothing', run: fixThreads }] : []),
       ...(pr.mine && pr.awaiting ? [{ id: 'finalize', group: 'Next', label: 'Finish the last comments', run: runFinalize }] : []),

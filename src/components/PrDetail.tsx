@@ -21,6 +21,7 @@ import type { Linked } from '../../server/index.ts'
 import { statusMeta } from './StatusBadge.tsx'
 import { Missing, missingTitle } from './Missing.tsx'
 import type { FlowAction } from '../../server/flow.ts'
+import { inSettings, SAY } from '../copy.ts'
 
 export const btn = 'group/btn inline-flex items-center gap-1.5 rounded-ctl px-3.5 py-2 text-body font-medium outline-none transition-[background-color,color,box-shadow,filter] duration-150 focus-visible:ring-2 focus-visible:ring-accent/50 disabled:pointer-events-none disabled:opacity-40'
 export const primary = 'group/btn inline-flex items-center gap-1.5 btn-primary btn-lg'
@@ -200,7 +201,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
           {!!job.denials?.length && (
             <p title={job.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-xl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-              <span>Denied {job.denials.length}×: {[...new Set(job.denials)].join(', ')}{job.refused?.[0] && <> (first: <code className="font-mono text-meta">{job.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed under Allowed tools in Settings → Workflows.</span>
+              <span>Denied {job.denials.length}×: {[...new Set(job.denials)].join(', ')}{job.refused?.[0] && <> (first: <code className="font-mono text-meta">{job.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed in {inSettings('workflows', 'Allowed tools')}.</span>
             </p>
           )}
         </Chip>
@@ -273,7 +274,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
   const go = (a: FlowAction, fn: () => unknown) => () => { if (!((a === 'publish' || a === 'rerequest') && armed !== a)) setPending(a); void fn() }
   // each action the flow can name: its main button, and its quiet "Also:" link
   const BIG: Partial<Record<FlowAction, ReactNode>> = {
-    cancel: <button className={`${secondary} ${big} hover:text-fail-text`} onClick={() => act('cancel', 'Cancelled')}><Square className="size-3.5 fill-current" />Cancel</button>,
+    cancel: <button className={`${secondary} ${big} hover:text-fail-text`} onClick={() => act('cancel', SAY.stopped)}><Square className="size-3.5 fill-current" />{SAY.stop}</button>,
     retry: <button className={`${primary} ${big}`} onClick={go('retry', retry)}><RotateCcw className="size-4" />Try again</button>,
     crit: <a href={url} target="_blank" rel="noreferrer" className={`${primary} ${big}`}><MessagesSquare className="size-4" />{pr.mine ? 'Fix in crit' : 'Review in crit'}</a>,
     fix: <button className={`${primary} ${big}`} onClick={go('fix', fixThreads)}><Wand className="size-4" />Fix the {waiting === 1 ? 'thread' : `${waiting} threads`}</button>,
@@ -314,7 +315,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
   const doNext = (
     <div className="space-y-2">
       {(next === 'run' || next === 'finalize') && <Missing names={pr.missing} />}
-      {next === 'cancel' && <Working why={pr.waiting ? `Waiting for ${pr.waiting.label}: ${pr.waiting.why}${pr.waiting.until ? ` until ${new Date(pr.waiting.until).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}. Another account takes it if one is set to stand in (Settings → Accounts).` : flow.why} feed={feed} onStop={() => act('cancel', 'Stopped')} bg={{ base: `/prs/${enc(pr.id)}`, count: pr.background }} toast={toast} />}
+      {next === 'cancel' && <Working why={pr.waiting ? `Waiting for ${pr.waiting.label}: ${pr.waiting.why}${pr.waiting.until ? ` until ${new Date(pr.waiting.until).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}. Another account takes it if one is set to stand in (${inSettings('accounts')}).` : flow.why} feed={feed} onStop={() => act('cancel', 'Stopped')} bg={{ base: `/prs/${enc(pr.id)}`, count: pr.background }} toast={toast} />}
       {next && next !== 'answer' && next !== 'cancel' && BIG[next]}
       {next !== 'cancel' && next !== 'post' && <p className={next === 'answer' || !next ? 'text-body leading-relaxed text-fg-2 ' : 'text-small text-fg-3'}>{flow.why}</p>}
       {alsoLine}
