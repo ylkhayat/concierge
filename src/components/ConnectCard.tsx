@@ -13,7 +13,7 @@ const SERVICE: Record<string, string> = { 'linear-key': 'Linear', 'sentry-token'
 const HIDDEN = 'connect:hidden'
 const hiddenNow = (): string[] => { try { return JSON.parse(localStorage.getItem(HIDDEN) ?? '[]') } catch { return [] } }
 
-/** `compact`: on a ticket page, one line you can open or dismiss (Settings › Connections keeps the full card). */
+/** `compact`: on a ticket page, one line you can open or dismiss (Settings → Connections keeps the full card). */
 export function ConnectCard({ onRun, toast, compact }: { onRun?: () => void; toast: (m: string, tone?: 'ok' | 'error') => void; compact?: boolean }) {
   const [list, setList] = useState<Connection[]>()
   const [done, setDone] = useState<string[]>([])
@@ -43,7 +43,7 @@ export function ConnectCard({ onRun, toast, compact }: { onRun?: () => void; toa
         <p key={c.name} className="flex items-center gap-2 rounded-lg bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">
           <PlugZap className="size-3.5 shrink-0" /><span className="flex-1">Agents can&apos;t reach {SERVICE[c.fix!] ?? c.name}.</span>
           <button onClick={() => setOpen(c.fix)} className="font-medium underline decoration-wait/40 hover:decoration-current">Connect</button>
-          <button onClick={() => hide(c.fix!)} title="Dismiss (Settings › Connections still has it)" aria-label="Dismiss"><X className="size-3.5" /></button>
+          <button onClick={() => hide(c.fix!)} title="Dismiss (Settings → Connections still has it)" aria-label="Dismiss"><X className="size-3.5" /></button>
         </p>
       ) : (
         <Fix key={c.name} c={c} toast={toast} onDone={(l) => { setList(l); setDone((d) => [...new Set([...d, SERVICE[c.fix!] ?? c.name])]) }} />
@@ -66,8 +66,8 @@ function Fix({ c, toast, onDone }: { c: Connection; toast: (m: string, tone?: 'o
   return (
     <div className="space-y-2 rounded-xl bg-wait/7 p-3 text-small ring-1 ring-wait/20">
       <p className="flex items-start gap-2 text-wait-text"><PlugZap className="mt-0.5 size-4 shrink-0" />
-        <span><span className="font-semibold">The agents can&apos;t reach {name}.</span> Its browser login isn&apos;t one the agents can use on every machine; a Sentry auth token works everywhere, set once.
-          {c.needsKey ? ' A Sentry auth token works instead.' : ` Your ${name} API key works instead.`}</span></p>
+        <span><span className="font-semibold">The agents can&apos;t reach {name}.</span> Its browser login isn&apos;t one the agents can use on every machine.
+          {c.needsKey ? ' A Sentry auth token works everywhere, set once.' : ` Your ${name} API key works everywhere, set once.`}</span></p>
       {c.needsKey && (
         <>
           <p className="text-meta text-wait-text/80">

@@ -374,8 +374,8 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                   <p className="font-semibold text-ok-text">What the agents never do on their own</p>
                   <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-fg-2 ">
                     <li>Post a review, approve, reply or push on a PR: those wait for your click.</li>
-                    <li>Merge anything, or touch your main checkout: they work in throwaway worktrees.</li>
-                    <li>Run a command outside the allowlist in Settings. Anything denied shows up in the run.</li>
+                    <li>Merge anything, unless you turn on “Ship as one PR” for a repository; or touch your main checkout: they work in throwaway worktrees.</li>
+                    <li>Run a command outside the allowed tools in Settings. Anything denied shows up in the run.</li>
                     <li>Spend past your daily budget: new runs wait for tomorrow or a higher cap.</li>
                   </ul>
                   <p className="mt-1.5 text-fg-3">Ship is the exception you opt into: it opens PRs and comments on its tickets, as the skill you choose says.</p>

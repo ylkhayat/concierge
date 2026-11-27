@@ -1,5 +1,7 @@
 import { Check, Circle, LoaderCircle, Square } from 'lucide-react'
+import { useContext } from 'react'
 import type { Activity } from '../lib.ts'
+import { StopAbove } from '../ui/Thread.tsx'
 import { BgNow, turnOver } from './Background.tsx'
 import { brief } from '../../server/brief.ts'
 import { plain } from './ActivityFeed.tsx'
@@ -15,7 +17,7 @@ function doing(feed: Activity[]) {
  * hands back.
  */
 export function Working({ why, feed, onStop, bg, toast }: { why?: string; feed: Activity[]; onStop: () => void; bg?: { base: string; count: number }; toast?: (m: string, tone?: 'ok' | 'error') => void }) {
-  const steps = doing(feed)
+  const steps = doing(feed), stopAbove = useContext(StopAbove)
   const parked = turnOver(feed)
   // its own plan (the latest TodoWrite of this run), kept as a ledger: done, the one it is on, what comes
   const since = feed.findLastIndex((a) => a.kind === 'section')
@@ -51,9 +53,9 @@ export function Working({ why, feed, onStop, bg, toast }: { why?: string; feed: 
       )}
       <div className="flex items-center gap-2 pt-0.5">
         <span className="flex-1 text-meta text-fg-4">Its decisions show here when it hands back.</span>
-        <button onClick={onStop} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium text-fg-2 ring-1 ring-line transition-colors duration-150 hover:bg-fail/10 hover:text-fail hover:ring-fail/30">
+        {!stopAbove && <button onClick={onStop} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium text-fg-2 ring-1 ring-line transition-colors duration-150 hover:bg-fail/10 hover:text-fail hover:ring-fail/30">
           <Square className="size-3 fill-current" />Stop
-        </button>
+        </button>}
       </div>
     </div>
   )

@@ -33,7 +33,7 @@
 @utility btn-ghost {
   border-radius: var(--radius-ctl); padding: 0.375rem 0.625rem; font-size: var(--text-small); font-weight: 500;
   color: var(--fg-3); transition: background-color 150ms, color 150ms, opacity 150ms;
-  &:hover:not(:disabled) { background: var(--hover); color: var(--fg-1); }
+  &:hover:not(:disabled) { background: var(--surface-hover); color: var(--fg-1); }
   &:disabled { opacity: 0.4; pointer-events: none; }
 }
 /* a text box, one look everywhere */

@@ -270,27 +270,30 @@ export function App() {
   useEffect(() => { document.documentElement.dataset.mode = codebaseRepo ? 'codebase' : mode }, [mode, codebaseRepo])
   useEffect(() => {
     const n = mode === 'exec' ? execWaiting : needsYou
-    document.title = `${n ? `(${n}) ` : ''}${{ exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans', design: { map: 'Map', components: 'Components', tokens: 'Tokens' }[designView] }[mode]} · Concierge`
-  }, [needsYou, execWaiting, mode])
+    document.title = `${n ? `(${n}) ` : ''}${codebaseRepo ? 'Codebase' : { exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans', design: { map: 'Map', components: 'Components', tokens: 'Tokens' }[designView] }[mode]} · Concierge`
+  }, [needsYou, execWaiting, mode, designView, codebaseRepo])
 
-  // g then r / e / s / c: to a workspace. g alone (no second key within a moment) still opens the PR on GitHub
-  const chord = useRef(0), chordTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  // g then r / e / s / c: to a view; g then h: the open PR on GitHub
+  const chord = useRef(0)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (document.querySelector('dialog[open]')) return // a modal is up: Esc closes it, list keys wait
       if (isTyping(e)) { if (e.key === 'Escape') (e.target as HTMLElement).blur(); return }
+      // the list keys belong to the views that have a list: elsewhere they would open a PR behind the view
+      const listed = (mode === 'review' && !codebaseRepo) || mode === 'exec'
       const ids = mode === 'exec' ? execList.map((t) => t.id) : list.map((p) => p.id)
       const i = ids.indexOf(selected ?? '')
-      if (e.key === 'j' || e.key === 'ArrowDown') select(ids[Math.min(i + 1, ids.length - 1)])
-      else if (e.key === 'k' || e.key === 'ArrowUp') select(ids[Math.max(i - 1, 0)])
-      else if (e.key === '/') { e.preventDefault(); document.querySelector('input')?.focus() }
+      const filter = document.querySelector<HTMLInputElement>('input[data-filter]')
+      if (listed && ids.length && (e.key === 'j' || e.key === 'ArrowDown')) select(ids[Math.min(i + 1, ids.length - 1)])
+      else if (listed && ids.length && (e.key === 'k' || e.key === 'ArrowUp')) select(ids[Math.max(i - 1, 0)])
+      else if (e.key === '/' && filter) filter.focus()
       else if (pr && e.key === 'o') { const u = critUrl(pr); if (u) open(u, '_blank') }
-      else if (chord.current && Date.now() - chord.current < 900 && 'resc'.includes(e.key)) {
-        chord.current = 0; clearTimeout(chordTimer.current)
-        if (e.key === 'c') goCodebase(); else setMode(({ r: 'review', e: 'exec', s: 'standup' } as const)[e.key as 'r' | 'e' | 's'])
+      else if (chord.current && Date.now() - chord.current < 900 && 'resch'.includes(e.key)) {
+        chord.current = 0
+        if (e.key === 'h') { if (pr?.url) open(pr.url, '_blank') } else if (e.key === 'c') goCodebase(); else setMode(({ r: 'review', e: 'exec', s: 'standup' } as const)[e.key as 'r' | 'e' | 's'])
       }
-      else if (e.key === 'g') { chord.current = Date.now(); const url = pr?.url; chordTimer.current = setTimeout(() => { chord.current = 0; if (url) open(url, '_blank') }, 900) }
+      else if (e.key === 'g') chord.current = Date.now()
       else if (pr?.job && e.key === 'r') api(`/prs/${enc(pr.id)}/resume-terminal`, {}).then(() => toast('Opened the session in Terminal'))
       else if (e.key === 'Escape' && !document.querySelector(':popover-open')) select(undefined)
       else return
@@ -398,7 +401,7 @@ export function App() {
       <Head>Views</Head>
       {/* the workspaces; one accent pill slides to the active one (railPill) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
-      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e) · /exec opens it in its own window'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear'], ['design', Swatch, 'Design', 0, 'What the pull requests look like, before and after, without opening them']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || m === 'design' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0]))
+      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e)'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear'], ['design', Swatch, 'Design', 0, 'What the pull requests look like, before and after, without opening them']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || m === 'design' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0]))
         // Design is the mode already: on the rail it is its views, each its own place
         // Design is the mode already: on the rail it is its views, each its own place
         .flatMap(([m, Icon, label, n, hint]): { m: Mode; Icon: typeof MapIcon; label: string; n: number; hint: string; view?: DesignView }[] => m !== 'design' ? [{ m, Icon, label, n, hint }]
@@ -669,7 +672,7 @@ function ExecSetupHint({ onOpen, hasKey }: { onOpen: () => void; hasKey: boolean
     <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
       <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/10"><Rocket className="size-6 text-accent" /></span>
       <p className="text-body font-medium">Ship your Linear tickets from here</p>
-      <p className="text-small text-fg-3">{hasKey ? 'Pick the exec command (ship-tickets, from your skill source, works out of the box) and which repo each team maps to.' : 'Connect Linear with your API key (Settings → Machines), then pick the exec command.'}</p>
+      <p className="text-small text-fg-3">{hasKey ? 'Pick the command that ships a ticket (ship-tickets works out of the box) and the repository each Linear team maps to.' : 'Connect Linear with your API key (Settings → Machines), then pick the command that ships a ticket.'}</p>
       <button onClick={onOpen} className="btn-primary transition-all hover:bg-accent">Open Ship settings</button>
     </div>
   )

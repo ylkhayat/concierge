@@ -36,7 +36,7 @@ export function HandedPanel({ h, onOpen }: { h: Handed; onOpen: (p: { repo: stri
       </button>
       {main.tracked && main.prState === 'open' && (
         <div>
-          <h4 className="mb-1 labelr text-fg-3">#{main.number}’s agent asks<span className="ml-1.5 font-normal normal-case tracking-normal">answered on #{main.number}</span></h4>
+          <h4 className="mb-1 label text-fg-3">#{main.number}’s agent asks<span className="ml-1.5 font-normal normal-case tracking-normal">answered on #{main.number}</span></h4>
           {q.data === undefined ? <p className="text-small text-fg-4">Reading…</p>
             : !theirs.length ? <p className="text-small text-fg-3">Nothing: it isn’t waiting on you.</p>
             : <ol className="space-y-0.5">{theirs.map((x, i) => (

@@ -327,7 +327,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
               )}
               {!!info?.responsibilities?.length && (
                 <section className="space-y-1.5">
-                  <h4 className="labelr text-fg-3">Responsibilities</h4>
+                  <h4 className="label text-fg-3">Responsibilities</h4>
                   <ul className="list-disc space-y-0.5 pl-4 text-fg-2">{info.responsibilities.map((r) => <li key={r}>{r}</li>)}</ul>
                 </section>
               )}

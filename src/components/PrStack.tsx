@@ -28,7 +28,7 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
       {groups.map((g) => (
         <div key={g.items[0].url} className={`overflow-hidden rounded-xl ring-1 ${g.gone ? 'bg-fill/60 ring-zinc-200/60 dark:ring-zinc-800/60' : 'bg-surface-1 ring-line '}`}>
           {groups.length > 1 && g.label && !g.gone && (
-            <p className="border-b border-line px-3 py-1.5 labelr text-fg-3 ">{g.label}</p>
+            <p className="border-b border-line px-3 py-1.5 label text-fg-3 ">{g.label}</p>
           )}
           <ol className={g.rail ? '' : 'divide-y divide-line'}>
             {g.items.map((p, i, chain) => {

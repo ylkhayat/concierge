@@ -168,7 +168,7 @@ export function PrThread(props: PrThreadProps) {
   const nextCard = busy && !pr.waiting ? (
     // working: one line (its background runs and Stop), the details folded; the conversation shows the work itself
     <WorkingBar title={pr.status === 'queued' ? 'Queued' : pr.status === 'posting' ? 'Posting' : 'The agent is working'} sub={pr.status === 'queued' ? queuedText(pr.queued) : pr.background ? `${pr.background} running in the background` : undefined}
-                stop={() => act('cancel', 'Cancelled')}>{doNext}</WorkingBar>
+                stop={() => act('cancel', 'Run stopped')}>{doNext}</WorkingBar>
   ) : pr.waiting ? (
     <NextCard icon={LoaderCircle} tone="run" title="Waiting for an account" actions={doNext} />
   ) : askFirst ? (

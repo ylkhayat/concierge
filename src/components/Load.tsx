@@ -250,7 +250,7 @@ function WorktreesSection({ wts, cleaning, armed, onClean, auto, onAuto }: {
 function Meter({ label, value, of, fill, hot }: { label: string; value: string; of: string; fill: number; hot?: boolean }) {
   return (
     <span className="min-w-0 rounded-lg bg-surface-1 px-2 py-1.5 ring-1 ring-line " title={`${value} ${of}`}>
-      <span className="block text-micro uppercase tracking-labelr text-fg-3">{label}</span>
+      <span className="block text-micro uppercase tracking-label text-fg-3">{label}</span>
       <span className={`block truncate text-small font-semibold tabular-nums leading-tight ${hot ? 'text-fail-text' : 'text-fg-1 '}`}>{value}</span>
       <span className="block truncate text-micro tabular-nums text-fg-3">{of}</span>
       <span className="mt-1 block h-1 overflow-hidden rounded-full bg-fill-strong"><span className={`block h-full rounded-full transition-[width] duration-500 ${hot ? 'bg-fail' : 'bg-accent'}`} style={{ width: `${Math.max(4, fill * 100)}%` }} /></span>

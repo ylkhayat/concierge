@@ -160,6 +160,7 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
         <label className="group flex items-center gap-2 rounded-xl bg-surface-1 px-3 py-1.5 text-body shadow-sm ring-1 ring-line transition-all duration-200 hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60">
           <Search className="size-4 text-fg-3 transition-colors group-focus-within:text-accent" aria-hidden />
           <input
+            data-filter
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') { if (query) { e.stopPropagation(); onQuery('') } else e.currentTarget.blur() } }}

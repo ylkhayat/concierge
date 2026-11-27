@@ -65,7 +65,7 @@ export function AlertDock({ alerts, now, onOpen }: { alerts: Alert[]; now: numbe
   }
   const section = (title: string, list: Alert[], max: number, tone: string) => list.length > 0 && (
     <section>
-      <h3 className={`px-2.5 pb-1 pt-2 labelr ${tone}`}>{title} <span className="tabular-nums opacity-70">{list.length}</span></h3>
+      <h3 className={`px-2.5 pb-1 pt-2 label ${tone}`}>{title} <span className="tabular-nums opacity-70">{list.length}</span></h3>
       <ul>{(all ? list : list.slice(0, max)).map((a) => <Row key={a.key} a={a} now={now} onOpen={() => { seen([a.key]); close(); onOpen(a) }} onDismiss={() => seen([a.key])} />)}</ul>
     </section>
   )

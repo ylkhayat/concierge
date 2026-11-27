@@ -3,7 +3,7 @@
 // everything else (its vitals: shipping, intent, understanding; Explain; the description). Switching tabs changes only
 // the panel, and a passage selected in it can be quoted into the composer, to ask the agent about that point.
 import { ChevronRight, CloudOff, LoaderCircle, MessageSquareQuote, type LucideIcon } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { usePhone } from '../components/NextPanel.tsx'
 
 export type Tone = 'ok' | 'wait' | 'fail' | 'run' | 'quiet'
@@ -268,6 +268,9 @@ export function NextCard({ title, why, details, detailsLabel, actions, also, mor
  * While the agent works: one line under the chat (what it is doing, what runs in the background, Stop), its details
  * unfolded only when you ask. The conversation already shows the work as it happens.
  */
+/** Inside a WorkingBar, whose line already has Stop: what it unfolds doesn't offer a second one. */
+export const StopAbove = createContext(false)
+
 export function WorkingBar({ title, sub, stop, children }: { title: string; sub?: ReactNode; stop?: () => void; children?: ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
@@ -282,7 +285,7 @@ export function WorkingBar({ title, sub, stop, children }: { title: string; sub?
           </button>
         )}
       </div>
-      {open && children && <div className="min-h-0 overflow-y-auto border-t border-line px-4 py-3">{children}</div>}
+      {open && children && <div className="min-h-0 overflow-y-auto border-t border-line px-4 py-3"><StopAbove.Provider value={!!stop}>{children}</StopAbove.Provider></div>}
     </section>
   )
 }

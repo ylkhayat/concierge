@@ -1935,7 +1935,7 @@ function Runs() {
 // --- About -----------------------------------------------------------------------------------------
 
 function About({ setup, onSetup }: { setup?: SetupView; onSetup: () => void }) {
-  const keys: [string, string][] = [['j / k', 'Next / previous PR'], ['o', 'Open crit'], ['r', 'Resume the agent session'], ['g', 'Open on GitHub'], ['/', 'Filter the list'], ['Esc', 'Close the top modal, then the PR']]
+  const keys: [string, string][] = [['j / k', 'Next / previous PR'], ['o', 'Open crit'], ['r', 'Resume the agent session'], ['g h', 'Open on GitHub'], ['/', 'Filter the list'], ['Esc', 'Close the top modal, then the PR']]
   return (
     <>
       <Group title="Setup">
@@ -1954,7 +1954,7 @@ function About({ setup, onSetup }: { setup?: SetupView; onSetup: () => void }) {
           ))}
         </div>
       </Group>
-      <p className="flex items-center gap-1.5 text-small text-fg-3"><Keyboard className="size-3.5" />Concierge runs on this machine; it only talks to GitHub and Claude.</p>
+      <p className="flex items-center gap-1.5 text-small text-fg-3"><ShieldCheck className="size-3.5" />Concierge runs on your own machines. It talks only to the services you connect: GitHub, your agent accounts, and what is under Connections.</p>
     </>
   )
 }
@@ -2299,7 +2299,7 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
             {f.steps.map((x, i) => (
               <li key={x.k} className="relative">
                 <button onClick={() => go(x.at)} title={x.tip} className="group h-full w-full rounded-lg bg-hover px-3 py-2 text-left transition-colors hover:bg-active">
-                  <span className="block labelr text-fg-4">{x.k}</span>
+                  <span className="block label text-fg-4">{x.k}</span>
                   <span className={`mt-0.5 block text-small leading-snug text-fg-1 ${x.mono ? 'break-all font-mono' : ''}`}>{x.v}</span>
                 </button>
                 {i < f.steps.length - 1 && <ArrowRight aria-hidden className="absolute -right-2 top-1/2 z-10 hidden size-3 -translate-y-1/2 text-fg-4 md:block" />}

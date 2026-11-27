@@ -55,7 +55,7 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
       <div id="repo-picker" ref={pop} popover="auto" onMouseEnter={stay} onMouseLeave={hide}
            style={{ positionAnchor: '--repo-picker', positionArea: 'right span-bottom', inset: 'auto' } as CSSProperties}
            className="m-0 ml-2 max-h-[calc(70vh/var(--z))] w-[280px] overflow-y-auto rounded-2xl border-0 bg-surface-1 p-1.5 text-fg-2 shadow-xl ring-1 ring-line ">
-        <p className="px-2.5 pb-1.5 pt-1 labelr text-fg-3">Focus on a workspace</p>
+        <p className="px-2.5 pb-1.5 pt-1 label text-fg-3">Focus on a workspace</p>
         {repos.length > 6 && (
           <label className="mb-1 flex items-center gap-2 rounded-lg bg-fill px-2.5 py-1.5 text-small">
             <Search className="size-3.5 text-fg-3" />

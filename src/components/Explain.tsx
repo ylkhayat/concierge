@@ -331,7 +331,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<Card>
       <p className="mt-1.5 line-clamp-2 text-meta leading-snug text-fg-2">{data.summary || <span className="italic text-fg-3">not mapped yet</span>}</p>
       {!!data.inner?.length && (
         <div className="mt-2 space-y-[3px] rounded-xl bg-fill/60 p-1.5 ring-1 ring-line ">
-          <div className="flex items-center justify-between px-1 labelr text-fg-3">
+          <div className="flex items-center justify-between px-1 label text-fg-3">
             <span>Inside</span>{!!data.innerMore && <span>+{data.innerMore} more</span>}
           </div>
           {data.inner.map((m) => (

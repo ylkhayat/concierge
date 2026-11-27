@@ -5,13 +5,13 @@ import { isTyping, type PrView, type TicketView } from '../lib.ts'
 export type Command = { id: string; label: string; hint?: string; run: () => void }
 type Entry = { key: string; icon: typeof Search; ref?: string; label: string; hint?: string; group: string; run: () => void }
 
-// every key the app answers to, for the ? sheet (keep in step with App.tsx, Desk.tsx, PrDetail.tsx and NextSteps.tsx)
+// every key the app answers to, for the ? sheet (keep in step with App.tsx, StackNav.tsx, Tour.tsx and NextSteps.tsx)
 const KEYS: [string, string][] = [
   ['⌘K', 'Jump anywhere, run a command'], ['?', 'These shortcuts'],
-  ['g d · g r · g e · g s · g c', 'Desk, Review, Ship, Standup, Codebase'], ['g', 'Open the PR on GitHub (alone)'],
+  ['g r · g e · g s · g c', 'Review, Ship, Standup, Codebase'], ['g h', 'Open the PR on GitHub'],
   ['j / k', 'Next and previous in the list'], ['/', 'Filter the list'], ['Esc', 'Clear the filter, close'],
-  ['n / p', 'Next and previous unit on the desk'], ['d', 'Open the PR on the desk'],
-  ['o', 'Open crit'], ['r', 'Resume the agent session in Terminal'], ['f', 'Focus while reading an explanation'],
+  ['[ / ]', 'Down and up the stack'], ['← / →', 'Back and next in a tour'],
+  ['o', 'Open crit'], ['r', 'Resume the agent session in Terminal'],
   ['⌘↵', 'Send to the agent'], ['Alt ↑ / ↓', 'Move an account in the fallback order'],
 ]
 

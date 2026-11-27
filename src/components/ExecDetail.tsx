@@ -139,7 +139,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
           {!!run.denials?.length && (
             <p title={run.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-xl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-              <span>Denied {run.denials.length}×: {[...new Set(run.denials)].join(', ')}{run.refused?.[0] && <> (first: <code className="font-mono text-meta">{run.refused[0].slice(0, 120)}</code>)</>}. The Activity tab shows each one where it happened; add what's needed in Settings → Exec.</span>
+              <span>Denied {run.denials.length}×: {[...new Set(run.denials)].join(', ')}{run.refused?.[0] && <> (first: <code className="font-mono text-meta">{run.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed under Allowed tools in Settings → Workflows.</span>
             </p>
           )}
         </Chip>
@@ -278,9 +278,9 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
                 <div className="space-y-4 px-5 py-4">
                   {t.agentWaiting && t.lastComment && (
                     <div className="rounded-xl bg-wait/6 p-3.5 ring-1 ring-wait/25">
-                      <h4 className="mb-1.5 flex items-center gap-1.5 text-meta font-semibold uppercase tracking-labelr text-wait-text"><MessageCircleQuestion className="size-3.5" />The agent is waiting on you</h4>
+                      <h4 className="mb-1.5 flex items-center gap-1.5 text-meta font-semibold uppercase tracking-label text-wait-text"><MessageCircleQuestion className="size-3.5" />The agent is waiting on you</h4>
                       <Md text={t.lastComment.body} className="!text-body" />
-                      <p className="mt-2 text-small text-fg-3">Answer on Linear, then Run again; or Resume to answer in the terminal.</p>
+                      <p className="mt-2 text-small text-fg-3">Answer it under “The agent asks you” on this page; the agent carries on from your answer.</p>
                     </div>
                   )}
                   {t.description.trim() ? <Md text={t.description} /> : <p className="py-6 text-center text-sm text-fg-3">No description.</p>}

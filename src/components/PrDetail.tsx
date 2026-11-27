@@ -200,7 +200,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
           {!!job.denials?.length && (
             <p title={job.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-xl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-              <span>Denied {job.denials.length}×: {[...new Set(job.denials)].join(', ')}{job.refused?.[0] && <> (first: <code className="font-mono text-meta">{job.refused[0].slice(0, 120)}</code>)</>}. The Activity tab shows each one where it happened; add what's needed to the allowlist in Settings.</span>
+              <span>Denied {job.denials.length}×: {[...new Set(job.denials)].join(', ')}{job.refused?.[0] && <> (first: <code className="font-mono text-meta">{job.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed under Allowed tools in Settings → Workflows.</span>
             </p>
           )}
         </Chip>
@@ -211,7 +211,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
               tone={pr.op.state === 'failed' ? 'rose' : pr.op.state === 'done' ? 'emerald' : 'zinc'}
               label={<>{pr.op.label.replace(/ \(.*\)$/, '')} · {pr.op.state === 'running' ? 'running' : pr.op.state === 'done' ? (pr.op.result && pr.op.result.length <= 28 ? pr.op.result : 'done') : 'failed'}</>}>
           <p className="text-small font-medium">{pr.op.label}</p>
-          <p className="mt-1 text-small text-fg-3">{pr.op.state === 'running' ? `Started ${ago(pr.op.at, now)}. The Activity tab follows it.` : `${pr.op.result} · ${ago(pr.op.endedAt, now)}`}</p>
+          <p className="mt-1 text-small text-fg-3">{pr.op.state === 'running' ? `Started ${ago(pr.op.at, now)}. The conversation follows it.` : `${pr.op.result} · ${ago(pr.op.endedAt, now)}`}</p>
         </Chip>
       )}
       {/* an explanation being written is visible wherever you are, not only in the Explain tab */}
@@ -314,7 +314,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
   const doNext = (
     <div className="space-y-2">
       {(next === 'run' || next === 'finalize') && <Missing names={pr.missing} />}
-      {next === 'cancel' && <Working why={pr.waiting ? `Waiting for ${pr.waiting.label}: ${pr.waiting.why}${pr.waiting.until ? ` until ${new Date(pr.waiting.until).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}. Another account takes it if one is set to stand in (Settings → Agents).` : flow.why} feed={feed} onStop={() => act('cancel', 'Stopped')} bg={{ base: `/prs/${enc(pr.id)}`, count: pr.background }} toast={toast} />}
+      {next === 'cancel' && <Working why={pr.waiting ? `Waiting for ${pr.waiting.label}: ${pr.waiting.why}${pr.waiting.until ? ` until ${new Date(pr.waiting.until).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}. Another account takes it if one is set to stand in (Settings → Accounts).` : flow.why} feed={feed} onStop={() => act('cancel', 'Stopped')} bg={{ base: `/prs/${enc(pr.id)}`, count: pr.background }} toast={toast} />}
       {next && next !== 'answer' && next !== 'cancel' && BIG[next]}
       {next !== 'cancel' && next !== 'post' && <p className={next === 'answer' || !next ? 'text-body leading-relaxed text-fg-2 ' : 'text-small text-fg-3'}>{flow.why}</p>}
       {alsoLine}

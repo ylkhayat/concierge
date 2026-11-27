@@ -87,7 +87,7 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
         {aspect ? <>
           <p className="label px-2.5 pb-1 pt-2 text-fg-4">Projects</p>
           {!list.data && <Skeleton rows={2} />}
-          {list.data && !repos.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Repositories.</p>}
+          {list.data && !repos.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Workspaces.</p>}
           {repos.map((r) => (
             <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
               <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
@@ -102,7 +102,7 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
         </> : <>
         <p className="label px-2.5 pb-1 pt-2 text-fg-4">Pull requests</p>
         {!list.data && <Skeleton rows={3} />}
-        {list.data && !prs.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Repositories, or for one PR from its page.</p>}
+        {list.data && !prs.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in Settings → Workspaces, or for one PR from its page.</p>}
         {prs.map((p) => {
           const s = standing(p, p.latest?.sha)
           return (
@@ -162,7 +162,7 @@ function Empty() {
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
       <Palette className="size-6 text-accent-text" />
       <p className="text-body font-medium text-fg-1">What your pull requests look like, before and after</p>
-      <p className="max-w-md text-small text-fg-3">Turn visuals on for a repository (Settings → Repositories), and each PR that changes what people see gets its screens captured: from its Storybook stories, else from the running app.</p>
+      <p className="max-w-md text-small text-fg-3">Turn visuals on for a repository (Settings → Workspaces), and each PR that changes what people see gets its screens captured: from its Storybook stories, else from the running app.</p>
     </div>
   )
 }

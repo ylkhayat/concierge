@@ -39,7 +39,7 @@ export function NextPanel({ count, children, footer, sync }: { count: number; ch
       <button onClick={() => setOpen(true)} title="Show what is next" aria-label="Show the Next panel"
               className="group flex w-11 shrink-0 flex-col items-center gap-2 border-l border-line bg-white/40 py-4 text-fg-3 transition-colors hover:bg-surface-1 hover:text-fg-1 dark:bg-zinc-900/20">
         <ChevronsLeft className="size-4" />
-        <span className="text-meta font-semibold uppercase tracking-labelr [writing-mode:vertical-rl]">Next</span>
+        <span className="text-meta font-semibold uppercase tracking-label [writing-mode:vertical-rl]">Next</span>
         {count > 0 && <span className="rounded-full bg-accent px-1.5 text-micro font-semibold tabular-nums leading-4 text-on-accent">{count}</span>}
       </button>
     )

@@ -241,7 +241,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
             <div className="space-y-3">
               {groups.map(([label, hint, idx]) => !!idx.length && (
                 <div key={label}>
-                  <h4 className="mb-1 px-2.5 labelr text-fg-3">{label}<span className="ml-1.5 font-normal normal-case tracking-normal">{hint}</span></h4>
+                  <h4 className="mb-1 px-2.5 label text-fg-3">{label}<span className="ml-1.5 font-normal normal-case tracking-normal">{hint}</span></h4>
                   <ol className="space-y-1">{idx.map((i) => row(list[i], i))}</ol>
                 </div>
               ))}

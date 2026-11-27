@@ -281,7 +281,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
       <div className="px-3 py-2.5">
         <label className="group flex items-center gap-2 rounded-xl bg-surface-1 px-3 py-1.5 text-body shadow-sm ring-1 ring-line transition-all duration-200 hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60">
           <Search className="size-4 text-fg-3 transition-colors group-focus-within:text-accent" aria-hidden />
-          <input value={query} onChange={(e) => onQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { if (query) { e.stopPropagation(); onQuery('') } else e.currentTarget.blur() } }} placeholder="Filter tickets" className="w-full bg-transparent outline-none placeholder:text-fg-3" />
+          <input data-filter value={query} onChange={(e) => onQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { if (query) { e.stopPropagation(); onQuery('') } else e.currentTarget.blur() } }} placeholder="Filter tickets" className="w-full bg-transparent outline-none placeholder:text-fg-3" />
           {query
             ? <button onClick={() => onQuery('')} className="rounded-md p-0.5 text-fg-3 transition-colors hov hover:text-fg-2" aria-label="Clear filter"><X className="size-3.5" /></button>
             : <kbd className="rounded-md border border-line-strong px-1.5 font-mono text-micro text-fg-3">/</kbd>}
