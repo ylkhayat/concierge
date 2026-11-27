@@ -26,6 +26,13 @@ const DENY = [
   'Bash(nc:*)', 'Bash(ncat:*)', 'Bash(ssh:*)', 'Bash(scp:*)', 'Bash(sftp:*)', 'Bash(ftp:*)', 'Bash(telnet:*)',
   'Read(~/.config/gh/**)', 'Read(~/.claude/.credentials.json)', 'Read(~/.codex/auth.json)', 'Read(**/claude-home/.credentials.json)', 'Read(**/codex-home/auth.json)', 'Read(~/.netrc)', 'Read(~/.ssh/**)', 'Read(~/.aws/**)',
   'Read(~/.config/concierge/**)', 'Read(~/.config/review-deck/**)', 'Read(~/.local/state/concierge/worker-token)', 'Read(~/.local/state/review-deck/worker-token)', 'Read(**/.env)', 'Read(**/.env.*)',
+  // the same places through a shell command (cat, python, a copy): a command that names where Concierge keeps its keys,
+  // its sign-ins, its state or the other runs' transcripts, or that calls Concierge's own API, is refused. This raises
+  // the bar, it is not a wall (a name built at run time gets past a pattern): the wall is a home folder of its own
+  // for these runs, which is still to come
+  'Bash(*.config/review-deck*)', 'Bash(*.config/concierge*)', 'Bash(*secrets.json*)', 'Bash(*worker-token*)', 'Bash(*.credentials.json*)', 'Bash(*msal_token_cache*)',
+  'Bash(*mcp.env*)', 'Bash(*state.*.db*)', 'Bash(*claude-home/projects*)', 'Bash(*.config/gh*)', 'Bash(*.ssh/*)', 'Bash(*.netrc*)',
+  'Bash(*127.0.0.1:4747*)', 'Bash(*localhost:4747*)', 'Bash(*127.0.0.1:4748*)', 'Bash(*localhost:4748*)',
 ]
 export const UNTRUSTED_ARGS = ['--disallowedTools', ...DENY]
 

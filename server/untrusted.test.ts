@@ -17,3 +17,7 @@ test("a review of someone else's PR keeps crit's settings (it won't start withou
   const env = untrustedEnv({ CRIT_HOST: '0.0.0.0', CRIT_ALLOW_UNAUTHENTICATED_NETWORK: '1', LINEAR_API_KEY: 'k', BASIC_AUTH: 'x', AUTH_HEADER: 'y', MDB_MCP_CONNECTION_STRING: 'z', PATH: '/bin', GITHUB_TOKEN: 'g' })
   assert.deepEqual(Object.keys(env).sort(), ['CRIT_ALLOW_UNAUTHENTICATED_NETWORK', 'CRIT_HOST', 'GITHUB_TOKEN', 'PATH'])
 })
+
+test('a shell command that names where the keys are kept, or calls Concierge itself, is refused too', () => {
+  for (const rule of ['Bash(*.config/review-deck*)', 'Bash(*secrets.json*)', 'Bash(*worker-token*)', 'Bash(*claude-home/projects*)', 'Bash(*127.0.0.1:4747*)', 'Bash(*localhost:4748*)']) assert.ok(UNTRUSTED_ARGS.includes(rule), rule)
+})
