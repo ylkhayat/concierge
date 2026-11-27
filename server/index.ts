@@ -2889,6 +2889,30 @@ app.get('/visuals/tokens/:owner/:name', async (c) => {
   const { tokensFor } = await import('./tokens.ts')
   return c.json({ repo, ...(await tokensFor(repo)) })
 })
+// The Tokens view's draft: changes previewed at once, a PR only once confirmed (tokenDraft.ts)
+app.get('/visuals/tokens/:owner/:name/draft', async (c) => {
+  const repo = `${c.req.param('owner')}/${c.req.param('name')}`
+  if (!config.repos[repo]) return c.json({ error: 'Not a watched repository' }, 404)
+  const { draftOf } = await import('./tokenDraft.ts')
+  return c.json(draftOf(repo))
+})
+app.post('/visuals/tokens/:owner/:name/draft', async (c) => {
+  const repo = `${c.req.param('owner')}/${c.req.param('name')}`
+  if (!config.repos[repo]) return c.json({ error: 'Not a watched repository' }, 404)
+  const b = await c.req.json() as { say?: string; set?: { book: string; name: string; theme: string; value: string; was?: string }; drop?: { book: string; name: string; theme?: string }; discard?: boolean; confirm?: boolean }
+  const x = await import('./tokenDraft.ts')
+  const str = (v: unknown, n = 300) => (typeof v === 'string' ? v.slice(0, n) : '')
+  if (b.set && str(b.set.name)) return c.json(x.setChange(repo, { book: str(b.set.book), name: str(b.set.name), theme: str(b.set.theme) || 'default', value: str(b.set.value), was: b.set.was === undefined ? undefined : str(b.set.was) }))
+  if (b.drop) return c.json(x.dropChanges(repo, { book: str(b.drop.book), name: str(b.drop.name), theme: b.drop.theme ? str(b.drop.theme) : undefined }))
+  if (b.discard) return c.json(x.dropChanges(repo))
+  if (b.confirm) {
+    const r = await x.confirmDraft(repo)
+    if (r.how === 'no') return c.json({ error: `${repo} has no checkout set up` }, 400)
+    return c.json(r.draft)
+  }
+  const said = str(b.say, 4000).trim()
+  return c.json(said ? await x.sayDraft(repo, said) : x.draftOf(repo))
+})
 // Design's Components and Tokens views: each its own conversation about the repository (runner.ts enqueueChat)
 const chatOf = (c: { req: { param: (k: string) => string } }) => {
   const view = c.req.param('view'), repo = `${c.req.param('owner')}/${c.req.param('name')}`

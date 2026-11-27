@@ -9,7 +9,9 @@ import type { VisualsTask } from '../../server/store.ts'
 import { api, enc, useIsDark } from '../lib.ts'
 import type { DesignView } from '../modes.ts'
 import type { Token, TokenBook } from '../../server/tokens.ts'
-import { refresh, useApi } from '../query.ts'
+import type { DraftChange, TokenDraft } from '../../server/tokenDraft.ts'
+import { draftCss, valueWith } from '../tokenCss.ts'
+import { refresh, remember, useApi } from '../query.ts'
 import { bare, byApp, focusOn, layout, partAt } from '../board.ts'
 import { ActivityFeed } from './ActivityFeed.tsx'
 import { Skeleton } from './Connections.tsx'
@@ -76,10 +78,12 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
   // a phone: the list is a screen of its own (the full width), opened from the bar over the item; picking one closes it
   const [listing, setListing] = useState(false)
   const pickItem = (id: string) => { onSelect(id); setListing(false) }
+  // a blueprint wants the width (its list of components and its board): below a laptop's (a tablet) the list folds into the bar, as on a phone
+  const roomy = !aspect && !!current?.startsWith('repo:')
   const name = current?.startsWith('repo:') ? `${current.slice(5).split('/')[1]} · blueprint` : ticket ? ticket.title : prs.find((p) => p.id === current)?.title
   return (
     <div className="flex h-full min-h-0">
-      <nav aria-label="Design" className={`${listing ? 'flex w-full' : 'hidden'} shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex md:w-60`}>
+      <nav aria-label="Design" className={`${listing ? 'flex w-full' : 'hidden'} shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 ${roomy ? 'xl:flex xl:w-60' : 'md:flex md:w-60'}`}>
         {aspect ? <>
           <p className="label px-2.5 pb-1 pt-2 text-fg-4">Projects</p>
           {!list.data && <Skeleton rows={2} />}
@@ -135,9 +139,9 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
         ))}
         </>}
       </nav>
-      <div className={`min-w-0 flex-1 flex-col ${listing ? 'hidden md:flex' : 'flex'}`}>
+      <div className={`min-w-0 flex-1 flex-col ${listing ? (roomy ? 'hidden xl:flex' : 'hidden md:flex') : 'flex'}`}>
         {current && (
-          <button onClick={() => setListing(true)} className="flex min-h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-left text-small text-fg-2 md:hidden">
+          <button onClick={() => setListing(true)} className={`flex min-h-11 shrink-0 items-center gap-2 border-b border-line px-3 text-left text-small text-fg-2 ${roomy ? 'xl:hidden' : 'md:hidden'}`}>
             <ArrowLeft className="size-4 shrink-0 text-fg-3" /><span className="shrink-0 font-medium text-fg-1">All designs</span><span className="min-w-0 flex-1 truncate text-fg-3">{name}</span>
           </button>
         )}
@@ -500,20 +504,73 @@ function snap(d: Document | null | undefined, marks: Mark[], W: number, H: numbe
     const k = W / root.width // the page's px per drawn px
     const els = [...d.body.querySelectorAll<HTMLElement>('*')].filter((e) => !e.classList.contains('bp-t'))
     const boxes = els.map((e) => { const r = e.getBoundingClientRect(); return { e, x: ((r.left - root.left) * k / W) * 100, y: ((r.top - root.top) * k / H) * 100, w: (r.width * k / W) * 100, h: (r.height * k / H) * 100 } })
-    return marks.map((m, i) => {
+    const iou = (m: Mark, b: (typeof boxes)[number]) => {
+      const ix = Math.max(0, Math.min(m.x + m.w, b.x + b.w) - Math.max(m.x, b.x)), iy = Math.max(0, Math.min(m.y + m.h, b.y + b.h) - Math.max(m.y, b.y))
+      const inter = ix * iy
+      return inter / (m.w * m.h + b.w * b.h - inter)
+    }
+    const found = marks.map((m) => {
       let best: (typeof boxes)[number] | undefined, score = 0.55
-      for (const b of boxes) {
-        if (b.w < 0.3 || b.h < 0.3) continue
-        const ix = Math.max(0, Math.min(m.x + m.w, b.x + b.w) - Math.max(m.x, b.x)), iy = Math.max(0, Math.min(m.y + m.h, b.y + b.h) - Math.max(m.y, b.y))
-        const inter = ix * iy, iou = inter / (m.w * m.h + b.w * b.h - inter)
-        if (iou > score) { score = iou; best = b }
+      for (const b of boxes) if (b.w >= 0.3 && b.h >= 0.3) { const s = iou(m, b); if (s > score) { score = s; best = b } }
+      return best
+    })
+    // a mark measured loosely (a small part, a few pixels off) is still the same component as the ones that matched:
+    // the element of the same make (its classes) nearest it, when one is there
+    const makes = new Set(found.flatMap((b) => (b && b.e.className && typeof b.e.className === 'string' ? [b.e.className] : [])))
+    return marks.map((m, i) => {
+      let best = found[i]
+      if (!best && makes.size) {
+        const cx = m.x + m.w / 2, cy = m.y + m.h / 2
+        let far = Math.max(m.w, m.h, 2)
+        for (const b of boxes) {
+          if (typeof b.e.className !== 'string' || !makes.has(b.e.className)) continue
+          const dist = Math.hypot(b.x + b.w / 2 - cx, b.y + b.h / 2 - cy)
+          if (dist < far) { far = dist; best = b }
+        }
       }
       if (!best) return plain[i]
       if (best.y >= 99) return undefined
-      const r = parseFloat(d.defaultView!.getComputedStyle(best.e).borderTopLeftRadius) || 0
-      return { x: best.x, y: best.y, w: best.w, h: best.h, r }
+      // what it draws past its own box (a label taller than its pill) is lit too, and a hair around it, so nothing is cut
+      let [x0, y0, x1, y1] = [best.x, best.y, best.x + best.w, best.y + best.h]
+      const css = d.defaultView!.getComputedStyle.bind(d.defaultView)
+      let r = parseFloat(css(best.e).borderTopLeftRadius) || 0
+      const area = best.w * best.h
+      for (const c of best.e.querySelectorAll('*')) {
+        const rc = c.getBoundingClientRect()
+        if (!rc.width || !rc.height) continue
+        // a wrapper's shape is the shape it holds: a pill inside a plain box lights as a pill
+        if (!r && ((rc.width * k / W) * 100) * ((rc.height * k / H) * 100) > area * 0.6) r = parseFloat(css(c).borderTopLeftRadius) || 0
+        const rr = rc
+        const cx = ((rr.left - root.left) * k / W) * 100, cy = ((rr.top - root.top) * k / H) * 100
+        x0 = Math.min(x0, cx); y0 = Math.min(y0, cy); x1 = Math.max(x1, cx + (rr.width * k / W) * 100); y1 = Math.max(y1, cy + (rr.height * k / H) * 100)
+      }
+      const px = (2 / W) * 100, py = (2 / H) * 100
+      return { x: x0 - px, y: y0 - py, w: x1 - x0 + 2 * px, h: y1 - y0 + 2 * py, r: r && r + 2 }
     }).filter((b): b is Lit => !!b)
   } catch { return plain }
+}
+
+/**
+ * A count that goes up whenever a page's layout may have moved (its fonts came, it rendered more, it was resized or
+ * zoomed): what the lit boxes are measured again on, so they stay on what is drawn.
+ */
+function useLayoutTick(frame: { current: HTMLIFrameElement | null }, ready: boolean): number {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    const d = ready ? frame.current?.contentDocument : undefined
+    if (!d?.body) return
+    let t: number | undefined
+    const bump = () => { clearTimeout(t); t = window.setTimeout(() => setN((x) => x + 1), 120) }
+    const v = (d.defaultView ?? window) as typeof window // the page's own observers: its elements are its window's
+    const ro = new v.ResizeObserver(bump), mo = new v.MutationObserver(bump)
+    try {
+      ro.observe(d.documentElement); ro.observe(d.body)
+      mo.observe(d.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style'] })
+      void d.fonts?.ready.then(bump)
+    } catch { /* not readable */ }
+    return () => { clearTimeout(t); ro.disconnect(); mo.disconnect() }
+  }, [ready])
+  return n
 }
 
 /**
@@ -791,7 +848,8 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
     } catch { /* another origin: as drawn */ }
   }, [k, ready, dark])
   // the lit component, on the page's own element when the page is there
-  const lit = useMemo(() => (shown.length ? snap(ready ? page.current?.contentDocument : undefined, shown, W, H) : []), [shown.map((m) => `${m.x},${m.y}`).join(), ready, W, H]) // eslint-disable-line react-hooks/exhaustive-deps
+  const moved = useLayoutTick(page, ready && shown.length > 0)
+  const lit = useMemo(() => (shown.length ? snap(ready ? page.current?.contentDocument : undefined, shown, W, H) : []), [shown.map((m) => `${m.x},${m.y}`).join(), ready, W, H, moved]) // eslint-disable-line react-hooks/exhaustive-deps
   const at = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }) => {
     const r = e.currentTarget.getBoundingClientRect()
     return partAt(marks, ((e.clientX - r.left) / r.width) * 100, ((e.clientY - r.top) / r.height) * 100)
@@ -847,6 +905,16 @@ function Focus({ pr, sha, shot, origin, live, target, lit: litPart, onPart, onCl
   // instead of a small picture of it being magnified. While the view glides it moves as drawn; once it lands, it is
   // drawn again for where it landed
   const [fw, setFw] = useState(0), [settled, setSettled] = useState(1)
+  // the screen as large as the space it has, whichever way it is short (a tablet's view is short and narrow both)
+  const area = useRef<HTMLDivElement>(null), [fit, setFit] = useState<number>()
+  useLayoutEffect(() => {
+    const el = area.current
+    if (!el) return
+    const measure = () => { const cs = getComputedStyle(el), w = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), h = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom); setFit(Math.max(120, Math.floor(Math.min(w, (h * W) / H)))) }
+    const ro = new ResizeObserver(measure)
+    ro.observe(el); measure()
+    return () => ro.disconnect()
+  }, [W, H])
   useLayoutEffect(() => {
     const el = stage.current
     if (!el) return
@@ -862,7 +930,8 @@ function Focus({ pr, sha, shot, origin, live, target, lit: litPart, onPart, onCl
   const lastPart = useRef<string | undefined>(undefined)
   if (showPart) lastPart.current = showPart
   const litMarks = useMemo(() => marks.filter((m) => m.part && m.part === lastPart.current), [marks, lastPart.current]) // eslint-disable-line react-hooks/exhaustive-deps
-  const lit = useMemo(() => snap(ready ? page.current?.contentDocument : undefined, litMarks, W, H), [litMarks, ready, W, H])
+  const moved = useLayoutTick(page, ready)
+  const lit = useMemo(() => snap(ready ? page.current?.contentDocument : undefined, litMarks, W, H), [litMarks, ready, W, H, R, moved])
   const hoverTimer = useRef<number | undefined>(undefined)
   const over = (m?: Mark) => { clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(() => setHoverMark(m), m ? 350 : 150) }
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
@@ -874,9 +943,9 @@ function Focus({ pr, sha, shot, origin, live, target, lit: litPart, onPart, onCl
         {onStep && <span className="flex gap-1"><button onClick={() => onStep(-1)} aria-label="The step before" className="btn-ghost btn-sm"><ChevronRight className="size-3.5 rotate-180" /></button><button onClick={() => onStep(1)} aria-label="The next step" className="btn-ghost btn-sm"><ChevronRight className="size-3.5" /></button></span>}
         <button onClick={onClose} aria-label="Back to the board" className="btn-ghost btn-sm inline-flex items-center gap-1.5"><X className="size-3.5" />Board</button>
       </header>
-      <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-5" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-        <div ref={stage} style={{ aspectRatio: `${W} / ${H}`, transform: from, transformOrigin: '0 0', transition: from ? 'none' : 'transform 420ms var(--ease-out)' }}
-             className="relative max-h-full w-full max-w-[min(100%,calc((100vh/var(--z,1)-14rem)*1.6))] overflow-hidden rounded-[4px] bg-surface-1 shadow-e3 ring-1 ring-line-strong">
+      <div ref={area} className="flex min-h-0 flex-1 items-center justify-center px-3 pb-3 sm:px-5 sm:pb-5" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+        <div ref={stage} style={{ aspectRatio: `${W} / ${H}`, width: fit, transform: from, transformOrigin: '0 0', transition: from ? 'none' : 'transform 420ms var(--ease-out)' }}
+             className="relative max-h-full max-w-full shrink-0 overflow-hidden rounded-[4px] bg-surface-1 shadow-e3 ring-1 ring-line-strong">
           <div className="absolute inset-0 origin-top-left transition-transform duration-700 ease-[var(--ease-out)]" style={{ transform: `translate(${t.tx}%, ${t.ty}%) scale(${t.s})` }}
                onTransitionEnd={(e) => { if (e.target === e.currentTarget) setSettled(t.s) }}>
             {live ? (!ready && <PageSkeleton />) : <img src={shotUrl(pr, sha, (shot.after ?? shot.before)!)} alt={shot.name} className="absolute inset-0 size-full object-cover object-top" />}
@@ -1203,6 +1272,30 @@ function Aspect({ view, repo, feed, toast }: { view: 'components' | 'tokens'; re
   const post = (body: object, msg?: string) => api(chatPath, body).then(() => { void refresh(chatPath); if (msg) toast(msg) }, (e: Error) => toast(e.message, 'error'))
   const set = base.data?.sets[0], parts = set?.impact?.changed ?? []
   const books = tokens.data?.books ?? []
+  // Tokens: a draft, previewed at once; a PR only on "Make the PR"
+  const draftPath = `/visuals/tokens/${repo}/draft`
+  const draftQ = useApi<TokenDraft>(view === 'tokens' ? draftPath : undefined)
+  const [draft, setDraft] = useState<TokenDraft>()
+  useEffect(() => { if (draftQ.data) setDraft(draftQ.data) }, [draftQ.data])
+  const changes = draft?.changes ?? []
+  const keep = (d: TokenDraft) => { setDraft(d); remember(draftPath, d) }
+  const postDraft = (body: object) => api(draftPath, body).then((d) => keep(d as TokenDraft), (e: Error) => toast(e.message, 'error'))
+  const sends = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  // an edit on the sheet: drawn now, kept a moment later (a colour dragged is many edits)
+  const edit = (c: DraftChange) => {
+    setDraft((d) => {
+      const rest = (d?.changes ?? []).filter((x) => !(x.book === c.book && x.name === c.name && x.theme === c.theme))
+      return { turns: [], ...d, changes: c.value.trim() && c.value.trim() !== c.was ? [...rest, c] : rest }
+    })
+    const k = `${c.book}|${c.name}|${c.theme}`
+    clearTimeout(sends.current.get(k))
+    sends.current.set(k, setTimeout(() => { sends.current.delete(k); void postDraft({ set: c }) }, 300))
+  }
+  const say = (text: string) => {
+    setDraft((d) => ({ changes: [], ...d, turns: [...(d?.turns ?? []), { who: 'you', text, at: new Date().toISOString() }], busy: true, error: undefined }))
+    return postDraft({ say: text })
+  }
+  const confirm = () => postDraft({ confirm: true }).then(() => { void refresh(chatPath); setTicking(true); toast('Making the PR') })
   const count = view === 'tokens' ? books.reduce((n, b) => n + b.tokens.length, 0) : parts.length
   return (
     <div className="flex h-full min-h-0">
@@ -1222,20 +1315,28 @@ function Aspect({ view, repo, feed, toast }: { view: 'components' | 'tokens'; re
               </div>
               <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
                 <button onClick={() => setTalk(!talk)} aria-pressed={talk} title={talk ? 'Hide the conversation' : `Talk about its ${view}`} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${talk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
+                {view === 'tokens' && changes.length > 0 && <>
+                  <button onClick={() => void postDraft({ discard: true })} className="btn-ghost btn-sm">Discard</button>
+                  <button onClick={() => void confirm()} disabled={busy(t)} title={busy(t) ? 'Its agent is still on the last one' : 'The agent changes the code to these values and opens a PR'} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Check className="size-3.5" />Make the PR · {changes.length}</button>
+                </>}
                 {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Its PR</a>}
                 {busy(t) && <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>}
               </div>
             </div>
           </header>
-          {view === 'tokens' ? (!tokens.data ? <Skeleton rows={6} /> : books.length ? books.map((b) => <TokenSheet key={b.book} book={b} />)
+          {view === 'tokens' ? (!tokens.data ? <Skeleton rows={6} /> : books.length ? <>
+                {set && <DraftPreview repo={repo} set={set} books={books} changes={changes} />}
+                {books.map((b) => <TokenSheet key={b.book} book={b} changes={changes.filter((c) => c.book === b.book)} onEdit={edit} />)}
+              </>
               : <p className="card px-4 py-3 text-small text-fg-3">No tokens yet: they are read from the Storybook its map is built with. Make its map (the Map view), or ask in the conversation.</p>)
             : !base.data ? <Skeleton rows={6} /> : set ? <Impact key={set.sha} pr={baselineKey(repo)} set={set} noBoard />
               : <p className="card px-4 py-3 text-small text-fg-3">No components yet: they are read with its map. Make its map (the Map view), or ask in the conversation.</p>}
         </div>
       </div>
-      {talk && <Conversation id={`design-${view}:${repo}`} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast}
-                             hint={view === 'tokens' ? 'Ask about a token (where it is set, what uses it), or for a change: a new colour, a type scale, a dark theme. A change comes back as a PR.' : 'Ask about a component (its states, its props, where it is used), or for a change: a new state, a story, a fix. A change comes back as a PR.'}
-                             placeholder={view === 'tokens' ? 'Which components use --accent?' : 'Which states does RuleCard have?'} />}
+      {talk && view === 'tokens' && <DraftChat draft={draft} task={t} onSay={say} onConfirm={() => void confirm()} onDiscard={() => void postDraft({ discard: true })} />}
+      {talk && view !== 'tokens' && <Conversation id={`design-${view}:${repo}`} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast}
+                             hint={'Ask about a component (its states, its props, where it is used), or for a change: a new state, a story, a fix. A change comes back as a PR.'}
+                             placeholder={'Which states does RuleCard have?'} />}
     </div>
   )
 }
@@ -1252,15 +1353,22 @@ const cssOf = (t: Token) => (t.rgb ? `rgb(var(${t.name}))` : t.hsl ? `hsl(var(${
  * radii and shadows on a tile, space as a bar. Each is drawn inside its theme's own values, so a token made of another
  * (var(--accent)) shows as the page shows it.
  */
-function TokenSheet({ book }: { book: TokenBook }) {
+function TokenSheet({ book, changes, onEdit }: { book: TokenBook; changes: DraftChange[]; onEdit: (c: DraftChange) => void }) {
   const themes = book.themes
-  const scope = (th: string) => Object.fromEntries(book.tokens.flatMap((t) => { const v = t.values[th] ?? t.values.default; return v === undefined ? [] : [[t.name, v]] })) as CSSProperties
+  // each theme's values with the draft's: a token made of another (var(--accent)) follows its change too
+  const scope = (th: string, orig = false) => Object.fromEntries(book.tokens.flatMap((t) => {
+    const v = orig ? t.values[th] ?? t.values.default : valueWith(t, th, changes) ?? valueWith(t, 'default', changes)
+    return v === undefined ? [] : [[t.name, v]]
+  })) as CSSProperties
   const base = scope('default')
+  const changed = (t: Token) => changes.some((c) => c.name === t.name)
+  const put = (t: Token, th: string, value: string) => onEdit({ book: book.book, name: t.name, theme: th, value, was: t.values[th] })
   return (
     <section className="card overflow-hidden">
       <header className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-2.5">
         <h3 className="text-body font-semibold capitalize text-fg-1">{book.book}</h3>
         <span className="text-meta text-fg-3">{book.tokens.length} tokens{themes.length > 1 ? ` · ${themes.join(', ')}` : ''}</span>
+        {changes.length > 0 && <span className="text-meta text-accent-text">· {changes.length} changed</span>}
       </header>
       <div className="space-y-5 px-4 py-4">
         {TOKEN_GROUPS.map((g) => {
@@ -1271,21 +1379,28 @@ function TokenSheet({ book }: { book: TokenBook }) {
               <h4 className="label mb-2 text-fg-4">{g.label} · {ts.length}</h4>
               {g.kinds[0] === 'color' ? (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
-                  {ts.map((t) => (
-                    <div key={t.name} className="overflow-hidden rounded-ctl ring-1 ring-line" title={Object.entries(t.values).map(([th, v]) => `${th}: ${v}`).join('\n')}>
-                      <div className="flex h-12">
-                        {themes.filter((th) => th === 'default' || th in t.values).map((th) => <span key={th} style={{ ...scope(th), background: cssOf(t) }} className="flex-1" />)}
+                  {ts.map((t) => {
+                    const ths = themes.filter((th) => th in t.values)
+                    return (
+                      <div key={t.name} className={`overflow-hidden rounded-ctl ring-1 ${changed(t) ? 'ring-accent/70' : 'ring-line'}`} title={Object.entries(t.values).map(([th, v]) => `${th}: ${v}`).join('\n')}>
+                        <div className="flex h-12">
+                          {themes.filter((th) => th === 'default' || th in t.values).map((th) => (
+                            <span key={th} style={{ ...scope(th), background: cssOf(t) }} className="relative flex-1">
+                              {changed(t) && <span style={{ ...scope(th, true), background: cssOf(t) }} title="Before" className="absolute inset-x-0 bottom-0 h-2.5" />}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="px-2 py-1.5">
+                          <p className="truncate font-mono text-micro text-fg-1">{t.name}{t.uses ? <span className="text-fg-4"> · {t.uses}×</span> : null}</p>
+                          {ths.map((th) => <EditValue key={th} label={ths.length > 1 ? th : undefined} value={valueWith(t, th, changes) ?? ''} was={t.values[th]} color={t} onCommit={(v) => put(t, th, v)} />)}
+                        </div>
                       </div>
-                      <div className="px-2 py-1.5">
-                        <p className="truncate font-mono text-micro text-fg-1">{t.name}</p>
-                        <p className="truncate font-mono text-micro text-fg-4">{t.values.default ?? Object.values(t.values)[0]}{t.uses ? ` · ${t.uses}×` : ''}</p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="divide-y divide-line rounded-ctl ring-1 ring-line">
-                  {ts.map((t) => <TokenRow key={t.name} t={t} scope={base} />)}
+                  {ts.map((t) => <TokenRow key={t.name} t={t} scope={base} value={valueWith(t, 'default', changes) ?? Object.values(t.values)[0]} onCommit={(v) => put(t, 'default' in t.values ? 'default' : Object.keys(t.values)[0], v)} />)}
                 </div>
               )}
             </div>
@@ -1297,7 +1412,7 @@ function TokenSheet({ book }: { book: TokenBook }) {
 }
 
 // the app's own values only on the sample: on the row they would replace Concierge's tokens of the same name (--font-mono)
-function TokenRow({ t, scope }: { t: Token; scope: CSSProperties }) {
+function TokenRow({ t, scope, value, onCommit }: { t: Token; scope: CSSProperties; value: string; onCommit: (v: string) => void }) {
   const v = `var(${t.name})`
   const sample = t.kind === 'font' ? <span style={{ ...scope, fontFamily: v }} className="text-body text-fg-1">Aa Bb Cc 123</span>
     : t.kind === 'text' ? <span style={{ ...scope, fontSize: v }} className="leading-none text-fg-1">Aa</span>
@@ -1308,11 +1423,155 @@ function TokenRow({ t, scope }: { t: Token; scope: CSSProperties }) {
     : t.kind === 'spacing' || t.kind === 'size' ? <span style={{ ...scope, width: `min(100%, ${v})` }} className="block h-2 min-w-px rounded-full bg-accent/50" />
     : null
   return (
-    <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_7rem] items-center gap-3 px-3 py-2">
+    <div className="grid grid-cols-[minmax(0,14rem)_minmax(0,1fr)_9rem] items-center gap-3 px-3 py-2">
       <span className="truncate font-mono text-micro text-fg-1" title={t.name}>{t.name}</span>
-      <span className="flex min-w-0 items-center overflow-hidden">{sample ?? <span className="truncate font-mono text-micro text-fg-3">{t.values.default ?? Object.values(t.values)[0]}</span>}</span>
-      <span className="truncate text-right font-mono text-micro text-fg-4" title={Object.entries(t.values).map(([th, x]) => `${th}: ${x}`).join('\n')}>{t.values.default ?? Object.values(t.values)[0]}</span>
+      <span className="flex min-w-0 items-center overflow-hidden">{sample ?? <span className="truncate font-mono text-micro text-fg-3">{value}</span>}</span>
+      <EditValue value={value} was={t.values.default ?? Object.values(t.values)[0]} onCommit={onCommit} right />
     </div>
+  )
+}
+
+const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+const hex6 = (v: string) => (v.length === 4 ? `#${[...v.slice(1)].map((c) => c + c).join('')}` : v)
+const toHex = (n: number[]) => `#${n.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}`
+/** A colour token's value as a picker's hex, when it is one plainly: hex, or bare rgb channels. */
+function pickable(v: string, t: Token): string | undefined {
+  if (HEX.test(v.trim())) return hex6(v.trim())
+  if (t.rgb) { const n = v.trim().split(/\s+/).slice(0, 3).map(Number); if (n.length === 3 && n.every((x) => x >= 0 && x <= 255)) return toHex(n) }
+  return undefined
+}
+const fromHex = (h: string, t: Token) => (t.rgb ? [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(' ') : h)
+
+/**
+ * A token's value, edited in place: a click makes it a field (Enter keeps it, Escape leaves it), a colour also takes a
+ * picker, drawn as you drag. A changed one shows what it was; a click on that puts it back.
+ */
+function EditValue({ value, was, label, color, right, onCommit }: { value: string; was?: string; label?: string; color?: Token; right?: boolean; onCommit: (v: string) => void }) {
+  const [editing, setEditing] = useState(false), [text, setText] = useState(value)
+  const changed = was !== undefined && value !== was
+  const pick = color ? pickable(value, color) : undefined
+  const done = (keep: boolean) => { setEditing(false); if (keep && text.trim() && text.trim() !== value) onCommit(text.trim()) }
+  return (
+    <div className={`flex min-w-0 flex-wrap items-center gap-x-1 ${right ? 'justify-end' : ''}`}>
+      {label && <span className="shrink-0 text-micro text-fg-4">{label}</span>}
+      {pick && color && <input type="color" value={pick} onChange={(e) => onCommit(fromHex(e.target.value, color))} aria-label="Pick a colour" className="size-3.5 shrink-0 cursor-pointer rounded-sm border-0 bg-transparent p-0" />}
+      {editing ? (
+        <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onBlur={() => done(true)} onFocus={(e) => e.target.select()}
+               onKeyDown={(e) => { if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false) }}
+               className="min-w-0 flex-1 rounded-sm bg-surface-2 px-1 font-mono text-micro text-fg-1 outline-none ring-1 ring-accent/50" />
+      ) : (
+        <button onClick={() => { setText(value); setEditing(true) }} title="Change it: the preview shows it at once" className={`min-w-0 truncate rounded-sm px-0.5 text-left font-mono text-micro hover:bg-surface-2 ${changed ? 'text-accent-text' : 'text-fg-4'}`}>{value}</button>
+      )}
+      {changed && !editing && <button onClick={() => onCommit(was!)} title={`Put it back: ${was}`} className={`min-w-0 basis-full truncate font-mono text-micro text-fg-4 line-through hover:text-fg-2 ${right ? 'text-right' : 'text-left'}`}>{was}</button>}
+    </div>
+  )
+}
+
+/**
+ * The draft on the app's own screens: each kept page (the board's), with the draft's values set after its own, as they
+ * change. Held, "Before" shows them without it.
+ */
+function DraftPreview({ repo, set, books, changes }: { repo: string; set: VisualSet; books: TokenBook[]; changes: DraftChange[] }) {
+  const slug = baselineKey(repo).replace(/[^\w.-]+/g, '-'), base = `/api/visuals/sb/${slug}/${set.sha}`
+  const kept = useApi<string[]>(`/visuals/snaps/${slug}/${set.sha}`)
+  const [before, setBefore] = useState(false)
+  const touched = [...new Set(changes.map((c) => c.book))].join('|')
+  const screens = useMemo(() => {
+    const seen = new Set<string>(), on = new Set(touched.split('|'))
+    const all = set.shots.filter((sh) => {
+      const k = `${sh.book}/${sh.story}`
+      if (!sh.book || !sh.story || seen.has(k) || !kept.data?.includes(k)) return false
+      seen.add(k); return true
+    })
+    return [...all.filter((sh) => on.has(sh.book!)), ...all.filter((sh) => !on.has(sh.book!))].slice(0, 10)
+  }, [set, kept.data, touched])
+  const css = useMemo(() => Object.fromEntries(books.map((b) => [b.book, draftCss(b.tokens, changes.filter((c) => c.book === b.book))])), [books, changes])
+  if (!kept.data || !screens.length) return null
+  const n = changes.length
+  return (
+    <section className="card overflow-hidden">
+      <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+        <h3 className="text-body font-semibold text-fg-1">Preview</h3>
+        <span className="min-w-0 flex-1 text-meta text-fg-3">{n ? `${n} change${n === 1 ? '' : 's'} on its screens: nothing reaches the code until you make the PR` : 'Change a value below, or say what you want: its screens show it at once'}</span>
+        {n > 0 && (
+          <button onPointerDown={() => setBefore(true)} onPointerUp={() => setBefore(false)} onPointerLeave={() => setBefore(false)}
+                  onKeyDown={(e) => { if (e.key === ' ') setBefore(true) }} onKeyUp={() => setBefore(false)}
+                  aria-pressed={before} title="Hold to see them as they are" className={`btn-outline btn-sm inline-flex items-center gap-1.5 ${before ? 'text-accent-text' : ''}`}><Eye className="size-3.5" />Hold for before</button>
+        )}
+      </header>
+      <div className="flex gap-3 overflow-x-auto p-3">
+        {screens.map((sh) => <DraftScreen key={`${sh.book}/${sh.story}`} src={`${base}/${sh.book}/__snap__/${sh.story}.html`} shot={sh} css={before ? '' : css[sh.book!] ?? ''} />)}
+      </div>
+    </section>
+  )
+}
+
+/** One kept page, small, with the draft's stylesheet last in it. */
+function DraftScreen({ src, shot, css }: { src: string; shot: Shot; css: string }) {
+  const W = shot.width ?? 1280, H = shot.height ?? Math.round(W * 0.625), cw = 300, k = cw / W
+  const page = useRef<HTMLIFrameElement>(null), [ready, setReady] = useState(false)
+  useEffect(() => {
+    try {
+      const d = page.current?.contentDocument
+      if (!ready || !d?.documentElement) return
+      d.documentElement.style.zoom = String(k)
+      let st = d.getElementById('concierge-draft')
+      if (!st) { st = d.createElement('style'); st.id = 'concierge-draft'; (d.body ?? d.documentElement).append(st) }
+      st.textContent = css
+    } catch { /* not readable */ }
+  }, [ready, css, k])
+  return (
+    <figure className="shrink-0">
+      <div style={{ width: cw, height: Math.min(cw * (H / W), 240) }} className="relative overflow-hidden rounded-ctl bg-surface-2 ring-1 ring-line">
+        <iframe ref={page} src={src} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-same-origin" onLoad={() => setReady(true)}
+                style={{ width: cw, height: cw * (H / W), border: 0, pointerEvents: 'none', opacity: ready ? 1 : 0 }} />
+        {!ready && <div className="absolute inset-0"><PageSkeleton /></div>}
+      </div>
+      <figcaption className="mt-1 max-w-[300px] truncate text-micro text-fg-3">{shot.name}</figcaption>
+    </figure>
+  )
+}
+
+/**
+ * The Tokens view's conversation: each message comes back in seconds as the draft (drawn on the preview), not a PR.
+ * "Make the PR" hands the draft to the agent, which changes the code to it.
+ */
+function DraftChat({ draft, task, onSay, onConfirm, onDiscard }: { draft?: TokenDraft; task?: VisualsTask & { prUrl?: string }; onSay: (text: string) => Promise<unknown>; onConfirm: () => void; onDiscard: () => void }) {
+  const [text, setText] = useState('')
+  const end = useRef<HTMLDivElement>(null)
+  const turns = draft?.turns ?? [], n = draft?.changes.length ?? 0
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [turns.length, draft?.busy])
+  const send = () => { const t = text.trim(); if (!t) return; setText(''); void onSay(t) }
+  return (
+    <aside aria-label="Conversation" className="hidden w-[clamp(300px,34%,460px)] shrink-0 flex-col border-l border-line lg:flex">
+      <p className="label border-b border-line px-4 py-2.5 text-fg-4">Conversation</p>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
+        {!turns.length && <p className="px-1 text-small text-fg-3">Say what to change: "a warmer accent", "rounder cards", "more contrast in dark". The preview shows it in seconds; nothing reaches the code until you make the PR.</p>}
+        {turns.map((t, i) => (
+          <div key={i} className={t.who === 'you' ? 'ml-8 rounded-2xl rounded-br-md bg-accent/12 px-3 py-2 text-small text-fg-1' : 'mr-8 px-1 text-small text-fg-2'}>{t.text}</div>
+        ))}
+        {draft?.busy && <p className="inline-flex items-center gap-1.5 px-1 text-small text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Drafting…</p>}
+        {draft?.error && <p className="px-1 text-small text-wait-text">{draft.error}</p>}
+        {busy(task) && <p className="inline-flex items-center gap-1.5 px-1 text-small text-run-text"><LoaderCircle className="size-3.5 animate-spin" />{task?.state === 'queued' ? 'The PR waits for a machine with its checkout' : 'Making the PR…'}</p>}
+        {!busy(task) && task?.prUrl && draft?.sent && <a href={task.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-1 text-small text-accent-text hover:underline"><ExternalLink className="size-3.5" />Its PR</a>}
+        <div ref={end} />
+      </div>
+      {n > 0 && (
+        <div className="flex items-center gap-2 border-t border-line px-3 py-2">
+          <span className="min-w-0 flex-1 text-meta text-fg-3">{n} change{n === 1 ? '' : 's'} on the preview</span>
+          <button onClick={onDiscard} className="btn-ghost btn-sm">Discard</button>
+          <button onClick={onConfirm} disabled={busy(task)} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Check className="size-3.5" />Make the PR</button>
+        </div>
+      )}
+      <div className="p-2.5">
+        <div className="flex items-end gap-2 rounded-2xl bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="A warmer accent, rounder cards…"
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+                    className="max-h-[160px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
+          <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
+        </div>
+      </div>
+    </aside>
   )
 }
 

@@ -147,6 +147,27 @@ http.createServer(async (req, res) => {
   if (process.env.MOCK_REAL) {
     const R = process.env.MOCK_REAL, sha = R.replace(/\/$/, '').split('/').pop(), sb = /^\/visuals\/sb\/[^/]+\/[0-9a-f]+\/(.+)$/.exec(p)
     if (p === '/visuals/repos/ylkhayat/elbuffeh') { const m = JSON.parse(readFileSync(`${R}/manifest.json`, 'utf8')); return json(res, { repo: 'ylkhayat/elbuffeh', mode: 'auto', sets: [{ ...m, sha }], task: { state: 'done' } }) }
+    // the Tokens draft, in memory: a message "drafts" the first colour, warmer
+    if (p === '/visuals/tokens/ylkhayat/elbuffeh/draft') {
+      globalThis.draft ??= { changes: [], turns: [] }
+      const d = globalThis.draft
+      if (req.method !== 'POST') return json(res, d)
+      let b = ''; req.on('data', (c) => { b += c }); req.on('end', async () => {
+        const j = JSON.parse(b || '{}')
+        if (j.set) { d.changes = d.changes.filter((x) => !(x.book === j.set.book && x.name === j.set.name && x.theme === j.set.theme)); if (j.set.value !== j.set.was) d.changes.push(j.set) }
+        if (j.discard) d.changes = []
+        if (j.confirm) { d.sent = { at: new Date().toISOString(), changes: d.changes }; d.changes = []; d.turns.push({ who: 'agent', text: 'Making the PR with the changes.', at: d.sent.at }) }
+        if (j.say) {
+          d.turns.push({ who: 'you', text: j.say, at: new Date().toISOString() })
+          const { booksIn } = await import('../../server/tokens.ts'), books = await booksIn(`${R}/storybook`)
+          const b0 = books[0], t = b0.tokens.find((x) => x.kind === 'color' && /accent|primary/.test(x.name)) ?? b0.tokens.find((x) => x.kind === 'color')
+          await new Promise((r) => setTimeout(r, 900))
+          for (const th of Object.keys(t.values)) d.changes.push({ book: b0.book, name: t.name, theme: th, value: t.rgb ? '214 92 48' : '#d65c30', was: t.values[th] })
+          d.turns.push({ who: 'agent', text: `Warmer: ${t.name} is now an orange-red in ${b0.book}.`, at: new Date().toISOString() })
+        }
+        json(res, d)
+      }); return
+    }
     if (p === '/visuals/tokens/ylkhayat/elbuffeh') { const { booksIn } = await import('../../server/tokens.ts'); return json(res, { repo: 'ylkhayat/elbuffeh', sha, books: await booksIn(`${R}/storybook`) }) }
     if (p === '/mockServiceWorker.js') { const b = /\/visuals\/sb\/[^/]+\/[0-9a-f]+\/([^/]+)\//.exec(req.headers.referer ?? '')?.[1] ?? 'rumanna'; res.writeHead(200, { 'content-type': 'text/javascript' }); return res.end(readFileSync(`${R}/storybook/${b}/mockServiceWorker.js`)) }
     if (/^\/visuals\/snaps\//.test(p) && req.method === 'POST') { let b = ''; req.on('data', (c) => { b += c }); req.on('end', async () => { const j = JSON.parse(b), fs = await import('node:fs'); fs.mkdirSync(`${R}/storybook/${j.book}/__snap__`, { recursive: true }); fs.writeFileSync(`${R}/storybook/${j.book}/__snap__/${j.story}.html`, j.html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')); json(res, { ok: true }) }); return }

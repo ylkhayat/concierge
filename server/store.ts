@@ -242,6 +242,7 @@ type State = {
   settings: Settings
   spend: Record<string, number> // YYYY-MM-DD → USD spent by agent runs that day
   base: Record<string, BaseTask> // "owner/repo" → the codebase-map job
+  tokenDrafts?: Record<string, import('./tokenDraft.ts').TokenDraft> // owner/repo: the Tokens view's changes, previewed before they become a PR (tokenDraft.ts)
   designChats?: Record<string, VisualsTask & { prUrl?: string }> // "components:owner/repo", "tokens:owner/repo": Design's Components and Tokens views, each its own conversation (runner.ts enqueueChat)
   visualsSetup?: Record<string, VisualsTask & { prUrl?: string; board?: boolean }> // board: this run adds only the blueprint to a baseline that has its stories // "owner/repo" → its Storybook set up and first shot (Design)
   execs: Record<string, ExecRun>
@@ -425,6 +426,7 @@ for (const [repo, t] of Object.entries(state.base)) {
 for (const t of [...Object.values(state.prs).map((p) => p.visuals), ...Object.values(state.visualsSetup ?? {}), ...Object.values(state.designChats ?? {})]) {
   if (t?.state === 'running') Object.assign(t, { state: 'failed', error: 'A restart interrupted it: start it again (it goes on where it was)', endedAt: new Date().toISOString() })
 }
+for (const d of Object.values(state.tokenDrafts ?? {})) delete d.busy // a quick answer a restart cut off
 
 // saving never holds the thread: calls within 300ms become one write, off the thread (the file is ~1MB, on the Mac's
 // slow file sharing). saveNow() is for shutdown, where waiting is fine.

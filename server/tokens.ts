@@ -13,6 +13,7 @@ export type Token = {
   rgb?: boolean // its value is bare channels ("22 19 16"), used as rgb(var(--x))
   hsl?: boolean // bare hsl channels ("210 40% 98%"), used as hsl(var(--x))
   uses: number // how many times the stylesheets read it
+  at?: Record<string, { sel: string; wrap: string[] }> // theme → the selector that sets it and the at-rules around it (@layer, @media): where a preview overrides it
 }
 export type TokenBook = { book: string; themes: string[]; tokens: Token[] }
 
@@ -63,13 +64,15 @@ export function tokensOf(css: string): Omit<TokenBook, 'book'> {
   const take = (sel: string, decls: string) => {
     if (!decls.includes('--')) return
     const dark = stack.some((x) => /^@media\b.*prefers-color-scheme:\s*dark/.test(x))
-    const names = sel.split(',').map((s) => themeOf(dark && ROOT.test(s.trim()) ? `@media (prefers-color-scheme: dark) ${s.trim()}` : s)).filter((t): t is string => !!t)
+    const wrap = stack.filter((x) => x.startsWith('@'))
+    const named = sel.split(',').map((s) => ({ sel: s.trim(), th: themeOf(dark && ROOT.test(s.trim()) ? `@media (prefers-color-scheme: dark) ${s.trim()}` : s) })).filter((x): x is { sel: string; th: string } => !!x.th)
+    const names = [...new Set(named.map((x) => x.th))]
     for (const d of decls.matchAll(/(--[\w-]+)\s*:\s*([^;]+)/g)) {
       const name = d[1], value = d[2].trim()
       if (!names.length || /^--(tw|sb)-/.test(name) || /^--[\w-]+--/.test(name) || !value) continue
       let t = byName.get(name)
       if (!t) { t = { name, values: {}, uses: 0, ...kindOf(name, value) }; byName.set(name, t) }
-      for (const th of names) { t.values[th] = value; if (!themes.includes(th)) themes.push(th) }
+      for (const th of names) { t.values[th] = value; (t.at ??= {})[th] = { sel: named.find((x) => x.th === th)!.sel, wrap }; if (!themes.includes(th)) themes.push(th) }
     }
   }
   for (const ch of css.replace(/\/\*[\s\S]*?\*\//g, '')) {
@@ -80,7 +83,7 @@ export function tokensOf(css: string): Omit<TokenBook, 'book'> {
   for (const t of byName.values()) t.uses = css.split(`var(${t.name}`).length - 1
   // a theme that only repeats the root is the root
   const shown = themes.filter((th) => th === 'default' || [...byName.values()].some((t) => th in t.values && t.values[th] !== t.values.default))
-  for (const t of byName.values()) for (const th of Object.keys(t.values)) if (!shown.includes(th)) delete t.values[th]
+  for (const t of byName.values()) for (const th of Object.keys(t.values)) if (!shown.includes(th)) { delete t.values[th]; delete t.at?.[th] }
   const order = ['default', 'light', 'dark']
   shown.sort((a, b) => (order.indexOf(a) + 1 || 9) - (order.indexOf(b) + 1 || 9))
   return { themes: shown, tokens: [...byName.values()].filter((t) => Object.keys(t.values).length) }

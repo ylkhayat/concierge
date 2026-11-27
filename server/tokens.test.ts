@@ -35,4 +35,8 @@ test('a stylesheet: root and themes per token, plumbing left out, uses counted, 
   assert.equal(by['--bg'].uses, 2)
   assert.deepEqual(by['--ink'].values, { dark: '#eee' })
   assert.equal(by['--radius-md'].kind, 'radius')
+  // where each is set, for a preview to set it again in the same place
+  assert.deepEqual(by['--bg'].at, { default: { sel: ':root', wrap: [] }, dark: { sel: '[data-theme=dark]', wrap: [] } })
+  assert.deepEqual(by['--text-xs'].at?.default, { sel: ':root', wrap: ['@layer theme'] })
+  assert.deepEqual(by['--ink'].at, { dark: { sel: ':root', wrap: ['@media (prefers-color-scheme: dark)'] } })
 })
