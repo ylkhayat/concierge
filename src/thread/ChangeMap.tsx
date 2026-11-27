@@ -10,7 +10,7 @@ import { elk } from '../elk.ts'
 import { ArrowRight, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { Diagram } from '../../server/discussions.ts'
-import type { Overlay, Shape, Touched } from '../../server/explain.ts'
+import type { Overlay, Touched } from '../../server/explain.ts'
 import { api, enc } from '../lib.ts'
 import { stepsOf } from './flowSteps.ts'
 import { Glossary, LaneBoard, LevelsBoard, STORY_ICONS, type Lane } from './LevelsBoard.tsx'
@@ -66,7 +66,6 @@ const WORD = { added: 'New', modified: 'Changed', removed: 'Gone' } as const
 const ROWS = 6 // file rows shown in a part before "+N more"
 const W = { root: 280, area: 270, flows: 270 }
 const heightOf = (n: MNode) => n.kind === 'root' ? 120 : n.plain ? 120 : 58 + (n.line ? 34 : 0) + Math.min(ROWS, n.kind === 'flows' ? n.flows!.length : n.touched.length) * (n.kind === 'flows' ? 64 : 46) + ((n.kind === 'area' && n.touched.length > ROWS) ? 22 : 0)
-const mark = (c: Touched['change']) => (c === 'added' ? '+' : c === 'removed' ? '−' : '~')
 
 const Hub = () => <Handle type="source" position={Position.Top} className="!left-1/2 !top-1/2 !size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />
 const HubIn = () => <Handle type="target" position={Position.Top} className="!left-1/2 !top-1/2 !size-0 !min-h-0 !min-w-0 !border-0 !opacity-0" isConnectable={false} />

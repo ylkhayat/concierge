@@ -4,7 +4,7 @@ import { asHtml, asText, forTeams, linkWritten, standupDay, workdayBefore, type 
 import type { Written } from '../../server/store.ts'
 import { ago } from '../time.ts'
 import { api, param, setParam, type TicketView } from '../lib.ts'
-import { IdBadge, PRIORITY } from './ExecList.tsx'
+import { PRIORITY } from './ExecList.tsx'
 import { StandupFlow, type Lane } from './StandupFlow.tsx'
 import { Pick } from '../ui/Pick.tsx'
 

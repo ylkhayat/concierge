@@ -30,7 +30,6 @@ export function setRole(r: Role) {
   dispatchEvent(new CustomEvent(EVENT))
 }
 document.documentElement.dataset.role = stored()
-export const nextRole = (r: Role) => ORDER[(ORDER.indexOf(r) + 1) % ORDER.length]
 
 export function useRole(): Role {
   const [r, setR] = useState(stored)

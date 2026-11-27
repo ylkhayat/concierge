@@ -79,10 +79,10 @@ export function TicketThread(props: TicketThreadProps) {
   // a new PR stacked on it, and the panel shows what the PR's agent asks
   const handed = !t.busy ? t.handed : undefined
   const steer = handed
-    ? <NextSteps attach={lane} route={route} commands={commands} stepper inline handover={handoverBox(t)} replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:handed:${handed.at}`} toast={toast} placeholder={handedPlaceholder(handed)} />
+    ? <NextSteps attach={lane} route={route} commands={commands} stepper handover={handoverBox(t)} replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:handed:${handed.at}`} toast={toast} placeholder={handedPlaceholder(handed)} />
     : handedBack
-    ? <NextSteps attach={lane} route={route} commands={commands} stepper inline nextUrl={`/exec/${run.id}/next`} replyUrl={`/exec/${run.id}/reply`} draft={`ticket:${t.id}`} version={run.endedAt ?? ''} toast={toast} placeholder="Tell the agent what to change, answer, or do next…" />
-    : <NextSteps attach={lane} route={route} commands={commands} stepper inline replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:${t.busy}`} toast={toast}
+    ? <NextSteps attach={lane} route={route} commands={commands} stepper nextUrl={`/exec/${run.id}/next`} replyUrl={`/exec/${run.id}/reply`} draft={`ticket:${t.id}`} version={run.endedAt ?? ''} toast={toast} placeholder="Tell the agent what to change, answer, or do next…" />
+    : <NextSteps attach={lane} route={route} commands={commands} stepper replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:${t.busy}`} toast={toast}
                  placeholder={t.busy ? 'Tell it something while it works: it reads it between steps, without stopping' : `What should ${t.id}’s implementation do differently?`} />
 
   return (

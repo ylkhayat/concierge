@@ -33,9 +33,7 @@ import { knowApps } from './appColor.ts'
 import { Activity, lazy, Suspense } from 'react'
 import { useWebMcp } from './webmcp.ts'
 import { Machine, ScopeSwitch } from './components/Machine.tsx'
-import { Read } from './components/Read.tsx'
-import { Focus } from './components/Focus.tsx'
-import { stackAt, type Rules } from './desk.ts'
+import { stackAt } from './desk.ts'
 import { StackPage } from './thread/StackPage.tsx'
 import { focusBlock, useDeskTime } from './deskTime.ts'
 import { useNewVersion } from './fresh.ts'
@@ -49,13 +47,10 @@ import { inSettings, SAY } from './copy.ts'
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
 
-// a phone opening the app (no PR in the link) starts on Focus: what needs you, one card at a time
-const phone = () => matchMedia('(max-width: 767px)').matches
 const modeOf = (): Mode => {
   const p = location.pathname
-  return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/read') ? 'read' : p.startsWith('/focus') ? 'focus' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans' : p.startsWith('/design') ? 'design'
-    // opened with nothing in the link: Review (on a phone, Focus: what needs you, one card at a time)
-    : p === '/' && !location.hash && phone() ? 'focus' : 'review'
+  return p.startsWith('/ship') || p.startsWith('/exec') ? 'exec' : p.startsWith('/standup') ? 'standup' : p.startsWith('/skills') ? 'skills' : p.startsWith('/plans') ? 'plans' : p.startsWith('/design') ? 'design'
+    : 'review'
 }
 // each view keeps its place (the open item, the filter), per browser: back on it, from the rail, another role or a
 // bare address, it is as you left it
@@ -67,29 +62,28 @@ const backTo = (m: Mode) => { const s = placeOf(m).selected; return s?.startsWit
  * The view to open on, agreeing with the role (the rail shows that role's views): a bare address opens the role's own,
  * where you last were in it (its view and its open item); a link to a view of another role (a PR link, /ship, while
  * you read as PM) opens it and takes that role, so the rail and the view never disagree (the rail said PM while Review
- * showed). Read and Focus open from any role.
+ * showed).
  */
 const firstMode = (): Mode => {
   const m = modeOf(), r = currentRole(), rail = ROLES[r].rail
-  if (location.pathname === '/' && !location.hash && m !== 'focus') {
+  if (location.pathname === '/' && !location.hash) {
     let last: string | null = null; try { last = localStorage.getItem(`mode:${r}`) } catch { /* none kept */ }
     const own = (last && rail.includes(last) ? last : rail[0]) as Mode, sel = backTo(own)
     history.replaceState(history.state, '', PATH[own] + location.search + (sel ? `#${enc(sel)}` : ''))
     return own
   }
-  if (rail.includes(m) || m === 'read' || m === 'focus') return m
+  if (rail.includes(m)) return m
   const other = (Object.keys(ROLES) as Role[]).find((x) => !ROLES[x].pending && ROLES[x].rail.includes(m))
   if (other) setRole(other)
   return m
 }
 // links from before Ship was named (/exec) still open it, and the address bar says /ship
 if (location.pathname.startsWith('/exec')) history.replaceState(history.state, '', `/ship${location.pathname.slice(5)}${location.search}${location.hash}`)
-// the Desk is gone: its old links open Review
+// the Desk is gone, and Read and Focus are the phone's (src/mobile): their links open Review, on the PR they named
+if (/^\/(read|focus)\b/.test(location.pathname)) history.replaceState(history.state, '', `/review${location.search}${location.hash}`)
 if (location.pathname.startsWith('/desk')) history.replaceState(history.state, '', `/review${location.search}${location.hash}`)
 const designPath = (v: DesignView) => (v === 'map' ? '/design' : `/design/${v}`)
 const PATH: Record<Mode, string> = { review: '/review', exec: '/ship', read: '/read', focus: '/focus', standup: '/standup', skills: '/skills', plans: '/plans', design: '/design' }
-// the list's own rules (Focus and Read group by them)
-const RULES: Rules = { waiting, ticketGroup: (t) => groupOf(t).id }
 
 export function App() {
   // each window keeps its own mode: /exec is Exec, everything else Review
@@ -461,8 +455,8 @@ export function App() {
 
   const reviewFrame = (
     <div className="relative flex min-h-0 flex-1">
-      <aside className={`w-full shrink-0 flex-col border-r border-line transition-[width] duration-300 ease-[var(--ease-snappy)] lg:flex lg:w-[300px] xl:w-[320px] 2xl:w-[360px] reading:lg:!w-[76px] ${detailOpen ? 'hidden' : 'flex'}`}>
-        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-1 pt-4 reading:hidden">
+      <aside className={`w-full shrink-0 flex-col border-r border-line transition-[width] duration-300 ease-[var(--ease-snappy)] lg:flex lg:w-[300px] xl:w-[320px] 2xl:w-[360px] ${detailOpen ? 'hidden' : 'flex'}`}>
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-1 pt-4">
           <a href="#" onClick={(e) => { e.preventDefault(); select(undefined) }} className="text-title font-semibold tracking-tight">{codebaseRepo ? 'Codebase' : 'Review'}</a>
           {!codebaseRepo && waitingBadge(needsYou)}
         </div>
@@ -495,7 +489,6 @@ export function App() {
     </div>
   )
 
-  const syncPr = { at: health?.lastPollAt, syncing: !!health?.polling || refreshing, onSync: refresh }
   // Exec has Review's shape: tickets on the left, the open one on the right; the accent and the work differ
   const execFrame = (
     <div className="relative flex min-h-0 flex-1">
@@ -565,18 +558,7 @@ export function App() {
             over it); Review and Ship share a shape, so without the key one was patched into the other */}
         <div key={mode} className="relative flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_160ms_var(--ease-out)]">
         {focus && away.has(focus) && ['review', 'exec', 'focus', 'read'].includes(mode) ? <AwayRepo repo={focus} onAllApps={() => setFocus(undefined)} />
-          : mode === 'exec' ? execFrame : mode === 'focus' ? (
-          <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-            {prs ? <Focus prs={focusedPrs ?? prs} tickets={scoped} rules={RULES} toast={toast} onOpenPr={goPr} onOpenTicket={goTicket}
-                          onRead={(id) => { history.pushState(null, '', `/read${location.search}#${enc(id)}`); setModeState('read'); setSelected(id) }} />
-              : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}
-          </main>
-        ) : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace view={designView} selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false, designView) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : mode === 'read' ? (
-          <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-            {prs ? <Read prs={focusedPrs ?? prs} tickets={scoped} rules={RULES} selected={selected} onSelect={select} toast={toast} />
-              : <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>}
-          </main>
-        ) : reviewFrame}
+          : mode === 'exec' ? execFrame : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace view={designView} selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false, designView) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : reviewFrame}
         </div>
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
         {/* narrow, what doesn't fit slides sideways instead of being cut off */}

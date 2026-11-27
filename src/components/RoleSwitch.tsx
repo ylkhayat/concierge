@@ -7,7 +7,7 @@ import { useApi } from '../query.ts'
 import { ready, ROLES, setRole, useRole, type Role, type RolesView } from '../role.ts'
 
 export function RoleSwitch({ onJoin, wide }: { onJoin: () => void; wide?: boolean }) {
-  const role = useRole(), R = ROLES[role]
+  const role = useRole()
   const q = useApi<RolesView>('/roles', { staleTime: 60_000 })
   const joined = ready(q.data?.joined ?? ['developer' as Role]).length ? ready(q.data?.joined ?? ['developer' as Role]) : ['developer' as Role]
   // a mode you left (on another machine): back to the first you joined

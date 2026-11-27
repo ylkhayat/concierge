@@ -1,11 +1,10 @@
-import { Bot, ChevronRight, Cpu, Layers, Square, TerminalSquare, TriangleAlert } from 'lucide-react'
+import { Bot, ChevronRight, Cpu, Layers, Square, TerminalSquare } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { BgTask } from '../../server/background.ts'
 import { ago, api, type Activity } from '../lib.ts'
 import { brief } from '../../server/brief.ts'
 
 import { useArm, ArmLabel } from '../arm.tsx'
-import { Chip } from './Chip.tsx'
 
 type Task = BgTask & { alive: boolean; outlived: boolean; pids: number[]; cpu: number; mb: number; tail?: string }
 type View = { tasks: Task[]; procs: { pid: number; cmd: string; cpu: number; mb: number }[] }
@@ -27,24 +26,6 @@ export function useBackground(base: string, count: number, live: boolean) {
     return () => { on = false; clearInterval(t); removeEventListener('deck-stale', on2) }
   }, [base, count, live])
   return v
-}
-
-/**
- * The chip for what an agent left running on its own (a background shell or subagent, a nohup'd server): how many
- * still run, and on click each one with what it runs, whether it is still going (or outlived the agent), its last
- * output, and Stop. Also any other process under the agent.
- */
-export function Background({ base, count, live, toast }: { base: string; count: number; live: boolean; toast: (m: string, tone?: 'ok' | 'error') => void }) {
-  const v = useBackground(base, count, live)
-  const running = v?.tasks.filter((t) => t.alive) ?? []
-  const outlived = running.filter((t) => t.outlived)
-  if (!v || (!v.tasks.length && !v.procs.length)) return null
-  return (
-    <Chip icon={outlived.length ? TriangleAlert : Layers} pulse={running.length > 0} tone={outlived.length ? 'amber' : running.length ? 'emerald' : 'zinc'}
-          label={<>Background{running.length ? ` · ${running.length} running` : v.tasks.length ? ` · ${v.tasks.length} done` : ''}{outlived.length ? ', outlived the agent' : ''}</>}>
-      <List v={v} base={base} toast={toast} />
-    </Chip>
-  )
 }
 
 /** The list itself (the chip's popover, and the phone's sheet). */

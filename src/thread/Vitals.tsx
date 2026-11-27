@@ -6,7 +6,7 @@
 import { ArrowLeft, CheckCircle2, Copy, Compass, LoaderCircle, RotateCcw, Rocket, Send } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { Action, Diagram, Discussion as D, Stage, Topic } from '../../server/discussions.ts'
+import type { Action, Diagram, Discussion as D, Topic } from '../../server/discussions.ts'
 import { CardDiagram } from './CardDiagram.tsx'
 import { api, type Activity } from '../lib.ts'
 import { ago } from '../time.ts'
@@ -18,12 +18,7 @@ import type { Tone } from '../ui/Thread.tsx'
 
 // what starting a discussion asks, from where the conversation stands (the discussion's agent reads the PR or ticket,
 // its description and the conversation so far)
-const START: Record<Topic, string> = {
-  intent: 'From the conversation so far and what was asked: is what is being built what was meant? Say what is agreed, what is still open, and ask me the one question that matters most next.',
-  understanding: 'From the conversation so far: walk me through what this change does, business first, then tell me the one part I should check before trusting it.',
-}
 type Toast = (m: string, tone?: 'ok' | 'error') => void
-const STEP: Record<Stage, number> = { new: 0, open: 1, converging: 2, concluded: 3 }
 
 // the boards (ChangeMap: React Flow, ELK) are their own chunk, fetched once and early (the page settling, a pointer on
 // the row) and kept here, so a board renders at once instead of suspending: one lazy per board suspended on each first

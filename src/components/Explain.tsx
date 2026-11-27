@@ -721,22 +721,19 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
               <Workflow className="size-3.5 transition-transform group-hover:rotate-12" />Flows<span className="rounded-full bg-fill/70 px-1.5 text-micro tabular-nums">{o.flows.length}</span>
             </button>
           )}
-          <span className="hidden items-center gap-1.5 font-mono text-micro text-fg-3 2xl:flex"
-                title={`Iteration ${o.iteration}. ${o.nodesKnown ?? '?'} folders came from the codebase map, ${o.nodesAsked} were newly mapped. ${o.asked} changed files explained${o.reused ? `, ${o.reused} carried over from the previous push` : ''}.`}>
-            <GitCommitVertical className="size-3" />#{o.iteration} · {o.nodesKnown ?? '–'} known · {o.nodesAsked} new{o.reused ? ` · ${o.reused} carried` : ''} · ${o.costUsd.toFixed(2)}
-          </span>
           <button onClick={() => api(`/prs/${enc(pr.id)}/explain-follow`, { on: pr.explainFollow !== true }).catch((e: Error) => toast(e.message, 'error'))}
                   aria-pressed={pr.explainFollow === true}
                   title={pr.explainFollow === true ? 'Follows new commits: every push (yours, a rebase, a resolved conflict, someone else’s) updates it. Click to keep this version' : 'Kept as is: new commits don’t update it. Click to follow them'}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium transition-colors ${pr.explainFollow === true ? 'text-accent-text hover:bg-accent/10' : 'text-fg-3 hov hover:text-fg-1'}`}>
             <Radio className={`size-3.5 ${pr.explainFollow === true && busy ? 'animate-pulse' : ''}`} />{pr.explainFollow === true ? 'Following commits' : 'Paused'}
           </button>
-          <button onClick={() => run()} disabled={busy} title="Explain the latest push (incremental)"
+          <button onClick={() => run()} disabled={busy} aria-label="Explain the latest push"
+                  title={`Explain the latest push (only what changed). Version ${o.iteration}: ${o.asked} changed files explained${o.reused ? `, ${o.reused} carried over` : ''}, $${o.costUsd.toFixed(2)}`}
                   className="group rounded-lg p-1.5 text-fg-3 transition-all hov hover:text-fg-1 disabled:opacity-40">
             <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : 'transition-transform duration-500 group-hover:rotate-180'}`} />
           </button>
           {!full && (
-            <button onClick={() => setFull(true)} title="Full screen" className="rounded-lg p-1.5 text-fg-3 transition-all hov hover:text-fg-1">
+            <button onClick={() => setFull(true)} title="Full screen" aria-label="Full screen" className="rounded-lg p-1.5 text-fg-3 transition-all hov hover:text-fg-1">
               <Maximize2 className="size-3.5" />
             </button>
           )}

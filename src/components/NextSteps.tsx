@@ -1,4 +1,4 @@
-import { ChevronUp, GitPullRequest, Layers, LoaderCircle, Send, Sparkles, Upload } from 'lucide-react'
+import { GitPullRequest, Layers, LoaderCircle, Send, Sparkles, Upload } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { NextSteps as Steps } from '../../server/next.ts'
 import type { Routed, RouteTo } from '../../server/handover.ts'
@@ -21,7 +21,8 @@ const KEPT = new Error('kept')
 // how long the routing decision shows before the words go: time to send them the other way
 const ROUTE_MS = 5000
 
-export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholder, isNext, inline, draft, self, others, commands, stepper, route, attach, handover }: {
+export function NextSteps({ nextUrl, replyUrl, version, toast, placeholder, draft, self, others, commands, stepper, route, attach, handover }: {
+  placeholder?: string
   // the ticket handed over to its PR (handover.ts): what you send to the agent is routed first, to that PR's agent or
   // to a new PR stacked on it; the decision shows a moment before it goes, with the other way one click away
   handover?: { routeUrl: string; main: number; open: boolean }
@@ -38,8 +39,6 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   nextUrl?: string // the agent's last message to read the checklist from; none: just your words
   replyUrl: string; version: string // changes when a new run finishes, to re-read
   draft?: string // whose draft the box keeps (a PR or ticket, shared with its Steer box); else the reply URL's
-  title?: string; placeholder?: string; isNext?: boolean // the page's next step: tagged like the action buttons
-  inline?: boolean // always open, in the page (the Next panel), instead of a bar with a sheet
   toast: (m: string, tone?: 'ok' | 'error') => void
 }) {
   const [picks, setPicks] = useState<Record<number, number>>({})
@@ -47,7 +46,6 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
   const [text, setText] = useDraft(draft ?? replyUrl)
   const box = useRef<HTMLTextAreaElement>(null)
   const [sending, setSending] = useState(false)
-  const [open, setOpen] = useState(false)
   const { armed, arm } = useArm()
   const slash = useSlash(commands, text, () => setText(''))
   const mention = useMention(text, setText)
@@ -160,16 +158,13 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
     setSending(true)
     if (handover) { ship(msg).then(() => { setText(''); setPicks({}); setChecked({}) }, (e: Error) => failed(e, msg)).finally(() => setSending(false)); setText(''); return }
     api(replyUrl, { text: msg }).then(
-      (r: { sent?: string; handedOver?: number[]; askAuthor?: number[]; passedTo?: string[] }) => { toast((r.passedTo?.length ? `${r.passedTo.join(', ')} ${r.passedTo.length === 1 ? 'is' : 'are'} in another run: it got your answer too. ` : '') + (r.handedOver?.length ? `Handed over to ${r.handedOver.map((n) => `#${n}`).join(', ')}'s agent. ` : '') + (r.askAuthor?.length ? `${r.askAuthor.map((n) => `#${n}`).join(', ')} isn't yours: the agent drafts a comment to its author instead. ` : '') + (r.handedOver?.length && !r.sent ? '' : r.sent === 'now' ? 'Sent: the agent reads it between steps' : r.sent === 'after' ? 'Sent: the agent takes it up as this turn ends' : r.sent === 'queued' ? 'Sent: it waits in the queue, and the agent reads it the moment it starts' : 'Sent to the agent')); setText(''); setPicks({}); setChecked({}); setOpen(false); if (r.handedOver?.length) forget() },
+      (r: { sent?: string; handedOver?: number[]; askAuthor?: number[]; passedTo?: string[] }) => { toast((r.passedTo?.length ? `${r.passedTo.join(', ')} ${r.passedTo.length === 1 ? 'is' : 'are'} in another run: it got your answer too. ` : '') + (r.handedOver?.length ? `Handed over to ${r.handedOver.map((n) => `#${n}`).join(', ')}'s agent. ` : '') + (r.askAuthor?.length ? `${r.askAuthor.map((n) => `#${n}`).join(', ')} isn't yours: the agent drafts a comment to its author instead. ` : '') + (r.handedOver?.length && !r.sent ? '' : r.sent === 'now' ? 'Sent: the agent reads it between steps' : r.sent === 'after' ? 'Sent: the agent takes it up as this turn ends' : r.sent === 'queued' ? 'Sent: it waits in the queue, and the agent reads it the moment it starts' : 'Sent to the agent')); setText(''); setPicks({}); setChecked({}); if (r.handedOver?.length) forget() },
       (e: Error) => toast(e.message, 'error')).finally(() => setSending(false))
   }
 
   const nothing = !list.length
   // nothing to pick: the box is where you go, but focusing it must not scroll the panel past what comes first
   useEffect(() => { if (nothing) box.current?.focus({ preventScroll: true }) }, [nothing])
-  const summary = steps === undefined ? 'Reading what the agent needs from you…'
-    : nothing ? (error ? 'Couldn’t read the agent’s last message' : nextUrl ? 'Nothing asked' : '')
-    : [going.length && `${going.length} to do`, list.some((x) => x.kind === 'decide') && `${decided}/${list.filter((x) => x.kind === 'decide').length} decided`].filter(Boolean).join(' · ')
   const sendLabel = extra ? `Send · ${extra} picked${text.trim() ? ' + your words' : ''}` : !nothing && (going.length || decided) ? `Go ahead · ${[going.length && `${going.length} step${going.length === 1 ? '' : 's'}`, decided && `${decided} decision${decided === 1 ? '' : 's'}`].filter(Boolean).join(', ')}` : 'Send'
 
   const peerOf = (t: string) => self !== undefined ? [...t.matchAll(/#(\d+)/g)].map((m) => Number(m[1])).find((n) => n !== self && others?.includes(n)) : undefined
@@ -231,10 +226,11 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
 
   return (
     <div className="relative">
-      {inline && steps === undefined && <p className="flex items-center gap-2 text-small text-fg-3"><Sparkles className="size-4 animate-pulse text-accent" />Reading what the agent needs…</p>}
-      {(open || inline) && steps !== undefined && (
+      {steps === undefined && <p className="flex items-center gap-2 text-small text-fg-3"><Sparkles className="size-4 animate-pulse text-accent" />Reading what the agent needs…</p>}
+      {error && <p className="text-small text-wait-text">Couldn’t read the agent’s last message. Write to it below.</p>}
+      {steps !== undefined && (
         // the sheet opens over the content, so the tabs keep their full height while closed; inline it simply sits there
-        <div className={inline ? 'space-y-3' : 'absolute inset-x-0 bottom-full z-20 mb-2 max-h-[calc(60vh/var(--z))] animate-[rise-in_200ms_var(--ease-snappy)] space-y-3 overflow-y-auto rounded-2xl bg-surface-1 p-4 shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.25)] ring-1 ring-accent/25 '}>
+        <div className={'space-y-3'}>
           {stepper && list.length > 0 ? stepperView : list.length > 0 && (
             // in the agent's order of importance: what it needs from you, what it recommends, what else it could do;
             // ticking moves nothing, so a row never jumps from under the pointer
@@ -251,7 +247,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
           {/* the box: docked under the checklist; in steps, under every step, so you can steer whichever decision is on screen.
               Solid: the steps scroll under it, never show through it. Its edge's shadow only over steps: with nothing
               above it, it drew a grey bar across the top of the box */}
-          <div className={inline ? `sticky bottom-0 -mx-1 space-y-2 bg-surface-1 px-1 pb-1 ${nothing ? '' : 'pt-2.5 shadow-[0_-12px_12px_-12px_rgb(0_0_0/0.35)]'}` : 'space-y-3'}>
+          <div className={`sticky bottom-0 -mx-1 space-y-2 bg-surface-1 px-1 pb-1 ${nothing ? '' : 'pt-2.5 shadow-[0_-12px_12px_-12px_rgb(0_0_0/0.35)]'}`}>
           {attach?.chips}
           {route && !route.force && <LanePicker pin={pin} onPin={setPin} />}
           <div className="relative" style={mention.open ? mention.anchor : slash.anchor}>
@@ -283,18 +279,6 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
           </div>
         </div>
       )}
-
-      {!inline && <button onClick={() => setOpen((o) => !o)} disabled={steps === undefined} aria-expanded={open}
-              className={`group/dock relative flex w-full ${isNext && !nothing && !open ? 'ring-2 !ring-accent/60' : ''} items-center gap-2 rounded-2xl px-4 py-2.5 text-left text-small ring-1 transition-all hover:shadow-md ${nothing
-                ? 'bg-surface-1 text-fg-2 ring-line '
-                : 'bg-accent/6 text-accent-text ring-accent/30'}`}>
-        <Sparkles className={`size-4 shrink-0 text-accent ${steps === undefined || (!nothing && !open) ? 'animate-pulse' : ''}`} />
-        <span className="shrink-0 font-semibold">{nothing ? title ?? 'Reply to the agent' : 'The agent is waiting on you'}</span>
-        <span className="truncate text-fg-3">{summary}</span>
-        <span className="flex-1" />
-        {isNext && !nothing && <span className="shrink-0 rounded-full bg-accent px-1.5 text-micro font-bold uppercase leading-4 tracking-wider text-on-accent">next · answer here</span>}
-        <ChevronUp className={`size-4 shrink-0 text-fg-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-      </button>}
     </div>
   )
 }

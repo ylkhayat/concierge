@@ -4,7 +4,6 @@
 
 /* theme is a class on <html>, set before paint by index.html and toggled in Settings */
 @custom-variant dark (&:where(.dark, .dark *));
-@custom-variant reading (&:where([data-reading], [data-reading] *));
 
 html { font-feature-settings: "cv11", "ss01"; font-optical-sizing: auto; }
 

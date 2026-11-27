@@ -118,7 +118,6 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
   const title = (id: string) => nodeOf.get(id)?.title ?? id
   // its name on the board: the planner's short one (1 to 4 words), else the title; the whole title is on hover
   const name = (id: string) => nodeOf.get(id)?.short ?? title(id)
-  const cut = (t: string, px: number) => { const n = Math.max(4, Math.floor(px / 6.4)); return t.length > n ? `${t.slice(0, n - 1)}…` : t }
   const slotAt = new Map(rows.flatMap((r) => r.st.slots.map((sl, j) => [sl.id, { sl, cy: r.isOpen ? r.listY + j * ROW + ROW / 2 : r.cy + r.yOf(sl.id) }] as const)))
   const weeks = Array.from({ length: Math.max(0, Math.floor(t1) - Math.ceil(t0) + 1) }, (_, i) => Math.ceil(t0) + i)
   const rowOf = new Map(rows.map((r) => [r.st.id, r]))

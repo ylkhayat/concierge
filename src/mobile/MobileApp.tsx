@@ -265,12 +265,12 @@ function TicketSheet({ t, prs, feed, now, toast, onClose, onPr }: { t: TicketVie
         {run && !t.busy && (run.state === 'done' || run.state === 'failed') ? (
           <div className="space-y-2">
             <p className="text-body font-semibold text-fg-3">What the agent needs</p>
-            <NextSteps attach={lane} inline nextUrl={`/exec/${run.id}/next`} replyUrl={`/exec/${run.id}/reply`} draft={`ticket:${t.id}`} version={run.endedAt ?? ''} toast={toast} placeholder="Tell the agent what to do next…" />
+            <NextSteps attach={lane} nextUrl={`/exec/${run.id}/next`} replyUrl={`/exec/${run.id}/reply`} draft={`ticket:${t.id}`} version={run.endedAt ?? ''} toast={toast} placeholder="Tell the agent what to do next…" />
           </div>
         ) : t.repo && (
           <div className="space-y-2">
             <p className="text-body font-semibold text-fg-3">Tell the agent</p>
-            <NextSteps attach={lane} inline replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:${t.busy}`} toast={toast}
+            <NextSteps attach={lane} replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:${t.busy}`} toast={toast}
                        placeholder={t.busy ? 'Tell it something while it works: it reads it between steps' : `What should ${t.id}’s agent do?`} />
           </div>
         )}
@@ -392,7 +392,7 @@ function PrSheet({ pr, feed, now, toast, onClose, onTour, onTicket }: { pr: PrVi
         {pr.flow.state !== 'asks' && (
           <div className="space-y-2">
             <p className="text-body font-semibold text-fg-3">Tell the agent</p>
-            <NextSteps attach={lane} inline replyUrl={`/prs/${enc(pr.id)}/reply`} draft={`pr:${pr.id}`} version={`${pr.job?.endedAt ?? ''}:${busy}`} toast={toast}
+            <NextSteps attach={lane} replyUrl={`/prs/${enc(pr.id)}/reply`} draft={`pr:${pr.id}`} version={`${pr.job?.endedAt ?? ''}:${busy}`} toast={toast}
                        placeholder={busy ? 'Tell it something while it works: it reads it between steps' : 'Ask an agent to do something on this PR'} />
           </div>
         )}

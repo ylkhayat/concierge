@@ -52,7 +52,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
   // the stack's own chat: one message, sent to each PR's agent in its own conversation (each told it is one of several).
   // What was said and what came back is read from the PRs themselves, so there is nothing to keep for the stack
   const [words, setWords] = useState('')
-  const [skip, setSkip] = useState<string[]>([]) // the PRs left out of the next message
+  const [skip] = useState<string[]>([]) // the PRs left out of the next message
   const [sending, setSending] = useState(false)
   const [justSent, setJustSent] = useState<{ words: string; at: string; n: number }[]>([]) // shown at once; an agent at work only shows it as its own once it gets to it
   const to = members.filter((p) => !skip.includes(p.id))

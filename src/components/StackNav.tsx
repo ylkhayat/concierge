@@ -1,5 +1,5 @@
 import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, GitPullRequest, Layers, MessageSquare, SquareKanban } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent } from 'react'
 import type { Linked } from '../../server/index.ts'
 import { isTyping } from '../lib.ts'
 import { DOT, STATE, type Me } from './Linked.tsx'

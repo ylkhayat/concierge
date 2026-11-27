@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { chosen, useScope } from './scope.ts'
 import type { Me } from '../server/github.ts'
 import type { ExecView, Health, PrView, TicketView } from '../server/index.ts'
@@ -288,21 +288,3 @@ export const resumed = (ok: string, toast: (m: string, tone?: 'ok' | 'error') =>
   ) ?? toast(r.command)
 }
 
-// focus mode: while you read Explain, the sidebars step back (html[data-reading], styled with the `reading:` variant)
-// only where the room is short: from 1536px wide the list stays open beside the page, as on the landing page
-let reading = false, asked = false, wide = 1536
-const readers = new Set<() => void>()
-const apply = () => {
-  const on = asked && innerWidth < wide
-  if (on === reading) return
-  reading = on
-  document.documentElement.toggleAttribute('data-reading', on)
-  readers.forEach((f) => f())
-}
-/** `below`: the window width under which the list steps back (the new design's three columns need more room). */
-export function setReading(on: boolean, below = 1536) { asked = on; wide = below; apply() }
-addEventListener('resize', apply)
-export const useReading = () => useSyncExternalStore((f) => { readers.add(f); return () => readers.delete(f) }, () => reading)
-// your choice to keep the sidebars while reading, per browser
-export const focusWanted = () => { try { return localStorage.getItem('focus-mode') !== 'off' } catch { return true } }
-export const wantFocus = (on: boolean) => { try { localStorage.setItem('focus-mode', on ? 'on' : 'off') } catch { /* private window */ } }

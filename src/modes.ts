@@ -4,7 +4,6 @@
 export type Mode = 'review' | 'exec' | 'read' | 'focus' | 'standup' | 'skills' | 'plans' | 'design'
 /** Design's own views, each a place on the rail: the map of the screens, the components, the design tokens. */
 export type DesignView = 'map' | 'components' | 'tokens'
-export const DESIGN_VIEWS: DesignView[] = ['map', 'components', 'tokens']
 /** Which of Design's views an address is (/design, /design/components, /design/tokens). */
 export const designViewOf = (path: string): DesignView => { const v = path.split('/')[2]; return v === 'components' || v === 'tokens' ? v : 'map' }
 

@@ -4,7 +4,7 @@ import {
   TriangleAlert, Send, CheckCheck, X, Upload, Wand, Sparkles, type LucideIcon, Scale } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PinButton } from './PinButton.tsx'
-import { ago, api, critUrl, duration, enc, focusWanted, isTyping, param, setParam, wantFocus, type Activity, type PrView, resumed } from '../lib.ts'
+import { ago, api, critUrl, duration, enc, setParam, type Activity, type PrView, resumed } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { useApi } from '../query.ts'
 import { Chip } from './Chip.tsx'
@@ -30,15 +30,6 @@ export const mini = 'inline-flex items-center gap-1 btn-ghost btn-sm'
 export const ghost = 'group/btn inline-flex items-center gap-1.5 btn-ghost btn-lg'
 const green = `${btn} bg-ok text-white shadow-e1 hover:bg-ok`
 
-/** Marks the button that is the next step in the flow. */
-export const NextTag = ({ tone = 'violet' }: { tone?: 'violet' | 'emerald' | 'zinc' }) => (
-  <span aria-label="next step" className={`pointer-events-none absolute -right-1.5 -top-2 rounded-full px-1.5 text-micro font-bold uppercase leading-4 tracking-wider text-white shadow-sm ring-2 ring-white dark:ring-zinc-950 ${{ violet: 'bg-accent', emerald: 'bg-ok', zinc: 'bg-zinc-700' }[tone]}`}>next</span>
-)
-
-export const Kbd = ({ k, light }: { k: string; light?: boolean }) => (
-  <kbd className={`ml-1 hidden rounded-md px-1.5 font-mono text-micro transition-opacity sm:inline ${light ? 'bg-white/20 text-white/90' : 'bg-fill text-fg-3'}`}>{k}</kbd>
-)
-
 function Stat({ icon: Icon, label, value, accent }: { icon: LucideIcon; label: string; value: number; accent: string }) {
   return (
     <div className="group/stat card px-3 py-2.5 transition-all duration-200 hover:shadow-md hover:ring-line-strong">
@@ -56,8 +47,6 @@ const STEPS_MINE = ['Feedback', 'Preparing', 'In crit', 'Fixing', 'All clear']
 /** The pipeline: where the flow (server/flow.ts) says this PR is. The last step reached means every step is done. */
 
 
-type Tab = 'explain' | 'turns' | 'activity' | 'description'
-let lastTab: Tab | undefined
 
 /** The PR's description, fetched when you open it (the live list leaves it out), again when the PR changes. */
 export function Description({ pr }: { pr: PrView }) {
@@ -72,6 +61,7 @@ export function Description({ pr }: { pr: PrView }) {
 }
 
 export type PrThreadProps = {
+  openPane?: (t: 'explain') => void // set by the page: how a chip opens one of its tabs
   ticket?: import('../lib.ts').TicketView // on the desk: the ticket this PR ships (the new design shows it as a tab)
   sync?: Sync
   compact?: boolean // on the desk: its row above already shows the stack
@@ -82,7 +72,7 @@ export type PrThreadProps = {
 
 /** Everything the PR page knows and can do, for either design to lay out: the flow's next step and its actions,
  *  the status chips, the agent's questions, the tabs' content and the dialogs. */
-export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSelect, sync, onOpenLinked, compact }: PrThreadProps) {
+export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSelect, sync, onOpenLinked, compact, openPane }: PrThreadProps) {
   const [copied, setCopied] = useState(false)
   // the Next button you just clicked: a spinner at once, until the PR's state moves (or it failed, or 20s passed)
   const [pending, setPending] = useState<FlowAction>()
@@ -117,30 +107,8 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
   }).then(() => toast('Fix round started'), (e: Error) => toast(e.message, 'error'))
   const resumeCmd = job && pr.repoPath ? `cd ${pr.repoPath} && claude --resume ${job.sessionId}` : undefined
 
-  // the tab you were on carries over to the next PR
-  const [tab, setTabState] = useState<Tab>(() => (param('tab') as Tab) ?? lastTab ?? (pr.explain ? 'explain' : job ? 'activity' : 'description'))
-  const setTab = (t: Tab) => { lastTab = t; setTabState(t); setParam('tab', t) }
-  // focus mode: reading Explain, the sidebars step back; any other tab (or leaving the PR) brings them back
-  const [focus, setFocus] = useState(focusWanted)
-  // ponytail: the list no longer steps back to bare PR numbers while you read (it collapsed unasked, behind the new view's own tabs)
-  const toggleFocus = () => { wantFocus(!focus); setFocus(!focus) }
-  // f: focus on and off; from another tab it opens Explain in focus
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (e.key !== 'f' || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('dialog[open]')) return
-      e.preventDefault()
-      if (tab !== 'explain') { setTab('explain'); if (!focus) toggleFocus() } else toggleFocus()
-    }
-    addEventListener('keydown', k)
-    return () => removeEventListener('keydown', k)
-  })
-  const tabBtn = (t: typeof tab, label: string, count?: number) => (
-    <button onClick={() => setTab(t)} aria-selected={tab === t} role="tab"
-            className={`relative flex items-center gap-1.5 rounded-lg px-3 py-1 text-body font-medium transition-[color,background-color,box-shadow] duration-200 ${tab === t ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>
-      {label}
-      {count != null && <span className="rounded-full bg-hover px-1.5 text-micro tabular-nums text-fg-3">{count}</span>}
-    </button>
-  )
+  // a chip's "open Explain": the page owns its tabs and says how to open one
+  const setTab = (t: 'explain') => openPane?.(t)
 
   const KIND = { review: 'Review', revise: 'Revise', approve: 'Approve', post: 'Post review', publish: 'Push & reply', reply: 'Your reply' }
   // status at a glance; each chip opens its details, so the content keeps the full width
@@ -346,7 +314,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
                 <button className={`${mini} px-1.5`} onClick={() => act('dismiss', 'Hidden until requested again')} title="Hide until it is requested again" aria-label="Dismiss"><EyeOff className="size-3.5" /></button>
             </>
   const people = <People pr={pr} />
-  return { statusField, parentLinks, stackNav, headerActions, people, pr, feed, now, onBack, toast, prs, onSelect, sync, onOpenLinked, compact, act, copied, setCopied, url, job, crit, busy, critDown, restarting, setRestarting, restartCrit, submit, setSubmit, flow, next, asks, askFirst, waiting, fixThreads, resumeCmd, tab, setTabState, setTab, focus, setFocus, toggleFocus, tabBtn, KIND, below, smartRebase, chips, runFinalize, armed, arm, publish, publishRebased, big, linkCls, retryOp, markRead, dismissOp, rerequest, retry, BIG, LINK, also, alsoLine, doNext }
+  return { statusField, parentLinks, stackNav, headerActions, people, pr, feed, onBack, toast, prs, onOpenLinked, act, url, job, busy, critDown, restartCrit, submit, setSubmit, flow, next, asks, askFirst, fixThreads, resumeCmd, below, smartRebase, chips, runFinalize, markRead, BIG, alsoLine, doNext }
 }
 
 

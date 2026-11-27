@@ -15,7 +15,6 @@ import { Pick } from '../ui/Pick.tsx'
 
 type Member = { pr: PrView; url: string; steps: Step[] }
 // what "and push when done" adds to each agent's answer: this round's go-ahead to publish what it was asked to fix
-const PUSH_WHEN_DONE = 'Push when done: once the changes for this answer are made and checked, push them to this PR\'s branch with a plain push (never --force or --force-with-lease: a rebase that needs one still waits for me) and post the replies you drafted for them. This is my go-ahead for this round only; anything I didn\'t ask for, and anything that fails, still waits for me.'
 const enc = encodeURIComponent
 
 /**

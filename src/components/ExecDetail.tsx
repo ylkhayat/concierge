@@ -1,17 +1,16 @@
 import { optionsOf, pendingOf } from '../../server/reply.ts'
 import {
-  LoaderCircle, ListChecks, Moon,  MessageSquare,  ArrowRight,  ArrowUpRight, Bot, Check, Copy, DollarSign, GitPullRequest,
-  ChevronDown, ChevronUp, Database, FileText, SearchCheck, MessageCircleQuestion, Play, Reply, Wand, RotateCcw, ShieldAlert, SquareTerminal, Timer, TriangleAlert,
+  LoaderCircle, ListChecks, Moon,  ArrowRight,  ArrowUpRight, Bot, Check, Copy, DollarSign, GitPullRequest,
+  ChevronDown, Database, FileText, SearchCheck, MessageCircleQuestion, Play, Reply, Wand, RotateCcw, ShieldAlert, SquareTerminal, Timer, TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PinButton } from './PinButton.tsx'
-import { api, duration, param, setParam, type Activity, type ExecView, type TicketView, resumed } from '../lib.ts'
+import { api, duration, type Activity, type ExecView, type TicketView, resumed } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { Md } from './Md.tsx'
 import { Pick } from '../ui/Pick.tsx'
 import { Chip } from './Chip.tsx'
-import { NextSteps } from './NextSteps.tsx'
-import { HandedPanel, handedPlaceholder } from './Handed.tsx'
+import { HandedPanel } from './Handed.tsx'
 import { Working } from './Working.tsx'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
 import { PanelSection, type Sync } from './NextPanel.tsx'
@@ -47,8 +46,6 @@ function stageOf(t: TicketView): { at: number; broken: boolean } {
 const GROUP_TONE: Record<string, StatusTone> = { running: 'blue', 'needs-you': 'amber', tend: 'rose', stalled: 'amber', 'in-progress': 'violet', shipped: 'emerald' }
 
 
-type Tab = 'activity' | 'ticket'
-let lastTab: Tab | undefined
 
 type Action = ExecView['actions'][number]
 
@@ -70,8 +67,6 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   const run = t.run
   // opening a ticket reads its environment from Sentry once (cached), so Investigate goes to the right data
   useEffect(() => { api(`/exec/tickets/${t.id}/env`).catch(() => {}) }, [t.id])
-  const [tab, setTabState] = useState<Tab>(() => (['activity', 'ticket'].includes(param('ttab') ?? '') ? param('ttab') as Tab : undefined) ?? lastTab ?? (run ? 'activity' : 'ticket'))
-  const setTab = (x: Tab) => { lastTab = x; setTabState(x); setParam('ttab', x) }
   const [copied, setCopied] = useState(false)
   const g = groupOf(t)
   const P = PRIORITY[t.priority] ?? PRIORITY[0]
@@ -108,14 +103,6 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
     const id = `${p.repo}#${p.number}`
     onOpenLinked(t.linked.find((l) => l.kind === 'pr' && l.id === id) ?? { kind: 'pr', id, label: `#${p.number}`, title: p.title ?? '', agent: 'none' })
   }
-
-  const tabBtn = (x: Tab, label: string, count?: number) => (
-    <button onClick={() => setTab(x)} aria-selected={tab === x} role="tab"
-            className={`relative flex items-center gap-1.5 rounded-lg px-3 py-1 text-body font-medium transition-[color,background-color,box-shadow] duration-200 ${tab === x ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>
-      {label}
-      {count != null && <span className="rounded-full bg-hover px-1.5 text-micro tabular-nums text-fg-3">{count}</span>}
-    </button>
-  )
 
   // status at a glance; each chip opens its details, so the content keeps the full width
   const chips = (
@@ -175,11 +162,11 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
               : prItems.length > 0 ? <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} /> : undefined
   const headerActions = <>
             <PinButton pinKey={`ticket:${t.id}`} on={t.pinned} className={`${mini} px-1.5`} toast={toast} />
-            <button className={`${mini} px-1.5`} aria-pressed={!!t.dimmed} aria-label={t.dimmed ? 'Undim' : 'Dim for now'}
-                    title={t.dimmed ? 'Undim: back to normal in the list' : "Dim for now: it stays listed, faded and last in its group, and leaves the waiting count until its state changes"}
-                    onClick={() => api(`/exec/tickets/${encodeURIComponent(t.id)}/dim`, { on: !t.dimmed }).then(() => toast(t.dimmed ? 'Back to normal' : 'Dimmed until its state changes'), (e: Error) => toast(e.message, 'error'))}>
-              <Moon className={`size-3.5 ${t.dimmed ? 'fill-current text-accent' : ''}`} />
-            </button>
+            {/* dimming is gone (Set aside does it): a ticket dimmed before keeps the way back */}
+            {t.dimmed && <button className={`${mini} px-1.5`} aria-pressed aria-label="Undim" title="Undim: back to normal in the list"
+                    onClick={() => api(`/exec/tickets/${encodeURIComponent(t.id)}/dim`, { on: false }).then(() => toast('Back to normal'), (e: Error) => toast(e.message, 'error'))}>
+              <Moon className="size-3.5 fill-current text-accent" />
+            </button>}
             <button className={mini} disabled={!run} onClick={() => act('resume-terminal', 'Opened the session in Terminal')} title={run ? 'Continue this run’s agent session in your terminal' : 'Not run yet'}>
               <SquareTerminal className="size-3.5" /><span className="hidden sm:inline">Resume</span>
             </button>
@@ -192,7 +179,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   // the Next panel's content (the next step, the run's plan, its question), the box to steer it, and the ticket itself
   const panelBody = <>
         {!t.busy && <ConnectCard compact onRun={t.repo ? runIt : undefined} toast={toast} />}
-        {!t.busy && asking && <ActionCard inline t={t} actions={actions} toast={toast} />}
+        {!t.busy && asking && <ActionCard t={t} actions={actions} toast={toast} />}
         {/* handed over to its PRs: their agent owns the next steps, so that is what shows, not the ticket's stale ones */}
         {!t.busy && t.handed ? <PanelSection title="Handed over" icon={GitPullRequest} tone="text-accent"><HandedPanel h={t.handed} onOpen={openPr} /></PanelSection>
         : !(!t.busy && next === 'dock' && asking) && <PanelSection title={t.busy ? 'The agent is working' : 'Do next'} icon={t.busy ? LoaderCircle : ArrowRight} tone={t.busy ? 'text-run' : 'text-accent'}>
@@ -258,23 +245,6 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
           )
         )}
   </>
-  const steerSection = <>
-        {/* once it hands back: its Linear question, its decisions, or your own words */}
-        {asking ? null : t.handed && !t.busy ? (
-          <PanelSection title="New work" icon={MessageSquare}>
-            <NextSteps inline handover={handoverBox(t)} replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:handed`} toast={toast} placeholder={handedPlaceholder(t.handed)} />
-          </PanelSection>
-        ) : run && !t.busy && (run.state === 'done' || run.state === 'failed') ? (
-          <PanelSection title={runAsks ? 'Decide' : 'Tell the agent'} icon={MessageSquare} tone={runAsks ? 'text-accent' : undefined}>
-            <NextSteps inline nextUrl={`/exec/${run.id}/next`} replyUrl={`/exec/${run.id}/reply`} draft={`ticket:${t.id}`} version={run.endedAt ?? ''} toast={toast} placeholder="Tell the agent what to change, answer, or do next…" />
-          </PanelSection>
-        ) : (
-          <PanelSection title="Tell the agent" icon={MessageSquare}>
-            <NextSteps inline replyUrl={`/exec/tickets/${t.id}/steer`} draft={`ticket:${t.id}`} version={`${t.id}:${t.busy}`} toast={toast}
-                       placeholder={t.busy ? 'Tell it something while it works: it reads it between steps, without stopping' : `What should ${t.id}’s implementation do differently?`} />
-          </PanelSection>
-        )}
-  </>
   const ticketBody = (
                 <div className="space-y-4 px-5 py-4">
                   {t.agentWaiting && t.lastComment && (
@@ -287,7 +257,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
                   {t.description.trim() ? <Md text={t.description} /> : <p className="py-6 text-center text-sm text-fg-3">No description.</p>}
                 </div>
   )
-  return { panelBody, steerSection, ticketBody, statusField, parentLinks, stackNav, headerActions, t, actions, missing, feed, onSelect, toast, sync, onOpenLinked, compact, pr, run, tab, setTabState, setTab, copied, setCopied, g, P, prs, ci, threads, dot, resumeCmd, lastAction, runIt, act, siblings, prItems, newer, asking, shipped, runAsks, tending, next, openPr, tabBtn, chips }
+  return { panelBody, ticketBody, statusField, parentLinks, stackNav, headerActions, t, missing, feed, toast, onOpenLinked, run, runIt, act, siblings, prItems, asking, runAsks, next, openPr, chips }
 }
 
 
@@ -298,11 +268,10 @@ export const handoverBox = (t: TicketView) => t.handed && { routeUrl: `/exec/tic
 const ACTION_ICON = { play: Play, file: FileText, reply: Reply, wand: Wand, search: SearchCheck }
 
 /** The agent stopped to ask you something: answer it, or decide for it. */
-function ActionCard({ t, actions, toast, inline }: { t: TicketView; actions: Action[]; toast: (m: string, tone?: 'ok' | 'error') => void; inline?: boolean }) {
+function ActionCard({ t, actions, toast }: { t: TicketView; actions: Action[]; toast: (m: string, tone?: 'ok' | 'error') => void }) {
   const [note, setNote] = useDraft(`answer:${t.id}`)
   const [busy, setBusy] = useState<string>()
   const [open, setOpen] = useState(false)
-  const [sheet, setSheet] = useState(false)
   const { armed, arm } = useArm()
   const q = t.lastComment?.body.replace(/^_Generated by Claude Code_\s*/i, '').trim()
   const opts = q ? optionsOf(q) : []
@@ -311,13 +280,13 @@ function ActionCard({ t, actions, toast, inline }: { t: TicketView; actions: Act
     if (armed) arm(armed, () => {})
     setBusy(action)
     api('/exec/action', { id: t.id, action, note }).then(
-      () => { toast(action === 'reply' ? 'Answer posted on Linear; running again' : `${label}: started`); setNote(''); setSheet(false) },
+      () => { toast(action === 'reply' ? 'Answer posted on Linear; running again' : `${label}: started`); setNote('') },
       (e: Error) => toast(e.message, 'error')).finally(() => setBusy(undefined))
   }
   return (
     <div className="relative">
-    {(sheet || inline) && (
-    <section className={inline ? 'overflow-hidden rounded-2xl bg-surface-1 ring-1 ring-wait/30 ' : 'absolute inset-x-0 bottom-full z-20 mb-2 max-h-[calc(65vh/var(--z))] animate-[rise-in_200ms_var(--ease-snappy)] overflow-y-auto rounded-2xl bg-surface-1 shadow-[0_-8px_40px_-12px_rgb(0_0_0/0.25)] ring-1 ring-wait/30 '}>
+    {(
+    <section className={'overflow-hidden rounded-2xl bg-surface-1 ring-1 ring-wait/30 '}>
       <header className="flex items-center gap-2 px-3.5 pt-3">
         <MessageCircleQuestion className="size-4 animate-pulse text-wait-text" />
         <h3 className="text-body font-semibold text-wait-text">The agent asks you</h3>
@@ -357,14 +326,6 @@ function ActionCard({ t, actions, toast, inline }: { t: TicketView; actions: Act
       </div>
     </section>
     )}
-    {!inline && <button onClick={() => setSheet((x) => !x)} aria-expanded={sheet}
-            className="group/dock flex w-full items-center gap-2 rounded-2xl bg-wait/7 px-4 py-2.5 text-left text-small text-wait-text ring-1 ring-wait/30 transition-all hover:shadow-md">
-      <MessageCircleQuestion className={`size-4 shrink-0 text-wait-text ${sheet ? '' : 'animate-pulse'}`} />
-      <span className="shrink-0 font-semibold">The agent is waiting on you</span>
-      {q && <span className="min-w-0 truncate text-fg-3">{q.split('\n')[0]}</span>}
-      <span className="flex-1" />
-      <ChevronUp className={`size-4 shrink-0 text-fg-3 transition-transform duration-200 ${sheet ? 'rotate-180' : ''}`} />
-    </button>}
     </div>
   )
 }

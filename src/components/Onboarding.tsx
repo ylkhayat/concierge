@@ -1,6 +1,6 @@
 import {
   ArrowLeft, ArrowRight, Bot, Check, CircleAlert, CircleCheck, Copy, ExternalLink, FolderGit2, GitPullRequestArrow, Layers, LayoutGrid, LoaderCircle, Monitor,
-  Lock, Moon, Network, Rocket, Search, Settings2, Sparkles, SquareTerminal, Sun, Wallet, Wand, X, Zap, type LucideIcon,
+  Lock, Moon, Network, Rocket, Search, Settings2, SquareTerminal, Sun, Wallet, Wand, X, Zap, type LucideIcon,
 } from 'lucide-react'
 import { ReviewIn } from './ReviewIn.tsx'
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'

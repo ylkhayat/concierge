@@ -122,9 +122,6 @@ export const TEAM_TONE: Record<string, string> = {
 export const TEAM_MARK: Record<string, string> = {
   BLI: 'from-accent to-accent', WA: 'from-run to-run', AI: 'from-fuchsia-400 to-fuchsia-600', DA: 'from-teal-400 to-teal-600',
 }
-export const IdBadge = ({ id, team }: { id: string; team: string }) => (
-  <span className={`shrink-0 rounded-md px-1.5 py-px font-mono text-micro font-semibold ring-1 ring-inset ${TEAM_TONE[team] ?? 'bg-fg-3/10 text-fg-2 ring-zinc-500/20 '}`}>{id}</span>
-)
 
 export { short } from '../time.ts'
 
@@ -261,7 +258,8 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
               {at ? <span className="text-right tabular-nums group-hover:invisible group-focus-within:invisible" title="When you last opened it">{short(new Date(at).toISOString(), now)} ago</span> : <span className="text-right tabular-nums group-hover:invisible group-focus-within:invisible">{short(done ? t.doneAt! : t.updatedAt, now)}</span>}
               <span className="invisible -my-1 flex justify-end gap-0.5 group-hover:visible group-focus-within:visible">
                 {([['pinned', Bookmark, t.pinned ? 'Remove the bookmark' : 'Bookmark: keep it on top, and alert me when its state changes'],
-                   ['dimmed', Moon, t.dimmed ? 'Undim' : 'Dim for now: faded and last in its group until its state changes']] as const).map(([what, Icon, label]) => (
+                   // dimming is gone (Set aside does it): a ticket dimmed before keeps the way back
+                   ...(t.dimmed ? [['dimmed', Moon, 'Undim: back to normal in the list'] as const] : [])] as const).map(([what, Icon, label]) => (
                   <button key={what} onClick={(e) => { e.stopPropagation(); quick(t, what) }} title={label} aria-label={label} aria-pressed={!!t[what]}
                           className={`rounded p-1 transition-colors ${t[what] ? 'text-accent' : 'text-fg-3 hover:bg-fg-3/10 hover:text-fg-1'}`}>
                     <Icon className={`size-3.5 ${t[what] ? 'fill-current' : ''}`} />

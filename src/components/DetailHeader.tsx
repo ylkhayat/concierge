@@ -1,44 +1,5 @@
 import { Check, ChevronDown, TriangleAlert } from 'lucide-react'
-import { useId, type CSSProperties, type ReactNode } from 'react'
-
-/**
- * The one header every workspace's detail uses, so the same kind of information always sits in the same place, in
- * three lines: where it is (its parent on the left, the way through its stack on the right), the title with what you
- * can do beside it, and how it stands (one status field, then the chips that open the details). Nothing ever scrolls
- * sideways: lines wrap.
- */
-export function DetailHeader({ status, id, parent, nav, context, actions, title, chips, extra, compact, people }: {
-  status: ReactNode; id?: ReactNode; context?: ReactNode; actions?: ReactNode
-  parent?: ReactNode // where it belongs: a PR's ticket and repo, a ticket's id and Linear state
-  nav?: ReactNode // the way through its stack (StackNav)
-  title: string; chips?: ReactNode; extra?: ReactNode
-  compact?: boolean // on the desk, under its own row: the title on one line, everything a little tighter
-  people?: ReactNode // who it waits on: reviewers' faces with their verdicts, at the end of the status line
-}) {
-  return (
-    <header className={`relative rounded-card bg-surface-1/85 shadow-e1 backdrop-blur-xl ${compact ? 'px-3.5 py-2 sm:px-4' : 'px-4 py-3.5 sm:px-5 sm:py-4'}`}>
-      {(parent || nav) && (
-        <div className={`${compact ? 'mb-1' : 'mb-1.5'} flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-small text-fg-3 [&>span>div:not([popover])]:contents`}>
-          <span className="flex min-w-0 flex-wrap items-center gap-1.5">{parent}</span>
-          {nav && <span className="ml-auto flex min-w-0 max-w-full justify-end">{nav}</span>}
-        </div>
-      )}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-3">
-        <h1 className={`min-w-0 flex-1 font-semibold text-fg-1 ${compact ? 'line-clamp-2 text-reading leading-snug tracking-[-0.01em] sm:line-clamp-1' : 'line-clamp-3 text-title leading-tight sm:text-display sm:leading-[1.2]'}`} title={title}>{title}</h1>
-        {actions && <span className="flex shrink-0 items-center gap-1 pt-0.5">{actions}</span>}
-      </div>
-      {extra && <div className="mt-1.5">{extra}</div>}
-      {/* everything about it on one line that wraps: the chips' own row melts into it */}
-      <div className={`${compact ? 'mt-1.5' : 'mt-3'} flex flex-wrap items-center gap-x-1 gap-y-1.5 text-small text-fg-3 [&>div:not([popover])]:contents`}>
-        {status}
-        {id && <span className="font-mono text-fg-2 ">{id}</span>}
-        {context}
-        {chips}
-        {people && <span className="ml-auto flex items-center">{people}</span>}
-      </div>
-    </header>
-  )
-}
+import { useId, type CSSProperties } from 'react'
 
 const TONE = {
   violet: 'bg-accent/10 text-accent-text ring-accent/25',

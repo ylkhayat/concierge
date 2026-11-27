@@ -36,7 +36,7 @@ const feed: Activity[] = [
 
 export function Gallery() {
   const toast = (m: string) => console.log(m)
-  const steer = <NextSteps stepper inline nextUrl="/gallery/next" replyUrl="/gallery/reply" draft="gallery" version="1" toast={toast} route={{ send: async () => {} }} commands={[{ id: 'run', group: 'Next', label: 'Run it again', hint: 'Start the exec command on it. Stack re-runs the tickets of its last run together, in order', run: () => {} }, { id: 'ticket', group: 'Read', label: 'Read AC-1462', run: () => {} }, { id: 'pr', group: 'Open', label: 'Open #2028 in Review', hint: 'User Feedback: Missing meeting summary', run: () => {} }, { id: 'linear', group: 'Open', label: 'Open in Linear', run: () => {} }]} />
+  const steer = <NextSteps stepper nextUrl="/gallery/next" replyUrl="/gallery/reply" draft="gallery" version="1" toast={toast} route={{ send: async () => {} }} commands={[{ id: 'run', group: 'Next', label: 'Run it again', hint: 'Start the exec command on it. Stack re-runs the tickets of its last run together, in order', run: () => {} }, { id: 'ticket', group: 'Read', label: 'Read AC-1462', run: () => {} }, { id: 'pr', group: 'Open', label: 'Open #2028 in Review', hint: 'User Feedback: Missing meeting summary', run: () => {} }, { id: 'linear', group: 'Open', label: 'Open in Linear', run: () => {} }]} />
   return (
     <div className="h-[100dvh] bg-bg-app text-fg-1">
       <ThreadLayout
@@ -60,7 +60,7 @@ export function Gallery() {
                     understanding: { target: 'x', topic: 'understanding', messages: [], stage: 'new', status: '', summary: '', costUsd: 0 } } }} />
         )}
         next={chat && live ? <WorkingBar title="The agent is working" sub="3 running in the background" stop={() => {}}>{steer}</WorkingBar> : <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent asks you" actions={steer} />}
-        composer={chat ? <Composer><NextSteps stepper inline replyUrl="/gallery/reply" draft="gallery-box" version="" toast={toast} placeholder="Tell it something while it works" /></Composer> : undefined}
+        composer={chat ? <Composer><NextSteps stepper replyUrl="/gallery/reply" draft="gallery-box" version="" toast={toast} placeholder="Tell it something while it works" /></Composer> : undefined}
         follow={chat ? feed.length : undefined}
       >
         {chat ? <ActivityFeed feed={feed} live={live} bg={{ base: '/gallery/run', count: 3 }} toast={toast} /> : <>

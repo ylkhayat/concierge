@@ -10,7 +10,6 @@ export type Tone = 'ok' | 'wait' | 'fail' | 'run' | 'quiet'
 const TONE: Record<Tone, string> = {
   ok: 'bg-ok/12 text-ok', wait: 'bg-wait/14 text-wait', fail: 'bg-fail/12 text-fail', run: 'bg-run/12 text-run', quiet: 'bg-hover text-fg-3',
 }
-export const toneCls = (t: Tone) => TONE[t]
 
 /** A short status, coloured by what it means. */
 export const Pill = ({ tone, children }: { tone: Tone; children: ReactNode }) => (

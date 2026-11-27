@@ -2,8 +2,8 @@
 // the right one map of the project (PlanStream): where it stands, what is done, going on, still to refine, and the
 // angles not explored yet, faint, one click from the planner. Not another Linear: the tickets themselves live there.
 import { GithubSignIn } from './MachinesSettings.tsx'
-import { ArrowRight, ArrowUp, Check, CheckCircle2, Zap, ExternalLink, Flag, GitBranch, LoaderCircle, Plus, RefreshCw, Redo2, Send, Sparkles, Target, Trash2, Undo2, X } from 'lucide-react'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowRight, ArrowUp, Check, CheckCircle2, Zap, ExternalLink, Flag, GitBranch, LoaderCircle, Plus, RefreshCw, Redo2, Send, Sparkles, Trash2, Undo2, X } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Kind, Op, Plan, PlanNode } from '../../server/plans.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { api } from '../lib.ts'
@@ -14,10 +14,10 @@ import { Pick, PickPill } from '../ui/Pick.tsx'
 import { Tabs } from './Tabs.tsx'
 import { ActivityFeed } from './ActivityFeed.tsx'
 import type { Activity } from '../../server/runner.ts'
-import { MOSCOW_HUE, PlanStream, type ColorBy, type Move } from './PlanStream.tsx'
+import { PlanStream, type ColorBy, type Move } from './PlanStream.tsx'
 import { playsFor } from '../planPlays.ts'
 import { AREAS, coverage, obligations, resources, type Compliance, type Obligation } from '../../server/readiness.ts'
-import type { SetupView } from '../../server/index.ts'
+
 import { applyAll, LATER } from '../../server/planOps.ts'
 import { impact } from '../planDiff.ts'
 import { orderOf, planStream, ranksOf } from '../planStream.ts'
@@ -37,7 +37,6 @@ const KIND: Record<Kind, { label: string; cls: string; w: number; h: number }> =
   ticket: { label: 'Ticket', cls: 'bg-surface-1 text-fg-1 ring-1 ring-line shadow-e1', w: 220, h: 52 },
 }
 const PRIORITY = ['', 'Urgent', 'High', 'Medium', 'Low']
-const PRIORITY_DOT = ['', 'bg-fail', 'bg-wait', 'bg-run', 'bg-fg-4']
 
 // --- choosing, in the app's own look: a row of chips for a few options, an inline list for many -------------------
 /** A few options in a row; the chosen one filled: the app's one picker (ui/Pick.tsx). */
@@ -659,7 +658,6 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
     const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); keepDock(last) }
     addEventListener('pointermove', move); addEventListener('pointerup', up)
   }
-  const setup = useApi<SetupView>('/setup', { staleTime: 60_000 })
   // its organization and the compliance profile its plans are checked against (its own, the shared one, or off)
   const checks = useApi<{ org?: string; tracker?: 'linear' | 'github'; repo?: string; profile: Compliance }>(`/plans/${id}/checks`, { staleTime: 60_000 })
   // where the tickets go: the organization's tracker (orgs.ts); GitHub issues in its repository, or Linear
@@ -705,7 +703,6 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
   // the fit: what the appetite holds, and whether the work left lands within it
   const people = p.people ?? Math.max(1, p.project?.members ?? 1), pace = p.pace ?? 5
   const f = forecast(whatIf.nodes, people, pace, Date.now(), whatIf.links)
-  const capacity = p.appetite ? p.appetite.weeks * people * pace : undefined
   const appetiteEnd = p.appetite ? Date.parse(p.appetite.from) + p.appetite.weeks * 7 * DAY : undefined
   const fits = appetiteEnd ? f.at <= appetiteEnd : undefined
   const refining = whatIf.nodes.filter((n) => n.kind === 'ticket' && refineOf(n)).length

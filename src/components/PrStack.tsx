@@ -74,15 +74,3 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
     </div>
   )
 }
-
-/** The action-row summary: how many PRs, a CI dot each, and the open threads in total. */
-export function PrSummary({ prs }: { prs: P[] }) {
-  const threads = prs.reduce((n, p) => n + (p.openThreads ?? 0), 0)
-  return (
-    <>
-      {prs.length} PR{prs.length === 1 ? '' : 's'}
-      <span className="flex items-center gap-0.5">{prs.map((p) => <span key={p.url} className={`size-1.5 rounded-full ${ciTone(p).split(' ')[0]}`} />)}</span>
-      {threads > 0 && <span className="flex items-center gap-0.5 tabular-nums text-wait-text"><MessageSquare className="size-3" />{threads}</span>}
-    </>
-  )
-}

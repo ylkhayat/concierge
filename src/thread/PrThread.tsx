@@ -57,7 +57,8 @@ const TAB: Record<Pane, string> = { overview: 'Overview', explain: 'Explain', de
 const ICON: Partial<Record<FlowAction, LucideIcon>> = { post: Send, publish: Upload, merge: CheckCheck, answer: MessageCircleQuestion }
 
 export function PrThread(props: PrThreadProps) {
-  const x = usePrThread(props)
+  const openPane = useRef<(t: 'explain') => void>(undefined) // the hook's chips open a tab the page owns
+  const x = usePrThread({ ...props, openPane: (t) => openPane.current?.(t) })
   const { pr, feed, toast, prs, onBack, job, busy, next, flow, asks, askFirst, act, url, resumeCmd, critDown, restartCrit, fixThreads, smartRebase, below, markRead, runFinalize, BIG, alsoLine, doNext, chips, statusField, parentLinks, stackNav, headerActions, people, submit, setSubmit } = x
   const feedLoading = useFeedLoading(pr.id)
   const held = useHeld()[pr.repo] // no machine can work on its application now: read only
@@ -70,6 +71,7 @@ export function PrThread(props: PrThreadProps) {
   const was = useRef(role)
   useEffect(() => { if (was.current !== role) { was.current = role; const p = lastPane[role] ?? panes[0]; setPaneState(p); setParam('pane', p === panes[0] ? null : p) } }, [role])
   const setRead = (r: Pane) => setPane(r)
+  openPane.current = setPane
   // the chat: the main conversation, or a discussion beside it; opening one puts what it is about in the panel
   // a PR in a stack can talk about itself or the whole stack: one decision, mapped to each PR
   const stack = pr.stack && pr.stack.length > 1 ? pr.stack : undefined
@@ -138,11 +140,11 @@ export function PrThread(props: PrThreadProps) {
   // conversation, since your picks and your words go out as one answer; otherwise a plain box docked at the bottom
   const steer = (
     job ? (
-            <NextSteps attach={lane} route={route} commands={commands} stepper inline nextUrl={busy ? undefined : `/prs/${enc(pr.id)}/next`} replyUrl={`/prs/${enc(pr.id)}/reply`} self={pr.number}
+            <NextSteps attach={lane} route={route} commands={commands} stepper nextUrl={busy ? undefined : `/prs/${enc(pr.id)}/next`} replyUrl={`/prs/${enc(pr.id)}/reply`} self={pr.number}
                        others={prs.filter((p) => p.repo === pr.repo && !p.closed && p.id !== pr.id).map((p) => p.number)} draft={`pr:${pr.id}`} version={`${job.endedAt ?? ''}|${pr.stackAnswered ?? ''}`} toast={toast}
                        placeholder={busy ? 'Tell it something while it works: it reads it between steps, without stopping' : 'Tell the agent what to change, answer, or do next…'} />
     ) : (
-            <NextSteps attach={lane} route={route} commands={commands} stepper inline replyUrl={`/prs/${enc(pr.id)}/reply`} draft={`pr:${pr.id}`} version="" toast={toast} placeholder="Ask an agent to do something on this PR: it starts a run with your words" />
+            <NextSteps attach={lane} route={route} commands={commands} stepper replyUrl={`/prs/${enc(pr.id)}/reply`} draft={`pr:${pr.id}`} version="" toast={toast} placeholder="Ask an agent to do something on this PR: it starts a run with your words" />
     )
   )
   const asking = asks && !busy

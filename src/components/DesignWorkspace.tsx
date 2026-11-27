@@ -2,7 +2,7 @@
 // left (the PRs that change what people see, and the tickets marked design), and the open one beside it: its screens,
 // before and after, and a conversation with the agent that captured them ("also at phone width": it captures again).
 import { ArrowLeft, ArrowUp, Check, ChevronRight, Component, SwatchBook, Crosshair, ExternalLink, Eye, EyeOff, Images, LayoutGrid, LayoutTemplate, LoaderCircle, MessageSquare, Palette, Pin, Search, Square, Camera, Tag, Wand, X, ZoomIn, ZoomOut } from 'lucide-react'
-import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { Activity } from '../../server/runner.ts'
 import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'

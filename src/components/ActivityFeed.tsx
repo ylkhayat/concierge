@@ -10,7 +10,7 @@ import { Tabs } from './Tabs.tsx'
 import { LANE } from './NextSteps.tsx'
 import { BgNow, turnOver } from './Background.tsx'
 import { chaptersOf, HANDOVER, once, type Chapter } from '../chapters.ts'
-import { clock, duration, stamp, when } from '../time.ts'
+import { clock, stamp, when } from '../time.ts'
 
 const TOOL_ICON: Record<string, LucideIcon> = {
   Bash: SquareTerminal, Read: FileText, Write: FilePen, Edit: FilePen, Grep: Search, Glob: Search,

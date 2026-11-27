@@ -45,13 +45,3 @@ export function Pick<T extends string | number>(props: { label: string; options:
     </div>
   )
 }
-
-/** A labelled row inside a card: the label in a fixed column, so rows of different kinds line up. */
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-3">
-      <span className="text-meta font-medium text-fg-3" title={hint}>{label}</span>
-      <div className="min-w-0">{children}</div>
-    </div>
-  )
-}

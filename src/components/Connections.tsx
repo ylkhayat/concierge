@@ -204,7 +204,6 @@ const chip = 'inline-flex items-center rounded-md px-2 py-0.5 text-meta font-med
 const btn = 'inline-flex items-center gap-1.5 btn-primary'
 type AccountRow = { id: string; label: string; kind: 'claude' | 'openai' | 'llama' | 'copilot'; builtIn: boolean }
 type AccountConn = { name: string; status: Connection['status']; via: 'claude.ai' | 'claude code' | 'codex' }
-const KIND_LABEL = { claude: 'Claude', openai: 'OpenAI', llama: 'Llama' }
 
 /** A tab per account; the first Claude account's connectors can be fixed here (a key, a login), the others' only listed. */
 function PerAccount({ toast }: { toast: Toast }) {

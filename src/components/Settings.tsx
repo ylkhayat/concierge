@@ -1,14 +1,14 @@
 import {
-  ArrowLeft, ArrowRight, ChevronDown, ChevronRight, BookOpen, GitMerge, Images, UserRound, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Keyboard, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
-  CheckCheck, CircleArrowUp, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
+  ArrowLeft, ArrowRight, ChevronDown, ChevronRight, BookOpen, GitMerge, Images, UserRound, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
+  CircleArrowUp, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
 import { ReviewIn } from './ReviewIn.tsx'
 import { useMachineName } from '../machineNames.ts'
 import { Tabs } from './Tabs.tsx'
 import { usePhone } from './NextPanel.tsx'
 import { label, sha, VERSION } from '../version.ts'
-import { Field, Pick, PickPill } from '../ui/Pick.tsx'
-import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { Pick, PickPill } from '../ui/Pick.tsx'
+import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
 import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
@@ -278,11 +278,7 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
           })}
         </Group>
       )}
-      <Group title="Reviews" hint="How review requests are picked up.">
-        <Row icon={Zap} title="Auto-review" hint="Start the review skill as soon as someone requests your review."
-             more="Off: a review request waits in the list until you press Run review. On: the review skill starts by itself, within the parallel limit and the daily budget, and the findings wait for you (on the PR page, or in crit if you review there). Nothing is posted to GitHub until you choose.">
-          <Toggle label="Auto-review" on={!!health?.autoStart} onChange={(on) => save('/auto-start', { on }, on ? 'Auto-review on' : 'Auto-review off').catch(() => {})} />
-        </Row>
+      <Group title="Runs" hint="How many agents work at once. Auto-review is on the Review card above.">
         <Row icon={Layers} title="Parallel runs" hint="Agent runs at once; the rest wait in a queue."
              more="Counts every agent run: reviews, your PRs, tickets and explanations. A run past the limit waits its turn; a stack runs bottom first.">
           <div className="inline-flex items-center gap-1 rounded-xl bg-fill p-1">
@@ -1328,8 +1324,6 @@ function StatusPill({ a, notReadyOn }: { a: AccountView; notReadyOn?: string[] }
 type OllamaCheck = { model: string; error?: string; seconds?: number; writingPerSecond?: number; loaded?: { name: string; onGpu: number }[] }
 const isCloud = (m: string) => /cloud$/.test(m)
 const hasModel = (list: string[], m?: string) => !!m && list.some((x) => x === m || x === `${m}:latest`)
-const CLOUD_TONE = 'bg-run/10 text-run-text ring-run/20'
-const LOCAL_TONE = 'bg-fg-3/10 text-fg-2 ring-zinc-500/20 '
 
 /** What a speed check found, in a few words: how fast, and where it ran (Ollama Cloud, or how much on the GPU). */
 function Checked({ r }: { r?: OllamaCheck | 'checking' }) {
