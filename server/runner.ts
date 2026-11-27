@@ -34,7 +34,8 @@ import { mine, readLines } from './perMachine.ts'
 import { scrub } from './scrub.ts'
 import { busyUnder, newRun, watch as watchBackground } from './background.ts'
 import { draining, heldWhy, machines, place, route, slotsHere, signInFor, token, whyNowhere } from './machines.ts'
-import { remoteAgent, NO_ROOM } from './worker.ts'
+import { remoteAgent } from './worker.ts'
+import { whyEnded } from './outcome.ts'
 import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
 import { keptMethod, skillBody, skillFor } from './method.ts'
@@ -288,8 +289,6 @@ export function remember(keys: string[], id: string, total: number, provider: Pr
 }
 // a session belongs to the provider it was started on: another one can't continue it
 const sameProvider = (s: { provider?: ProviderId } | undefined, p: ProviderId) => !!s && (s.provider ?? 'claude') === p
-// a resumed session Claude no longer has (cleaned up): start that run over in a fresh one
-const GONE = /No conversation found|session .* not found/i
 
 export function enqueue(pr: Pr, kind: JobKind = 'review', prompt?: string, said?: string, after?: string) {
   // your words for a PR whose run is back in the queue (it was requeued just as they were due): kept with it, never dropped
@@ -484,13 +483,9 @@ const pausedNote = (provider: ProviderId = 'claude') => provider !== 'claude' ? 
 const SHUT_OUT_MS = 15 * 60_000
 /** A ticket run's id: 64 random bits, and never one in use (eight hex characters collided once a few thousand runs were kept, and the newer run silently took the older one's place). */
 const runId = () => { let id: string; do id = randomUUID().replace(/-/g, '').slice(0, 16); while (state.execs[id]); return id }
-/** It ended because the network dropped (the API server unreachable): it continues its session in a minute. */
-const netDown = (error?: string) => !!error && /agent hung|lost the connection to|Can't reach the API server|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ECONNRESET|socket hang up/i.test(error)
 const NET_NOTE = "It lost its connection to the AI (the network dropped, or a reply never came): it continues where it left off in a minute."
 const soon = () => { setTimeout(() => pump(), 61_000).unref(); return new Date(Date.now() + 60_000).toISOString() }
 const waited = (t: { notBefore?: string }) => !t.notBefore || t.notBefore <= new Date().toISOString()
-/** It ended because its provider couldn't sign in or be paid: fresh work starts over (on the fallback, if one can). */
-const shutOut = (error?: string) => !!error && (authFailed(error) || cantPay(error))
 function startOver(t: { sessionId: string; provider?: ProviderId; resumed?: boolean; resume?: string; costBefore?: number; sessionCostBefore?: number }, key: string) {
   note(key, { at: new Date().toISOString(), kind: 'event', text: `${t.provider ?? 'claude'} couldn't sign in or be paid: it starts over${(config.providers?.fallback ?? []).length ? ' on the next provider that can take it' : ' once it can run again'}.` })
   t.sessionId = randomUUID(); delete t.provider; t.resumed = false; delete t.resume; t.costBefore = 0; t.sessionCostBefore = 0
@@ -1309,16 +1304,17 @@ function start(pr: Pr, on?: string) {
         save(); bus.emit('change'); pump(); return
       }
       if (e.hung && !e.resulted) job.error = HUNG
-      if (job.error?.startsWith(NO_ROOM)) { // it never started: placed again, nothing counted against it
+      const why = whyEnded(job.error, e.stderr) // how it ended, as a code (outcome.ts): what follows goes by it
+      if (why === 'no-room') { // it never started: placed again, nothing counted against it
         ev('queued', 'no room', { error: undefined, notBefore: soon() })
         save(); bus.emit('change'); return
       }
-      if (netDown(job.error) && (job.continued ?? 0) < MAX_CONTINUES) {
+      if (why === 'network' && (job.continued ?? 0) < MAX_CONTINUES) {
         ev('queued', 'network', { continuing: true, continued: (job.continued ?? 0) + 1, error: undefined, notBefore: soon(), sessionCostBefore: e.resulted ? job.sessionCostUsd : job.sessionCostBefore })
         told('event', NET_NOTE)
         save(); bus.emit('change'); return
       }
-      if (shutOut(job.error)) {
+      if (why === 'shut-out') {
         // refused because its account can't be paid or signed in: back in the queue, where it goes to the next account in
         // the order (a follow-up in a new session handed what the last one said, at its start)
         if (fresh({ kind: job.kind })) startOver(job, pr.id); else note(pr.id, { at: job.endedAt!, kind: 'event', text: `${accountOf(job.provider ?? 'claude').label} refused it (${short(job.error!, 120)}): it goes to the next account in the order.` })
@@ -1331,7 +1327,7 @@ function start(pr: Pr, on?: string) {
         told('event', pausedNote(job.provider))
         save(); bus.emit('change'); pump(); return
       }
-      if (!e.resulted && GONE.test(e.stderr) && (job.resumed || job.continuing || isFollowUp(job.kind))) {
+      if (!e.resulted && whyEnded(undefined, e.stderr) === 'session-gone' && (job.resumed || job.continuing || isFollowUp(job.kind))) {
         delete state.sessions[pr.id]
         // a review/revise just starts over in a new session (a restart may have stopped it before its session was
         // saved); a follow-up needs the old one, so say so
@@ -1667,16 +1663,17 @@ function startExec(run: ExecRun, on?: string) {
         return finished()
       }
       if (e.hung && !e.resulted) run.error = HUNG
-      if (run.error?.startsWith(NO_ROOM)) { // it never started: placed again, nothing counted against it
+      const why = whyEnded(run.error, e.stderr) // how it ended, as a code (outcome.ts): what follows goes by it
+      if (why === 'no-room') { // it never started: placed again, nothing counted against it
         ev('queued', 'no room', { error: undefined, notBefore: soon() })
         return finished()
       }
-      if (netDown(run.error) && (run.continued ?? 0) < MAX_CONTINUES) {
+      if (why === 'network' && (run.continued ?? 0) < MAX_CONTINUES) {
         ev('queued', 'network', { continuing: true, continued: (run.continued ?? 0) + 1, error: undefined, notBefore: soon(), costBefore: e.resulted ? (run.costBefore ?? 0) + (run.costUsd ?? 0) : run.costBefore })
         told('event', NET_NOTE)
         return finished()
       }
-      if (shutOut(run.error)) {
+      if (why === 'shut-out') {
         if (!run.replyTo && !run.resume) startOver(run, key); else note(key, { at: run.endedAt!, kind: 'event', text: `${accountOf(run.provider ?? 'claude').label} refused it (${short(run.error!, 120)}): it goes to the next account in the order.` })
         ev('queued', 'provider unavailable', { continuing: false, error: undefined })
         return finished()
@@ -1686,7 +1683,7 @@ function startExec(run: ExecRun, on?: string) {
         told('event', pausedNote(run.provider))
         save(); bus.emit('exec'); pump(); return
       }
-      if (!e.resulted && (run.resume || run.continuing) && GONE.test(e.stderr)) {
+      if (!e.resulted && (run.resume || run.continuing) && whyEnded(undefined, e.stderr) === 'session-gone') {
         for (const id of run.ids) if (state.sessions[id]?.id === (run.resume ?? run.sessionId)) delete state.sessions[id]
         if (run.replyTo) {
           // your reply was to that conversation: in a new session it would land with no context, so say so instead
