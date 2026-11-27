@@ -8,7 +8,8 @@ import type { SetupView } from '../../server/index.ts'
 import type { TailscaleView } from '../../server/tailscale.ts'
 import type { RepoFound } from '../../server/setup.ts'
 import { api, type Health, type Theme } from '../lib.ts'
-import { Agents, blocked, Exec as ExecSetup, forgetSkills, guessSkill, SkillSources, skillsFor, Toggle, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
+import { Agents, blocked, Exec as ExecSetup, forgetSkills, guessSkill, SkillSources, skillsFor, WorkflowCard, type FoundSkill, type ProvidersView } from './Settings.tsx'
+import { Toggle } from '../ui/settings.tsx'
 import { Tabs } from './Tabs.tsx'
 import { Pick } from '../ui/Pick.tsx'
 import { NearbyMachines } from './NearbyMachines.tsx'
@@ -212,7 +213,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   const toggleSpace = (w: 'review' | 'exec') => setSpaces((x) => (x.includes(w) ? x.filter((y) => y !== w) : [...x, w]))
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-fill/60 p-4 sm:p-8">
+    <div role="dialog" aria-modal="true" aria-label="Set up Concierge" className="fixed inset-0 z-[60] flex items-center justify-center bg-fill/60 p-4 sm:p-8">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-80 bg-[radial-gradient(60%_100%_at_50%_0%,var(--accent-soft),transparent)]" />
       <div className="relative flex max-h-full w-full max-w-4xl animate-[toast-in_300ms_var(--ease-snappy)] flex-col overflow-hidden rounded-panel bg-surface-1 shadow-2xl ring-1 ring-line md:h-[min(680px,100%)] md:flex-row">
         {/* step rail */}
@@ -266,7 +267,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                 <Agents compact toast={toast} onConnections={() => {}} />
               </Step>
             ) : id === 'spaces' ? (
-              <Step title="What will you use it for?" lead="Each view is its own place in the app, with its own setup. Pick one or both; Settings can change it later.">
+              <Step title="What will you use it for?" lead="Each view is its own place in the app, with its own setup. Pick one or both; Settings can change it later. These are a developer’s views: if you plan or design, add that role afterwards (the + beside the roles in the sidebar) and it brings Plans, or the Map, Components and Tokens.">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Choice on={spaces.includes('review')} onClick={() => toggleSpace('review')} icon={GitPullRequestArrow} title="Review"
                           body="Review the PRs you are asked to, and revise your own from their threads. Prepared by an agent, finished by you." />
@@ -319,7 +320,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               </Step>
             ) : id === 'exec' ? (
               <div data-accent="exec">
-                <Step title="Set up Ship" lead="The command an agent runs to ship a ticket, the Linear teams to show, and which repository each ticket prefix lives in. Save, then continue.">
+                <Step title="Set up Ship" lead="The command an agent runs to ship a ticket, and what its runs may use without asking. Save, then continue. Which repository each Linear team is worked in is set per workspace, in Settings.">
                   <div className="space-y-4">
                     <WorkflowCard work="exec" title="Ship a ticket" icon={Rocket} trigger="When you press Run on tickets; several are stacked in the order picked" value={setup.config.exec?.command ?? ''}
                                   suggested={guess.exec?.command} onSave={(v) => saveExec({ exec: { ...setup.config.exec, command: v } }, 'Ship command saved')} />
@@ -354,7 +355,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                     </Pref>
                   )}
                   <Pref icon={Layers} title="Parallel runs" hint="Agent runs at once; more are queued.">
-                    <Tabs label="Parallel runs" value={String(prefs.maxJobs)} options={['1', '2', '3', '4'].map((n) => ({ id: n, label: n }))} onChange={(n) => setPrefs({ ...prefs, maxJobs: Number(n) })} />
+                    <Tabs label="Parallel runs" value={String(prefs.maxJobs)} options={['1', '2', '3', '4', '6', '8'].map((n) => ({ id: n, label: n }))} onChange={(n) => setPrefs({ ...prefs, maxJobs: Number(n) })} />
                   </Pref>
                   <Pref icon={Wallet} title="Daily budget" hint="Stop starting runs once today's spend reaches it. Empty means no cap.">
                     <label className="flex w-28 items-center gap-1 rounded-ctl bg-fill/60 px-3 py-1.5 ring-1 ring-line focus-within:ring-2 focus-within:ring-accent/60 ">

@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, ArrowRight, ChevronDown, ChevronRight, BookOpen, GitMerge, Images, UserRound, Bot, Check, Info, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
+  ArrowLeft, ArrowRight, ChevronRight, BookOpen, GitMerge, Images, UserRound, Bot, Check, Network, Palette, Search, Workflow, GripVertical, CircleAlert, ExternalLink, GitPullRequestArrow, CircleCheck, Coins, FolderGit2, Layers, LoaderCircle, Map as MapIcon, Minus, Monitor, Moon, Plus, RotateCcw,
   CircleArrowUp, Download, RefreshCw, ShieldCheck, Gauge, Maximize, PlugZap, Rocket, Server, Settings2, ShieldAlert, Sparkles, SquareTerminal, Sun, Trash2, UsersRound, Wallet, Wand, X, Zap, type LucideIcon
 } from 'lucide-react'
 import { ReviewIn } from './ReviewIn.tsx'
@@ -8,7 +8,7 @@ import { Tabs } from './Tabs.tsx'
 import { usePhone } from './NextPanel.tsx'
 import { label, sha, VERSION } from '../version.ts'
 import { Pick, PickPill } from '../ui/Pick.tsx'
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
 import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
@@ -29,6 +29,8 @@ import { inSettings, SETTINGS } from '../copy.ts'
 import { shortcuts } from '../shortcuts.ts'
 import { viewsFor } from '../views.ts'
 import { SETTINGS_INDEX, type Found } from '../settingsIndex.ts'
+import { Checks, Group, input, More, primary, quiet, Row, Segmented, Select, Setting, Toggle } from '../ui/settings.tsx'
+import { Caught } from '../ui/Caught.tsx'
 
 export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'skills' | 'limits' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
   // older names, still used by links around the app
@@ -68,59 +70,6 @@ type BaseInfo = { repo: string; meta?: { branch: string; sha: string; mappedAt: 
 
 // --- primitives ------------------------------------------------------------------------------
 
-function Group({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <section className="space-y-2">
-      <header className="px-0.5">
-        <h3 className="text-small font-semibold text-fg-1 ">{title}</h3>
-        {hint && <p className="text-meta text-fg-3">{hint}</p>}
-      </header>
-      <div className="divide-y divide-line overflow-hidden card ">{children}</div>
-    </section>
-  )
-}
-
-/** An (i) beside a setting: what it is and what it changes, in a few lines, on hover or click. */
-export function More({ children }: { children: ReactNode }) {
-  const id = 'more' + useId().replace(/[^a-zA-Z0-9]/g, '')
-  return (
-    <>
-      <button popoverTarget={id} style={{ anchorName: `--${id}` } as CSSProperties} aria-label="What is this?" className="inline-flex align-[-2px] text-fg-4 transition-colors hover:text-accent-text"><Info className="size-3.5" /></button>
-      <div id={id} popover="auto" style={{ positionAnchor: `--${id}`, positionArea: 'bottom span-right', positionTryFallbacks: 'flip-block, flip-inline', inset: 'auto' } as CSSProperties}
-           className="m-0 mt-1.5 w-72 rounded-ctl border-0 bg-surface-2 p-3 text-small leading-relaxed text-fg-2 shadow-e3">{children}</div>
-    </>
-  )
-}
-
-function Row({ icon: Icon, title, hint, more, children }: { icon: LucideIcon; title: string; hint?: ReactNode; more?: ReactNode; children?: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-ctl bg-fill text-fg-3"><Icon className="size-3.5" aria-hidden /></span>
-      <div className="min-w-0 flex-1 basis-48">
-        <div className="flex items-center gap-1.5 text-small font-medium">{title}{more && <More>{more}</More>}</div>
-        {hint && <div className="text-meta leading-snug text-fg-3">{hint}</div>}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
-            className={`relative h-[22px] w-9 shrink-0 rounded-full transition-colors duration-300 ${on ? 'bg-accent' : 'bg-fill-strong'}`}>
-      <span className={`absolute top-[3px] size-4 rounded-full bg-white shadow-sm transition-all duration-300 ease-[var(--ease-snappy)] ${on ? 'left-[17px]' : 'left-[3px]'}`} />
-    </button>
-  )
-}
-
-function Segmented<T extends string>({ value, options, onChange, label = 'Choose' }: { value: T; options: { id: T; label: string; icon?: LucideIcon }[]; onChange: (v: T) => void; label?: string }) {
-  return <Tabs value={value} options={options} onChange={onChange} label={label} />
-}
-
-const input = 'field'
-const primary = 'inline-flex shrink-0 items-center gap-1.5 btn-primary'
-const quiet = 'inline-flex shrink-0 items-center gap-1.5 btn-outline'
 const hours = (iso: string) => ago(iso)
 const home = (p: string) => p.replace(/^\/Users\/(?!Shared\/)[^/]+/, '~')
 
@@ -213,7 +162,8 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
           ))}
         </nav>
         <main ref={main} className={`min-h-0 min-w-0 flex-1 overflow-y-auto ${list ? 'hidden' : ''}`}>
-          <div key={tab} className="mx-auto max-w-[880px] animate-[rise-in_220ms_var(--ease-snappy)] space-y-6 px-4 pb-16 pt-6 md:px-8">
+          <Caught key={tab} what={`Settings: ${current.label}`}>
+          <div className="mx-auto max-w-[880px] animate-[rise-in_220ms_var(--ease-snappy)] space-y-6 px-4 pb-16 pt-6 md:px-8">
             {phone && <button onClick={() => setSections(true)} className="btn-ghost -mx-2.5 -my-2 inline-flex min-h-10 items-center gap-1.5"><ArrowLeft className="size-4" />All settings</button>}
             <header>
               <h2 className="text-display font-semibold">{current.label}</h2>
@@ -250,6 +200,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
             {tab === 'appearance' && <Appearance setup={setup} theme={theme} onTheme={onTheme} saveConfig={saveConfig} />}
             {tab === 'about' && <About setup={setup} onSetup={() => { onClose(); onSetup() }} />}
           </div>
+          </Caught>
         </main>
       </div>
     </div>
@@ -586,46 +537,6 @@ function AddWorkspace({ onAdded, toast }: { onAdded: () => unknown; toast: Toast
 
 type VisMode = 'off' | 'auto' | 'always'
 const VIS_TABS: { id: VisMode; label: string }[] = [{ id: 'off', label: 'Off' }, { id: 'auto', label: 'Auto' }, { id: 'always', label: 'Always' }]
-
-/** One setting of a list: its name on the left, its control beside it, a line on what it does under the control. */
-function Setting({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-x-6 gap-y-1 py-2.5 sm:grid-cols-[8.5rem_1fr] sm:items-start">
-      <span className="pt-1 text-small font-medium text-fg-2">{label}</span>
-      <div className="min-w-0 space-y-1">{children}{hint && <p className="text-meta text-fg-4">{hint}</p>}</div>
-    </div>
-  )
-}
-
-/** Any of several: each option a checkbox you can see is one, so it never reads as a single choice. */
-function Checks<T extends string>({ label, value, options, onToggle }: { label: string; value: T[]; options: { value: T; label: ReactNode; sub?: string; locked?: string }[]; onToggle: (v: T, on: boolean) => void }) {
-  return (
-    <div role="group" aria-label={label} className="flex flex-wrap gap-x-4 gap-y-1.5">
-      {options.map((o) => {
-        const on = value.includes(o.value)
-        return (
-          <label key={o.value} title={o.locked} className={`inline-flex items-center gap-2 text-small ${o.locked ? 'text-fg-3' : 'cursor-pointer text-fg-1'}`}>
-            <input type="checkbox" checked={on} disabled={!!o.locked} onChange={(e) => onToggle(o.value, e.target.checked)} className="peer sr-only" />
-            <span aria-hidden className={`flex size-4 shrink-0 items-center justify-center rounded-[5px] ring-1 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent ${on ? 'bg-accent text-on-accent ring-accent' : 'bg-surface-1 ring-line-strong'}`}>{on && <Check className="size-3" strokeWidth={3} />}</span>
-            {o.label}{o.sub && <span className="text-meta text-fg-4">{o.sub}</span>}
-          </label>
-        )
-      })}
-    </div>
-  )
-}
-
-/** One of many: a dropdown, for a choice with more options than fit a segmented control. */
-function Select<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
-  return (
-    <span className="relative inline-flex">
-      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value as T)} className="field appearance-none py-1 pl-2.5 pr-8 text-small">
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      <ChevronDown aria-hidden className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-fg-3" />
-    </span>
-  )
-}
 
 /** A fact about a repository on its closed row: read, never clicked. */
 const Fact = ({ icon: Icon, children, tone = 'text-fg-3', title }: { icon: LucideIcon; children: ReactNode; tone?: string; title?: string }) => (
@@ -1758,12 +1669,13 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
   const [rule, setRule] = useState('')
   if (!setup || !x) return <Skeleton rows={4} />
   const save = (patch: Partial<typeof x>, msg: string) => saveConfig({ exec: { ...x, ...patch } }, msg)
-  const addRule = () => { const t = rule.trim(); if (!t || x.allowedTools.includes(t)) return setRule(''); save({ allowedTools: [...x.allowedTools, t] }, `Allowed: ${t}`); setRule('') }
+  const tools = x.allowedTools ?? [] // a setup from before the list had one
+  const addRule = () => { const t = rule.trim(); if (!t || tools.includes(t)) return setRule(''); save({ allowedTools: [...tools, t] }, `Allowed: ${t}`); setRule('') }
   return (
     <>
       <Group title="Allowed tools" hint="What a ticket’s run may use without asking. Anything else is refused, and the ticket shows it.">
         {([['Built in', (t: string) => !/^Bash\(|^mcp__/.test(t)], ['Commands', (t: string) => t.startsWith('Bash(')], ['Connectors', (t: string) => t.startsWith('mcp__')]] as const).map(([group, is]) => {
-          const list = x.allowedTools.filter(is)
+          const list = tools.filter(is)
           if (!list.length) return null
           const short = (t: string) => t.startsWith('Bash(') ? t.slice(5, -1).replace(/:\*$/, '') : t.startsWith('mcp__') ? t.slice(5).replace(/^(?:plugin_[a-z]+_|claude_ai_)/, '').replace(/__+/g, ' · ').replace(/_/g, ' ') : t
           return (
@@ -1772,7 +1684,7 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
               {list.map((t) => (
                 <span key={t} title={t} className="group/t inline-flex max-w-full items-center gap-1 rounded-full bg-fill py-0.5 pl-2.5 pr-1 font-mono text-meta text-fg-2">
                   <span className="truncate">{short(t)}</span>
-                  <button onClick={() => save({ allowedTools: x.allowedTools.filter((y) => y !== t) }, `No longer allowed: ${t}`)} aria-label={`Remove ${t}`}
+                  <button onClick={() => save({ allowedTools: tools.filter((y) => y !== t) }, `No longer allowed: ${t}`)} aria-label={`Remove ${t}`}
                           className="rounded-full p-0.5 text-fg-4 opacity-0 transition-opacity hover:bg-fail/10 hover:text-fail-text group-hover/t:opacity-100 focus-visible:opacity-100"><X className="size-3" /></button>
                 </span>
               ))}
@@ -1799,10 +1711,10 @@ function Usage({ part, health, setup, save, saveConfig }: { part: 'numbers' | 'l
   const today = health?.spentToday ?? 0
   const days = health?.spendDays ?? []
   const [draft, setDraft] = useState(budget?.toString() ?? '')
-  const [perRun, setPerRun] = useState(setup ? String(setup.config.explainBudgetUsd) : '')
+  const [perRun, setPerRun] = useState(String(setup?.config.explainBudgetUsd ?? ''))
   const [bases, setBases] = useState<BaseInfo[]>([])
   useEffect(() => setDraft(budget?.toString() ?? ''), [budget])
-  useEffect(() => { if (setup) setPerRun(String(setup.config.explainBudgetUsd)) }, [setup])
+  useEffect(() => { if (setup) setPerRun(String(setup.config.explainBudgetUsd ?? '')) }, [setup])
   useEffect(() => { api('/base').then(setBases).catch(() => {}) }, [])
   const peak = useMemo(() => Math.max(...days.map((d) => d.usd), budget ?? 0, 0.01), [days, budget])
   const week = days.reduce((n, d) => n + d.usd, 0)

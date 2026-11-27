@@ -7,6 +7,7 @@ import { MobileApp } from './mobile/MobileApp.tsx'
 import '@fontsource-variable/inter/opsz.css' // Inter 4, variable weight and optical size (its Display cut for big text)
 import './index.css'
 import './slowUi.ts' // the page's slow moments, into the server's log
+import { Caught } from './ui/Caught.tsx'
 
 // super-wide screens: everything scales up gently, as if the window were ~2400px wide (at most 1.4×).
 // Viewport units grow with zoom, so full-height and full-width sizes divide by --z (see index.css and the h-/w- calcs).
@@ -29,7 +30,7 @@ const wantsDesktop = () => { try { return sessionStorage.getItem('desktop') === 
 function Root() {
   const [phone, setPhone] = useState(() => matchMedia(PHONE).matches && !wantsDesktop())
   useEffect(() => { const m = matchMedia(PHONE); const f = () => setPhone(m.matches && !wantsDesktop()); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, [])
-  return phone ? <MobileApp /> : <App />
+  return <Caught what="Concierge">{phone ? <MobileApp /> : <App />}</Caught>
 }
 
 // the dev server's gallery of parts (src/dev/Gallery.tsx): never in a build

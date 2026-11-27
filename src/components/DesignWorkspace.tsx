@@ -81,7 +81,7 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
   const pickItem = (id: string) => { onSelect(id); setListing(false) }
   // a blueprint wants the width (its list of components and its board): below a laptop's (a tablet) the list folds into the bar, as on a phone
   const roomy = !aspect && !!current?.startsWith('repo:')
-  const name = current?.startsWith('repo:') ? `${current.slice(5).split('/')[1]} · blueprint` : ticket ? ticket.title : prs.find((p) => p.id === current)?.title
+  const name = current?.startsWith('repo:') ? `${current.slice(5).split("/")[1]} · map` : ticket ? ticket.title : prs.find((p) => p.id === current)?.title
   return (
     <div className="flex h-full min-h-0">
       <nav aria-label="Design" className={`${listing ? 'flex w-full' : 'hidden'} shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 ${roomy ? 'xl:flex xl:w-60' : 'md:flex md:w-60'}`}>

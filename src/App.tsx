@@ -45,6 +45,7 @@ import { ago, api, critUrl, enc, isTyping, param, prefetchFeed, setParam, useDec
 import { inSettings, SAY } from './copy.ts'
 import { viewLabel, viewsFor } from './views.ts'
 import { shortcuts } from './shortcuts.ts'
+import { Caught } from './ui/Caught.tsx'
 
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
@@ -309,7 +310,8 @@ export function App() {
 
   const refresh = () => { setRefreshing(true); api('/poll', {}).finally(() => setRefreshing(false)) }
 
-  const openSettings = () => setSettingsOpen(mode === 'exec' ? 'exec' : 'general')
+  // the gear opens Settings where you last were in it; the first time, on How it works
+  const openSettings = () => { let last: string | null = null; try { last = localStorage.getItem('settings:last') } catch { /* none kept */ } setSettingsOpen((last as SettingsTab) || 'overview') }
   const goCodebase = (repo = (focus && repos.includes(focus) ? focus : undefined) ?? codebaseRepo ?? repos[0]) => {
     if (mode !== 'review') { history.pushState(null, '', '/' + location.search); setModeState('review') }
     setSelected(`codebase:${repo}`); history.replaceState(null, '', `#${enc(`codebase:${repo}`)}`)
@@ -560,8 +562,10 @@ export function App() {
         {/* one view at a time, drawn afresh on a switch (its entrance a short fade-in, never the old view fading out
             over it); Review and Ship share a shape, so without the key one was patched into the other */}
         <div key={mode} className="relative flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_160ms_var(--ease-out)]">
+        <Caught key={mode} what={viewLabel(mode, designView)}>
         {focus && away.has(focus) && ['review', 'exec', 'focus', 'read'].includes(mode) ? <AwayRepo repo={focus} onAllApps={() => setFocus(undefined)} />
           : mode === 'exec' ? execFrame : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace view={designView} selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false, designView) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : reviewFrame}
+        </Caught>
         </div>
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
         {/* narrow, what doesn't fit slides sideways instead of being cut off */}
@@ -579,7 +583,7 @@ export function App() {
         </footer>
       </div>
 
-      <SettingsDialog open={!!settingsOpen} tab={settingsOpen || 'general'} onTab={(t) => setParam('settings', t)} onClose={() => setSettingsOpen(false)} health={health} theme={theme} onTheme={setTheme} toast={toast}
+      <SettingsDialog open={!!settingsOpen} tab={settingsOpen || 'general'} onTab={(t) => { setParam('settings', t); try { localStorage.setItem('settings:last', t) } catch { /* private window */ } }} onClose={() => setSettingsOpen(false)} health={health} theme={theme} onTheme={setTheme} toast={toast}
                       onSetup={() => setSetupOpen(true)} />
       <Palette prs={prs ?? []} tickets={tickets} onPr={goPr} onTicket={goTicket} keys={shortcuts(views, role === 'developer' && repos.length > 0)} commands={[
         ...views.map((v) => ({ id: v.key, label: `Go to ${v.label}`, hint: v.hint, run: () => setMode(v.mode, v.design) })),
