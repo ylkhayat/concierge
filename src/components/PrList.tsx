@@ -2,7 +2,7 @@ import { useAway } from '../away.ts'
 import { useHeld } from '../held.ts'
 import { appColor } from '../appColor.ts'
 import { askLine } from '../../server/reply.ts'
-import { Bookmark, ChevronRight, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
+import { Archive, Bookmark, ChevronRight, CircleCheck, EyeOff, GitPullRequestDraft, History, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { api, prefetchFeed, useStable, type PrView } from '../lib.ts'
 import { treeOf } from '../desk.ts'
@@ -17,8 +17,10 @@ import { pending, shapeKey, useSettled } from '../settle.ts'
 import { recent, useTouch } from '../recent.ts'
 
 export type Tab = 'review' | 'mine'
-type Group = { title: string; statuses: PrView['status'][]; recent?: boolean; pinned?: boolean }
+type Group = { title: string; statuses: PrView['status'][]; recent?: boolean; pinned?: boolean; aside?: boolean }
 const PINNED: Group = { title: 'Bookmarked', statuses: [], pinned: true }
+// what you set aside: out of the groups and the counts, one folded section at the foot until you bring it back
+const ASIDE: Group = { title: 'Set aside', statuses: [], aside: true }
 
 const GROUPS: Record<Tab, Group[]> = {
   review: [
@@ -41,7 +43,7 @@ const GROUPS: Record<Tab, Group[]> = {
 
 export const tabOf = (p: PrView): Tab => (p.mine ? 'mine' : 'review')
 /** What counts toward a tab's badge: work that is waiting on you. */
-export const waiting = (p: PrView) => (p.mine ? p.status === 'new' || p.status === 'approved' : p.status === 'ready' || p.status === 'in-review')
+export const waiting = (p: PrView) => !p.aside && (p.mine ? p.status === 'new' || p.status === 'approved' : p.status === 'ready' || p.status === 'in-review')
 
 /** "repo#bottom" for PRs in a stack: members share it. */
 export const stackKey = (p: PrView) => (p.stack ? `${p.repo}#${p.stack[0].number}` : undefined)
@@ -61,8 +63,10 @@ export function grouped(prs: PrView[], q: string, tab: Tab): { group: Group; uni
   const every = [...units.values()].map((u) => { if (u.length < 2) return u; const at = new Map(treeOf(u).map((x, i) => [x.number, i])); return u.sort((a, b) => (at.get(a.number) ?? 0) - (at.get(b.number) ?? 0)) })
   // bookmarked ones lead, whatever their state; the rest sit in the group that says where they stand (no "recent"
   // group: it pulled PRs out of their state and read as if they needed you)
-  const pinned = every.filter((u) => u.some((p) => p.pinned)), all = every.filter((u) => !pinned.includes(u))
-  return [...(pinned.length ? [{ group: PINNED, units: pinned }] : []), ...GROUPS[tab].map((group, i) => ({ group, units: all.filter((u) => Math.min(...u.map(gi)) === i) }))]
+  const aside = every.filter((u) => u.some((p) => p.aside)), live = every.filter((u) => !aside.includes(u))
+  const pinned = live.filter((u) => u.some((p) => p.pinned)), all = live.filter((u) => !pinned.includes(u))
+  return [...(pinned.length ? [{ group: PINNED, units: pinned }] : []), ...GROUPS[tab].map((group, i) => ({ group, units: all.filter((u) => Math.min(...u.map(gi)) === i) })),
+    ...(aside.length ? [{ group: ASIDE, units: aside }] : [])]
 }
 
 const prId = (p: PrView) => p.id, groupTitle = (g: { group: Group }) => g.group.title
@@ -84,12 +88,22 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
   picked: string[]; onPick: (ids: string[]) => void; toast: (m: string, tone?: 'ok' | 'error') => void
 }) {
   // a bookmark or hide clicked here shows at once (the row moves or goes), and stays until the server agrees (settle.ts)
-  const [over, setOver] = useState<Record<string, { pinned?: boolean; dismissed?: boolean }>>({})
+  const [over, setOver] = useState<Record<string, { pinned?: boolean; dismissed?: boolean; aside?: boolean }>>({})
   useEffect(() => setOver((o) => pending(o, given)), [given])
   const prs = given.map((p) => (over[p.id] ? { ...p, ...over[p.id] } : p)).filter((p) => !p.dismissed)
   const nav = useRef<HTMLElement>(null)
-  const act: Act = useStable((p: PrView, what: 'pin' | 'hide') => {
+  const act: Act = useStable((p: PrView, what: 'pin' | 'hide' | 'aside' | 'aside-stack') => {
     const name = `${p.repo.split('/')[1]}#${p.number}`
+    if (what === 'aside' || what === 'aside-stack') {
+      const stack = what === 'aside-stack' && p.stack, on = !p.aside
+      const ids = stack ? given.filter((x) => stackKey(x) === stackKey(p)).map((x) => x.id) : [p.id]
+      const said = stack ? `The ${p.repo.split('/')[1]} stack` : name
+      setOver((o) => ({ ...o, ...Object.fromEntries(ids.map((id) => [id, { ...o[id], aside: on }])) }))
+      // bringing a stack member back brings back whatever set it aside: the stack, or the PR itself
+      const keys = on ? [stack ? `stack:${stackKey(p)}` : `pr:${p.id}`] : [`pr:${p.id}`, ...(p.stack ? [`stack:${stackKey(p)}`] : [])]
+      return Promise.all(keys.map((key) => api('/aside', { key, on }))).then(() => toast(on ? `${said} set aside: it waits at the foot of the list` : `${said} is back`),
+        (e: Error) => { setOver((o) => ({ ...o, ...Object.fromEntries(ids.map((id) => [id, { ...o[id], aside: !on }])) })); toast(e.message, 'error') })
+    }
     if (what === 'hide') {
       setOver((o) => ({ ...o, [p.id]: { ...o[p.id], dismissed: true } }))
       return api(`/prs/${encodeURIComponent(p.id)}/dismiss`, {}).then(() => toast(`${name} hidden until it is requested again`),
@@ -106,7 +120,8 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
   useFlip(nav, `${tab}|${shapeKey(groups, prId, groupTitle)}`, prs.map(prId))
   // folded groups, kept per browser; what's finished starts folded
   const [shut, setShut] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('prlist-shut') ?? '') } catch { return { 'Reviewed by you': true, Closed: true, Done: true } } })
-  const fold = (t: string) => setShut((s) => { const n = { ...s, [t]: !s[t] }; try { localStorage.setItem('prlist-shut', JSON.stringify(n)) } catch {} return n })
+  const isShut = (t: string) => shut[t] ?? t === ASIDE.title // set aside starts folded
+  const fold = (t: string) => setShut((s) => { const n = { ...s, [t]: !(s[t] ?? t === ASIDE.title) }; try { localStorage.setItem('prlist-shut', JSON.stringify(n)) } catch {} return n })
   useTouch('review', selected)
   const seen = recent('review', 5, now)
   const byNumber = new Map(prs.map((p) => [`${p.repo}#${p.number}`, p]))
@@ -172,14 +187,14 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
           return (
             <section key={g.title} className="mb-1.5 reading:mb-0 reading:border-b reading:border-zinc-200/80 reading:py-1 reading:last:border-0 dark:reading:border-zinc-800/80">
               <h2 className="sticky top-0 z-10 reading:hidden backdrop-blur-xl">
-                <button type="button" onClick={() => fold(g.title)} aria-expanded={!shut[g.title]} className="flex w-full items-center gap-2 px-2.5 pb-1.5 pt-3 label text-fg-4 hover:text-fg-2">
-                <ChevronRight className={`size-3.5 transition-transform ${shut[g.title] ? '' : 'rotate-90'}`} aria-hidden />
-                {g.recent && <History className="size-3.5" aria-hidden />}{g.pinned && <Bookmark className="size-3.5 fill-current text-accent" aria-hidden />}{g.title}
-                <span className="rounded-full bg-hover px-1.5 py-px text-micro font-medium normal-case tabular-nums tracking-normal text-fg-3">{g.recent || g.pinned ? units.length : units.flat().filter((p) => g.statuses.includes(p.status)).length}</span>
+                <button type="button" onClick={() => fold(g.title)} aria-expanded={!isShut(g.title)} className="flex w-full items-center gap-2 px-2.5 pb-1.5 pt-3 label text-fg-4 hover:text-fg-2">
+                <ChevronRight className={`size-3.5 transition-transform ${isShut(g.title) ? '' : 'rotate-90'}`} aria-hidden />
+                {g.aside && <Archive className="size-3.5" aria-hidden />}{g.recent && <History className="size-3.5" aria-hidden />}{g.pinned && <Bookmark className="size-3.5 fill-current text-accent" aria-hidden />}{g.title}
+                <span className="rounded-full bg-hover px-1.5 py-px text-micro font-medium normal-case tabular-nums tracking-normal text-fg-3">{g.recent || g.pinned || g.aside ? units.length : units.flat().filter((p) => g.statuses.includes(p.status)).length}</span>
                 </button>
               </h2>
-              {!shut[g.title] && units.map((u) => u[0].stack && u.length > 1
-                ? <Stack key={stackKey(u[0])} prs={u} here={g.recent || g.pinned ? u.map((p) => p.status) : g.statuses} byNumber={byNumber} selected={u.some((p) => p.id === selected || `stack:${p.id}` === selected) ? selected : undefined} onSelect={select} now={now} activeRef={activeRef} pick={pick} act={act} />
+              {!isShut(g.title) && units.map((u) => u[0].stack && u.length > 1
+                ? <Stack key={stackKey(u[0])} prs={u} here={g.recent || g.pinned || g.aside ? u.map((p) => p.status) : g.statuses} byNumber={byNumber} selected={u.some((p) => p.id === selected || `stack:${p.id}` === selected) ? selected : undefined} onSelect={select} now={now} activeRef={activeRef} pick={pick} act={act} />
                 : <Row key={u[0].id} p={u[0]} seen={g.recent ? seen.get(u[0].id) : undefined} active={u[0].id === selected} onSelect={select} now={now} activeRef={activeRef} pick={pick} act={act} />)}
             </section>
           )
@@ -208,7 +223,7 @@ function PickMark({ p, pick, children, small = false }: { p: PrView; pick: Pick;
 }
 
 type RowProps = { p: PrView; seen?: number; active: boolean; onSelect: (id: string) => void; now: number; activeRef: RefObject<HTMLButtonElement | null>; pick: Pick; act: Act }
-type Act = (p: PrView, what: 'pin' | 'hide') => void
+type Act = (p: PrView, what: 'pin' | 'hide' | 'aside' | 'aside-stack') => void
 
 /** A row's last column: its own facts, swapped on hover for the actions in the same place (nothing else moves or hides). */
 export const Trail = ({ children, actions }: { children: ReactNode; actions: ReactNode }) => (
@@ -223,6 +238,7 @@ export const Trail = ({ children, actions }: { children: ReactNode; actions: Rea
 function Quick({ p, act }: { p: PrView; act: Act }) {
   const items = [
     { what: 'pin' as const, Icon: Bookmark, on: !!p.pinned, label: p.pinned ? 'Remove the bookmark' : 'Bookmark: keep it on top, and alert me when its state changes' },
+    ...(!p.stack ? [{ what: 'aside' as const, Icon: Archive, on: !!p.aside, label: p.aside ? 'Bring it back into the list' : 'Set aside: out of the way until you bring it back' }] : []),
     ...(!p.mine && !p.closed ? [{ what: 'hide' as const, Icon: EyeOff, on: false, label: 'Hide until it is requested again' }] : []),
   ]
   return (
@@ -297,12 +313,16 @@ const Stack = memo(function Stack({ prs, here, byNumber, selected, onSelect, now
     <div style={appColor(repo).style} className="mb-1.5 rounded-xl bg-white/50 p-1 ring-1 ring-line reading:mb-0 reading:bg-transparent reading:p-0 reading:ring-0 dark:bg-zinc-900/30 ">
       {/* the stack itself is a row: it opens the stack's page (its PRs at a glance, one answer for all of them) */}
       <button onClick={() => onSelect(`stack:${prs[0].id}`)} aria-current={selected?.startsWith('stack:') && prs.some((p) => `stack:${p.id}` === selected)} title={`Open the stack: ${all.map((s) => `#${s.number}`).join(' → ')}`}
-              className="flex w-full items-center gap-2 rounded-ctl px-2 pb-1 pt-1 text-left text-meta text-fg-3 transition-colors hover:bg-hover hover:text-fg-1 aria-[current=true]:bg-accent-soft/60 aria-[current=true]:text-fg-1 reading:hidden">
+              className="group/stk flex w-full items-center gap-2 rounded-ctl px-2 pb-1 pt-1 text-left text-meta text-fg-3 transition-colors hover:bg-hover hover:text-fg-1 aria-[current=true]:bg-accent-soft/60 aria-[current=true]:text-fg-1 reading:hidden">
         <Layers className="size-3.5 shrink-0 text-accent" />
         <span className={`truncate font-mono ${appColor(repo).text}`}>{repo.split('/')[1]}</span>
         <span className="shrink-0 tabular-nums">{all.length} PRs</span>
         {prs.some((p) => p.stackRun) && <span className="inline-flex shrink-0 items-center gap-1 text-run-text" title="One agent is resolving the whole stack now, bottom first"><LoaderCircle className="size-3 animate-spin" />{prs.some((p) => p.stackRun === 'running') ? 'resolving' : 'queued'}</span>}
-        <span className="ml-auto flex shrink-0 -space-x-1">{authors.slice(0, 3).map((a) => <Avatar key={a.login} src={a.avatar} className="size-4" />)}</span>
+        {(() => { const on = prs.some((p) => p.aside), label = on ? 'Bring the stack back into the list' : 'Set the stack aside: out of the way until you bring it back'
+          return <span role="button" tabIndex={0} title={label} aria-label={label} aria-pressed={on} onClick={(e) => { e.stopPropagation(); act(prs[0], 'aside-stack') }}
+                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); act(prs[0], 'aside-stack') } }}
+                       className={`ml-auto shrink-0 rounded p-0.5 transition-colors ${on ? 'text-accent' : 'invisible text-fg-3 hover:bg-hover hover:text-fg-1 group-hover/stk:visible focus-visible:visible'}`}><Archive className="size-3.5" /></span> })()}
+        <span className="flex shrink-0 -space-x-1">{authors.slice(0, 3).map((a) => <Avatar key={a.login} src={a.avatar} className="size-4" />)}</span>
         {/* the whole stack at a glance, bottom to top: a segment per PR in its status colour */}
         <span className="flex w-16 shrink-0 gap-0.5">
           {all.map((s) => {

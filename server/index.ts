@@ -98,7 +98,7 @@ import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
 
 export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
-export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
+export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { aside?: boolean; queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
 /** An error in a few words, with what is under Node's bare "fetch failed" (ENOTFOUND: no DNS, a timeout, a reset). */
 const whyFailed = (e: unknown) => {
   const c = (e as { cause?: { code?: string; message?: string } }).cause
@@ -179,7 +179,7 @@ function views(): PrView[] {
       if (stackAnswered && pr.job) pr.job = { ...pr.job, next: undefined }
       // and its flow and status read it so too: the agent no longer "asks you" what the stack's answer covered
       const q = stackAnswered && p.job ? { ...p, job: { ...p.job, next: undefined } } : p // answered with the stack: nothing asked any more
-      return { ...pr, ...(critOff && { critOff }), ...(stackRun && { stackRun }), ...(stackAnswered && { stackAnswered }), waiting, queued, pinned: `pr:${p.id}` in pins(), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(q, crit, !!repoPath, op), flow: flowOf(flowInOf(q, crit, !!repoPath, op)),
+      return { ...pr, ...(critOff && { critOff }), ...(stackRun && { stackRun }), ...(stackAnswered && { stackAnswered }), waiting, queued, pinned: `pr:${p.id}` in pins(), aside: !!state.aside?.some((k) => k === `pr:${p.id}` || (!!pr.stack && k === `stack:${p.repo}#${pr.stack[0].number}`)), hasBody: !!body?.trim(), background: openTasks(p.id), repoPath, crit, linked: linksOfPr(p, tickets), op, status: statusOf(q, crit, !!repoPath, op), flow: flowOf(flowInOf(q, crit, !!repoPath, op)),
         missing: missingFor(slot(p.mine ? 'revise' : 'review')), codebaseMap: repoPath ? { task: state.base[p.repo], mappedAt: mappedAt(p.repo) } : undefined }
     })
 }
@@ -807,6 +807,15 @@ app.post('/exec/tickets/:id/dim', async (c) => {
   return c.json({ ok: true })
 })
 // bookmarks: on or off for a PR ("pr:<id>") or a ticket ("ticket:<id>")
+// set aside: a PR, a stack or a ticket you can't move on now, out of your lists' way (one quiet folded section) and out
+// of the counts, until you bring it back; kept across devices
+app.post('/aside', async (c) => {
+  const { key, on } = await c.req.json<{ key?: string; on?: boolean }>()
+  if (!key || !/^(pr|stack|ticket):\S+$/.test(key)) return c.json({ error: 'key must be pr:<id>, stack:<repo>#<n> or ticket:<id>' }, 400)
+  state.aside = on ? [...new Set([...(state.aside ?? []), key])] : (state.aside ?? []).filter((k) => k !== key)
+  save(); bus.emit('change'); bus.emit('exec')
+  return c.json({ ok: true })
+})
 app.post('/pins', async (c) => {
   const { key, on } = await c.req.json<{ key?: string; on?: boolean }>()
   if (!key || !/^(pr|ticket):\S+$/.test(key)) return c.json({ error: 'key must be pr:<id> or ticket:<id>' }, 400)
