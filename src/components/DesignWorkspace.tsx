@@ -467,6 +467,56 @@ const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, wi
  * screen. A live page is only there while its screen is near the board's view. The light comes and goes softly: the
  * last lit component stays drawn while it fades out.
  */
+/** Below this scale a page's text is a grey haze: the miniature draws it as a blueprint instead. */
+export const BLUEPRINT_BELOW = 0.42
+const BLUEPRINT_CSS = `
+html.bp .bp-t { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important;
+  --bp-ink: color-mix(in srgb, var(--bp-c) 50%, transparent);
+  background: linear-gradient(var(--bp-ink), var(--bp-ink)) 0 55% / 100% 58% no-repeat !important; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+html.bp .bp-t.bp-h { --bp-ink: color-mix(in srgb, var(--bp-c) 88%, transparent); }
+html.bp [data-bp-b] { outline: var(--bp-px) solid var(--bp-bc) !important; outline-offset: calc(-1 * var(--bp-px)); }
+html.bp input, html.bp textarea, html.bp select { color: transparent !important; }
+html.bp ::placeholder { color: transparent !important; }
+html.bp img, html.bp svg, html.bp video, html.bp canvas { filter: grayscale(.4) contrast(1.15); }
+html.bp *, html.bp *::before, html.bp *::after { transition: none !important; animation: none !important; }`
+
+/**
+ * A kept page drawn for the board, seen from afar: each run of text becomes a solid bar in its own colour (a title or
+ * a bold word darker), every edge a line that stays one screen pixel at any size, fields empty. Its layout, its
+ * places and its colours stay as drawn. Marking the page is done once; `on` and the scale `k` switch it.
+ */
+export function blueprint(d: Document, k: number, on: boolean) {
+  const root = d.documentElement
+  if (!root.dataset.bp) {
+    root.dataset.bp = '1'
+    const st = d.createElement('style'); st.textContent = BLUEPRINT_CSS; d.head?.append(st)
+    const view = d.defaultView!
+    const walk = d.createTreeWalker(d.body ?? root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => !n.textContent?.trim() || n.parentElement?.closest('script, style, noscript, textarea, option, svg, title') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    })
+    const texts: Text[] = []
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) texts.push(n as Text)
+    for (const t of texts) {
+      const cs = view.getComputedStyle(t.parentElement!)
+      const span = d.createElement('span')
+      span.className = Number(cs.fontWeight) >= 600 || parseFloat(cs.fontSize) >= 20 || /^H[1-3]$/.test(t.parentElement!.tagName) ? 'bp-t bp-h' : 'bp-t'
+      span.style.setProperty('--bp-c', cs.color)
+      t.replaceWith(span); span.append(t)
+    }
+    for (const el of (d.body ?? root).querySelectorAll<HTMLElement>('*')) {
+      if (el.classList.contains('bp-t')) continue
+      const cs = view.getComputedStyle(el)
+      const side = (['Top', 'Right', 'Bottom', 'Left'] as const).find((s) => parseFloat(cs[`border${s}Width`]) > 0 && cs[`border${s}Style`] !== 'none')
+      if (!side) continue
+      const c = cs[`border${side}Color`]
+      if (/rgba\([^)]*,\s*0\)$|transparent/.test(c)) continue
+      el.dataset.bpB = ''; el.style.setProperty('--bp-bc', c)
+    }
+  }
+  root.classList.toggle('bp', on)
+  root.style.setProperty('--bp-px', `${(1 / k).toFixed(2)}px`)
+}
+
 /**
  * A rendered page as plain HTML: its markup and every style it has (the files it links, and the rules a CSS-in-JS
  * library put in by script), what is typed in its fields, without a script, and its addresses read from its own
@@ -616,7 +666,14 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
   const W = shot.width ?? 1280, H = shot.height ?? Math.round(W * 0.625)
   // the page itself, drawn at this size: its layout as at full width, the browser zooming it down (never a picture shrunk)
   const page = useRef<HTMLIFrameElement>(null), k = cell / W
-  useEffect(() => { try { const d = page.current?.contentDocument; if (d) d.documentElement.style.zoom = String(k) } catch { /* another origin: as drawn */ } }, [k, ready])
+  useEffect(() => {
+    try {
+      const d = page.current?.contentDocument
+      if (!d) return
+      d.documentElement.style.zoom = String(k)
+      if (ready) blueprint(d, k, k < BLUEPRINT_BELOW) // from afar: the layout, not a haze of text
+    } catch { /* another origin: as drawn */ }
+  }, [k, ready])
   const mask = `m${useId().replace(/\W/g, '')}`
   const at = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }) => {
     const r = e.currentTarget.getBoundingClientRect()
