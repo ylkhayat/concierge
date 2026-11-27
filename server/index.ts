@@ -6,7 +6,7 @@ import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.t
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { profile } from './profile.ts'
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { unlinkSync, watch as fsWatch } from 'node:fs'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
@@ -77,12 +77,12 @@ import { domainOf, writeDomain, writingDomain } from './domain.ts'
 import { peers as replicaPeers, replicaExtras, replicaStatus } from './replica.ts'
 import { laneByModel } from './laneModel.ts'
 import { ask as joinAsk, decide as joinDecide, hello as joinHello, status as joinStatus, waiting as joinsWaiting } from './join.ts'
-import { baseSlots, canChange, mustChange, ownerOf, roles, setOwner, setRoles, slot, withRole, type Owner, type Role } from './roles.ts'
+import { baseSlots, mustChange, ownerOf, roles, setOwner, setRoles, slot, withRole, type Owner } from './roles.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from './readiness.ts'
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { addToProject as addPlanToProject, applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
-import { brokenSkillLinks, checkedOut, markClones, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
+import { brokenSkillLinks, checkedOut, markClones, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today, snapshotNow } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
@@ -1242,42 +1242,6 @@ function writeStandup(day: string, since: Date, teams: string[]) {
   return p
 }
 // the facts, live, and the written version for that day and those teams, saying whether the facts moved since
-// --- the Desk's brief: a topic (a ticket and its PRs, a stack, a PR) in two or three sentences, written by a small model
-// from the facts here, kept until those facts change (then written again on the next look)
-const briefing = new Map<string, Promise<string | undefined>>()
-function briefFacts(ticketId: string | undefined, prIds: string[]) {
-  const t = ticketId ? ticketViews().find((x) => x.id === ticketId) : undefined
-  const prs = views().filter((p) => prIds.includes(p.id))
-  return {
-    ticket: t && { id: t.id, title: t.title, state: t.state, project: t.project, about: t.description.slice(0, 900), lastComment: t.lastComment && `${t.lastComment.by}: ${t.lastComment.body.slice(0, 300)}` },
-    prs: prs.map((p) => {
-      const o = loadOverlay(state.prs[p.id])
-      return { pr: `#${p.number}`, title: p.title, mine: !!p.mine, status: p.status, stands: p.flow.why, about: o?.business.headline, threadsWaitingOnYou: p.awaiting ?? p.unresolved ?? 0, review: p.reviewDecision ?? undefined, agentWorking: p.status === 'preparing' || p.status === 'posting' }
-    }),
-  }
-}
-app.post('/desk/brief', async (c) => {
-  const { key, ticket, prs } = await c.req.json<{ key?: string; ticket?: string; prs?: string[] }>()
-  if (!key || key.length > 300) return c.json({ error: 'key required' }, 400)
-  const facts = briefFacts(ticket, (prs ?? []).slice(0, 12))
-  if (!facts.ticket && !facts.prs.length) return c.json({ error: 'Nothing known about that topic' }, 404)
-  const input = JSON.stringify(facts)
-  const fp = createHash('sha1').update(input).digest('hex').slice(0, 12)
-  const had = state.briefs?.[key]
-  if (had && had.key === fp) return c.json({ text: had.text, at: had.at })
-  // one write per topic at a time; an old brief shows meanwhile, marked as catching up
-  if (!briefing.has(key)) briefing.set(key, (async () => {
-    const { result, cost, provider, tokens } = await callClaude<{ text: string }>(input, tmpdir(), undefined, () => {},
-      { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, 0.1, await method('brief', 'The text field holds the brief.'), 'haiku')
-    addSpend(cost, provider, tokens)
-    // the newest 100 stay
-    state.briefs = Object.fromEntries([...Object.entries(state.briefs ?? {}), [key, { key: fp, text: result.text.trim(), at: new Date().toISOString() }] as const].sort((a, b) => a[1].at.localeCompare(b[1].at)).slice(-100))
-    save()
-    return result.text.trim()
-  })().catch((e) => { console.warn(`desk brief ${key}: ${(e as Error).message.split('\n')[0]}`); return undefined }).finally(() => briefing.delete(key)))
-  const text = await briefing.get(key)
-  return text ? c.json({ text, at: new Date().toISOString() }) : c.json({ text: had?.text, at: had?.at, stale: true, error: had ? undefined : 'Could not write the brief' }, had ? 200 : 502)
-})
 app.get('/standup', async (c) => {
   const q = c.req.query('since'), since = q && !isNaN(Date.parse(q)) ? new Date(q) : lastWorkday()
   const day = c.req.query('day') ?? '', teams = (c.req.query('teams') ?? '').split(',').filter(Boolean)
@@ -2363,7 +2327,6 @@ app.post('/setup/step', async (c) => {
   if (state.onboardingStep !== step) { state.onboardingStep = step; save() }
   return c.json({ ok: true })
 })
-app.get('/setup/my-skills', async (c) => c.json(await mySkills()))
 /** Which machines may clone a repository (several machines: a company may keep one off some). Allowing it here clones it. */
 app.post('/repos/clone-on', async (c) => {
   const { repo, machine, on } = await c.req.json() as { repo?: string; machine?: string; on?: boolean }
@@ -2586,8 +2549,6 @@ app.post('/accounts/:id/adopt-login', async (c) => {
   return c.json({ ok: true, login: loginText(who) })
 })
 
-// --- the placement matrix: where each repository's work runs (machines.ts route), logged when it moves
-app.get('/placement', (c) => c.json(matrix().map((r) => ({ ...r, main: fleet.machine }))))
 // the repositories no machine can work on now (none it is allowed on is online with its checkout), and why: the page
 // says so wherever they show (their pull requests and tickets stay to read; their runs wait). Several machines only
 app.get('/repos/held', (c) => c.json(fleet.machine ? Object.fromEntries(matrix().filter((r) => !r.order.length && r.why).map((r) => [r.repo, r.why])) : {}))
@@ -3535,38 +3496,6 @@ app.post('/handover/new', async (c) => {
   return c.json({ id, started: !!run })
 })
 
-// hand linked work from one agent to the other: the source's latest word goes to the target's own session, which
-// continues; the source stops being the one that acts. Refused while either is working (stop it first).
-app.post('/handoff', async (c) => {
-  const { from, to } = await c.req.json<{ from?: { kind: string; id: string }; to?: { kind: string; id: string } }>()
-  if (!from || !to) return c.json({ error: 'Say who hands over to whom' }, 400)
-  const side = (x: { kind: string; id: string }) => x.kind === 'pr'
-    ? (() => { const p = state.prs[x.id]; return p && { name: `PR #${p.number}`, said: p.job?.summary, busy: p.job?.state === 'running' || p.job?.state === 'queued', p } })()
-    : (() => { const t = execBoard.tickets.find((y) => y.id === x.id); const r = t && ticketViews().find((y) => y.id === t.id)?.run; return t && { name: `ticket ${t.id}`, said: r?.summary, busy: ticketBusy(t.id), t, r } })()
-  const a = side(from), b = side(to)
-  if (!a || !b) return c.json({ error: 'Unknown item' }, 404)
-  if (a.busy) return c.json({ error: `The ${a.name} agent is still working; let it finish or stop it first` }, 409)
-  if (b.busy) return c.json({ error: `The ${b.name} agent is working; let it finish first` }, 409)
-  const msg = `Handover from the agent on ${a.name}: it stops here, and you continue this work from where it left off.`
-    + (a.said ? `\n\nIts latest report:\n${a.said.slice(0, 5000)}` : '\n\n(It has no report yet.)')
-    + '\n\nCheck the current state of the branch and threads first, keep what it did, and do not redo it.'
-  const said = `Handover from ${a.name}`
-  // noted on the giving side only once the handover happened
-  const fromFeed = 'p' in a ? a.p!.id : 'r' in a && a.r ? `exec:${a.r.id}` : undefined // a ticket's timeline is its runs'
-  const done = () => { if (fromFeed) logged(fromFeed, `Handed over to ${b.name}`) }
-  if ('p' in b && b.p) {
-    if (!b.p.job?.sessionId) return c.json({ error: `${b.name} has no agent session yet; run it first` }, 400)
-    enqueue(b.p, 'reply', msg + REPLY_NOTE, said)
-    done()
-    return c.json({ ok: true })
-  }
-  const t = 't' in b ? b.t : undefined, r = 'r' in b ? b.r : undefined
-  const repo = t && repoFor(t.id, config.exec.repoByPrefix)
-  if (!t || !repo) return c.json({ error: 'No repository mapped for that ticket' }, 400)
-  const run = enqueueExec([t.id], repo, false, { label: 'Handover', prompt: msg + REPLY_NOTE, said, ...(r && { resume: r.sessionId, costBefore: (r.costBefore ?? 0) + (r.costUsd ?? 0) }) })
-  if (run) done()
-  return run ? c.json({ ok: true, run }) : c.json({ error: 'Could not start the ticket agent' }, 400)
-})
 app.post('/prs/:id/reply', async (c) => {
   const p = pr(c.req.param('id'))
   const { text } = await c.req.json() as { text?: string }
@@ -3629,16 +3558,6 @@ const handedNote = (p: Pr) => p.handoffs?.length
 /** Your words to a PR's agent: they start a run, reach the running one between steps, or replace a queued start. */
 // one message to a whole stack: each PR's agent gets it in its own conversation, told that it is one of several
 export const STACK_MARK = '\n\n(To the whole stack'
-app.post('/stacks/say', async (c) => {
-  const { ids, text } = await c.req.json() as { ids?: unknown; text?: unknown }
-  const msg = typeof text === 'string' ? text.trim().slice(0, 6000) : ''
-  if (!msg) return c.json({ error: 'Write what the stack should do' }, 400)
-  const ps = (Array.isArray(ids) ? ids : []).map((id) => (typeof id === 'string' ? pr(id) : undefined)).filter((p): p is Pr => !!p && !p.closed && !!config.repos[p.repo])
-  if (!ps.length) return c.json({ error: 'None of these pull requests can take a message here (unknown, closed, or no local checkout)' }, 400)
-  const chain = ps.map((p) => `#${p.number}`).join(' → ')
-  const sent = ps.map((p) => ({ number: p.number, how: sendReply(p, `${msg}${STACK_MARK}, bottom first: ${chain}. You work on #${p.number}. Do the part of this that belongs to #${p.number}; when none of it does, say so in one line and change nothing. The agents on the other pull requests got the same message, each for its own.)`) }))
-  return c.json({ sent })
-})
 // one agent for the whole stack (the drive-stack skill): it works bottom-up through every PR, settles what crosses them,
 // restacks and checks again after each, and ends done or with one question. One run instead of a resume per PR's agent
 // a PR's agent's questions are answered once the stack was resolved after it finished: the stack's run took them up

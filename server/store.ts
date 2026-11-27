@@ -1,13 +1,13 @@
 import type { Env } from './envOf.ts'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { appendFile, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { appendFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 import { config } from './config.ts'
 import { transition, type RunState } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
 import { mine } from './perMachine.ts'
-import { drop, emptyMeta, entriesOf, merge, put, valueOf, type Meta } from './merge.ts'
+import { drop, emptyMeta, entriesOf, merge, put, type Meta } from './merge.ts'
 import { StateDb } from './db.ts'
 export { config }
 

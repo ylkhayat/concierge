@@ -2,7 +2,7 @@
 // against one table of what may follow what, and appends it to the event log (events.jsonl, append-only). The log is
 // the history nothing else keeps: state.json holds each PR's latest job only, and a feed only what the agent said.
 // The Runs view and its totals are read from it. Own paths (no import of store.ts, which calls this while loading).
-import { appendFile, readFile } from 'node:fs/promises'
+import { appendFile } from 'node:fs/promises'
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { STATE_DIR } from './paths.ts'

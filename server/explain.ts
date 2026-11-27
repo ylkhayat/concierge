@@ -5,7 +5,7 @@
 import { tmpdir } from 'node:os'
 import { LEVELS_SCHEMA, LEVELS_SYSTEM, STORY_RULE, levelsOf, levelsPrompt, type Term } from './levels.ts'
 import { method } from './method.ts'
-import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { mine, readMerged } from './perMachine.ts'
@@ -18,6 +18,7 @@ import { fill } from './config.ts'
 import { ticketBrief } from './linear.ts'
 import { config, STATE_DIR, type Pr } from './store.ts'
 import { kindOf, providerFor, spawnAgent, tokensOf, type ProviderId } from './providers.ts'
+import { Lru } from './lru.ts'
 
 // --- shapes ----------------------------------------------------------------------------------
 
@@ -83,7 +84,7 @@ const OVERLAYS = (pr: Pr) => join(STATE_DIR, 'explain', `${slug(pr.repo)}-${pr.n
 
 // maps and explanations are only written here, so they stay in memory once read: a page view never reads them
 // from disk again, and writes go out off the thread (in order, per file) while readers already see the new data
-const cache = new Map<string, unknown>()
+const cache = new Lru<string, unknown>(60) // the explanations read last (each is megabytes): one not here is read from its file again
 const readJson = <T>(p: string): T | undefined => {
   if (cache.has(p)) return cache.get(p) as T | undefined
   // every machine's copy (perMachine.ts): a folder map merged entry by entry, anything else the newest copy

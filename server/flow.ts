@@ -3,7 +3,7 @@ import { pendingOf } from './reply.ts'
 // first that matches wins, so the same facts always give the same answer, and the page, the pipeline and the Next
 // panel all read this one answer.
 import type { Crit, Status } from './crit.ts'
-import { isFollowUp, state, type Job, type Pr } from './store.ts'
+import { isFollowUp, type Job, type Pr } from './store.ts'
 
 export type FlowState =
   | 'closed' | 'no-checkout' | 'working' | 'failed' | 'asks'

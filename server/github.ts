@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { config, save, state, type Pr, type StackRef } from './store.ts'
 import { judge, settled, verdictOf } from './judge.ts'
+import { Lru } from './lru.ts'
 
 let token = process.env.GITHUB_TOKEN ?? ''
 /** The shared GitHub token changed (sharedEnv.ts): use it from the next call. */
@@ -11,7 +12,7 @@ async function getToken() {
   return token
 }
 
-const etags = new Map<string, { etag: string; body: unknown }>()
+const etags = new Lru<string, { etag: string; body: unknown }>(3000) // whole answers, by path: one not here is fetched again
 
 // GitHub's secondary limits punish bursts (many requests at once, or too many a minute), whatever the hourly quota
 // says: every call to GitHub goes through one gate, a few at a time, and once GitHub says slow down nothing asks it

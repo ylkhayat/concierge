@@ -13,7 +13,6 @@
 // What replaced Syncthing, which re-walked ~100k files every minute and re-sent a 7 MB state file on every change.
 import { randomUUID } from 'node:crypto'
 import { appendFile, chmod, lstat, mkdir, open, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { CLAUDE_HOME, sessionDir } from './agentHome.ts'
 import { reloadConfig } from './config.ts'
@@ -85,7 +84,6 @@ async function pullState() {
 type Root = { id: string; dir: string; walk: string[]; keep?: (rel: string) => boolean } // walk: the top-level files and folders that travel ('' : all); keep: which of what is under them
 // the session folders of runs Concierge started: Claude names one after the run's working directory, every other character a dash
 const SESSION_DIRS = [process.env.DECK_CODE || process.env.CODE_DIR, STATE_DIR].filter((x): x is string => !!x).map(sessionDir)
-const CODE = process.env.DECK_CODE || process.env.CODE_DIR
 const ROOTS: Root[] = [
   { id: 'state', dir: STATE_DIR, walk: ['logs', 'explain', 'domain', 'drafts', 'devlogs', 'atlas', 'crit', 'evals', 'review-records', 'review-pr-records', 'review-pr', 'revise', 'norms.json', 'events.jsonl',
     // your organization's skills, as every machine shares them (orgSkills.ts): a machine claude.ai never synced them to runs them from here

@@ -5,11 +5,9 @@
 // How it breaks a brief down is a skill: the one picked in Settings → Skills (plan-project by default), or another per plan.
 import { skillBody } from './method.ts'
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { gql } from './linear.ts'
 import { providerFor, spawnAgent } from './providers.ts'
-import { skillFile } from './setup.ts'
 import { slot } from './roles.ts'
 import { save as persist, state } from './store.ts'
 import { stale } from './live.ts'
