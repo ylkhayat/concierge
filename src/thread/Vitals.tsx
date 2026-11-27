@@ -181,12 +181,13 @@ const PHASE: Record<NonNullable<D['phase']>, string> = { refreshing: 'Catching u
 
 /** Intent or Understanding: a card that knows one side of the work. Its few words on the tile, its gist on hover, the
  *  whole page when clicked; asked from the chat's box (Send to Intent / Understanding), it lights up and answers here. */
-export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen, pane = open, prId, explainPath }: {
+export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onView, toast, here, open, onOpen, pane = open, prId, explainPath, explaining }: {
+  explaining?: boolean // the PR's explanation is being written: both cards draw from it, so both show it
   target: string; topic: Topic; d?: D; onChange: (all: Discussions) => void; onSteer: (text: string) => Promise<unknown>
   onSteerPr?: (number: number, text: string) => Promise<unknown>; onView?: (v: View) => void; toast: Toast; here?: number; prId?: string; explainPath?: string
   open?: boolean; onOpen?: () => void; pane?: boolean // pane: its card is drawn (open, or fading out under the next one)
 }): { tile: ReactNode; details: ReactNode } {
-  const t = TOPIC[topic], b = d?.brief, started = !!b || !!d?.messages.length, busy = !!d?.busy
+  const t = TOPIC[topic], b = d?.brief, started = !!b || !!d?.messages.length, busy = !!d?.busy || !!explaining
   const asked = (d?.messages ?? []).slice(-6)
   const fail = (e: Error) => toast(e.message, 'error')
   // written (or caught up) without a question: one short call
@@ -195,12 +196,12 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
   const sendPr = (n: number, text: string) => onSteerPr?.(n, text).then(() => api('/discussions/sent', { target, topic, number: n }).then(onChange)).then(() => toast(`Sent to #${n}'s agent`), fail)
   const act = (a: Action) => actOn(a, { target, topic, onChange, onSteer, onView, toast })
   const chip = 'inline-flex max-w-full items-center gap-1.5 rounded-ctl bg-fill px-2.5 py-1 text-left text-small text-fg-2 transition-colors hover:bg-fill-strong hover:text-fg-1'
-  const status = busy ? PHASE[d!.phase ?? 'answering'] : b ? b.status : started ? d!.status || 'Open' : 'Not written yet'
+  const status = busy ? (d?.busy ? PHASE[d.phase ?? 'answering'] : 'Reading the change…') : b ? b.status : started ? d!.status || 'Open' : 'Not written yet'
   const lane = d?.stage === 'concluded' ? 'var(--st-ok)' : `var(--vital-${topic})`
   const unsent = !!d?.steer && !d.sentAt
   const tile = (
     <Vital name={t.label} icon={<t.icon className="size-3.5" style={{ color: lane }} />} status={status} lane={lane} busy={busy} idle={!started && !busy} flag={unsent}
-           glow={busy && d?.phase !== 'refreshing'} stale={d?.stale} open={open} onOpen={started || busy ? onOpen : write}
+           glow={busy && (!d?.busy || d.phase !== 'refreshing')} stale={d?.stale} open={open} onOpen={started || busy ? onOpen : write}
            foot={busy ? undefined : b ? <Update at={d!.messages.at(-1)?.at && d!.messages.at(-1)!.at > b.at ? d!.messages.at(-1)!.at : b.at} text={d!.messages.at(-1)?.who === 'agent' ? `answered: ${d!.messages.at(-1)!.text.replace(/[#*_`>]/g, '').slice(0, 80)}` : `written${asked.length ? ` · ${asked.filter((m) => m.who === 'you').length} asked` : ''}`} />
              : <p className="truncate text-micro text-fg-4">{started ? 'asked before cards' : 'click to write it'}</p>}
            peek={b ? (
