@@ -404,6 +404,13 @@ function changes(): { key: string; value: string | null }[] {
  * What another machine changed, pulled from its change log (replica.ts): into the database and into the state as it
  * runs here, never counted as a change of ours. `full`: every entry it has (this one was too far behind).
  */
+/** A copy of the state as it is, kept before it is replaced whole by another machine's (the last three are kept). */
+export function keepBeforeReplace() {
+  mkdirSync(SNAPSHOTS, { recursive: true })
+  const prefix = `before-replace.${basename(DB_FILE)}.`
+  db.snapshot(join(SNAPSHOTS, `${prefix}${Date.now()}.db`))
+  for (const f of readdirSync(SNAPSHOTS).filter((x) => x.startsWith(prefix)).sort().slice(0, -3)) rmSync(join(SNAPSHOTS, f), { force: true })
+}
 export function applyRemote(got: { key: string; value: string | null }[], full?: Map<string, string>) {
   const applied = full ? db.replace(full) : (db.write(got), got)
   for (const c of applied) {

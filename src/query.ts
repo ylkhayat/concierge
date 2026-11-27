@@ -32,9 +32,21 @@ export const remember = <T,>(path: string, data: T) => queryClient.setQueryData(
  * Something under these API paths changed (the server said so over /api/events, or one of the stream's own events
  * implies it): every cached read under them is refetched if on screen, and the pages that read by hand (useLive) read again.
  */
+// A thing said stale is read again at once, and then at most once more two seconds later however often it is said in
+// between: a run's every step patches the list, and each patch named the same few reads (the machine's load, which the
+// server answers by listing its processes) in every open tab.
+const SPACING = 2000
+const readAt = new Map<string, number>(), later = new Map<string, ReturnType<typeof setTimeout>>()
 export function staleNow(prefixes: string[]) {
-  for (const p of prefixes) void refresh(p)
-  dispatchEvent(new CustomEvent('deck-stale', { detail: prefixes }))
+  const now = Date.now(), go: string[] = []
+  for (const p of prefixes) {
+    const since = now - (readAt.get(p) ?? 0)
+    if (since >= SPACING) { readAt.set(p, now); go.push(p) }
+    else if (!later.has(p)) later.set(p, setTimeout(() => { later.delete(p); staleNow([p]) }, SPACING - since))
+  }
+  if (!go.length) return
+  for (const p of go) void refresh(p)
+  dispatchEvent(new CustomEvent('deck-stale', { detail: go }))
 }
 const touches = (said: string[], mine: string[]) => said.some((p) => mine.some((q) => q.startsWith(p) || p.startsWith(q)))
 /**

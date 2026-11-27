@@ -20,7 +20,7 @@ import { reloadConfig } from './config.ts'
 import { fleet } from './fleet.ts'
 import { token } from './machines.ts'
 import { CONFIG_DIR, STATE_DIR } from './paths.ts'
-import { applyRemote, db } from './store.ts'
+import { applyRemote, db, keepBeforeReplace } from './store.ts'
 import { call } from './worker.ts'
 import { expired } from './retention.ts'
 
@@ -49,6 +49,13 @@ export function changesSince(since: number, theirEpoch?: string): Changes {
   return { epoch: mine, head, upto, more: upto < head, changes: got.map(({ key, value }) => ({ key, value })) }
 }
 
+/**
+ * A whole copy that would empty this machine: the other side has nothing, or a small fraction of what is here. That is
+ * what a machine with a new, empty state looks like (renamed, reinstalled, its file lost), not the fleet's state: taking
+ * it would delete everything here to match. Refused and said; a state this small (a new install) takes anything.
+ */
+export const wouldEmpty = (ours: number, theirs: number) => ours >= 50 && theirs < ours / 10
+
 const follow = { from: undefined as string | undefined, head: 0, applied: 0, at: 0, error: undefined as string | undefined }
 async function pullState() {
   const from = fleet.elsewhere()
@@ -59,7 +66,13 @@ async function pullState() {
     for (let round = 0; round < 50; round++) { // a long backlog in pages of 2000, then wait for the next tick
       const since = Number(db.getKv(`applied:${from}`) ?? 0)
       const r = await call<Changes>(peer.base, token(), 'POST', '/x/replica', { since, epoch: db.getKv(`epoch:${from}`) }, 60_000)
-      if (r.full) { applyRemote([], new Map(r.full)); console.log(`replica: took all ${r.full.length} entries from ${from}`) }
+      if (r.full) {
+        const ours = db.all().size
+        if (wouldEmpty(ours, r.full.length)) throw new Error(`${from} has ${r.full.length} entries where this machine has ${ours}: not taken (its state looks newly made, and taking it would remove what is here)`)
+        // replaced whole: what is here is kept aside first (the last three such copies, in snapshots/)
+        if (ours) try { keepBeforeReplace() } catch (e) { console.warn(`replica: couldn't keep a copy before taking ${from}'s state: ${(e as Error).message}`) }
+        applyRemote([], new Map(r.full)); console.log(`replica: took all ${r.full.length} entries from ${from}`)
+      }
       else if (r.changes?.length) applyRemote(r.changes)
       db.setKv(`applied:${from}`, String(r.upto)); db.setKv(`epoch:${from}`, r.epoch)
       Object.assign(follow, { from, head: r.head, applied: r.upto, at: Date.now(), error: undefined })

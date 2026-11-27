@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, statSync, utimesSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { tidy } from './replica.ts'
+import { tidy, wouldEmpty } from './replica.ts'
 
 test('at start, keys and sign-ins are readable by you alone and a failed pull\'s leftovers are gone', async () => {
   const config = mkdtempSync(join(tmpdir(), 'rd-tidy-c-')), state = mkdtempSync(join(tmpdir(), 'rd-tidy-s-'))
@@ -21,4 +21,12 @@ test('at start, keys and sign-ins are readable by you alone and a failed pull\'s
   assert.equal(mode('config.json'), 0o644) // not a secret: left as it was
   assert.ok(!existsSync(stale) && !existsSync(staleLog))
   assert.ok(existsSync(fresh)) // a pull may be writing it now
+})
+
+test('a whole copy from a machine with next to nothing is not taken over a state that has something', () => {
+  assert.ok(wouldEmpty(6880, 0))
+  assert.ok(wouldEmpty(6880, 5))      // a machine renamed or reinstalled: a new, empty state
+  assert.ok(!wouldEmpty(6880, 6500))  // the fleet's state, a little behind or ahead
+  assert.ok(!wouldEmpty(6880, 900))   // pruned hard, still the same state
+  assert.ok(!wouldEmpty(12, 0))       // a new install here: takes whatever the fleet has
 })

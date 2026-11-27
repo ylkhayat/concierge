@@ -6,7 +6,7 @@ import { appendFile, readFile } from 'node:fs/promises'
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { STATE_DIR } from './paths.ts'
-import { mine, readLines } from './perMachine.ts'
+import { copies, mine, readLines } from './perMachine.ts'
 
 export type RunState = 'queued' | 'running' | 'done' | 'failed' | 'interrupted' | 'cancelled'
 export type Entity = 'job' | 'exec' | 'explain' | 'base' | 'op' // op: a tool run on a PR (Smart rebase, re-run checks…)
@@ -67,15 +67,24 @@ export function transition<T extends Thing>(entity: Entity, id: string, run: str
   return thing
 }
 
+// The event log, read and parsed once for as long as its files stay as they are (their sizes and dates): the runs
+// page, the standup and the skills views each asked for it, some twice in one request, and each read and parsed every
+// machine's whole file again.
+let read: { sig: string; events: RunEvent[] } | undefined
+async function events(): Promise<RunEvent[]> {
+  const sig = copies(EVENTS).map((f) => { try { const s = statSync(f); return `${f}:${s.size}:${s.mtimeMs}` } catch { return f } }).join('|')
+  if (read && read.sig === sig) return read.events
+  const out: RunEvent[] = []
+  for (const line of (await readLines(EVENTS)).split('\n')) { if (line) try { out.push(JSON.parse(line)) } catch { /* a line cut by a crash */ } }
+  read = { sig, events: out }
+  return out
+}
+
 /** The event log's runs, newest first: each run's last word (its state now) with what it cost and why it ended. */
 export async function runs(sinceDays = 7) {
   const since = new Date(Date.now() - sinceDays * 86400_000).toISOString()
-  const text = await readLines(EVENTS)
   const byRun = new Map<string, RunEvent & { startedAt?: string; queuedAt?: string; restarts: number }>()
-  for (const line of text.split('\n')) {
-    if (!line) continue
-    let e: RunEvent
-    try { e = JSON.parse(line) } catch { continue }
+  for (const e of await events()) {
     if (e.at < since) continue
     const k = `${e.entity}|${e.id}|${e.run}`
     const prev = byRun.get(k)

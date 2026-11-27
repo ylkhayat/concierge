@@ -88,9 +88,14 @@ export function serveWorker(o: { port: number; host: string; token: () => string
         child.stdout.on('data', (c: Buffer) => frame({ o: c.toString() }))
         child.stderr.on('data', (c: Buffer) => frame({ e: c.toString() }))
         child.on('error', (e: Error) => frame({ err: e.message }))
-        child.on('close', (code: number | null, signal: string | null) => { hosted.delete(s.id); frame({ x: [code, signal] }); res.end() })
+        // a beat every 10s, whatever the agent prints: the other side tells a machine that fell asleep or dropped off the
+        // network (silence) from an agent that is thinking (beats, no output). And the connection itself is probed, so a
+        // control plane that vanished without a goodbye closes it here too
+        const beat = setInterval(() => frame({ b: 1 }), BEAT_MS)
+        req.socket.setKeepAlive(true, 15_000)
+        child.on('close', (code: number | null, signal: string | null) => { clearInterval(beat); hosted.delete(s.id); frame({ x: [code, signal] }); res.end() })
         // the control plane went away: so does its agent (it is continued from there, as after a restart)
-        res.on('close', () => { if (hosted.has(s.id)) child.kill('SIGTERM') })
+        res.on('close', () => { clearInterval(beat); if (hosted.has(s.id)) child.kill('SIGTERM') })
         return
       }
       const h = id ? hosted.get(id) : undefined
@@ -148,6 +153,8 @@ export function call<T>(base: string, token: string, method: string, path: strin
 
 /** How a run ends when the machine it was sent to had no room left: it never started there. */
 export const NO_ROOM = 'no room on the machine'
+/** How often a machine running an agent for another says it is still there, and how long without a word means it isn't. */
+export const BEAT_MS = Number(process.env.DECK_BEAT_MS) || 10_000, SILENT_MS = BEAT_MS * 4.5 // (a test sets it shorter)
 
 /**
  * The control plane's side: an agent on another machine, shaped like a local one (stdout, stderr, stdin, kill,
@@ -193,12 +200,27 @@ export function remoteAgent(machine: string, base: string, token: string, s: Spa
     started = true
     for (const m of queue.splice(0)) push(m)
     let buf = ''
+    // a machine that beats (one updated to) and then says nothing for 45s is asleep or off the network: its run is
+    // lost here and continued elsewhere, and it is told to stop its agent for when it comes back (no second agent on
+    // one session). A machine that never beat (an older version) is left to the checks there were
+    let beats = false, heard = Date.now()
+    const watch = setInterval(() => {
+      if (ended) return clearInterval(watch)
+      if (!beats || Date.now() - heard < SILENT_MS) return
+      clearInterval(watch)
+      void call(base, token, 'POST', `/run/${id}/kill`, { signal: 'SIGTERM' }).catch(() => {})
+      req.destroy()
+      finish(null, null, `lost the connection to ${machine} mid-run (it went silent)`)
+    }, BEAT_MS)
+    watch.unref()
     res.on('data', (c: Buffer) => {
+      heard = Date.now()
       buf += c
       const lines = buf.split('\n'); buf = lines.pop()!
       for (const l of lines) {
         let f: any
         try { f = JSON.parse(l) } catch { continue }
+        if (f.b) beats = true
         if (f.o) stdout.write(f.o)
         if (f.e) stderr.write(f.e)
         if (f.err) proc.emit('error', new Error(f.err))
@@ -209,6 +231,7 @@ export function remoteAgent(machine: string, base: string, token: string, s: Spa
     res.on('error', () => finish(null, null, `lost the connection to ${machine} mid-run`))
   })
   req.on('error', (e) => finish(null, null, `lost the connection to ${machine}: ${e.message}`))
+  req.setSocketKeepAlive(true, 15_000)
   req.end(JSON.stringify({ ...s, id }))
   return proc
 }

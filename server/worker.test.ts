@@ -1,4 +1,6 @@
+process.env.DECK_BEAT_MS = '40' // beats every 40ms here, silence after 180ms
 import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 import { test } from 'node:test'
 import type { AddressInfo } from 'node:net'
@@ -67,4 +69,32 @@ test('after a new key, the one before still works (runs in flight), and nothing 
   assert.equal((await call<{ name: string }>(base, 'o'.repeat(40), 'GET', '/status')).name, 'win')
   await assert.rejects(call(base, 'x'.repeat(40), 'GET', '/status'), /not allowed/)
   w.server.closeAllConnections(); w.server.close()
+})
+
+test('a machine that beats while its agent is quiet keeps its run; one that goes silent loses it, and is told to stop', async () => {
+  // quiet but there: the real worker, an agent that prints nothing for longer than the silence allowed
+  const w = await worker()
+  const quiet = remoteAgent('win', w.base, 't'.repeat(40), { provider: 'claude', args: [], cwd: '/', stdin: true })
+  const done = ended(quiet)
+  await new Promise((r) => setTimeout(r, 400))
+  assert.equal(w.hosted.size, 1) // still running: the beats said so
+  quiet.stdin!.end()
+  assert.equal((await done)[0], 3)
+  w.server.closeAllConnections(); w.server.close()
+
+  // a machine that fell asleep: it answered, beat once, then nothing
+  const asked: string[] = []
+  const asleep = createServer((req, res) => {
+    asked.push(`${req.method} ${req.url}`)
+    if (req.url === '/run') { res.writeHead(200, { 'content-type': 'application/x-ndjson' }); res.write('{"b":1}\n'); return }
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}')
+  })
+  await new Promise<void>((ok) => asleep.listen(0, '127.0.0.1', ok))
+  const p = remoteAgent('mac', `http://127.0.0.1:${(asleep.address() as AddressInfo).port}`, 't'.repeat(40), { provider: 'claude', args: [], cwd: '/' })
+  const [code, , errs] = await ended(p)
+  assert.equal(code, null)
+  assert.match(errs[0], /lost the connection to mac mid-run \(it went silent\)/)
+  await new Promise((r) => setTimeout(r, 50))
+  assert.ok(asked.some((a) => /^POST \/run\/[^/]+\/kill$/.test(a)), asked.join(', ')) // told to stop its agent, for when it wakes
+  asleep.closeAllConnections(); asleep.close()
 })
