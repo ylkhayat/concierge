@@ -53,7 +53,7 @@ export function Working({ why, feed, onStop, bg, toast }: { why?: string; feed: 
       )}
       <div className="flex items-center gap-2 pt-0.5">
         <span className="flex-1 text-meta text-fg-4">Its decisions show here when it hands back.</span>
-        {!stopAbove && <button onClick={onStop} className="inline-flex items-center gap-1.5 rounded-ctl px-2.5 py-1 text-small font-medium text-fg-2 ring-1 ring-line transition-colors duration-150 hover:bg-fail/10 hover:text-fail-text hover:ring-fail/30">
+        {!stopAbove && <button onClick={onStop} className="btn-outline btn-sm inline-flex items-center gap-1.5 hover:text-fail-text">
           <Square className="size-3 fill-current" />Stop
         </button>}
       </div>

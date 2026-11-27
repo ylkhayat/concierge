@@ -1082,9 +1082,9 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
 
       <div className="relative min-w-0 flex-1">
         <div className="absolute right-3 top-2.5 z-20 flex items-center gap-1.5 rounded-[4px] bg-surface-2/90 px-2 py-1 shadow-e1 ring-1 ring-line backdrop-blur">
-          <button onClick={() => zoomTo(zoom - 40)} aria-label="Smaller" className="rounded-chip p-1.5 text-fg-3 hover:bg-hover hover:text-fg-1"><ZoomOut className="size-3.5" /></button>
+          <button onClick={() => zoomTo(zoom - 40)} aria-label="Smaller" className="btn-ghost btn-sm px-1.5"><ZoomOut className="size-3.5" /></button>
           <input type="range" min={120} max={440} step={20} value={zoom} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Size of the screens" className="w-20 accent-current text-accent" />
-          <button onClick={() => zoomTo(zoom + 40)} aria-label="Larger" className="rounded-chip p-1.5 text-fg-3 hover:bg-hover hover:text-fg-1"><ZoomIn className="size-3.5" /></button>
+          <button onClick={() => zoomTo(zoom + 40)} aria-label="Larger" className="btn-ghost btn-sm px-1.5"><ZoomIn className="size-3.5" /></button>
         </div>
         {/* the board: a faint grid, moving with the screens */}
         <div className="size-full overflow-auto px-6 pb-8 pt-5" style={{ backgroundImage: 'linear-gradient(color-mix(in oklch, var(--line) 45%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--line) 45%, transparent) 1px, transparent 1px)', backgroundSize: '40px 40px', backgroundAttachment: 'local' }}>
@@ -1562,7 +1562,7 @@ function TalkFrame({ children }: { children: ReactNode }) {
       {sheet && <button aria-label="Close the conversation" onClick={() => setSheet(false)} className="fixed inset-0 z-40 animate-[fade-in_200ms] bg-black/10 lg:hidden" />}
       <aside aria-label="Conversation" className={`${sheet ? 'flex max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-50 max-lg:h-[55dvh] max-lg:animate-[sheet-in_260ms_var(--ease-snappy)] max-lg:rounded-t-panel max-lg:bg-surface-1 max-lg:shadow-e3' : 'hidden'} w-full shrink-0 flex-col lg:flex lg:w-[clamp(300px,34%,460px)] lg:border-l lg:border-line`}>
         <p className="label flex items-center border-b border-line px-4 py-2.5 text-fg-4">Conversation
-          <button onClick={() => setSheet(false)} aria-label="Close the conversation" className="-my-1 ml-auto rounded-chip p-1.5 text-fg-3 hover:bg-hover hover:text-fg-1 lg:hidden"><X className="size-4" /></button>
+          <button onClick={() => setSheet(false)} aria-label="Close the conversation" className="btn-ghost btn-sm -my-1 ml-auto px-1.5 lg:hidden"><X className="size-4" /></button>
         </p>
         {children}
       </aside>

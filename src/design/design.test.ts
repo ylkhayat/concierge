@@ -51,7 +51,7 @@ for (const [what, rx, most, use] of [
 }
 
 test('buttons with a look of their own: no more than there are', () => {
-  const MOST = 558
-  const own = files.reduce((n, f) => n + [...readFileSync(join(src, f), 'utf8').matchAll(/<button\b[^>]*>/g)].filter((m) => !/\bbtn-(primary|quiet|outline|ghost)\b/.test(m[0])).length, 0)
+  const MOST = 507 // a button's opening tag, its arrow functions included (=> is not the tag's end)
+  const own = files.reduce((n, f) => n + [...readFileSync(join(src, f), 'utf8').matchAll(/<button\b(?:=>|[^>])*>/g)].filter((m) => !/\bbtn-(primary|quiet|outline|ghost)\b/.test(m[0])).length, 0)
   assert.ok(own <= MOST, `${own} buttons styled by hand (at most ${MOST}). Use btn-primary, btn-outline, btn-quiet or btn-ghost (src/design/recipes.css).`)
 })

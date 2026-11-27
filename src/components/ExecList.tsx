@@ -450,7 +450,7 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
               : shown && !shown.error
                 ? <button onClick={() => run(shape ? stacksOf(shape) : shown.stacks)} disabled={!!busy} className={primaryCls}>{busy === 'run' ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}Run the plan</button>
                 : <button onClick={makePlan} disabled={!!busy} className={primaryCls}>{busy === 'plan' ? <><LoaderCircle className="size-4 animate-spin" />Planning…</> : <><Layers className="size-4" />Plan {picked.length} tickets</>}</button>}
-            <button onClick={() => { onPick([]); setPlan(undefined) }} className="rounded-ctl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
+            <button onClick={() => { onPick([]); setPlan(undefined) }} className="btn-ghost">Clear</button>
           </div>
           {picked.length > 1 && (
             <button onClick={() => arm('one', shipOne)} disabled={!!busy || !oneRepo} title={oneRepo ? `One agent works them together as one piece of work (one shared memory, shown as one group), deciding on its own (no questions), into one pull request: merged once its checks pass if its repository allows (${inSettings('repos')})` : 'One PR is one repository: pick tickets of one repository'}
