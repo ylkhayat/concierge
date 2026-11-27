@@ -119,7 +119,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
           <div className="flex items-end gap-2">
             <textarea value={words} onChange={(e) => setWords(e.target.value)} rows={2} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); say() } }}
                       placeholder="Tell the stack: one agent works it through, bottom first…" aria-label="A message to the whole stack"
-                      className="max-h-40 min-h-[52px] flex-1 resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/50" />
+                      className="max-h-40 min-h-[52px] flex-1 resize-none rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/50" />
             <button onClick={say} disabled={!words.trim() || !to.length || sending} className="inline-flex items-center gap-1.5 btn-primary" title="Send (⌘↵)">{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}Send</button>
           </div>
         </Composer>
@@ -159,7 +159,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
       {/* the stack's conversation: what you told all of it, and where each agent is with that */}
       {chat.map((m) => (
         <div key={m.at + m.words} className="border-t border-line px-4 py-3 text-small">
-          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-accent-soft/70 px-3 py-1.5 text-fg-1">{m.words}</p>
+          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-card bg-accent-soft/70 px-3 py-1.5 text-fg-1">{m.words}</p>
           <ul className="mt-2 space-y-1">
             {m.to.map((p) => { const j = p.job!, going = j.state === 'running' || j.state === 'queued'; return (
               <li key={p.id}>
@@ -176,7 +176,7 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
       {driveRun && <DriveFeed id={driveRun.id} live={driving} toast={toast} />}
       {justSent.filter((m) => !talks.has(m.words)).map((m) => (
         <div key={m.at} className="border-t border-line px-4 py-3 text-small">
-          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl bg-accent-soft/70 px-3 py-1.5 text-fg-1">{m.words}</p>
+          <p className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap rounded-card bg-accent-soft/70 px-3 py-1.5 text-fg-1">{m.words}</p>
           <p className="mt-1 text-right text-meta text-fg-3">One agent works it through the stack, bottom first: its work shows below</p>
         </div>
       ))}
@@ -247,13 +247,13 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
       </div>
 
       {/* the direction: a callout of its own, since every agent on these PRs holds to it */}
-      <div className="rounded-xl bg-accent-soft/40 px-3 py-2.5 ring-1 ring-accent/20">
+      <div className="rounded-ctl bg-accent-soft/40 px-3 py-2.5 ring-1 ring-accent/20">
         <div className="flex items-center gap-2">
           <Compass className="size-3.5 shrink-0 text-accent-text" />
           <h3 className="label text-accent-text" title="Every agent on these PRs is told to hold to it, and the stack’s answer is read against it">Direction</h3>
           {dir && <span className="text-micro text-fg-4">{dir.by === 'you' ? 'yours' : 'from the check'}</span>}
           <span className="flex-1" />
-          {draft === undefined ? <button onClick={() => setDraft(dir?.text ?? '')} title={dir ? 'Edit the direction' : 'Write the direction'} aria-label={dir ? 'Edit the direction' : 'Write the direction'} className="rounded-md p-1 text-fg-3 transition-colors hover:bg-hover hover:text-fg-1"><Pencil className="size-3.5" /></button>
+          {draft === undefined ? <button onClick={() => setDraft(dir?.text ?? '')} title={dir ? 'Edit the direction' : 'Write the direction'} aria-label={dir ? 'Edit the direction' : 'Write the direction'} className="rounded-chip p-1 text-fg-3 transition-colors hover:bg-hover hover:text-fg-1"><Pencil className="size-3.5" /></button>
             : <span className="flex gap-1"><button onClick={() => setDraft(undefined)} className="btn-ghost btn-sm">Cancel</button><button onClick={() => void saveDir()} className="btn-primary btn-sm">Save</button></span>}
         </div>
         {draft !== undefined ? <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} rows={5} placeholder={'- one rule or decision per line, that every PR of the stack holds to'} className="field mt-2 w-full resize-y font-mono text-meta leading-relaxed" />
@@ -262,7 +262,7 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
       </div>
 
       {!c ? <p className="px-0.5 text-fg-3">Each PR was reviewed on its own. The check reads what every PR’s agent found and decided, and reports only what crosses PRs: one question decided two ways, a change above that a PR below contradicts, the same fix twice.</p>
-        : c.issues.length === 0 ? <p className="flex items-start gap-2 px-0.5 text-fg-2"><CircleCheck className="mt-0.5 size-4 shrink-0 text-ok" /><span>Nothing crosses PRs. {c.agrees}</span></p>
+        : c.issues.length === 0 ? <p className="flex items-start gap-2 px-0.5 text-fg-2"><CircleCheck className="mt-0.5 size-4 shrink-0 text-ok-text" /><span>Nothing crosses PRs. {c.agrees}</span></p>
         : (
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 px-0.5">
@@ -273,9 +273,9 @@ function Check({ path, sig, members, onSelect, toast }: { path: string; sig: str
             {c.issues.map((x, i) => {
               const isOpen = openIssue === i, sent = fixing.includes(x.title)
               return (
-                <div key={i} className="overflow-hidden rounded-xl ring-1 ring-line">
+                <div key={i} className="overflow-hidden rounded-ctl ring-1 ring-line">
                   <button onClick={() => setOpenIssue(isOpen ? undefined : i)} aria-expanded={isOpen} className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-hover">
-                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-wait" />
+                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-wait-text" />
                     <span className="min-w-0 flex-1">
                       <span className="font-medium text-fg-1">{x.title}</span>
                       {!isOpen && <span className="mt-0.5 block truncate text-meta text-fg-3">{x.why}</span>}

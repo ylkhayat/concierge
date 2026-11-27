@@ -27,13 +27,13 @@ export function ExecHome({ repo, tickets, prs, now, onTicket, onPr, onMap }: {
   return (
     <div className="h-full overflow-y-auto px-6 py-6 lg:px-8 2xl:px-10">
       <header className="mb-6 flex flex-wrap items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-2xl bg-accent/10 text-accent-text"><Rocket className="size-5" /></span>
+        <span className="flex size-10 items-center justify-center rounded-card bg-accent/10 text-accent-text"><Rocket className="size-5" /></span>
         <div className="min-w-0">
-          <h1 className={`text-xl font-semibold tracking-tight text-fg-1 ${repo ? 'font-mono' : ''}`}>{repo ?? 'All repositories'}</h1>
+          <h1 className={`text-title font-semibold tracking-tight text-fg-1 ${repo ? 'font-mono' : ''}`}>{repo ?? 'All repositories'}</h1>
           <p className="text-small text-fg-3">{assigned.length} ticket{assigned.length === 1 ? '' : 's'} assigned to you{repo ? ' here' : ''} · pick one, or tick several to run them, stacked where they depend on each other</p>
         </div>
         {repo && onMap && (
-          <button onClick={onMap} className="ml-auto inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">
+          <button onClick={onMap} className="ml-auto inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">
             <MapIcon className="size-4" />Codebase map
           </button>
         )}
@@ -46,7 +46,7 @@ export function ExecHome({ repo, tickets, prs, now, onTicket, onPr, onMap }: {
             <div className="flex items-center gap-1.5 text-small font-semibold text-fg-3">
               <g.icon className={`size-3.5 ${g.tone} ${g.id === 'running' ? 'animate-spin' : ''}`} />{g.title}
             </div>
-            <div className="mt-1.5 text-2xl font-semibold tabular-nums text-fg-1 ">{items.length}</div>
+            <div className="mt-1.5 text-display font-semibold tabular-nums text-fg-1 ">{items.length}</div>
             <div className="mt-1 truncate text-meta text-fg-3">{items[0].id} · {items[0].title}</div>
           </button>
         ))}

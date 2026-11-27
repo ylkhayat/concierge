@@ -158,7 +158,7 @@ function SignedInOn({ a, w, onDone }: { a: AccountRow; w?: Where; onDone: () => 
       </div>
       {w.login && <p className="mt-1 text-meta text-fg-3">This account is <b className="font-medium text-fg-2">{w.login}</b> on every machine: its plan, limits and spend are that login&apos;s.</p>}
       {w.off?.map((m) => (
-        <p key={m} className="mt-1.5 rounded-lg bg-fail/7 px-2.5 py-1.5 text-meta text-fail-text ring-1 ring-fail/20">
+        <p key={m} className="mt-1.5 rounded-ctl bg-fail/7 px-2.5 py-1.5 text-meta text-fail-text ring-1 ring-fail/20">
           {m} has it signed in as {w.who?.[m]}, so {m} takes none of its work. Sign it in again there as {w.login}, or{' '}
           <button onClick={() => adopt(m)} className="font-medium underline decoration-fail/40 hover:decoration-current">make {w.who?.[m]} this account&apos;s login</button>{' '}
           (the other machines then sign in again). Two plans? Add the other as its own account.
@@ -200,7 +200,7 @@ export function Skeleton({ rows = 5 }: { rows?: number }) {
   )
 }
 
-const chip = 'inline-flex items-center rounded-md px-2 py-0.5 text-meta font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1 hover:ring-line-strong'
+const chip = 'inline-flex items-center rounded-chip px-2 py-0.5 text-meta font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1 hover:ring-line-strong'
 const btn = 'inline-flex items-center gap-1.5 btn-primary'
 type AccountRow = { id: string; label: string; kind: 'claude' | 'openai' | 'llama' | 'copilot'; builtIn: boolean }
 type AccountConn = { name: string; status: Connection['status']; via: 'claude.ai' | 'claude code' | 'codex' }
@@ -399,14 +399,14 @@ function Login({ name, account, toast, onDone }: { name: string; account?: strin
   // on that machine: from anywhere else the page won't load, and its address is pasted here instead
   const elsewhere = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1'
   return (
-    <span className="flex w-full basis-full flex-col gap-1.5 rounded-lg bg-accent/5 p-2.5 text-meta text-fg-2 ring-1 ring-accent/20 ">
+    <span className="flex w-full basis-full flex-col gap-1.5 rounded-ctl bg-accent/5 p-2.5 text-meta text-fg-2 ring-1 ring-accent/20 ">
       <span className="flex items-center gap-1.5"><LoaderCircle className="size-3.5 shrink-0 animate-spin text-accent" />{state === 'starting' ? 'Opening the sign-in…' : <>1. Approve <b>{name}</b> in the tab that opened.</>}</span>
       {state === 'waiting' && elsewhere && (
         <>
           <span>2. It then goes to a page at <code className="font-mono">http://localhost:…/callback</code> that won&apos;t load: that address is meant for the machine running Concierge. Copy the whole address from that tab and paste it here:</span>
           <span className="flex items-center gap-1.5">
-            <input autoFocus value={redirect} onChange={(e) => setRedirect(e.target.value)} placeholder="http://localhost:51426/callback?code=…" className="min-w-0 flex-1 rounded-md bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
-            <button onClick={finish} disabled={!/^https?:\/\/localhost[:/]/.test(redirect.trim())} className="rounded-md bg-accent px-2.5 py-1 font-medium text-on-accent disabled:opacity-40">Finish</button>
+            <input autoFocus value={redirect} onChange={(e) => setRedirect(e.target.value)} placeholder="http://localhost:51426/callback?code=…" className="min-w-0 flex-1 rounded-chip bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
+            <button onClick={finish} disabled={!/^https?:\/\/localhost[:/]/.test(redirect.trim())} className="rounded-chip bg-accent px-2.5 py-1 font-medium text-on-accent disabled:opacity-40">Finish</button>
           </span>
         </>
       )}
@@ -450,12 +450,12 @@ export function ClaudeAccount({ toast }: { toast: Toast }) {
         : !a.loggedIn ? <p className="text-meta text-fg-3">Sign in with your claude.ai plan.</p>
         : <p className="text-meta text-fg-3">On the setup token: models only, without claude.ai connectors.
             {a.lapsed && <span className="text-wait-text"> The claude.ai sign-in expired {new Date(a.lapsed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.</span>}</p>}
-      {!a.usingLogin && !waiting && <button onClick={start} className="rounded-md px-2 py-0.5 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10">Sign in with claude.ai</button>}
+      {!a.usingLogin && !waiting && <button onClick={start} className="rounded-chip px-2 py-0.5 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10">Sign in with claude.ai</button>}
       {waiting && (
         <span className="flex items-center gap-1.5 text-meta text-fg-3">
           <LoaderCircle className="size-3.5 shrink-0 animate-spin" />Approve in the new tab, then paste the code it shows:
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code" className="w-56 rounded-md bg-surface-1 px-1.5 py-0.5 font-mono text-meta ring-1 ring-line-strong" />
-          <button onClick={finish} disabled={!code.trim()} className="rounded-md px-1.5 py-0.5 font-medium text-accent-text ring-1 ring-accent/30 disabled:opacity-40">Finish</button>
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code" className="w-56 rounded-chip bg-surface-1 px-1.5 py-0.5 font-mono text-meta ring-1 ring-line-strong" />
+          <button onClick={finish} disabled={!code.trim()} className="rounded-chip px-1.5 py-0.5 font-medium text-accent-text ring-1 ring-accent/30 disabled:opacity-40">Finish</button>
         </span>
       )}
     </div>
@@ -483,7 +483,7 @@ function Azure({ toast }: { toast: Toast }) {
   if (got) return (
     <div className="space-y-1.5 text-small text-fg-3">
       <p>Open <a href={got.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">{got.url.replace('https://', '')}<ExternalLink className="ml-0.5 inline size-3" /></a> and enter this code:</p>
-      <button onClick={() => navigator.clipboard?.writeText(got.code).then(() => toast('Code copied'))} className="inline-flex items-center gap-1.5 rounded-lg bg-fill px-2 py-1 font-mono text-reading font-semibold tracking-wider hover:bg-active">{got.code}<Copy className="size-3 text-fg-3" /></button>
+      <button onClick={() => navigator.clipboard?.writeText(got.code).then(() => toast('Code copied'))} className="inline-flex items-center gap-1.5 rounded-ctl bg-fill px-2 py-1 font-mono text-reading font-semibold tracking-wider hover:bg-active">{got.code}<Copy className="size-3 text-fg-3" /></button>
       <p className="flex items-center gap-1.5"><LoaderCircle className="size-3.5 animate-spin" />Waiting for you to approve…</p>
     </div>
   )

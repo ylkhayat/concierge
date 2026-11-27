@@ -5,9 +5,9 @@ import { api } from '../lib.ts'
 import { short } from '../time.ts'
 
 const TONE: Record<AlertTone, { text: string; icon: typeof Info; label: string }> = {
-  you: { text: 'text-wait', icon: Hand, label: 'needs you' },
-  warn: { text: 'text-fail', icon: CircleAlert, label: 'failed' },
-  ok: { text: 'text-ok', icon: CircleCheck, label: 'done' },
+  you: { text: 'text-wait-text', icon: Hand, label: 'needs you' },
+  warn: { text: 'text-fail-text', icon: CircleAlert, label: 'failed' },
+  ok: { text: 'text-ok-text', icon: CircleCheck, label: 'done' },
   info: { text: 'text-accent', icon: Info, label: 'update' },
 }
 const latest = (a: Alert) => a.updates.at(-1)!
@@ -25,7 +25,7 @@ function Row({ a, now, onOpen, onDismiss }: { a: Alert; now: number; onOpen: () 
   return (
     <li className="group/a relative">
       <button onClick={onOpen} data-alert onKeyDown={(e) => { if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); onDismiss() } }}
-              className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-colors hov focus-visible:bg-fill">
+              className="flex w-full items-start gap-2.5 rounded-ctl px-2.5 py-2 text-left outline-none transition-colors hov focus-visible:bg-fill">
         <t.icon className={`mt-0.5 size-3.5 shrink-0 ${t.text}`} />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-1.5 pr-5 text-small">
@@ -37,7 +37,7 @@ function Row({ a, now, onOpen, onDismiss }: { a: Alert; now: number; onOpen: () 
         </span>
       </button>
       <button onClick={onDismiss} aria-label={`Dismiss ${a.label}`} tabIndex={-1}
-              className="absolute right-1.5 top-1.5 rounded-md p-1 text-fg-3 opacity-0 transition-opacity hover:bg-active hover:text-fg-2 group-hover/a:opacity-100 group-focus-within/a:opacity-100"><X className="size-3" /></button>
+              className="absolute right-1.5 top-1.5 rounded-chip p-1 text-fg-3 opacity-0 transition-opacity hover:bg-active hover:text-fg-2 group-hover/a:opacity-100 group-focus-within/a:opacity-100"><X className="size-3" /></button>
     </li>
   )
 }
@@ -73,7 +73,7 @@ export function AlertDock({ alerts, now, onOpen }: { alerts: Alert[]; now: numbe
   return (
     <>
       <button popoverTarget="alert-panel" style={{ anchorName: '--alert-panel' } as CSSProperties} title="What happened, and what needs you"
-              className="inline-flex items-center gap-1.5 rounded-md px-1.5 text-micro font-medium leading-[18px] text-fg-2 transition-colors hov ">
+              className="inline-flex items-center gap-1.5 rounded-chip px-1.5 text-micro font-medium leading-[18px] text-fg-2 transition-colors hov ">
         <Bell className="size-3 text-fg-3" />
         {needs.length > 0 && <span className="inline-flex items-center gap-1 font-semibold text-wait-text"><span className="size-1.5 animate-pulse rounded-full bg-wait" />{needs.length} need{needs.length === 1 ? 's' : ''} you</span>}
         {needs.length > 0 && updates.length > 0 && <span className="text-fg-4">·</span>}
@@ -84,12 +84,12 @@ export function AlertDock({ alerts, now, onOpen }: { alerts: Alert[]; now: numbe
         if ((e as unknown as ToggleEvent).newState === 'open') panel.current?.querySelector<HTMLButtonElement>('[data-alert]')?.focus()
         else setAll(false)
       }} style={{ positionAnchor: '--alert-panel', positionArea: 'top span-left', inset: 'auto' } as CSSProperties}
-           className="m-0 mb-1.5 max-h-[calc(100vh/var(--z)-60px)] w-[min(400px,calc(100vw/var(--z)-24px))] overflow-y-auto overscroll-contain rounded-2xl border-0 bg-surface-1 p-1.5 text-fg-2 shadow-2xl ring-1 ring-line ">
+           className="m-0 mb-1.5 max-h-[calc(100vh/var(--z)-60px)] w-[min(400px,calc(100vw/var(--z)-24px))] overflow-y-auto overscroll-contain rounded-card border-0 bg-surface-1 p-1.5 text-fg-2 shadow-2xl ring-1 ring-line ">
         {section('Needs you', needs, SHOWN.needs, 'text-wait-text')}
         {section('Updates', updates, SHOWN.updates, 'text-fg-3')}
         <div className="mt-1 flex items-center gap-2 border-t border-line px-2.5 pb-1 pt-2 text-meta font-medium ">
-          {hidden > 0 && <button onClick={() => setAll(true)} className="rounded-md px-1.5 py-0.5 text-fg-2 hov hover:text-fg-1 ">Show {hidden} more</button>}
-          <button onClick={() => { seen(); close() }} className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-fg-2 hov hover:text-fg-1 "><CheckCheck className="size-3.5" />Mark all seen</button>
+          {hidden > 0 && <button onClick={() => setAll(true)} className="rounded-chip px-1.5 py-0.5 text-fg-2 hov hover:text-fg-1 ">Show {hidden} more</button>}
+          <button onClick={() => { seen(); close() }} className="ml-auto inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 text-fg-2 hov hover:text-fg-1 "><CheckCheck className="size-3.5" />Mark all seen</button>
         </div>
       </div>
     </>

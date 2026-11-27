@@ -6,10 +6,10 @@ type Meta = { label: string; icon: LucideIcon; kind: Kind; tone: string; dot: st
 
 // one status grammar everywhere: five kinds, each one colour; only "needs you" and "failed" get a background
 const KIND: Record<Kind, { tone: string; dot: string }> = {
-  wait: { tone: 'bg-wait/12 text-wait', dot: 'bg-wait' },
-  fail: { tone: 'bg-fail/12 text-fail', dot: 'bg-fail' },
-  run: { tone: 'text-run', dot: 'bg-run' },
-  ok: { tone: 'text-ok', dot: 'bg-ok' },
+  wait: { tone: 'bg-wait/12 text-wait-text', dot: 'bg-wait' },
+  fail: { tone: 'bg-fail/12 text-fail-text', dot: 'bg-fail' },
+  run: { tone: 'text-run-text', dot: 'bg-run' },
+  ok: { tone: 'text-ok-text', dot: 'bg-ok' },
   idle: { tone: 'text-idle', dot: 'bg-idle' },
 }
 const m = (label: string, icon: LucideIcon, kind: Kind, spin?: boolean): Meta => ({ label, icon, kind, ...KIND[kind], spin })

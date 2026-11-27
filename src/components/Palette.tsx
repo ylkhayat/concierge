@@ -75,12 +75,12 @@ export function Palette({ prs, tickets, commands, onPr, onTicket }: {
                  else if (e.key === 'Enter') { e.preventDefault(); pick(hits[at]) }
                }}
                className="w-full bg-transparent text-reading outline-none placeholder:text-fg-4" />
-        <kbd className="rounded-md border border-line px-1.5 font-sans text-micro text-fg-4">esc</kbd>
+        <kbd className="rounded-chip border border-line px-1.5 font-sans text-micro text-fg-4">esc</kbd>
       </label>
       {keys ? (
         <dl className="grid max-h-[calc(55vh/var(--z))] grid-cols-[auto_1fr] gap-x-6 gap-y-2 overflow-y-auto px-5 py-4 text-body">
           {KEYS.map(([k, what]) => [
-            <dt key={`k${k}`} className="text-right"><kbd className="rounded-md bg-hover px-1.5 py-0.5 font-sans text-small text-fg-1 ring-1 ring-line">{k}</kbd></dt>,
+            <dt key={`k${k}`} className="text-right"><kbd className="rounded-chip bg-hover px-1.5 py-0.5 font-sans text-small text-fg-1 ring-1 ring-line">{k}</kbd></dt>,
             <dd key={`d${k}`} className="text-fg-2">{what}</dd>,
           ])}
         </dl>
@@ -90,7 +90,7 @@ export function Palette({ prs, tickets, commands, onPr, onTicket }: {
             <li key={`${e.group}:${e.key}`}>
               {(i === 0 || hits[i - 1].group !== e.group) && <p className="px-3 pb-1 pt-2 text-meta font-medium text-fg-4">{e.group}</p>}
               <button onMouseMove={() => setAt(i)} onClick={() => pick(e)} ref={(el) => { if (i === at) el?.scrollIntoView({ block: 'nearest' }) }}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-body ${i === at ? 'sel text-fg-1' : 'text-fg-2'}`}>
+                      className={`flex w-full items-center gap-2.5 rounded-ctl px-3 py-2 text-left text-body ${i === at ? 'sel text-fg-1' : 'text-fg-2'}`}>
                 <e.icon className={`size-4 shrink-0 ${i === at ? 'text-accent-text' : 'text-fg-4'}`} />
                 {e.ref && <span className="shrink-0 text-small tabular-nums text-fg-4">{e.ref}</span>}
                 <span className="min-w-0 flex-1 truncate">{e.label}</span>

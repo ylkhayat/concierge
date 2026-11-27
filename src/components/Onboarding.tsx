@@ -34,9 +34,9 @@ const STEPS: { id: string; title: string; hint: string; icon: Icon }[] = [
   { id: 'prefs', title: 'Preferences', hint: 'How it behaves', icon: Settings2 },
 ]
 
-const field = 'w-full rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60'
+const field = 'w-full rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60'
 const primaryBtn = 'inline-flex items-center gap-1.5 btn-primary btn-lg'
-const quietBtn = 'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-body font-medium text-fg-3 transition-colors hov hover:text-fg-1'
+const quietBtn = 'inline-flex items-center gap-1.5 rounded-ctl px-3 py-2 text-body font-medium text-fg-3 transition-colors hov hover:text-fg-1'
 
 export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   health?: Health; theme: Theme; onTheme: (t: Theme) => void; onDone: () => void; onClose?: () => void
@@ -214,11 +214,11 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-fill/60 p-4 sm:p-8">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-80 bg-[radial-gradient(60%_100%_at_50%_0%,rgb(139_92_246/0.12),transparent)]" />
-      <div className="relative flex max-h-full w-full max-w-4xl animate-[toast-in_300ms_var(--ease-snappy)] flex-col overflow-hidden rounded-3xl bg-surface-1 shadow-2xl ring-1 ring-line md:h-[min(680px,100%)] md:flex-row">
+      <div className="relative flex max-h-full w-full max-w-4xl animate-[toast-in_300ms_var(--ease-snappy)] flex-col overflow-hidden rounded-panel bg-surface-1 shadow-2xl ring-1 ring-line md:h-[min(680px,100%)] md:flex-row">
         {/* step rail */}
         <aside className="flex shrink-0 flex-col gap-6 border-b border-line bg-fill/60 p-6 md:w-64 md:border-b-0 md:border-r">
           <div className="flex items-center gap-2.5">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent text-white shadow-md shadow-accent/30"><GitPullRequestArrow className="size-5" /></span>
+            <span className="flex size-9 items-center justify-center rounded-ctl bg-gradient-to-br from-accent to-accent text-white shadow-md shadow-accent/30"><GitPullRequestArrow className="size-5" /></span>
             <div>
               <div className="font-semibold tracking-tight">Concierge</div>
               <div className="text-meta text-fg-3">{onClose ? 'Settings' : 'Let’s get you set up'}</div>
@@ -230,8 +230,8 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               return (
                 <li key={s.id} className="flex-1 md:flex-none">
                   <button onClick={() => (i <= reached || onClose) && setStep(i)} disabled={i > reached && !onClose}
-                          className={`group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${on ? 'sel' : 'hover:bg-hover disabled:hover:bg-transparent'}`}>
-                    <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors ${done ? 'bg-accent text-on-accent' : on ? 'bg-accent/15 text-accent-text' : 'bg-fill text-fg-3'}`}>
+                          className={`group flex w-full items-center gap-3 rounded-chip px-2.5 py-2 text-left transition-colors ${on ? 'sel' : 'hover:bg-hover disabled:hover:bg-transparent'}`}>
+                    <span className={`flex size-7 shrink-0 items-center justify-center rounded-ctl transition-colors ${done ? 'bg-accent text-on-accent' : on ? 'bg-accent/15 text-accent-text' : 'bg-fill text-fg-3'}`}>
                       {done ? <Check className="size-4" strokeWidth={3} /> : <s.icon className="size-4" />}
                     </span>
                     <span className="hidden min-w-0 md:block">
@@ -249,7 +249,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
         {/* step body */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           {onClose && (
-            <button onClick={onClose} className="absolute right-4 top-4 rounded-lg p-1.5 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close"><X className="size-4" /></button>
+            <button onClick={onClose} className="absolute right-4 top-4 rounded-ctl p-1.5 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close"><X className="size-4" /></button>
           )}
           <div key={step} className="min-h-0 flex-1 animate-[rise-in_260ms_var(--ease-snappy)] overflow-y-auto p-6 sm:p-8">
             {!setup ? <Loading text="Checking your setup" /> : id === 'github' ? (
@@ -288,7 +288,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                     {suggested.map((s) => {
                       const p = picks[s.repo] ?? { on: false, path: '' }
                       return (
-                        <div key={s.repo} className={`rounded-2xl p-3 ring-1 transition-all ${p.on ? 'bg-accent/4 ring-accent/30' : 'ring-line hover:ring-line-strong'}`}>
+                        <div key={s.repo} className={`rounded-card p-3 ring-1 transition-all ${p.on ? 'bg-accent/4 ring-accent/30' : 'ring-line hover:ring-line-strong'}`}>
                           <label className="flex cursor-pointer items-center gap-3">
                             <input type="checkbox" checked={p.on} onChange={(e) => setPicks((x) => ({ ...x, [s.repo]: { ...p, on: e.target.checked } }))} className="size-4 accent-accent" />
                             <span className="min-w-0 flex-1 truncate font-mono text-body font-medium">{s.repo}</span>
@@ -304,7 +304,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                               )}
                               {!s.paths.length && p.status !== 'ok' && (
                                 <button onClick={() => clone(s.repo)} disabled={p.status === 'checking'} title="Clone it into your code folder with the GitHub CLI"
-                                        className="shrink-0 rounded-lg px-2.5 py-1.5 text-small font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10 disabled:opacity-50">
+                                        className="shrink-0 rounded-ctl px-2.5 py-1.5 text-small font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10 disabled:opacity-50">
                                   {p.status === 'checking' ? 'Cloning…' : 'Clone it'}</button>
                               )}
                               <PathStatus status={p.status} />
@@ -332,7 +332,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                 <ReviewIn setup={setup} onSaved={setSetup} />
                 {c && !c.crit.ok && <ToolRow name="crit" c={c.crit} note="You chose to review in crit" />}
                 {setup.brokenLinks.length > 0 && (
-                  <div className="rounded-2xl bg-wait/6 px-3.5 py-3 text-small ring-1 ring-wait/20">
+                  <div className="rounded-card bg-wait/6 px-3.5 py-3 text-small ring-1 ring-wait/20">
                     <p className="flex items-center gap-2 font-medium text-wait-text"><CircleAlert className="size-4 shrink-0" />Some of your skills are links Concierge can&apos;t follow here</p>
                     <p className="mt-1 text-fg-3">{setup.brokenLinks.map((l) => l.name).join(', ')} point into {[...new Set(setup.brokenLinks.map((l) => l.to.replace(/\/[^/]+\/?$/, '')))].join(', ')}, which the container doesn&apos;t see. Run <code className="font-mono">bin/up</code> again: it mounts that folder. Nothing of yours is changed meanwhile.</p>
                   </div>
@@ -347,7 +347,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
               </Step>
             ) : (
               <Step title="Set how it behaves" lead="All of these live in Settings too.">
-                <div className="divide-y divide-line rounded-2xl ring-1 ring-line ">
+                <div className="divide-y divide-line rounded-card ring-1 ring-line ">
                   {spaces.includes('review') && (
                     <Pref icon={Zap} title="Auto-review" hint="Start the review skill as soon as someone requests your review.">
                       <Toggle label="Auto-review" on={prefs.autoStart} onChange={(v) => setPrefs({ ...prefs, autoStart: v })} />
@@ -357,7 +357,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                     <Tabs label="Parallel runs" value={String(prefs.maxJobs)} options={['1', '2', '3', '4'].map((n) => ({ id: n, label: n }))} onChange={(n) => setPrefs({ ...prefs, maxJobs: Number(n) })} />
                   </Pref>
                   <Pref icon={Wallet} title="Daily budget" hint="Stop starting runs once today's spend reaches it. Empty means no cap.">
-                    <label className="flex w-28 items-center gap-1 rounded-xl bg-fill/60 px-3 py-1.5 ring-1 ring-line focus-within:ring-2 focus-within:ring-accent/60 ">
+                    <label className="flex w-28 items-center gap-1 rounded-ctl bg-fill/60 px-3 py-1.5 ring-1 ring-line focus-within:ring-2 focus-within:ring-accent/60 ">
                       <span className="text-body text-fg-3">$</span>
                       <input inputMode="decimal" value={prefs.budget} placeholder="no cap" onChange={(e) => setPrefs({ ...prefs, budget: e.target.value })} className="w-full bg-transparent text-body outline-none" />
                     </label>
@@ -370,7 +370,7 @@ export function Onboarding({ health, theme, onTheme, onDone, onClose, toast }: {
                   </Pref>
                 </div>
                 {/* the safety story, said once, where you decide how much runs on its own */}
-                <div className="mt-4 rounded-2xl bg-ok/6 p-4 text-small leading-relaxed ring-1 ring-ok/20">
+                <div className="mt-4 rounded-card bg-ok/6 p-4 text-small leading-relaxed ring-1 ring-ok/20">
                   <p className="font-semibold text-ok-text">What the agents never do on their own</p>
                   <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-fg-2 ">
                     <li>Post a review, approve, reply or push on a PR: those wait for your click.</li>
@@ -406,7 +406,7 @@ function Step({ title, lead, children }: { title: string; lead: string; children
   return (
     <div className="mx-auto max-w-xl space-y-5">
       <header className="space-y-1.5">
-        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-title font-semibold tracking-tight">{title}</h2>
         <p className="text-body leading-relaxed text-fg-3">{lead}</p>
       </header>
       {children}
@@ -420,8 +420,8 @@ function Loading({ text }: { text: string }) {
 
 function ToolRow({ name, c, note }: { name: string; c: { ok: boolean; detail: string; fix?: string }; note?: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl bg-wait/6 px-3.5 py-3 ring-1 ring-wait/20">
-      <CircleAlert className="size-5 shrink-0 text-wait" />
+    <div className="flex items-center gap-3 rounded-card bg-wait/6 px-3.5 py-3 ring-1 ring-wait/20">
+      <CircleAlert className="size-5 shrink-0 text-wait-text" />
       <div className="min-w-0 flex-1">
         <div className="text-body font-medium">{name}: {c.detail}</div>
         {note && <div className="text-small text-fg-3">{note}</div>}
@@ -435,8 +435,8 @@ function CopyCommand({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <button onClick={() => navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
-            className="group flex max-w-full shrink-0 items-center gap-1.5 rounded-lg bg-fill px-2.5 py-1.5 font-mono text-meta text-fg-2 transition-colors hover:bg-active" title="Copy">
-      <span className="truncate">{text}</span>{copied ? <Check className="size-3 shrink-0 text-ok" /> : <Copy className="size-3 shrink-0 opacity-50 group-hover:opacity-100" />}
+            className="group flex max-w-full shrink-0 items-center gap-1.5 rounded-ctl bg-fill px-2.5 py-1.5 font-mono text-meta text-fg-2 transition-colors hover:bg-active" title="Copy">
+      <span className="truncate">{text}</span>{copied ? <Check className="size-3 shrink-0 text-ok-text" /> : <Copy className="size-3 shrink-0 opacity-50 group-hover:opacity-100" />}
     </button>
   )
 }
@@ -446,7 +446,7 @@ function ServiceCard({ icon: Icon, name, ok, detail, action, children }: { icon:
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center gap-3.5 p-4">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-fill text-fg-1"><Icon className="size-5" /></span>
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-ctl bg-fill text-fg-1"><Icon className="size-5" /></span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-reading font-semibold">{name}
             {ok && <span className="inline-flex items-center gap-1 rounded-full bg-ok/10 px-2 py-px text-micro font-medium text-ok-text ring-1 ring-inset ring-ok/20"><Check className="size-3" strokeWidth={3} />Connected</span>}
@@ -503,7 +503,7 @@ function RepoSearch({ onPick, picked }: { onPick: (f: RepoFound) => void; picked
               const on = picked.includes(f.repo.toLowerCase())
               return (
                 <button key={f.repo} role="option" aria-selected={i === at} onMouseEnter={() => setAt(i)} onClick={() => pick(f)}
-                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${i === at ? 'bg-hover' : ''}`}>
+                        className={`flex w-full items-center gap-3 rounded-ctl px-3 py-2 text-left transition-colors ${i === at ? 'bg-hover' : ''}`}>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5 font-mono text-body font-medium text-fg-1">
                       <span className="truncate">{f.repo}</span>{f.private && <Lock className="size-3 shrink-0 text-fg-3" aria-label="Private" />}
@@ -522,16 +522,16 @@ function RepoSearch({ onPick, picked }: { onPick: (f: RepoFound) => void; picked
 
 function PathStatus({ status }: { status?: string }) {
   if (status === 'checking') return <LoaderCircle className="size-4 shrink-0 animate-spin text-fg-3" />
-  if (status === 'ok') return <CircleCheck className="size-4 shrink-0 text-ok" />
-  if (status) return <CircleAlert className="size-4 shrink-0 text-fail" />
+  if (status === 'ok') return <CircleCheck className="size-4 shrink-0 text-ok-text" />
+  if (status) return <CircleAlert className="size-4 shrink-0 text-fail-text" />
   return <span className="size-4 shrink-0" />
 }
 
 function Choice({ on, onClick, icon: Icon, title, body }: { on: boolean; onClick: () => void; icon: LucideIcon; title: string; body: string }) {
   return (
     <button onClick={onClick} aria-pressed={on}
-            className={`group flex flex-col rounded-2xl p-4 text-left ring-1 transition-all ${on ? 'bg-accent/5 ring-2 ring-accent' : 'ring-line hover:shadow-md hover:ring-line-strong'}`}>
-      <span className={`mb-2.5 flex size-8 items-center justify-center rounded-lg ${on ? 'bg-accent text-on-accent' : 'bg-fill text-fg-3'}`}><Icon className="size-4" /></span>
+            className={`group flex flex-col rounded-card p-4 text-left ring-1 transition-all ${on ? 'bg-accent/5 ring-2 ring-accent' : 'ring-line hover:shadow-md hover:ring-line-strong'}`}>
+      <span className={`mb-2.5 flex size-8 items-center justify-center rounded-ctl ${on ? 'bg-accent text-on-accent' : 'bg-fill text-fg-3'}`}><Icon className="size-4" /></span>
       <span className="block text-reading font-semibold">{title}</span>
       <span className="mt-1 block text-small leading-relaxed text-fg-3">{body}</span>
     </button>
@@ -596,7 +596,7 @@ function GithubCard({ c, onSaved, toast }: { c: { ok: boolean; detail: string };
         <div className="space-y-2.5">
           <p className="text-small text-fg-2">Open <a href={code.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent-text hover:underline">{code.url.replace('https://', '')}<ExternalLink className="size-3" /></a> and enter this code:</p>
           <div className="flex flex-wrap items-center gap-3">
-            <button onClick={() => void navigator.clipboard?.writeText(code.code).then(() => toast('Code copied'))} title="Copy the code" className="flex items-center gap-2 rounded-lg bg-surface-1 px-3 py-1.5 font-mono text-title font-semibold tracking-widest text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}<Copy className="size-3.5 text-fg-3" /></button>
+            <button onClick={() => void navigator.clipboard?.writeText(code.code).then(() => toast('Code copied'))} title="Copy the code" className="flex items-center gap-2 rounded-ctl bg-surface-1 px-3 py-1.5 font-mono text-title font-semibold tracking-widest text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}<Copy className="size-3.5 text-fg-3" /></button>
             <span className="flex items-center gap-1.5 text-meta text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Waiting for you to approve it…</span>
           </div>
         </div>

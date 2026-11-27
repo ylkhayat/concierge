@@ -269,11 +269,15 @@ export function useIsDark() {
 }
 
 /** React Flow's zoom controls, restyled to match the app's quiet rounded buttons in both themes. */
-export const flowControls = '!m-3 !overflow-hidden !rounded-xl !border-0 !shadow-sm ring-1 ring-line-strong '
+export const flowControls = '!m-3 !overflow-hidden !rounded-ctl !border-0 !shadow-sm ring-1 ring-line-strong '
   + '[&_button]:!size-7 [&_button]:!border-zinc-100 [&_button]:!bg-white [&_button]:!text-zinc-500 [&_button:hover]:!bg-zinc-50 [&_button:hover]:!text-zinc-900 [&_button_svg]:!fill-current [&_button_svg]:!max-h-3 [&_button_svg]:!max-w-3 '
   + 'dark:[&_button]:!border-zinc-800 dark:[&_button]:!bg-zinc-900 dark:[&_button]:!text-zinc-400 dark:[&_button:hover]:!bg-zinc-800 dark:[&_button:hover]:!text-zinc-100'
 
 /** True when a key press is going into a field (input, textarea, select, contenteditable): shortcuts must not take it. */
+/** Motion asked to be reduced (the system's setting): scripted motion (a smooth scroll, a map gliding) is then a jump. */
+export const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches
+export const smooth = (): ScrollBehavior => (calm() ? 'auto' : 'smooth')
+
 export const isTyping = (e: KeyboardEvent) => {
   const el = e.target as HTMLElement | null
   return !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || el.isContentEditable)

@@ -26,7 +26,7 @@ export function NearbyMachines() {
   return (
     <div className="card overflow-hidden">
       <div className="flex items-start gap-3 p-4">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-fill text-fg-1"><Network className="size-5" /></span>
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-ctl bg-fill text-fg-1"><Network className="size-5" /></span>
         <div className="min-w-0 flex-1">
           <div className="text-reading font-semibold">Your other machines</div>
           <p className="text-small text-fg-3">Concierge already runs on {names(v.machines)} on this tailnet. This machine joins them as the standby or a worker: the main one stays the main one, and its settings become this machine's.</p>
@@ -48,8 +48,8 @@ export function NearbyMachines() {
               : <>None is online now. Start the join from this computer’s terminal, in Concierge’s checkout: it waits until Tailscale says one is online (hours later is fine), then finishes by itself.</>}
           </p>
           <button onClick={() => void navigator.clipboard?.writeText('bin/join').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })}
-                  className="group flex items-center gap-1.5 rounded-lg bg-surface-1 px-2.5 py-1.5 font-mono text-meta text-fg-2 ring-1 ring-line hover:ring-line-strong" title="Copy">
-            bin/join{copied ? <Check className="size-3 text-ok" /> : <Copy className="size-3 opacity-50 group-hover:opacity-100" />}
+                  className="group flex items-center gap-1.5 rounded-ctl bg-surface-1 px-2.5 py-1.5 font-mono text-meta text-fg-2 ring-1 ring-line hover:ring-line-strong" title="Copy">
+            bin/join{copied ? <Check className="size-3 text-ok-text" /> : <Copy className="size-3 opacity-50 group-hover:opacity-100" />}
           </button>
           <p className="text-meta text-fg-3">It sets this computer up as one of them, which Concierge can’t do from inside Docker. Until then this machine works on its own, as now.</p>
         </>}
@@ -71,7 +71,7 @@ function JoinProgress({ j, online }: { j: Joining; online: boolean }) {
   }[j.state]
   return (
     <div className="flex items-start gap-2 text-small">
-      {busy ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-fg-3" /> : j.state === 'stopped' || j.state === 'approval' ? <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-wait" /> : <Network className="mt-0.5 size-3.5 shrink-0 text-fg-3" />}
+      {busy ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-fg-3" /> : j.state === 'stopped' || j.state === 'approval' ? <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-wait-text" /> : <Network className="mt-0.5 size-3.5 shrink-0 text-fg-3" />}
       <span className="min-w-0 text-fg-2">{text}{j.code && j.state === 'approval' && <span className="ml-1.5 rounded bg-surface-1 px-1.5 py-0.5 font-mono text-meta text-fg-1 ring-1 ring-line">{j.code}</span>}</span>
     </div>
   )
@@ -105,7 +105,7 @@ export function Alignment() {
           <div className="mb-1 text-small font-medium text-fg-1">{called(m)}</div>
           {v.items.filter((x) => x.machine === m).map((x, i) => (
             <div key={i} className="flex items-start gap-2 py-0.5 text-small">
-              {x.state === 'fixing' ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-fg-3" /> : <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-wait" />}
+              {x.state === 'fixing' ? <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-fg-3" /> : <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-wait-text" />}
               <span className="min-w-0"><span className={x.state === 'fixing' ? 'text-fg-3' : 'text-fg-1'}>{x.what}</span>{x.fix && <span className="block text-meta text-fg-3">{x.fix}</span>}</span>
             </div>
           ))}

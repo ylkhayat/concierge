@@ -312,7 +312,7 @@ export function App() {
   usePinNotifications(alerts, openAlert)
   const waitingBadge = (n: number) => n > 0 && (
     <span className="flex items-center gap-1.5 rounded-full bg-wait/10 px-2.5 py-1 text-meta font-semibold text-wait-text ring-1 ring-wait/20">
-      <span className="relative flex size-1.5"><span className="absolute inset-0 animate-ping rounded-full bg-wait/60" /><span className="size-1.5 rounded-full bg-wait" /></span>
+      <span className="size-1.5 rounded-full bg-wait" />
       {n} waiting on you
     </span>
   )
@@ -320,16 +320,16 @@ export function App() {
   const syncState = (
     // a phone: its icon or dot alone (the words for the screen reader), never a word cut in half
     <span className="flex min-w-0 items-center gap-1.5 truncate" title={paused ? `${health?.pollError ?? 'GitHub asked Concierge to slow down'}. GitHub counts every client of your account (your agents' gh too); Concierge asked it ${health?.traffic?.lastMinute ?? 0} times in the last minute${health?.traffic?.refused ? `, and it refused ${health.traffic.refused.what}` : ''}.` : health?.pollError}>
-      {!connected ? <><WifiOff className="size-3.5 shrink-0 text-fail" /><span className="max-sm:sr-only">reconnecting</span></>
+      {!connected ? <><WifiOff className="size-3.5 shrink-0 text-fail-text" /><span className="max-sm:sr-only">reconnecting</span></>
         // GitHub asked to slow down: a pause that ends by itself, not a failure
-        : paused ? <><Clock className="size-3.5 shrink-0 text-wait" /><span className="max-sm:sr-only">GitHub paused until {new Date(health!.traffic!.slowedUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
-        : health?.pollError ? <><TriangleAlert className="size-3.5 shrink-0 text-fail" /><span className="max-sm:sr-only">GitHub sync failed</span></>
+        : paused ? <><Clock className="size-3.5 shrink-0 text-wait-text" /><span className="max-sm:sr-only">GitHub paused until {new Date(health!.traffic!.slowedUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></>
+        : health?.pollError ? <><TriangleAlert className="size-3.5 shrink-0 text-fail-text" /><span className="max-sm:sr-only">GitHub sync failed</span></>
         : health?.polling ? <><LoaderCircle className="size-3.5 shrink-0 animate-spin" /><span className="max-sm:sr-only">syncing</span></>
         : <><span className="size-1.5 shrink-0 rounded-full bg-ok shadow-[0_0_0_3px_rgb(16_185_129/0.15)]" /><span className="max-sm:sr-only">synced {ago(mode === 'exec' ? exec?.at : health?.lastPollAt, now)}</span></>}
     </span>
   )
   const refreshBtn = (
-    <button onClick={mode === 'exec' ? () => { setRefreshing(true); api('/exec/poll', {}).finally(() => setRefreshing(false)) } : refresh} title={mode === 'exec' ? 'Check Linear now' : 'Check GitHub now'} aria-label="Refresh" className="group rounded-md p-1 transition-colors hover:bg-hover hover:text-fg-1">
+    <button onClick={mode === 'exec' ? () => { setRefreshing(true); api('/exec/poll', {}).finally(() => setRefreshing(false)) } : refresh} title={mode === 'exec' ? 'Check Linear now' : 'Check GitHub now'} aria-label="Refresh" className="group rounded-chip p-1 transition-colors hover:bg-hover hover:text-fg-1">
       <RefreshCw className={`size-3.5 transition-transform duration-500 ${refreshing ? 'animate-spin' : 'group-hover:rotate-90'}`} />
     </button>
   )
@@ -407,7 +407,7 @@ export function App() {
         const on = mode === m && !(m === 'review' && codebaseRepo) && (!view || view === designView)
         return (
           <button key={view ? `design:${view}` : m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m, view); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}`} aria-current={on}
-                  className={`group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 transition-[background-color,scale] duration-150 active:scale-[0.96] md:flex-none md:py-0 ${W('md:size-10', 'md:h-9 md:w-full md:flex-row md:justify-start md:gap-2.5 md:px-1')} ${on ? '' : 'md:hover:bg-hover'}`}>
+                  className={`group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-ctl py-1 transition-[background-color,scale] duration-150 active:scale-[0.96] md:flex-none md:py-0 ${W('md:size-10', 'md:h-9 md:w-full md:flex-row md:justify-start md:gap-2.5 md:px-1')} ${on ? '' : 'md:hover:bg-hover'}`}>
             <span data-rail-icon className={`relative flex size-8 items-center justify-center transition-colors duration-150 ${on ? 'text-accent-text' : 'text-fg-3 group-hover:text-fg-1'}`}>
               <Icon className="size-[18px]" />
               {n > 0 && !wide && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-wait px-1 text-center text-micro font-semibold tabular-nums leading-4 text-white ring-2 ring-[var(--bg-rail)]">{n}</span>}
@@ -420,7 +420,7 @@ export function App() {
       })}
       {repos.length > 0 && role === 'developer' && (
         <span className="hidden md:contents">
-        <button data-rail={codebaseRepo ? 'on' : undefined} onClick={() => goCodebase()} title="Codebase map (g c)" aria-current={!!codebaseRepo} className={`group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1 transition-[background-color,scale] duration-150 active:scale-[0.96] md:flex-none md:py-0 ${W('md:size-10', 'md:h-9 md:w-full md:flex-row md:justify-start md:gap-2.5 md:px-1')} ${codebaseRepo ? '' : 'md:hover:bg-hover'}`}>
+        <button data-rail={codebaseRepo ? 'on' : undefined} onClick={() => goCodebase()} title="Codebase map (g c)" aria-current={!!codebaseRepo} className={`group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-ctl py-1 transition-[background-color,scale] duration-150 active:scale-[0.96] md:flex-none md:py-0 ${W('md:size-10', 'md:h-9 md:w-full md:flex-row md:justify-start md:gap-2.5 md:px-1')} ${codebaseRepo ? '' : 'md:hover:bg-hover'}`}>
           <span data-rail-icon className={`flex size-8 items-center justify-center transition-colors duration-150 ${codebaseRepo ? 'text-accent-text' : 'text-fg-3 group-hover:text-fg-1'}`}>
             <MapIcon className="size-[18px]" />
           </span>
@@ -464,7 +464,7 @@ export function App() {
           {/* in Codebase the left column picks the repository; elsewhere it is the PR list */}
           {codebaseRepo ? <RepoList selected={codebaseRepo} onSelect={(r) => { setFocus(r); select(`codebase:${r}`) }} now={now} version={health?.lastPollAt} />
             : focusedPrs ? <PrList prs={focusedPrs} selected={selected} onSelect={select} query={query} onQuery={setQuery} now={now} tab={tab} onTab={setTab} picked={pickedPrs} onPick={setPickedPrs} toast={toast} />
-            : <div className="space-y-2 p-3 pt-16">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[46px] animate-pulse rounded-lg bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
+            : <div className="space-y-2 p-3 pt-16">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[46px] animate-pulse rounded-ctl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
       <main data-detail className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
@@ -501,7 +501,7 @@ export function App() {
           {exec && !exec.configured ? <ExecSetupHint onOpen={() => setSettingsOpen('exec')} hasKey={exec.hasKey} />
             : exec?.at ? <ExecList tickets={scoped} selected={selected} onSelect={select} picked={picked} onPick={setPicked} onRun={runPicked} missing={exec?.missing} query={query} onQuery={setQuery} now={now} toast={toast}
                           elsewhere={focus ? execWaiting - scoped.filter((t) => !t.dimmed && ['needs-you', 'tend'].includes(groupOf(t).id)).length : 0} onAllApps={() => setFocus(undefined)} />
-            : <div className="space-y-2 p-3 pt-6">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-xl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
+            : <div className="space-y-2 p-3 pt-6">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-ctl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
         </div>
       </aside>
       <main data-detail className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
@@ -551,7 +551,7 @@ export function App() {
           <div className="relative z-20 flex items-center gap-2.5 border-b border-wait/20 bg-wait/10 px-4 py-2 text-body text-wait-text">
             <Wallet className="size-4 shrink-0" />
             <span>Daily budget reached: ${health.spentToday.toFixed(2)} of ${health.settings.dailyBudgetUsd}. Queued runs wait until tomorrow or a higher cap.</span>
-            <button onClick={() => setSettingsOpen('usage')} className="ml-auto rounded-lg px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Adjust</button>
+            <button onClick={() => setSettingsOpen('usage')} className="ml-auto rounded-ctl px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Adjust</button>
           </div>
         )}
         {/* one view at a time, drawn afresh on a switch (its entrance a short fade-in, never the old view fading out
@@ -597,12 +597,12 @@ export function App() {
 /** The status bar's spend: the account in use and today's spend; the full meter opens above it. */
 function SpendChip({ health, onOpen }: { health: NonNullable<ReturnType<typeof useDeck>['health']>; onOpen: () => void }) {
   const cap = health.settings?.dailyBudgetUsd ?? null, today = health.spentToday
-  const tone = cap != null && today >= cap ? 'text-fail' : cap != null && today >= cap * 0.75 ? 'text-wait' : 'text-fg-2'
+  const tone = cap != null && today >= cap ? 'text-fail-text' : cap != null && today >= cap * 0.75 ? 'text-wait-text' : 'text-fg-2'
   return (
     <>
       <button popoverTarget="spend" style={{ anchorName: '--spend' } as CSSProperties} title={health.now?.standingInFor ? `${health.now.label} takes new work in place of ${health.now.standingInFor}${health.now.why ? `: ${health.now.why}` : ''}` : 'AI spend and the account in use'}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 leading-[18px] text-fg-3 transition-colors duration-150 hov hover:text-fg-1">
-        {health.now && <span className={`hidden max-w-52 truncate sm:inline ${health.now.standingInFor ? 'text-wait' : ''}`}>{health.now.label}{health.now.standingInFor ? ` for ${health.now.standingInFor}` : ''} ·</span>}
+              className="inline-flex items-center gap-1 rounded-chip px-1.5 leading-[18px] text-fg-3 transition-colors duration-150 hov hover:text-fg-1">
+        {health.now && <span className={`hidden max-w-52 truncate sm:inline ${health.now.standingInFor ? 'text-wait-text' : ''}`}>{health.now.label}{health.now.standingInFor ? ` for ${health.now.standingInFor}` : ''} ·</span>}
         <span className={`tabular-nums ${tone}`}>${today.toFixed(2)}</span><span className="text-fg-4">today</span>
       </button>
       <div id="spend" popover="auto" style={{ positionAnchor: '--spend', positionArea: 'top span-left', inset: 'auto' } as CSSProperties}
@@ -624,9 +624,9 @@ function SpendMeter({ health, onOpen }: { health: NonNullable<ReturnType<typeof 
   const peak = Math.max(...days.map((d) => d.usd), cap ?? 0, 0.01)
   return (
     <button onClick={onOpen} title={cap ? `$${today.toFixed(2)} of a $${cap} daily budget · $${week.toFixed(2)} over 7 days` : 'No daily budget: click to set one'}
-            className="group w-full rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-hover">
+            className="group w-full rounded-ctl px-2 py-1.5 text-left transition-colors hover:bg-hover">
       <div className="flex items-baseline gap-1.5 text-meta">
-        <Coins className={`size-3.5 shrink-0 self-center ${pct >= 100 ? 'text-fail' : pct >= 75 ? 'text-wait' : 'text-fg-3'}`} />
+        <Coins className={`size-3.5 shrink-0 self-center ${pct >= 100 ? 'text-fail-text' : pct >= 75 ? 'text-wait-text' : 'text-fg-3'}`} />
         <span className="font-medium text-fg-2 ">AI spend today</span>
         <span className="ml-auto font-mono text-small font-semibold tabular-nums text-fg-1 ">${today.toFixed(2)}</span>
         <span className="font-mono text-micro tabular-nums text-fg-3">{cap != null ? `/ $${cap}` : 'no cap'}</span>
@@ -653,7 +653,7 @@ function SpendMeter({ health, onOpen }: { health: NonNullable<ReturnType<typeof 
 function ExecSetupHint({ onOpen, hasKey }: { onOpen: () => void; hasKey: boolean }) {
   return (
     <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-accent/10"><Rocket className="size-6 text-accent" /></span>
+      <span className="flex size-12 items-center justify-center rounded-card bg-accent/10"><Rocket className="size-6 text-accent" /></span>
       <p className="text-body font-medium">Ship your Linear tickets from here</p>
       <p className="text-small text-fg-3">{hasKey ? 'Pick the command that ships a ticket (ship-tickets works out of the box) and the repository each Linear team maps to.' : `Connect Linear with your API key (${inSettings('machines')}), then pick the command that ships a ticket.`}</p>
       <button onClick={onOpen} className="btn-primary transition-all hover:bg-accent">Open Ship settings</button>
@@ -664,7 +664,7 @@ function ExecSetupHint({ onOpen, hasKey }: { onOpen: () => void; hasKey: boolean
 /** The first load, before the setup check answers: the logo, as index.html draws it before any script runs. */
 const Boot = () => (
   <div className="grain flex h-dvh items-center justify-center bg-bg-app">
-    <span className="flex size-11 animate-pulse items-center justify-center rounded-xl bg-accent text-on-accent"><GitPullRequestArrow className="size-6" /></span>
+    <span className="flex size-11 animate-pulse items-center justify-center rounded-ctl bg-accent text-on-accent"><GitPullRequestArrow className="size-6" /></span>
   </div>
 )
 

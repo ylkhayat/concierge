@@ -99,7 +99,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
   // one agent is resolving the stack now: what it was answered is under way, so nothing is asked again until it ends
   const driving = stack.map((s) => prs.find((p) => p.repo === s.repo && p.number === s.number)).find((p) => p?.stackRun)?.stackRun
   if (driving) return { covers: prs.filter((p) => stack.some((s) => s.repo === p.repo && s.number === p.number)).map((p) => p.id), card: (
-    <section className="flex items-center gap-2 rounded-xl bg-run/5 p-3 text-small text-fg-2 ring-1 ring-run/20">
+    <section className="flex items-center gap-2 rounded-ctl bg-run/5 p-3 text-small text-fg-2 ring-1 ring-run/20">
       <LoaderCircle className="size-4 shrink-0 animate-spin text-run-text" />
       <span>{driving === 'running' ? 'One agent is resolving the stack with your answers, bottom first.' : 'Your answers are queued for the stack\'s agent.'} What it still needs from you comes back here when it ends.</span>
     </section>
@@ -197,8 +197,8 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
       {showPlan && standing.map((g, k) => (
         // one card per conflict still standing: what it is, why, and each side as a button (the agents' favourite marked)
-        <section key={k} className="rounded-xl bg-wait/8 p-2.5 ring-1 ring-wait/25">
-          <p className="flex items-center gap-1.5 text-small font-medium text-fg-1"><TriangleAlert className="size-3.5 shrink-0 text-wait" />{g.title?.trim() || 'These can’t both happen'}<span className="ml-1 inline-flex gap-1">{prsOf(g.items).map((n) => <span key={n} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-3">#{n}</span>)}</span></p>
+        <section key={k} className="rounded-ctl bg-wait/8 p-2.5 ring-1 ring-wait/25">
+          <p className="flex items-center gap-1.5 text-small font-medium text-fg-1"><TriangleAlert className="size-3.5 shrink-0 text-wait-text" />{g.title?.trim() || 'These can’t both happen'}<span className="ml-1 inline-flex gap-1">{prsOf(g.items).map((n) => <span key={n} className="rounded-full bg-fill px-1.5 font-mono text-micro text-fg-3">#{n}</span>)}</span></p>
           <p className="mt-0.5 text-meta text-fg-3">{g.why.replace(/\b(\d{2,6}):\d+\b/g, '#$1')}</p>
           <div role="radiogroup" aria-label={g.title || 'Keep one'} className="mt-1.5 flex flex-col gap-1">
             {g.items.map((id) => (
@@ -216,7 +216,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
       {!showPlan && plan.isFetching && !raw && <p className="flex items-center gap-2 px-1 py-3 text-small text-fg-3"><LoaderCircle className="size-4 animate-spin" />Reading the {all.length} items of {waiting.length} PRs together…</p>}
       {!showPlan && plan.isError && !raw && <p className="px-1 text-meta text-wait-text">Couldn’t boil them down ({(plan.error as Error).message}): here is every item as the agents wrote it.</p>}
       {(raw || (!showPlan && !plan.isFetching)) && waiting.map((m) => (
-        <div key={m.pr.id} className="rounded-xl bg-fill/40 p-2.5 ring-1 ring-line">
+        <div key={m.pr.id} className="rounded-ctl bg-fill/40 p-2.5 ring-1 ring-line">
           <p className="mb-1.5 truncate text-meta text-fg-3"><span className="font-mono font-semibold text-fg-2">#{m.pr.number}</span> {m.pr.title}</p>
           <ul className="space-y-1.5">
             {m.steps.map((s, i) => s.kind === 'decide' ? (
@@ -245,7 +245,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
       ))}
       </div>
       <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000} placeholder="Steer the stack: say which way to go. Reanalyze reads it, and every agent gets it with your answer…"
-                className="w-full resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60" />
+                className="w-full resize-none rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-accent/60" />
       {(review.isFetching || standing.length > 0 || unanswered.length > 0) && <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {review.isFetching && <span className="flex items-center gap-1 text-meta text-fg-3"><LoaderCircle className="size-3 animate-spin" />Checking for duplicates and conflicts…</span>}
         {standing.length > 0 && <span className="text-meta text-wait-text" title="Two lines that can't both happen are both ticked: each is marked ⚠ above. Untick one, or press Keep this one on the side you want">{standing.length} conflict{standing.length === 1 ? '' : 's'}: keep one side of each (above)</span>}
@@ -259,7 +259,7 @@ export function useStackNext({ stack, prs, toast }: { stack: { repo: string; num
         {note.trim() && note.trim() !== (plan.data?.steer ?? steer) && <button onClick={() => { setRaw(false); setSteer(note.trim()) }} disabled={plan.isFetching} title="Read the PRs' suggestions again with your steer: it settles what it can and suggests the rest" className="inline-flex items-center gap-1.5 btn-outline btn-sm"><RefreshCw className="size-3.5" />Reanalyze with this steer</button>}
         <button disabled={sending || unanswered.length > 0 || standing.length > 0} onClick={() => void send()}
                 title={standing.length ? 'Two ticked lines can’t both happen: keep one side of each (marked ⚠)' : unanswered.length ? `Decide ${unanswered.length} first` : undefined}
-                className="relative inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-1.5 text-small font-medium text-on-accent transition-all active:scale-[0.98] disabled:bg-fill-strong disabled:text-fg-3">
+                className="relative inline-flex items-center gap-1.5 rounded-ctl bg-accent px-3.5 py-1.5 text-small font-medium text-on-accent transition-all active:scale-[0.98] disabled:bg-fill-strong disabled:text-fg-3">
           {sending ? <LoaderCircle className="size-3.5 animate-spin" /> : publishing.length ? <Upload className="size-3.5" /> : <Send className="size-3.5" />}
           {armed === 'send' ? <ArmLabel>{`Confirm: ${publishing.length} public step${publishing.length === 1 ? '' : 's'}`}</ArmLabel> : `Answer the stack · ${waiting.length} PRs`}
           {armed === 'send' && <ArmBar on="color" />}
@@ -309,7 +309,7 @@ function PlanView({ p, chosen, choose, stepOn, toggle, prsOf, restack }: {
     <div className="space-y-3">
       {p.summary && <details className="group/sum px-1"><summary className="cursor-pointer list-none text-small leading-relaxed text-fg-2 [&::-webkit-details-marker]:hidden"><span className="line-clamp-2 group-open/sum:line-clamp-none">{p.summary}</span></summary></details>}
       {p.decisions.length > 0 && (
-        <section className="rounded-xl bg-wait/6 p-2.5 ring-1 ring-wait/20">
+        <section className="rounded-ctl bg-wait/6 p-2.5 ring-1 ring-wait/20">
           <p className={`${head} mb-1.5 !text-wait-text`}>Needs your input</p>
           <ul className="space-y-2.5">
             {p.decisions.map((d, i) => (
@@ -324,10 +324,10 @@ function PlanView({ p, chosen, choose, stepOn, toggle, prsOf, restack }: {
           </ul>
         </section>
       )}
-      {checks.length > 0 && <section className="rounded-xl bg-run/5 p-2.5 ring-1 ring-run/20"><p className={`${head} mb-1 flex items-center gap-1 !text-run-text`}><CircleCheck className="size-3" />Checks: the agents confirm these, nothing changes</p><ul className="space-y-1">{checks.map(row)}</ul></section>}
-      {priv.length > 0 && <section className="rounded-xl bg-fill/40 p-2.5 ring-1 ring-line"><p className={`${head} mb-1`}>Changes, on your machine</p><ul className="space-y-1">{priv.map(row)}</ul></section>}
+      {checks.length > 0 && <section className="rounded-ctl bg-run/5 p-2.5 ring-1 ring-run/20"><p className={`${head} mb-1 flex items-center gap-1 !text-run-text`}><CircleCheck className="size-3" />Checks: the agents confirm these, nothing changes</p><ul className="space-y-1">{checks.map(row)}</ul></section>}
+      {priv.length > 0 && <section className="rounded-ctl bg-fill/40 p-2.5 ring-1 ring-line"><p className={`${head} mb-1`}>Changes, on your machine</p><ul className="space-y-1">{priv.map(row)}</ul></section>}
       {pub.length > 0 && (
-        <section className="rounded-xl bg-ok/5 p-2.5 ring-1 ring-ok/20">
+        <section className="rounded-ctl bg-ok/5 p-2.5 ring-1 ring-ok/20">
           <p className={`${head} mb-1 flex items-center gap-1 !text-ok-text`}><Upload className="size-3" />Public: others will see these{restack}</p>
           <ul className="space-y-1">{pub.map(row)}</ul>
         </section>

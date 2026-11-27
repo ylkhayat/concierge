@@ -16,7 +16,7 @@ export function Norms({ pr, toast }: { pr: PrView; toast: (m: string, tone?: 'ok
   const [d, setD] = useState<{ norms: Norm[]; exceptions: Exception[] }>()
   const load = () => api(`/prs/${enc(pr.id)}/norms`).then(setD, () => setD({ norms: [], exceptions: [] }))
   useEffect(() => { void load() }, [pr.id, pr.crit?.drift]) // eslint-disable-line react-hooks/exhaustive-deps
-  if (!d) return <div className="space-y-2 p-5">{[0, 1].map((i) => <div key={i} className="h-20 animate-pulse rounded-lg bg-hover" />)}</div>
+  if (!d) return <div className="space-y-2 p-5">{[0, 1].map((i) => <div key={i} className="h-20 animate-pulse rounded-ctl bg-hover" />)}</div>
 
   const drift = d.norms.filter((n) => n.state === 'drift'), kept = d.norms.filter((n) => n.state === 'deliberate')
   const reviewed = (pr.crit?.aiComments ?? 0) > 0
@@ -32,7 +32,7 @@ export function Norms({ pr, toast }: { pr: PrView; toast: (m: string, tone?: 'ok
       </header>
 
       {!drift.length && (
-        <p className="rounded-lg bg-hover px-4 py-3 text-body text-fg-2">
+        <p className="rounded-ctl bg-hover px-4 py-3 text-body text-fg-2">
           {reviewed ? 'The review found nothing that departs from its libraries’ docs, the language’s conventions or the house’s ADRs.'
             : 'Norms come with the review: anything that departs from its libraries’ docs, the language’s conventions or the house’s ADRs shows up here, with the source that says so.'}
         </p>
@@ -72,7 +72,7 @@ function Drift({ pr, n, toast, onDone }: { pr: PrView; n: Norm; toast: (m: strin
       (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false))
   }
   return (
-    <li className="rounded-lg bg-surface-1 p-3.5 shadow-e1">
+    <li className="rounded-ctl bg-surface-1 p-3.5 shadow-e1">
       <p className="text-body font-medium text-fg-1">{n.claim}</p>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-small text-fg-2">
         <span className="text-fg-4">Norm</span>{n.norm}
@@ -88,7 +88,7 @@ function Drift({ pr, n, toast, onDone }: { pr: PrView; n: Norm; toast: (m: strin
         <div className="mt-2 flex items-center gap-2">
           <input autoFocus value={why} onChange={(e) => setWhy(e.target.value)} maxLength={500} placeholder="Why, briefly (e.g. ADR-0031)"
                  onKeyDown={(e) => { if (e.key === 'Enter' && !busy) keep(); if (e.key === 'Escape') setAsking(false) }}
-                 className="min-w-0 flex-1 rounded-lg bg-bg-app px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/50" />
+                 className="min-w-0 flex-1 rounded-ctl bg-bg-app px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/50" />
           <button onClick={keep} disabled={busy} className={`${secondary} py-1.5 text-small`}>{busy ? 'Keeping…' : 'Keep it'}</button>
         </div>
       )}

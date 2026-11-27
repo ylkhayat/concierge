@@ -45,7 +45,7 @@ export function SignInSteps({ s }: { s: MachineSignIn }) {
         : <>
             <p className="text-fg-2">1. <a href={f.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">Open the sign-in page</a> and approve{f.code ? <> with the code <code className="rounded bg-fill px-1 font-mono">{f.code}</code></> : ''}.</p>
             {!f.code && <div className="flex gap-1.5">
-              <input value={f.input} onChange={(e) => s.setInput(e.target.value)} placeholder="2. Paste the code it shows" className="min-w-0 flex-1 rounded-md bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
+              <input value={f.input} onChange={(e) => s.setInput(e.target.value)} placeholder="2. Paste the code it shows" className="min-w-0 flex-1 rounded-chip bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
               <button onClick={s.finish} disabled={!f.input.trim() || f.waiting} className={btn}>{f.waiting ? <LoaderCircle className="size-3.5 animate-spin" /> : null}Finish</button>
             </div>}
             {f.code && <button onClick={() => s.poll(f.machine)} className={btn}>I approved it</button>}

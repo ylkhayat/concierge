@@ -85,13 +85,13 @@ export function AccountMachines({ account, label, m, again, toast }: { account: 
         <div className="mt-2 space-y-2 border-t border-line pt-2 text-small">
           <p className="text-fg-2">1. In a terminal on any computer with Claude Code, run this and approve in the browser it opens (signed in to this account):</p>
           <div className="flex items-center gap-2">
-            <code className="rounded-md bg-fill px-2 py-1 font-mono text-meta text-fg-1">claude setup-token</code>
+            <code className="rounded-chip bg-fill px-2 py-1 font-mono text-meta text-fg-1">claude setup-token</code>
             <button onClick={() => void navigator.clipboard?.writeText('claude setup-token').then(() => toast('Copied'), () => {})} className="text-meta text-fg-4 hover:text-fg-1">Copy</button>
           </div>
           <p className="text-fg-2">2. Paste the key it prints (it starts with <code className="font-mono text-meta">sk-ant-oat</code>):</p>
           <div className="flex flex-wrap items-center gap-2">
             <KeyRound className="size-3.5 text-fg-3" />
-            <input autoFocus value={pasting} onChange={(e) => setPasting(e.target.value)} placeholder="sk-ant-oat…" type="password" aria-label="Key" className="w-72 rounded-md bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
+            <input autoFocus value={pasting} onChange={(e) => setPasting(e.target.value)} placeholder="sk-ant-oat…" type="password" aria-label="Key" className="w-72 rounded-chip bg-surface-1 px-2 py-1 font-mono text-meta ring-1 ring-line-strong" />
             <button onClick={() => paste(pasting.trim())} disabled={!pasting.trim()} className={btn}>Use on all machines</button>
             <button onClick={() => setPasting(undefined)} className="text-meta text-fg-4 hover:text-fg-1">Cancel</button>
           </div>

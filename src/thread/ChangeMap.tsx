@@ -38,7 +38,7 @@ function Missing({ prId, busy, toast }: { prId: string; busy: boolean; toast: (m
   const working = busy || asked
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-      <span className="flex size-10 items-center justify-center rounded-2xl bg-accent-soft"><Sparkles className="size-5 text-accent-text" /></span>
+      <span className="flex size-10 items-center justify-center rounded-card bg-accent-soft"><Sparkles className="size-5 text-accent-text" /></span>
       <p className="max-w-sm text-small text-fg-2">{working ? 'Explaining the change: the picture appears here when it is ready.' : failed ?? 'This picture is drawn from the PR’s explanation, which isn’t written yet.'}</p>
       {working ? <LoaderCircle className="size-4 animate-spin text-fg-3" />
         : <button onClick={() => api(`/prs/${enc(prId)}/explain`, {}).then(() => { started.add(prId); setAsked(true); toast('Explaining the change') }, (e: Error) => toast(e.message, 'error'))} className="btn-primary btn-sm">Try again</button>}

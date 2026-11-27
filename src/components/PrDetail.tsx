@@ -36,7 +36,7 @@ function Stat({ icon: Icon, label, value, accent }: { icon: LucideIcon; label: s
       <div className="flex items-center gap-1.5 text-micro font-medium uppercase tracking-label text-fg-3">
         <Icon className={`size-3.5 opacity-60 transition-opacity duration-200 group-hover/stat:opacity-100 ${accent}`} aria-hidden />{label}
       </div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums tracking-tight transition-transform duration-200 group-hover/stat:translate-x-0.5 ${value ? accent : 'text-fg-4'}`}>{value}</div>
+      <div className={`mt-1 text-display font-semibold tabular-nums tracking-tight transition-transform duration-200 group-hover/stat:translate-x-0.5 ${value ? accent : 'text-fg-4'}`}>{value}</div>
     </div>
   )
 }
@@ -52,7 +52,7 @@ const STEPS_MINE = ['Feedback', 'Preparing', 'In crit', 'Fixing', 'All clear']
 export function Description({ pr }: { pr: PrView }) {
   // cached per PR and update: read again only when the PR changed
   const { data: b } = useApi<{ body: string; bodyHtml: string }>(pr.hasBody ? `/prs/${enc(pr.id)}/body?at=${pr.updatedAt}` : undefined, { staleTime: Infinity })
-  if (!pr.hasBody) return <p className="px-5 py-10 text-center text-sm text-fg-3">No description.</p>
+  if (!pr.hasBody) return <p className="px-5 py-10 text-center text-reading text-fg-3">No description.</p>
   if (!b) return <div className="flex justify-center py-10"><Timer className="size-5 animate-spin text-fg-3" /></div>
   // body_html is rendered and sanitized by GitHub, same as on github.com
   return b.bodyHtml
@@ -122,7 +122,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
       {/* what the agent left running on its own: first, so it is never missed */}
       {pr.behindBase && below && (
         <button onClick={smartRebase} title={`#${below.number} below moved past this branch since it was last rebased. Nothing was pushed here; a smart rebase brings it up.`}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-wait/10 px-2.5 py-1 text-small font-medium text-wait-text ring-1 ring-wait/25 transition-colors hover:bg-wait/15">
+                className="inline-flex items-center gap-1.5 rounded-ctl bg-wait/10 px-2.5 py-1 text-small font-medium text-wait-text ring-1 ring-wait/25 transition-colors hover:bg-wait/15">
           <Layers className="size-3.5" />Outdated: behind #{below.number} · Smart rebase
         </button>
       )}
@@ -144,7 +144,7 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
         {/* crit went down while the review still needs it: the header shows one glyph, and the way back is here */}
         {critDown && <>
           <p className="mt-3 text-small text-fg-3">crit stopped while the review still needs it. Your comments are kept.</p>
-          <button onClick={restartCrit} disabled={restarting} className="mt-2.5 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-small font-medium text-wait-text ring-1 ring-wait/30 transition-colors hover:bg-wait/10 disabled:opacity-50">
+          <button onClick={restartCrit} disabled={restarting} className="mt-2.5 inline-flex items-center gap-1 rounded-ctl px-2.5 py-1 text-small font-medium text-wait-text ring-1 ring-wait/30 transition-colors hover:bg-wait/10 disabled:opacity-50">
             {restarting ? <Timer className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}{restarting ? 'Starting…' : 'Restart crit'}
           </button>
         </>}
@@ -161,13 +161,13 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
             <Meta label="Session">
               <button onClick={() => resumeCmd && navigator.clipboard.writeText(resumeCmd).then(() => { setCopied(true); toast('Resume command copied'); setTimeout(() => setCopied(false), 1500) })}
                       className="group/sid flex items-center gap-1 font-mono text-fg-2 transition-colors hover:text-accent-text" title="Copy resume command">
-                {job.sessionId.slice(0, 8)}{copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5 opacity-0 transition-opacity group-hover/sid:opacity-100" />}
+                {job.sessionId.slice(0, 8)}{copied ? <Check className="size-3.5 text-ok-text" /> : <Copy className="size-3.5 opacity-0 transition-opacity group-hover/sid:opacity-100" />}
               </button>
             </Meta>
           </dl>
-          {job.error && <p className="mt-3 flex items-start gap-2 rounded-xl bg-fail/10 px-3 py-2 text-small text-fail-text ring-1 ring-fail/30"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{job.error}</p>}
+          {job.error && <p className="mt-3 flex items-start gap-2 rounded-ctl bg-fail/10 px-3 py-2 text-small text-fail-text ring-1 ring-fail/30"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{job.error}</p>}
           {!!job.denials?.length && (
-            <p title={job.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-xl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
+            <p title={job.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-ctl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
               <span>Denied {job.denials.length}×: {[...new Set(job.denials)].join(', ')}{job.refused?.[0] && <> (first: <code className="font-mono text-meta">{job.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed in {inSettings('workflows', 'Allowed tools')}.</span>
             </p>
@@ -188,14 +188,14 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
         <Chip icon={Sparkles} pulse={!pr.explain.step?.startsWith('Waiting:')} tone="zinc" label={pr.explain.state === 'queued' ? (pr.explain.step?.startsWith('Waiting:') ? 'Explain · waiting for a machine' : 'Explain · queued') : `Explaining · ${/^Running\b|[/~]\w/.test(pr.explain.step ?? '') ? 'reading the code' : (pr.explain.step ?? 'working').toLowerCase()}`}>
           {/* queued where it can't be written (no machine with the checkout runs Concierge): the server says why */}
           <p className="text-small text-fg-2 ">{pr.explain.state === 'queued' ? (pr.explain.step?.startsWith('Waiting:') ? pr.explain.step.slice(9) : 'Waiting its turn (a PR below it in the stack goes first, or the parallel limit is reached).') : 'The explanation is being written; the Explain tab shows the previous one meanwhile.'}</p>
-          <button onClick={() => setTab('explain')} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10">Open Explain</button>
+          <button onClick={() => setTab('explain')} className="mt-2.5 inline-flex items-center gap-1.5 rounded-ctl px-2.5 py-1 text-small font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent/10">Open Explain</button>
         </Chip>
       )}
       {/* NORM findings (review-exchange): where it departs from a written convention; advisory, never blocking */}
       {!!pr.crit?.drift && (
         <Chip icon={Scale} tone="zinc" label={`${pr.crit.drift} drift${pr.crit.drift === 1 ? '' : 's'}`}>
           <p className="text-small text-fg-2">The review found {pr.crit.drift === 1 ? 'a place' : `${pr.crit.drift} places`} where this departs from how its libraries, its language or the house write things down. Advisory: none of it blocks.</p>
-          <button onClick={() => { setParam('view', 'norms'); setTab('explain') }} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium text-accent-text ring-1 ring-accent/30 hov">Open Norms</button>
+          <button onClick={() => { setParam('view', 'norms'); setTab('explain') }} className="mt-2.5 inline-flex items-center gap-1.5 rounded-ctl px-2.5 py-1 text-small font-medium text-accent-text ring-1 ring-accent/30 hov">Open Norms</button>
         </Chip>
       )}
       <Chip icon={FileDiff} tone={pr.mine && (pr.awaiting ?? pr.unresolved) ? 'amber' : 'zinc'}
@@ -209,8 +209,8 @@ export function usePrThread({ pr, feed, now, onBack, toast: toastIn, prs, onSele
           </Meta>
           <Meta label="Opened">{ago(pr.createdAt, now)}</Meta>
           <Meta label="Updated">{ago(pr.updatedAt, now)}</Meta>
-          <Meta label="Base"><span className="rounded-md bg-fill px-1.5 py-0.5 font-mono">{pr.base}</span></Meta>
-          <Meta label="Head"><span className="block max-w-[180px] truncate rounded-md bg-fill px-1.5 py-0.5 font-mono" title={pr.head}>{pr.head}</span></Meta>
+          <Meta label="Base"><span className="rounded-chip bg-fill px-1.5 py-0.5 font-mono">{pr.base}</span></Meta>
+          <Meta label="Head"><span className="block max-w-[180px] truncate rounded-chip bg-fill px-1.5 py-0.5 font-mono" title={pr.head}>{pr.head}</span></Meta>
           {pr.mine ? (
             <>
               <Meta label="Unresolved threads"><span className={pr.unresolved ? 'font-semibold text-wait-text' : ''}>{pr.unresolved ?? 0}</span></Meta>
@@ -337,7 +337,7 @@ function Findings({ pr, critUrl, onSubmit, onRestartCrit }: {
   type Pick = { id: 'comment' | 'approve' | 'approve-quiet'; icon: LucideIcon; title: string; sub: string; go: () => void; tone: string }
   const picks: Pick[] = [
     { id: 'comment', icon: Send, title: k ? `Post ${k === 1 ? 'it' : `the ${k}`} as comments` : 'Post a note', sub: k ? 'A comment review: your note first, each finding on its line. No verdict.' : 'A comment review with your note, no verdict.', go: () => onSubmit('COMMENT', !k), tone: 'text-accent-text' },
-    { id: 'approve', icon: CheckCheck, title: k ? 'Approve, with the findings' : 'Approve', sub: k ? 'Approves and posts the findings as comments for the author.' : 'Nothing to flag: approve, with a note if you like.', go: () => onSubmit('APPROVE'), tone: 'text-ok' },
+    { id: 'approve', icon: CheckCheck, title: k ? 'Approve, with the findings' : 'Approve', sub: k ? 'Approves and posts the findings as comments for the author.' : 'Nothing to flag: approve, with a note if you like.', go: () => onSubmit('APPROVE'), tone: 'text-ok-text' },
     ...(k ? [{ id: 'approve-quiet' as const, icon: Check, title: 'Approve without them', sub: 'Approves with only your note. The findings stay in crit, unposted.', go: () => onSubmit('APPROVE', true), tone: 'text-fg-3' }] : []),
   ]
   const reason = !k ? 'The review found nothing to flag.' : b ? `${b} of the ${k} ${b === 1 ? 'is' : 'are'} blocking: the author should change ${b === 1 ? 'it' : 'them'} before merge.` : `None of the ${k} is blocking.`
@@ -412,15 +412,15 @@ export function SubmitDialog({ pr, event, drop, onClose, toast }: {
       .then(() => { toast(approve ? 'Approving: the agent is posting it now' : 'Posting: the agent is submitting the review'); onClose() },
             (e: Error) => { toast(e.message, 'error'); setSending(false) })
   }
-  const field = 'w-full rounded-xl bg-fill/60 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:bg-surface-1 focus:ring-2 focus:ring-accent/60'
+  const field = 'w-full rounded-ctl bg-fill/60 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:bg-surface-1 focus:ring-2 focus:ring-accent/60'
 
   return (
     <dialog ref={(d) => { ref.current = d; if (d && !d.open) d.showModal() }} onClose={onClose}
             onClick={(e) => e.target === ref.current && ref.current?.close()}
-            className="m-auto w-[min(520px,calc(100vw/var(--z)-32px))] animate-[toast-in_200ms_var(--ease-snappy)] rounded-2xl bg-surface-1 p-0 text-fg-1 shadow-2xl ring-1 ring-line backdrop:bg-zinc-950/40 backdrop:backdrop-blur-sm ">
+            className="m-auto w-[min(520px,calc(100vw/var(--z)-32px))] animate-[toast-in_200ms_var(--ease-snappy)] rounded-card bg-surface-1 p-0 text-fg-1 shadow-2xl ring-1 ring-line backdrop:bg-zinc-950/40 backdrop:backdrop-blur-sm ">
       <form method="dialog" onSubmit={(e) => { e.preventDefault(); send() }} className="space-y-4 p-5">
         <header className="flex items-start gap-3">
-          <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${approve ? 'bg-ok/10 text-ok-text' : 'bg-accent/10 text-accent-text'}`}>
+          <span className={`flex size-9 shrink-0 items-center justify-center rounded-ctl ${approve ? 'bg-ok/10 text-ok-text' : 'bg-accent/10 text-accent-text'}`}>
             {approve ? <CheckCheck className="size-5" /> : <Send className="size-5" />}
           </span>
           <div className="min-w-0 flex-1">
@@ -430,7 +430,7 @@ export function SubmitDialog({ pr, event, drop, onClose, toast }: {
                 : <>The agent tidies the {findings} crit finding{findings === 1 ? '' : 's'} plus your notes, then submits them to GitHub{approve ? ' as an approval' : ' as a comment review'}.</>}
             </p>
           </div>
-          <button type="button" onClick={() => ref.current?.close()} className="rounded-lg p-1 text-fg-3 transition-colors hov hover:text-fg-2" aria-label="Close"><X className="size-4" /></button>
+          <button type="button" onClick={() => ref.current?.close()} className="rounded-ctl p-1 text-fg-3 transition-colors hov hover:text-fg-2" aria-label="Close"><X className="size-4" /></button>
         </header>
         <label className="block space-y-1.5">
           <span className="text-small font-medium text-fg-2">Your note <span className="font-normal text-fg-3">(optional, opens the review body)</span></span>
@@ -489,7 +489,7 @@ export function Turns({ pr }: { pr: PrView }) {
           <ul className="mt-1.5 space-y-1">
             {t.lines.map((l, i) => (
               <li key={i} className="flex items-baseline gap-2 text-body text-fg-1 ">
-                <span className={`w-[58px] shrink-0 rounded-md px-1.5 py-px text-center text-micro font-semibold ${TURN[l.kind].tone}`}>{TURN[l.kind].label}</span>
+                <span className={`w-[58px] shrink-0 rounded-chip px-1.5 py-px text-center text-micro font-semibold ${TURN[l.kind].tone}`}>{TURN[l.kind].label}</span>
                 <span className="min-w-0">{l.text}{l.who && <> · {l.url ? <a href={l.url} target="_blank" rel="noreferrer" className="text-fg-3 hover:text-accent-text hover:underline">{l.who}</a> : <span className="text-fg-3">{l.who}</span>}</>}</span>
               </li>
             ))}

@@ -198,9 +198,9 @@ function Calendar({ from, onPick, busy }: { from: string; onPick: (k: string) =>
   return (
     <section className="card p-3">
       <div className="flex items-center justify-between px-1">
-        <button onClick={() => shift(-1)} aria-label="Previous month" className="rounded-md p-1 text-fg-3 hov hover:text-fg-1"><ChevronLeft className="size-4" /></button>
+        <button onClick={() => shift(-1)} aria-label="Previous month" className="rounded-chip p-1 text-fg-3 hov hover:text-fg-1"><ChevronLeft className="size-4" /></button>
         <span className="text-small font-semibold">{month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</span>
-        <button onClick={() => shift(1)} disabled={key(month) >= now.slice(0, 8) + '01'} aria-label="Next month" className="rounded-md p-1 text-fg-3 hov hover:text-fg-1 disabled:opacity-30"><ChevronRight className="size-4" /></button>
+        <button onClick={() => shift(1)} disabled={key(month) >= now.slice(0, 8) + '01'} aria-label="Next month" className="rounded-chip p-1 text-fg-3 hov hover:text-fg-1 disabled:opacity-30"><ChevronRight className="size-4" /></button>
       </div>
       <div className="mt-2 grid grid-cols-7 gap-y-0.5 text-center">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i} className={`pb-1 text-micro font-semibold ${i > 4 ? 'text-fg-4' : 'text-fg-3'}`}>{d}</span>)}
@@ -209,11 +209,11 @@ function Calendar({ from, onPick, busy }: { from: string; onPick: (k: string) =>
           const k = key(d), on = k >= from && k <= now, start = k === from, end = k === now, future = k > now
           const sat = d.getDay() === 6, sun = d.getDay() === 0, n = busy[k] ?? 0
           // the range is one band: rounded at its start and end, and at the week's edges
-          const band = on ? `${start || d.getDay() === 1 ? 'rounded-l-lg' : ''} ${end || sun ? 'rounded-r-lg' : ''} ${sat || sun ? 'bg-wait/10' : 'bg-accent/10'}` : ''
+          const band = on ? `${start || d.getDay() === 1 ? 'rounded-l-ctl' : ''} ${end || sun ? 'rounded-r-ctl' : ''} ${sat || sun ? 'bg-wait/10' : 'bg-accent/10'}` : ''
           return (
             <span key={k} className={`relative py-0.5 ${band}`}>
               <button onClick={() => onPick(k)} disabled={future} title={`${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}${n ? ` · ${n} thing${n === 1 ? '' : 's'} done` : ''}`}
-                      className={`mx-auto flex size-7 flex-col items-center justify-center rounded-lg text-small tabular-nums transition-colors disabled:cursor-default disabled:opacity-30
+                      className={`mx-auto flex size-7 flex-col items-center justify-center rounded-ctl text-small tabular-nums transition-colors disabled:cursor-default disabled:opacity-30
                         ${start ? 'bg-accent font-semibold text-on-accent' : end ? 'font-semibold text-accent-text ring-1 ring-accent/50' : sat || sun ? 'text-fg-3 hov ' : 'text-fg-2 hov '}`}>
                 {d.getDate()}
                 <span className={`mt-px h-1 w-1 rounded-full ${n ? (n > 6 ? 'bg-accent' : n > 2 ? 'bg-accent/40' : 'bg-accent/40') : 'bg-transparent'} ${start ? 'bg-white/80' : ''}`} />
@@ -236,7 +236,7 @@ function Calendar({ from, onPick, busy }: { from: string; onPick: (k: string) =>
  * calling the model on every change.
  */
 function WrittenPanel({ w, day, writing, onWrite, onCopy, onOpen, titles, empty }: { w?: Written & { stale: boolean }; day: string; writing: boolean; onWrite: () => void; onCopy: () => void; onOpen: (id: string) => void; titles: Map<string, string>; empty: boolean }) {
-  const btn = 'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium transition-all disabled:opacity-40'
+  const btn = 'inline-flex items-center gap-1.5 rounded-ctl px-2.5 py-1 text-small font-medium transition-all disabled:opacity-40'
   return (
     <section className="min-w-0 card p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -248,7 +248,7 @@ function WrittenPanel({ w, day, writing, onWrite, onCopy, onOpen, titles, empty 
           {writing ? <LoaderCircle className="size-3.5 animate-spin" /> : w ? <RefreshCw className="size-3.5" /> : <Sparkles className="size-3.5" />}{w ? 'Rewrite' : 'Write it'}
         </button>
       </div>
-      {w?.stale && <p className="mt-2 rounded-lg bg-wait/10 px-2.5 py-1.5 text-small text-wait-text">The facts moved on since it was written (a merge, a review, another day picked). Rewrite to bring it up to date.</p>}
+      {w?.stale && <p className="mt-2 rounded-ctl bg-wait/10 px-2.5 py-1.5 text-small text-wait-text">The facts moved on since it was written (a merge, a review, another day picked). Rewrite to bring it up to date.</p>}
       {w ? (
         <div className="mt-3 space-y-1 text-body leading-relaxed text-fg-1 ">
           {w.text.split('\n').map((line, i) => {
@@ -281,7 +281,7 @@ function TicketId({ id, title, onOpen }: { id: string; title?: string; onOpen: (
               style={{ anchorName: name } as CSSProperties} className="font-mono text-small font-semibold text-fg-1 hover:text-accent-text">{id}</button>
       {title && (
         <span ref={card} popover="manual" role="tooltip" style={{ positionAnchor: name, positionArea: 'top span-right', positionTryFallbacks: 'flip-block, flip-inline', inset: 'auto' } as CSSProperties}
-              className="pointer-events-none m-0 mb-1.5 max-w-[340px] rounded-xl border-0 bg-surface-1 px-3 py-2 text-left shadow-lg ring-1 ring-line-strong">
+              className="pointer-events-none m-0 mb-1.5 max-w-[340px] rounded-ctl border-0 bg-surface-1 px-3 py-2 text-left shadow-lg ring-1 ring-line-strong">
           <span className="block font-mono text-micro font-semibold text-fg-3">{id}</span>
           <span className="block text-small font-medium leading-snug text-fg-1 ">{title}</span>
         </span>

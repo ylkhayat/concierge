@@ -25,7 +25,7 @@ function Step({ n, title, done, children }: { n: number; title: string; done?: b
   )
 }
 const Note = ({ tone = 'wait', children }: { tone?: 'wait' | 'fail'; children: ReactNode }) => (
-  <p className={`flex items-start gap-2 rounded-lg px-3 py-2 text-small ${tone === 'fail' ? 'bg-fail/6 text-fail-text' : 'bg-wait/6 text-wait-text'}`}><CircleAlert className="mt-0.5 size-3.5 shrink-0" /><span className="min-w-0 break-words">{children}</span></p>
+  <p className={`flex items-start gap-2 rounded-ctl px-3 py-2 text-small ${tone === 'fail' ? 'bg-fail/6 text-fail-text' : 'bg-wait/6 text-wait-text'}`}><CircleAlert className="mt-0.5 size-3.5 shrink-0" /><span className="min-w-0 break-words">{children}</span></p>
 )
 
 export function LiveUpdates({ toast }: { toast: Toast }) {
@@ -82,7 +82,7 @@ export function LiveUpdates({ toast }: { toast: Toast }) {
       <div className="divide-y divide-line overflow-hidden card">
         {/* where things stand: what came in, and the test and off switches */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5">
-          <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${live.length ? 'bg-ok/15 text-ok-text' : 'bg-fill text-fg-3'}`}><Radio className="size-3.5" aria-hidden /></span>
+          <span className={`flex size-7 shrink-0 items-center justify-center rounded-ctl ${live.length ? 'bg-ok/15 text-ok-text' : 'bg-fill text-fg-3'}`}><Radio className="size-3.5" aria-hidden /></span>
           <div className="min-w-0 flex-1 basis-48 text-small">
             <div className="font-medium text-fg-1">{live.length ? `Live on ${live.length} of ${connected.length} ${connected.length === 1 ? 'repository' : 'repositories'}` : connected.length ? 'Waiting for a delivery' : 'Off: polling every minute'}</div>
             <div className="text-meta text-fg-3">{v.lastAt ? `Last delivery ${at(v.lastAt)} · ${v.today} today` : 'No deliveries yet'}{v.bad ? ` · ${v.bad} refused (bad signature)` : ''}</div>
@@ -113,7 +113,7 @@ export function LiveUpdates({ toast }: { toast: Toast }) {
           <p className="text-small text-fg-3">A webhook on each repository ticked. It needs admin on the repository; the others keep polling every minute.</p>
           {/* the token can't make webhooks: sign in again, here, asking GitHub for admin:repo_hook */}
           {(needsSignIn || signIn) && (
-            <div className="space-y-2 rounded-lg bg-wait/6 px-3 py-2.5 text-small text-wait-text">
+            <div className="space-y-2 rounded-ctl bg-wait/6 px-3 py-2.5 text-small text-wait-text">
               <p className="flex items-start gap-2"><KeyRound className="mt-0.5 size-3.5 shrink-0" />
                 <span>{v.token.source === 'env'
                   ? 'Your GitHub token (GITHUB_TOKEN in this machine\'s .env) may not manage webhooks. Sign in again: the new token, with admin:repo_hook, replaces it for every machine.'
@@ -123,7 +123,7 @@ export function LiveUpdates({ toast }: { toast: Toast }) {
               {signIn
                 ? <div className="flex flex-wrap items-center gap-2 pl-5.5">
                     <span className="text-fg-2">Enter this code on GitHub:</span>
-                    <code className="rounded-md bg-surface-1 px-2 py-0.5 font-mono font-semibold tracking-wider text-fg-1 ring-1 ring-line">{signIn.code}</code>
+                    <code className="rounded-chip bg-surface-1 px-2 py-0.5 font-mono font-semibold tracking-wider text-fg-1 ring-1 ring-line">{signIn.code}</code>
                     <button aria-label="Copy the code" onClick={() => void navigator.clipboard.writeText(signIn.code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })} className={`${quiet} btn-sm`}>{copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}{copied ? 'Copied' : 'Copy'}</button>
                     <a href={signIn.url} target="_blank" rel="noreferrer" className={`${quiet} btn-sm`}><ExternalLink className="size-3.5" />Open github.com/login/device</a>
                     <span className="flex items-center gap-1.5 text-meta text-fg-3"><LoaderCircle className="size-3 animate-spin" />Waiting for you to approve it</span>
@@ -146,7 +146,7 @@ export function LiveUpdates({ toast }: { toast: Toast }) {
                   <span className={`text-meta ${r.problem && !r.id ? (r.problem.problem === 'no-admin' ? 'text-fg-4' : 'text-fail-text') : 'text-fg-3'}`}>
                     {r.id ? (r.live ? `Live · ${at(r.lastAt)}` : 'Connected · waiting for its first delivery') : r.problem ? r.problem.text : !r.watched ? 'A PR you follow' : ''}
                   </span>
-                  {r.id && <button disabled={!!busy} aria-label={`Disconnect ${r.repo}`} title="Remove its webhook" onClick={() => void act<HooksView>('disconnect', '/hooks/disconnect', { repo: r.repo }, set)} className="ml-auto rounded-lg p-1 text-fg-4 transition-colors hover:bg-fail/10 hover:text-fail-text"><Trash2 className="size-3.5" /></button>}
+                  {r.id && <button disabled={!!busy} aria-label={`Disconnect ${r.repo}`} title="Remove its webhook" onClick={() => void act<HooksView>('disconnect', '/hooks/disconnect', { repo: r.repo }, set)} className="ml-auto rounded-ctl p-1 text-fg-4 transition-colors hover:bg-fail/10 hover:text-fail-text"><Trash2 className="size-3.5" /></button>}
                 </li>
               )
             })}

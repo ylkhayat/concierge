@@ -26,7 +26,7 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
   return (
     <div className="space-y-2.5">
       {groups.map((g) => (
-        <div key={g.items[0].url} className={`overflow-hidden rounded-xl ring-1 ${g.gone ? 'bg-fill/60 ring-zinc-200/60 dark:ring-zinc-800/60' : 'bg-surface-1 ring-line '}`}>
+        <div key={g.items[0].url} className={`overflow-hidden rounded-ctl ring-1 ${g.gone ? 'bg-fill/60 ring-zinc-200/60 dark:ring-zinc-800/60' : 'bg-surface-1 ring-line '}`}>
           {groups.length > 1 && g.label && !g.gone && (
             <p className="border-b border-line px-3 py-1.5 label text-fg-3 ">{g.label}</p>
           )}
@@ -46,9 +46,9 @@ export function PrStack({ prs, closed = [], dense }: { prs: P[]; closed?: P[]; d
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
                         <span className="font-mono text-meta text-fg-3">#{p.number}</span>
-                        {t.type && <span className="rounded-md bg-fill px-1.5 py-px font-mono text-micro text-fg-2 ">{t.type}{t.scope ? `·${t.scope}` : ''}</span>}
-                        {p.merged ? <span className="rounded-md bg-accent/10 px-1.5 py-px text-micro font-medium text-accent-text">merged</span>
-                          : p.state === 'CLOSED' && <span className="rounded-md bg-fill/70 px-1.5 py-px text-micro font-medium text-fg-2">closed</span>}
+                        {t.type && <span className="rounded-chip bg-fill px-1.5 py-px font-mono text-micro text-fg-2 ">{t.type}{t.scope ? `·${t.scope}` : ''}</span>}
+                        {p.merged ? <span className="rounded-chip bg-accent/10 px-1.5 py-px text-micro font-medium text-accent-text">merged</span>
+                          : p.state === 'CLOSED' && <span className="rounded-chip bg-fill/70 px-1.5 py-px text-micro font-medium text-fg-2">closed</span>}
                       </span>
                       <span className={`mt-0.5 block text-small leading-snug ${g.gone ? (p.merged ? 'text-fg-3' : 'text-fg-4 line-through decoration-fg-4') : 'text-fg-2 '} ${dense || g.gone ? 'truncate' : 'line-clamp-2'}`}>{t.text || p.repo}</span>
                     </span>

@@ -30,7 +30,7 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
   useEffect(() => () => clearTimeout(timer.current), [])
   const row = (label: string, n: number, waiting: number, on: boolean, r?: string, away?: boolean, held?: string) => (
     <button key={r ?? 'all'} onClick={() => pick(r)} aria-current={on} title={away ? `${r}: not on this machine` : held ? `${r}: no machine can work on it now (${held})` : undefined}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-body transition-colors ${on ? 'bg-accent/10' : 'hov '} ${away ? 'text-fg-4' : ''}`}>
+            className={`flex w-full items-center gap-2.5 rounded-ctl px-2.5 py-2 text-left text-body transition-colors ${on ? 'bg-accent/10' : 'hov '} ${away ? 'text-fg-4' : ''}`}>
       <span className="flex size-4 shrink-0 items-center justify-center">{on && <Check className="size-4 text-accent-text" />}</span>
       {r && <span className={`size-2 shrink-0 rounded-full ${appColor(r).bar}`} aria-hidden />}
       <span className={`min-w-0 flex-1 truncate ${r ? 'font-mono' : 'font-medium'}`} title={r}>{label}</span>
@@ -43,8 +43,8 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
   return (
     <>
       <button onClick={() => show(0)} onMouseEnter={() => show(120)} onMouseLeave={hide} aria-haspopup="dialog" style={{ anchorName: '--repo-picker' } as CSSProperties} title={`Focus: ${value ?? 'all workspaces'} · ${current?.tickets ?? total} ${unit}s`}
-              className={`group flex w-full ${wide ? 'items-center gap-2.5 rounded-xl px-1.5 py-1 text-left hover:bg-hover' : 'flex-col items-center gap-1 py-1'}`}>
-        <span className={`relative flex size-10 items-center justify-center rounded-2xl font-mono text-body font-bold uppercase ring-1 transition-all group-hover:scale-105 ${value
+              className={`group flex w-full ${wide ? 'items-center gap-2.5 rounded-ctl px-1.5 py-1 text-left hover:bg-hover' : 'flex-col items-center gap-1 py-1'}`}>
+        <span className={`relative flex size-10 items-center justify-center rounded-card font-mono text-body font-bold uppercase ring-1 transition-all group-hover:scale-105 ${value
           ? `${appColor(value).tile} ring-transparent` : 'bg-surface-1 text-fg-3 ring-line-strong'}`}>
           {value ? monogram(value) : <FolderGit2 className="size-[18px]" />}
           <ChevronDown className="absolute -bottom-1 -right-1 size-3.5 rounded-full bg-surface-1 p-px text-fg-3 ring-1 ring-line-strong" />
@@ -54,10 +54,10 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
       </button>
       <div id="repo-picker" ref={pop} popover="auto" onMouseEnter={stay} onMouseLeave={hide}
            style={{ positionAnchor: '--repo-picker', positionArea: 'right span-bottom', inset: 'auto' } as CSSProperties}
-           className="m-0 ml-2 max-h-[calc(70vh/var(--z))] w-[280px] overflow-y-auto rounded-2xl border-0 bg-surface-1 p-1.5 text-fg-2 shadow-xl ring-1 ring-line ">
+           className="m-0 ml-2 max-h-[calc(70vh/var(--z))] w-[280px] overflow-y-auto rounded-card border-0 bg-surface-1 p-1.5 text-fg-2 shadow-xl ring-1 ring-line ">
         <p className="px-2.5 pb-1.5 pt-1 label text-fg-3">Show one repository</p>
         {repos.length > 6 && (
-          <label className="mb-1 flex items-center gap-2 rounded-lg bg-fill px-2.5 py-1.5 text-small">
+          <label className="mb-1 flex items-center gap-2 rounded-ctl bg-fill px-2.5 py-1.5 text-small">
             <Search className="size-3.5 text-fg-3" />
             <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus placeholder="Find a repository" className="w-full bg-transparent outline-none placeholder:text-fg-3"
                    onKeyDown={(e) => { if (e.key === 'Enter' && shown[0]) pick(shown[0].repo) }} />

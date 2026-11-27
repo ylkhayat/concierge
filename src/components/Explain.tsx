@@ -14,7 +14,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Facts, Mark, Overlay, Skeleton, System } from '../../server/explain.ts'
 import { useApi, explainPath, keepSame } from '../query.ts'
-import { param, setParam, api, enc, flowControls, isTyping, useIsDark, type PrView } from '../lib.ts'
+import { param, setParam, api, enc, flowControls, isTyping, useIsDark, type PrView, calm } from '../lib.ts'
 
 type NodeInfo = { summary: string; responsibilities: string[]; businessRole?: string }
 type Data = { task?: PrView['explain']; overlay?: Overlay; skeleton?: Skeleton; nodes: Record<string, NodeInfo>; stale: boolean }
@@ -309,7 +309,7 @@ const MARK: Record<Mark, { label: string; tone: string }> = {
 const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<Card>>) {
   const hot = !!data.mark, warm = !!data.impacted
   return (
-    <div className={`group relative h-full w-full animate-[pop-in_260ms_var(--ease-snappy)] overflow-hidden rounded-2xl bg-surface-1 p-3 text-left ring-1 transition-all duration-200 
+    <div className={`group relative h-full w-full animate-[pop-in_260ms_var(--ease-snappy)] overflow-hidden rounded-card bg-surface-1 p-3 text-left ring-1 transition-all duration-200 
       ${hot ? 'shadow-[0_0_0_1px_rgb(139_92_246/0.5),0_8px_30px_-6px_rgb(139_92_246/0.45)] ring-accent/60'
         : warm ? 'ring-2 ring-dashed ring-wait/80 [outline:2px_dashed_rgb(251_191_36/0.7)] [outline-offset:3px] ring-transparent'
         : data.unmapped ? 'bg-fill/80 ring-1 ring-dashed ring-line-strong [outline:1.5px_dashed_rgb(161_161_170/0.6)] [outline-offset:-1.5px] ring-transparent'
@@ -318,7 +318,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<Card>
       <Handle type="target" position={Position.Left} className="!size-1.5 !border-0 !bg-fill-strong" />
       <Handle type="source" position={Position.Right} className="!size-1.5 !border-0 !bg-fill-strong" />
       <div className="flex items-center gap-2">
-        <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${hot ? 'bg-accent/15 text-accent-text' : warm ? 'bg-wait/15 text-wait-text' : 'bg-fill text-fg-3'}`}>
+        <span className={`flex size-7 shrink-0 items-center justify-center rounded-ctl ${hot ? 'bg-accent/15 text-accent-text' : warm ? 'bg-wait/15 text-wait-text' : 'bg-fill text-fg-3'}`}>
           <data.icon className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -330,12 +330,12 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<Card>
       </div>
       <p className="mt-1.5 line-clamp-2 text-meta leading-snug text-fg-2">{data.summary || <span className="italic text-fg-3">not mapped yet</span>}</p>
       {!!data.inner?.length && (
-        <div className="mt-2 space-y-[3px] rounded-xl bg-fill/60 p-1.5 ring-1 ring-line ">
+        <div className="mt-2 space-y-[3px] rounded-ctl bg-fill/60 p-1.5 ring-1 ring-line ">
           <div className="flex items-center justify-between px-1 label text-fg-3">
             <span>Inside</span>{!!data.innerMore && <span>+{data.innerMore} more</span>}
           </div>
           {data.inner.map((m) => (
-            <div key={m.name} className="flex items-center gap-1.5 rounded-md bg-surface-1 px-1.5 py-[2px] text-micro ring-1 ring-zinc-200/60 dark:ring-zinc-800">
+            <div key={m.name} className="flex items-center gap-1.5 rounded-chip bg-surface-1 px-1.5 py-[2px] text-micro ring-1 ring-zinc-200/60 dark:ring-zinc-800">
               <span className={`size-1.5 shrink-0 rounded-full ${m.mark === 'added' ? 'bg-ok' : m.mark === 'removed' ? 'bg-fail' : 'bg-accent'}`} />
               <span className="min-w-0 flex-1 truncate font-mono text-fg-2 ">{m.name}</span>
               <span className="tabular-nums text-fg-3">{m.count}</span>
@@ -354,11 +354,11 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<Card>
 
 const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<Node<Card>>) {
   return (
-    <div className={`h-full w-full animate-[pop-in_260ms_var(--ease-snappy)] rounded-3xl border-2 transition-colors duration-300
+    <div className={`h-full w-full animate-[pop-in_260ms_var(--ease-snappy)] rounded-panel border-2 transition-colors duration-300
       ${data.mark ? 'border-accent/40 bg-accent/4' : data.impacted ? 'border-dashed border-wait/60 bg-wait/3' : 'border-line bg-fg-3/2 '}
       ${selected ? '!border-accent' : ''}`}>
       <div className="flex h-[46px] items-center gap-2 px-4">
-        <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${data.mark ? 'bg-accent/15 text-accent-text' : 'bg-fill text-fg-3'}`}><data.icon className="size-4" /></span>
+        <span className={`flex size-7 shrink-0 items-center justify-center rounded-ctl ${data.mark ? 'bg-accent/15 text-accent-text' : 'bg-fill text-fg-3'}`}><data.icon className="size-4" /></span>
         <div className="min-w-0">
           <div className="truncate text-body font-semibold text-fg-1 ">{data.name}</div>
           {data.summary && <div className="truncate text-meta text-fg-3">{data.summary}</div>}
@@ -375,7 +375,7 @@ const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<Node<Car
 
 const MoreNode = memo(function MoreNode({ data }: NodeProps<Node<Card>>) {
   return (
-    <div className="flex h-full w-full animate-[pop-in_260ms_var(--ease-snappy)] items-center gap-2 rounded-2xl border border-dashed border-line-strong px-3 text-small text-fg-3">
+    <div className="flex h-full w-full animate-[pop-in_260ms_var(--ease-snappy)] items-center gap-2 rounded-card border border-dashed border-line-strong px-3 text-small text-fg-3">
       <Boxes className="size-4 shrink-0" /><span className="truncate"><span className="font-semibold text-fg-3">+{data.name}</span> · {data.summary?.toLowerCase()}</span>
     </div>
   )
@@ -435,8 +435,8 @@ function Mermaid({ code }: { code: string }) {
     })
     return () => { live = false }
   }, [code, darkTheme])
-  if (err) return <pre className="whitespace-pre-wrap break-words rounded-lg bg-fill p-3 font-mono text-meta text-fg-2 ">{code}</pre>
-  if (!svg) return <div className="h-24 animate-pulse rounded-lg bg-fill" />
+  if (err) return <pre className="whitespace-pre-wrap break-words rounded-ctl bg-fill p-3 font-mono text-meta text-fg-2 ">{code}</pre>
+  if (!svg) return <div className="h-24 animate-pulse rounded-ctl bg-fill" />
   // mermaid renders with securityLevel strict, which sanitises labels
   return <div className="[&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: svg }} />
 }
@@ -557,7 +557,7 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
     // the box just opened; else the changed boxes you start with; else everything
     const vp = viewportFor(all, el, { focus: id, preferOpen: true, left: flowsOpen && !business ? 480 : 32 })
     // the first frame lands in place (no camera sweep from the last PR); later ones glide
-    rf.setViewport(vp, { duration: firstFrame.current ? 0 : 420 })
+    rf.setViewport(vp, { duration: firstFrame.current || calm() ? 0 : 420 })
     if (firstFrame.current) { firstFrame.current = false; requestAnimationFrame(() => setReady(true)) }
   }, [rf, flowsOpen, business])
   const fit = useCallback(() => frame(rf.getNodes() as Node<Card>[]), [frame, rf])
@@ -645,7 +645,7 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
     return (
       <div className="relative h-full overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle,rgb(161_161_170/0.25)_1px,transparent_1px)] [background-size:18px_18px] opacity-60" />
-        <div className="absolute left-1/2 top-1/2 h-48 w-80 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-3xl bg-fill/50" />
+        <div className="absolute left-1/2 top-1/2 h-48 w-80 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-panel bg-fill/50" />
       </div>
     )
   }
@@ -656,20 +656,20 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
         <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
           {busy ? <Generating step={task?.step} /> : task?.state === 'failed' ? (
             <>
-              <TriangleAlert className="size-8 text-fail" />
-              <p className="max-w-md text-sm text-fg-2 ">{task.error}</p>
-              <button onClick={() => run()} className="rounded-xl bg-accent px-3.5 py-2 text-sm font-medium text-on-accent transition-all hover:bg-accent">Try again</button>
+              <TriangleAlert className="size-8 text-fail-text" />
+              <p className="max-w-md text-reading text-fg-2 ">{task.error}</p>
+              <button onClick={() => run()} className="rounded-ctl bg-accent px-3.5 py-2 text-reading font-medium text-on-accent transition-all hover:bg-accent">Try again</button>
             </>
           ) : (!mapped || mappingNow) && pr.repoPath ? (
             <MapFirst task={mapTask} plan={plan} waiting={waiting} onMapThenExplain={afterMap} onExplainNow={() => run()} />
           ) : (
             <>
-              <span className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><Sparkles className="size-7" /></span>
+              <span className="flex size-14 items-center justify-center rounded-card bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><Sparkles className="size-7" /></span>
               <div>
                 <p className="font-semibold">See this PR as a map</p>
                 <p className="mt-1 max-w-sm text-body text-fg-3">What it means for the business, and how the system and code change, opening each part down to the file.</p>
               </div>
-              <button onClick={() => run()} disabled={!pr.repoPath} className="group inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-2 text-sm font-medium text-on-accent shadow-sm transition-all disabled:opacity-40">
+              <button onClick={() => run()} disabled={!pr.repoPath} className="group inline-flex items-center gap-1.5 rounded-ctl bg-accent px-3.5 py-2 text-reading font-medium text-on-accent shadow-sm transition-all disabled:opacity-40">
                 <Sparkles className="size-4 transition-transform group-hover:rotate-12" />Explain this PR
               </button>
             </>
@@ -690,14 +690,14 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
       <div ref={box} className="flex h-full min-h-0 flex-col">
         {/* toolbar: perspective first, then what the technical map shows, then housekeeping */}
         <div className={`flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line px-3 py-2 ${full ? 'pr-32' : ''}`}>
-          <div role="tablist" aria-label="Perspective" style={{ gridTemplateColumns: `repeat(${lenses.length}, minmax(0, 1fr))` }} className="relative grid rounded-xl bg-fill p-1">
-            <span className="absolute inset-y-1 left-1 rounded-lg bg-surface-1 shadow-sm ring-1 ring-black/5 transition-transform duration-300 ease-[var(--ease-snappy)] dark:ring-white/5"
+          <div role="tablist" aria-label="Perspective" style={{ gridTemplateColumns: `repeat(${lenses.length}, minmax(0, 1fr))` }} className="relative grid rounded-ctl bg-fill p-1">
+            <span className="absolute inset-y-1 left-1 rounded-ctl bg-surface-1 shadow-sm ring-1 ring-black/5 transition-transform duration-300 ease-[var(--ease-snappy)] dark:ring-white/5"
                   style={{ width: `calc((100% - 8px) / ${lenses.length})`, transform: `translateX(${Math.max(0, lenses.indexOf(norms ? 'norms' : tour ? 'tour' : business ? 'business' : 'technical')) * 100}%)` }} />
             {([['tour', Compass, 'Tour', 'A guided walk through the change, step by step'], ['business', Briefcase, 'Business', 'What it means for users and the company'], ['technical', Cpu, 'Technical', 'How the system and code change'], ['norms', Scale, 'Norms', 'Where it drifts from how its libraries, its language and the house write things down']] as const).filter(([v]) => lenses.includes(v)).map(([v, Icon, label, hint]) => {
               const on = v === (norms ? 'norms' : tour ? 'tour' : business ? 'business' : 'technical')
               return (
                 <button key={label} role="tab" aria-selected={on} title={hint} onClick={() => { if (v === 'tour') setTour(true); else if (v === 'norms') setNorms(); else setBusiness(v === 'business'); setSelected(undefined); setCodePath(undefined) }}
-                        className={`group relative z-10 flex items-center justify-center gap-1.5 rounded-lg px-3 py-1 text-small font-semibold transition-colors ${on ? 'text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
+                        className={`group relative z-10 flex items-center justify-center gap-1.5 rounded-ctl px-3 py-1 text-small font-semibold transition-colors ${on ? 'text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
                   <Icon className={`size-3.5 transition-transform group-hover:scale-110 ${on ? 'text-accent' : ''}`} />{label}{v === 'norms' && !!pr.crit?.drift && <span className="rounded-full bg-accent-soft px-1.5 text-micro tabular-nums text-accent-text">{pr.crit.drift}</span>}
                 </button>
               )
@@ -717,23 +717,23 @@ function Canvas({ pr, toast, prs = [], onSelect, lenses = LENSES, onTurns }: { p
           <span className="flex-1" />
           {!business && !tour && !norms && !codePath && o.flows.length > 0 && (
             <button onClick={() => { setFlowsOpen(!flowsOpen); setTimeout(fit, 0) }} aria-pressed={flowsOpen} title="Before and after logic diagrams"
-                    className={`group flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-small font-medium transition-all ${flowsOpen ? 'bg-accent/10 text-accent-text ring-1 ring-accent/30' : 'text-fg-3 ring-1 ring-line-strong hover:text-fg-1'}`}>
+                    className={`group flex items-center gap-1.5 rounded-ctl px-2.5 py-1 text-small font-medium transition-all ${flowsOpen ? 'bg-accent/10 text-accent-text ring-1 ring-accent/30' : 'text-fg-3 ring-1 ring-line-strong hover:text-fg-1'}`}>
               <Workflow className="size-3.5 transition-transform group-hover:rotate-12" />Flows<span className="rounded-full bg-fill/70 px-1.5 text-micro tabular-nums">{o.flows.length}</span>
             </button>
           )}
           <button onClick={() => api(`/prs/${enc(pr.id)}/explain-follow`, { on: pr.explainFollow !== true }).catch((e: Error) => toast(e.message, 'error'))}
                   aria-pressed={pr.explainFollow === true}
                   title={pr.explainFollow === true ? 'Follows new commits: every push (yours, a rebase, a resolved conflict, someone else’s) updates it. Click to keep this version' : 'Kept as is: new commits don’t update it. Click to follow them'}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium transition-colors ${pr.explainFollow === true ? 'text-accent-text hover:bg-accent/10' : 'text-fg-3 hov hover:text-fg-1'}`}>
+                  className={`inline-flex items-center gap-1 rounded-ctl px-2 py-1 text-meta font-medium transition-colors ${pr.explainFollow === true ? 'text-accent-text hover:bg-accent/10' : 'text-fg-3 hov hover:text-fg-1'}`}>
             <Radio className={`size-3.5 ${pr.explainFollow === true && busy ? 'animate-pulse' : ''}`} />{pr.explainFollow === true ? 'Following commits' : 'Paused'}
           </button>
           <button onClick={() => run()} disabled={busy} aria-label="Explain the latest push"
                   title={`Explain the latest push (only what changed). Version ${o.iteration}: ${o.asked} changed files explained${o.reused ? `, ${o.reused} carried over` : ''}, $${o.costUsd.toFixed(2)}`}
-                  className="group rounded-lg p-1.5 text-fg-3 transition-all hov hover:text-fg-1 disabled:opacity-40">
+                  className="group rounded-ctl p-1.5 text-fg-3 transition-all hov hover:text-fg-1 disabled:opacity-40">
             <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : 'transition-transform duration-500 group-hover:rotate-180'}`} />
           </button>
           {!full && (
-            <button onClick={() => setFull(true)} title="Full screen" aria-label="Full screen" className="rounded-lg p-1.5 text-fg-3 transition-all hov hover:text-fg-1">
+            <button onClick={() => setFull(true)} title="Full screen" aria-label="Full screen" className="rounded-ctl p-1.5 text-fg-3 transition-all hov hover:text-fg-1">
               <Maximize2 className="size-3.5" />
             </button>
           )}
@@ -832,9 +832,9 @@ function Shell({ expanded, onClose, children }: { expanded?: boolean; onClose?: 
   return (
     <dialog ref={(d) => { if (d && !d.open) d.showModal() }} onClose={onClose}
             onClick={(e) => e.target === e.currentTarget && onClose?.()}
-            className="m-auto h-[calc(100dvh/var(--z)-48px)] max-h-none w-[calc(100vw/var(--z)-48px)] max-w-none animate-[toast-in_220ms_var(--ease-snappy)] overflow-hidden rounded-2xl bg-fill/60 p-0 text-fg-1 shadow-2xl ring-1 ring-line backdrop:bg-zinc-950/50 backdrop:backdrop-blur-sm ">
+            className="m-auto h-[calc(100dvh/var(--z)-48px)] max-h-none w-[calc(100vw/var(--z)-48px)] max-w-none animate-[toast-in_220ms_var(--ease-snappy)] overflow-hidden rounded-card bg-fill/60 p-0 text-fg-1 shadow-2xl ring-1 ring-line backdrop:bg-zinc-950/50 backdrop:backdrop-blur-sm ">
       <button onClick={onClose} aria-label="Close full screen" title="Close (esc)"
-              className="absolute right-3 top-2 z-30 flex items-center gap-1.5 rounded-lg bg-white/90 px-2.5 py-1.5 text-small font-medium text-fg-2 shadow-sm ring-1 ring-line-strong backdrop-blur transition-all hover:text-fg-1 dark:bg-zinc-900/90">
+              className="absolute right-3 top-2 z-30 flex items-center gap-1.5 rounded-ctl bg-white/90 px-2.5 py-1.5 text-small font-medium text-fg-2 shadow-sm ring-1 ring-line-strong backdrop-blur transition-all hover:text-fg-1 dark:bg-zinc-900/90">
         <X className="size-3.5" />Close<kbd className="rounded bg-fill px-1 font-mono text-micro text-fg-3">esc</kbd>
       </button>
       {children}
@@ -865,7 +865,7 @@ function MapFirst({ task, plan, waiting, onMapThenExplain, onExplainNow }: {
   const running = task?.state === 'running' || task?.state === 'queued'
   return (
     <div className="w-full max-w-md space-y-5">
-      <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
+      <span className="mx-auto flex size-14 items-center justify-center rounded-card bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
       <div>
         <p className="font-semibold">{running ? 'Mapping the codebase' : 'Map the codebase first'}</p>
         <p className="mt-1 text-body leading-relaxed text-fg-3">
@@ -876,13 +876,13 @@ function MapFirst({ task, plan, waiting, onMapThenExplain, onExplainNow }: {
       {!running && plan && <p className="text-small text-fg-3">{plan.toMap} of {plan.folders} folders to map · about ${plan.estimateUsd.toFixed(2)}, once</p>}
       <div className="flex flex-wrap items-center justify-center gap-2">
         {waiting ? (
-          <span className="inline-flex items-center gap-1.5 rounded-xl bg-accent/10 px-3.5 py-2 text-body font-medium text-accent-text ring-1 ring-accent/20"><Check className="size-4" />Explains when the map is ready</span>
+          <span className="inline-flex items-center gap-1.5 rounded-ctl bg-accent/10 px-3.5 py-2 text-body font-medium text-accent-text ring-1 ring-accent/20"><Check className="size-4" />Explains when the map is ready</span>
         ) : (
           <button onClick={onMapThenExplain} className="group inline-flex items-center gap-1.5 btn-primary btn-lg shadow-sm transition-all">
             <MapIcon className="size-4" />{running ? 'Explain when it’s done' : 'Map, then explain'}
           </button>
         )}
-        <button onClick={onExplainNow} className="rounded-xl px-3.5 py-2 text-body font-medium text-fg-3 ring-1 ring-line-strong transition-all hover:text-fg-1">Explain now</button>
+        <button onClick={onExplainNow} className="rounded-ctl px-3.5 py-2 text-body font-medium text-fg-3 ring-1 ring-line-strong transition-all hover:text-fg-1">Explain now</button>
       </div>
     </div>
   )
@@ -924,7 +924,7 @@ function BusinessBrief({ o, systems }: { o: Overlay; systems: Card[] }) {
       <Section label="What changes">{b.what}</Section>
       <Section label="Why">{b.why}</Section>
       <Section label="Who is affected">{b.who}</Section>
-      <section className="space-y-1 rounded-xl bg-fill/60 p-3 ring-1 ring-line ">
+      <section className="space-y-1 rounded-ctl bg-fill/60 p-3 ring-1 ring-line ">
         <h4 className="text-meta font-semibold text-fg-3">Risk</h4>
         <p className="text-small leading-relaxed text-fg-2 ">{b.riskWhy}</p>
       </section>
@@ -947,11 +947,11 @@ function FlowsDrawer({ flows, onClose }: { flows: Overlay['flows']; onClose: () 
   const [side, setSide] = useState<'after' | 'before'>('after')
   const fl = flows[Math.min(i, flows.length - 1)]
   return (
-    <div className="absolute left-3 top-3 z-10 flex max-h-[calc(100%-24px)] w-[min(460px,calc(100%-24px))] animate-[toast-in_240ms_var(--ease-snappy)] flex-col overflow-hidden rounded-2xl bg-white/95 shadow-xl ring-1 ring-line backdrop-blur dark:bg-zinc-900/95 ">
+    <div className="absolute left-3 top-3 z-10 flex max-h-[calc(100%-24px)] w-[min(460px,calc(100%-24px))] animate-[toast-in_240ms_var(--ease-snappy)] flex-col overflow-hidden rounded-card bg-white/95 shadow-xl ring-1 ring-line backdrop-blur dark:bg-zinc-900/95 ">
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-line p-1.5 ">
-        <button onClick={onClose} className="order-last ml-auto shrink-0 rounded-md p-1 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close flows"><X className="size-3.5" /></button>
+        <button onClick={onClose} className="order-last ml-auto shrink-0 rounded-chip p-1 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close flows"><X className="size-3.5" /></button>
         {flows.map((f, k) => (
-          <button key={k} onClick={() => setI(k)} className={`shrink-0 rounded-lg px-2 py-1 text-meta font-medium transition-colors ${k === i ? 'bg-accent/10 text-accent-text' : 'text-fg-3 hov '}`}>
+          <button key={k} onClick={() => setI(k)} className={`shrink-0 rounded-ctl px-2 py-1 text-meta font-medium transition-colors ${k === i ? 'bg-accent/10 text-accent-text' : 'text-fg-3 hov '}`}>
             <Workflow className="mr-1 inline size-3 -translate-y-px" />{f.title}
           </button>
         ))}
@@ -960,7 +960,7 @@ function FlowsDrawer({ flows, onClose }: { flows: Overlay['flows']; onClose: () 
         <span className="truncate font-mono text-micro text-fg-3">{fl.scope}</span>
         <span className="flex-1" />
         {fl.before && (
-          <div className="flex rounded-md bg-fill p-0.5 text-micro font-medium">
+          <div className="flex rounded-chip bg-fill p-0.5 text-micro font-medium">
             {(['before', 'after'] as const).map((s) => (
               <button key={s} onClick={() => setSide(s)} className={`rounded px-2 py-0.5 capitalize transition-colors ${side === s ? 'sel text-fg-1 ' : 'text-fg-3'}`}>{s}</button>
             ))}
@@ -986,11 +986,11 @@ function Inspector({ card, o, d, pr, business, onPrimary, onClose }: { card: Car
           <h3 className="truncate text-body font-semibold">{card.name}</h3>
           <p className="truncate font-mono text-micro text-fg-3">{card.kind === 'system' ? card.sub : card.id}</p>
         </div>
-        <button onClick={onClose} className="rounded-md p-1 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close"><X className="size-3.5" /></button>
+        <button onClick={onClose} className="rounded-chip p-1 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close"><X className="size-3.5" /></button>
       </header>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-small leading-relaxed">
         {t && (
-          <section className="space-y-2 rounded-xl bg-accent/5 p-3 ring-1 ring-accent/15">
+          <section className="space-y-2 rounded-ctl bg-accent/5 p-3 ring-1 ring-accent/15">
             <h4 className="text-meta font-semibold text-accent-text">This PR · {t.change}</h4>
             {t.before && <p><span className="font-semibold text-fg-3">Before. </span>{t.before}</p>}
             <p><span className="font-semibold text-fg-1 ">After. </span>{t.after}</p>
@@ -1032,7 +1032,7 @@ function Inspector({ card, o, d, pr, business, onPrimary, onClose }: { card: Car
             {business ? <><Cpu className="size-3.5" />See it technically</> : card.expandPath ? (card.expanded ? <><Minimize2 className="size-3.5" />Close box</> : <><ZoomIn className="size-3.5" />Open box</>) : <><Workflow className="size-3.5" />Before &amp; after</>}
           </button>
         )}
-        {ghUrl && <a href={ghUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">File<ArrowUpRight className="size-3.5" /></a>}
+        {ghUrl && <a href={ghUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-ctl px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">File<ArrowUpRight className="size-3.5" /></a>}
       </footer>
     </aside>
   )
@@ -1045,17 +1045,17 @@ function CodeView({ pr, path, t, impact, flows }: { pr: PrView; path: string; t?
         <div className="flex items-center gap-2">
           <FileCode className="size-5 text-accent" />
           <h3 className="min-w-0 flex-1 truncate font-mono text-reading font-semibold">{path}</h3>
-          <a href={`https://github.com/${pr.repo}/blob/${pr.headSha}/${path}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-small text-fg-3 ring-1 ring-line-strong transition-all hover:text-fg-1">GitHub<ArrowUpRight className="size-3.5" /></a>
+          <a href={`https://github.com/${pr.repo}/blob/${pr.headSha}/${path}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-ctl px-2.5 py-1 text-small text-fg-3 ring-1 ring-line-strong transition-all hover:text-fg-1">GitHub<ArrowUpRight className="size-3.5" /></a>
         </div>
         {t && (
           <div className="grid gap-3 md:grid-cols-2">
             {t.before && <div className="card p-4 "><h4 className="mb-1.5 text-meta font-semibold text-fg-3">Before</h4><p className="text-body leading-relaxed text-fg-2 ">{t.before}</p></div>}
-            <div className={`rounded-2xl bg-accent/5 p-4 ring-1 ring-accent/20 ${t.before ? '' : 'md:col-span-2'}`}><h4 className="mb-1.5 text-meta font-semibold text-accent-text">After · {t.change}</h4><p className="text-body leading-relaxed text-fg-1 ">{t.after}</p></div>
+            <div className={`rounded-card bg-accent/5 p-4 ring-1 ring-accent/20 ${t.before ? '' : 'md:col-span-2'}`}><h4 className="mb-1.5 text-meta font-semibold text-accent-text">After · {t.change}</h4><p className="text-body leading-relaxed text-fg-1 ">{t.after}</p></div>
             <p className="text-small text-fg-2 md:col-span-2"><span className="font-semibold text-fg-1 ">Why. </span>{t.why}</p>
           </div>
         )}
         {impact.length > 0 && (
-          <div className="rounded-2xl bg-wait/5 p-4 ring-1 ring-wait/20">
+          <div className="rounded-card bg-wait/5 p-4 ring-1 ring-wait/20">
             <h4 className="mb-2 text-meta font-semibold text-wait-text">Who depends on this</h4>
             {impact.map((i) => <p key={i.path} className="text-small text-fg-2 "><span className="font-mono text-meta text-fg-1 ">{i.path}</span>: {i.reason}</p>)}
           </div>

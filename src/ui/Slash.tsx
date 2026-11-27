@@ -69,12 +69,12 @@ function SlashMenu({ items, at, armed, onPick, onHover }: { items: Command[]; at
       <li key={c.id} role="option" aria-selected={on}>
         {/* the pointer picks without taking focus from the box */}
         <button type="button" onMouseDown={(e) => { e.preventDefault(); onPick(c) }} onMouseEnter={() => onHover(i)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left ${on ? 'bg-hover' : ''}`}>
+                className={`flex w-full items-center gap-3 rounded-ctl px-3 py-1.5 text-left ${on ? 'bg-hover' : ''}`}>
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline gap-2"><span className="truncate text-body font-medium text-fg-1">{c.label}</span><span className="shrink-0 font-mono text-micro text-fg-4">/{slug(c.label)}</span></span>
             {c.hint && <span className="block truncate text-meta text-fg-3">{c.hint}</span>}
           </span>
-          {armed === c.id ? <span className="shrink-0 rounded-md bg-wait/15 px-1.5 py-0.5 text-meta font-semibold text-wait">Enter again to confirm</span>
+          {armed === c.id ? <span className="shrink-0 rounded-chip bg-wait/15 px-1.5 py-0.5 text-meta font-semibold text-wait-text">Enter again to confirm</span>
             : on && <CornerDownLeft aria-hidden className="size-3.5 shrink-0 text-fg-4" />}
         </button>
       </li>,
@@ -82,7 +82,7 @@ function SlashMenu({ items, at, armed, onPick, onHover }: { items: Command[]; at
   })
   return <ul role="listbox" aria-label="Actions" className={FRAME}>{rows}</ul>
 }
-const FRAME = 'max-h-[min(360px,50vh)] overflow-y-auto rounded-2xl bg-surface-1 p-1 shadow-[var(--e3)] ring-1 ring-line'
+const FRAME = 'max-h-[min(360px,50vh)] overflow-y-auto rounded-card bg-surface-1 p-1 shadow-[var(--e3)] ring-1 ring-line'
 
 type ToolAction = { id: string; group: string; label: string; hint: string; confirm?: string; missing?: string[]; counts: Partial<Record<'this' | 'stack' | 'all', number>> }
 
@@ -127,8 +127,8 @@ export function useMention(text: string, setText: (t: string) => void, repo?: st
         {items.map((c, i) => (
           <li key={c.key} role="option" aria-selected={i === at}>
             <button type="button" onMouseDown={(e) => { e.preventDefault(); pick(c) }} onMouseEnter={() => setAt(i)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left ${i === at ? 'bg-hover' : ''}`}>
-              <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-meta ${c.kind === 'ticket' ? 'bg-accent-soft text-accent-text' : 'bg-fill text-fg-2'}`}>{token(c)}</span>
+                    className={`flex w-full items-center gap-3 rounded-ctl px-3 py-1.5 text-left ${i === at ? 'bg-hover' : ''}`}>
+              <span className={`shrink-0 rounded-chip px-1.5 py-0.5 font-mono text-meta ${c.kind === 'ticket' ? 'bg-accent-soft text-accent-text' : 'bg-fill text-fg-2'}`}>{token(c)}</span>
               <span className="min-w-0 flex-1 truncate text-body text-fg-1">{c.title}</span>
               {i === at && <CornerDownLeft aria-hidden className="size-3.5 shrink-0 text-fg-4" />}
             </button>

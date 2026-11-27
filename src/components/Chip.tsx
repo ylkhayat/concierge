@@ -5,9 +5,9 @@ import { useId, type CSSProperties, type ReactNode } from 'react'
 const TONE = {
   // metadata that opens: reads as text, a surface only on hover; colour only when it needs a look
   zinc: 'text-fg-3 hov hover:text-fg-1',
-  emerald: 'text-ok hover:bg-ok/10',
-  amber: 'bg-wait/10 text-fg-1 hover:bg-wait/15 [&>svg:first-child]:text-wait',
-  rose: 'bg-fail/10 text-fg-1 hover:bg-fail/15 [&>svg:first-child]:text-fail',
+  emerald: 'text-ok-text hover:bg-ok/10',
+  amber: 'bg-wait/10 text-fg-1 hover:bg-wait/15 [&>svg:first-child]:text-wait-text',
+  rose: 'bg-fail/10 text-fg-1 hover:bg-fail/15 [&>svg:first-child]:text-fail-text',
 }
 
 /**
@@ -21,14 +21,14 @@ export function Chip({ icon: Icon, label, tone = 'zinc', pulse, children }: {
   return (
     <>
       <button popoverTarget={id} style={{ anchorName: `--${id}` } as CSSProperties}
-              className={`group/chip inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-small transition-colors duration-150 ${TONE[tone]}`}>
+              className={`group/chip inline-flex items-center gap-1.5 rounded-chip px-1.5 py-0.5 text-small transition-colors duration-150 ${TONE[tone]}`}>
         <Icon className={`size-3.5 shrink-0 ${pulse ? 'animate-pulse' : ''}`} />
         <span className="tabular-nums">{label}</span>
         <ChevronDown className="size-3 opacity-0 transition-opacity group-hover/chip:opacity-60" />
       </button>
       <div id={id} popover="auto"
            style={{ positionAnchor: `--${id}`, positionArea: 'bottom span-right', positionTryFallbacks: 'flip-inline, flip-block', inset: 'auto' } as CSSProperties}
-           className="m-0 mt-1.5 w-80 rounded-2xl border-0 bg-surface-1 p-4 text-fg-2 shadow-xl ring-1 ring-line ">
+           className="m-0 mt-1.5 w-80 rounded-card border-0 bg-surface-1 p-4 text-fg-2 shadow-xl ring-1 ring-line ">
         {children}
       </div>
     </>

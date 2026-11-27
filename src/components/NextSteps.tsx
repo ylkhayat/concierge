@@ -177,7 +177,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, placeholder, draf
   // a decision's option: pick it, or click the picked one again to clear it
   const pickOf = (i: number, j: number) => setPicks((p) => { const n = { ...p }; if (p[i] === j) delete n[i]; else n[i] = j; return n })
   const row = (x: Step, i: number) => x.kind === 'decide' ? (
-                <li key={i} className="rounded-xl px-2.5 py-2 ring-1 ring-line ">
+                <li key={i} className="rounded-ctl px-2.5 py-2 ring-1 ring-line ">
                   <div className="text-small font-medium text-fg-1 ">{x.text}
                     {x.blocking && <span className={`ml-1.5 rounded-full px-1.5 label ${picks[i] === undefined ? 'bg-wait/15 text-wait-text' : 'bg-fg-3/10 text-fg-3'}`}>needed</span>}
                   </div>
@@ -187,7 +187,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, placeholder, draf
                 </li>
               ) : (
                 <li key={i}>
-                  <label className="flex cursor-pointer items-start gap-2.5 rounded-xl px-2.5 py-1.5 transition-colors hover:bg-hover">
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-ctl px-2.5 py-1.5 transition-colors hover:bg-hover">
                     <input type="checkbox" checked={on(i)} onChange={(e) => setChecked((c) => ({ ...c, [i]: e.target.checked }))}
                            className="mt-0.5 size-4 shrink-0 accent-accent" />
                     <span className="min-w-0 flex-1">
@@ -257,7 +257,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, placeholder, draf
                       if (mention.onKeyDown(e) || slash.onKeyDown(e)) return
                       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!blocked) send() } }} maxLength={6000}
                     placeholder={`${nothing ? placeholder ?? 'Tell the agent what to do next…' : 'Steer: anything else, or a change of plan (optional)…'}${commands ? '  ( / for actions, @ to link a ticket or PR )' : ''}`}
-                    className={`max-h-[240px] w-full resize-none rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 transition-all duration-300 placeholder:text-fg-3 focus:ring-2 ring-line hover:ring-line-strong focus:ring-accent/50`} />
+                    className={`max-h-[240px] w-full resize-none rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 transition-all duration-300 placeholder:text-fg-3 focus:ring-2 ring-line hover:ring-line-strong focus:ring-accent/50`} />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -267,7 +267,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, placeholder, draf
             <kbd className="hidden font-sans text-micro text-fg-3 sm:inline">⌘↵</kbd>
             <button disabled={blocked} onClick={send}
                     title={unanswered.length ? `Decide ${unanswered.map((x) => x.text).join(', ')} first` : publishing.length ? `Pushes or posts: ${publishing.map((x) => x.text).join('; ')}` : undefined}
-                    className={`relative inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-small font-medium text-white transition-all active:scale-[0.98] disabled:translate-y-0 disabled:bg-fill-strong disabled:text-fg-4 ${publishing.length ? 'bg-ok hover:bg-ok' : 'bg-accent hover:bg-accent'} ${armed === 'send' ? armedCls : ''}`}>
+                    className={`relative inline-flex items-center gap-1.5 rounded-ctl px-3.5 py-1.5 text-small font-medium text-white transition-all active:scale-[0.98] disabled:translate-y-0 disabled:bg-fill-strong disabled:text-fg-4 ${publishing.length ? 'bg-ok hover:bg-ok' : 'bg-accent hover:bg-accent'} ${armed === 'send' ? armedCls : ''}`}>
               {sending ? <LoaderCircle className="size-3.5 animate-spin" /> : publishing.length ? <Upload className="size-3.5" /> : <Send className="size-3.5" />}
               {armed === 'send' ? <ArmLabel>{`Confirm: ${publishing.length} public step${publishing.length === 1 ? '' : 's'}`}</ArmLabel> : sendLabel}
               {armed === 'send' && <ArmBar on="color" />}
@@ -295,16 +295,16 @@ function RouteBar({ d, open, onGo, onKeep }: { d: Routed; open: boolean; onGo: (
   const say = (to: RouteTo) => (to === 'pr' ? `#${d.pr}’s agent` : open ? `a new PR stacked on #${d.pr}` : 'a new PR')
   return (
     <div role="status" className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-micro text-fg-3 animate-[detail-in_200ms_var(--ease-snappy)]">
-      <span className="inline-flex items-center gap-1 rounded-md bg-run/12 px-1.5 py-0.5 font-semibold text-run-text">
+      <span className="inline-flex items-center gap-1 rounded-chip bg-run/12 px-1.5 py-0.5 font-semibold text-run-text">
         {d.to === 'pr' ? <GitPullRequest className="size-3" /> : <Layers className="size-3" />}{d.to === 'pr' ? `Goes to #${d.pr}’s agent` : open ? `Starts a new PR stacked on #${d.pr}` : 'Starts a new PR'}
       </span>
       <span className="min-w-0 truncate" title={d.by === 'model' ? 'Read by a small model from your words and the PR' : 'By rule'}>{d.why}{d.by === 'model' ? ' · read by a small model' : ''}</span>
       <span className="flex-1" />
-      <button type="button" onClick={() => onGo(d.to)} className={`${armedCls} rounded-md px-1.5 py-0.5 font-medium text-fg-1 ring-1 ring-line`}>
+      <button type="button" onClick={() => onGo(d.to)} className={`${armedCls} rounded-chip px-1.5 py-0.5 font-medium text-fg-1 ring-1 ring-line`}>
         Send now<span className="ml-1 tabular-nums text-fg-3">{left}s</span><span aria-hidden className="pointer-events-none absolute inset-0 -z-10 origin-right animate-[arm_5s_linear_forwards] bg-current opacity-[0.12]" />
       </button>
-      {!(other === 'pr' && d.fixed) && <button type="button" onClick={() => onGo(other)} className="rounded-md px-1.5 py-0.5 font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1">To {say(other)} instead</button>}
-      <button type="button" onClick={onKeep} className="rounded-md px-1.5 py-0.5 font-medium text-fg-3 transition-colors hover:text-fg-1">Keep editing</button>
+      {!(other === 'pr' && d.fixed) && <button type="button" onClick={() => onGo(other)} className="rounded-chip px-1.5 py-0.5 font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1">To {say(other)} instead</button>}
+      <button type="button" onClick={onKeep} className="rounded-chip px-1.5 py-0.5 font-medium text-fg-3 transition-colors hover:text-fg-1">Keep editing</button>
     </div>
   )
 }
@@ -312,8 +312,8 @@ function RouteBar({ d, open, onGo, onKeep }: { d: Routed; open: boolean; onGo: (
 /** Each lane's name and colour: the chip over the box, the box's edge, and the turns in the conversation. */
 export const LANE: Record<Lane, { label: string; hint: string; cls: string; bar: string; ring: string; fill: string; text: string }> = {
   ship: { label: 'Ship', hint: 'An instruction: the coding agent acts on it', cls: 'bg-accent-soft text-accent-text', bar: 'border-accent', ring: 'ring-accent/40 focus:ring-accent/60', fill: 'bg-accent text-on-accent', text: 'text-accent-text' },
-  intent: { label: 'Intent', hint: 'What it is meant to do: a read-only discussion toward a decision record', cls: 'bg-wait/14 text-wait', bar: 'border-wait', ring: 'ring-wait/40 focus:ring-wait/60', fill: 'bg-wait text-white', text: 'text-wait-text' },
-  understanding: { label: 'Understanding', hint: 'What it does: a read-only discussion, nothing changes', cls: 'bg-run/12 text-run', bar: 'border-run', ring: 'ring-run/40 focus:ring-run/60', fill: 'bg-run text-white', text: 'text-run-text' },
+  intent: { label: 'Intent', hint: 'What it is meant to do: a read-only discussion toward a decision record', cls: 'bg-wait/14 text-wait-text', bar: 'border-wait', ring: 'ring-wait/40 focus:ring-wait/60', fill: 'bg-wait text-white', text: 'text-wait-text' },
+  understanding: { label: 'Understanding', hint: 'What it does: a read-only discussion, nothing changes', cls: 'bg-run/12 text-run-text', bar: 'border-run', ring: 'ring-run/40 focus:ring-run/60', fill: 'bg-run text-white', text: 'text-run-text' },
 }
 const LANES = Object.keys(LANE) as Lane[]
 const WHERE: Record<Lane, string> = { ship: 'the agent', intent: 'Intent', understanding: 'Understanding' }
@@ -322,11 +322,11 @@ const WHERE: Record<Lane, string> = { ship: 'the agent', intent: 'Intent', under
 function SentTo({ to, unsettled, onMove }: { to: { lane: Lane; text: string }; unsettled?: string; onMove: (l: Lane) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-micro text-fg-3 animate-[detail-in_200ms_var(--ease-snappy)]">
-      <span className={`rounded-md px-1.5 py-0.5 font-semibold ${LANE[to.lane].cls}`}>Sent to {WHERE[to.lane]}</span>
-      {to.lane === 'ship' && unsettled && <span className="text-wait" title="An instruction before the intent is agreed can build the wrong thing">{unsettled}</span>}
+      <span className={`rounded-chip px-1.5 py-0.5 font-semibold ${LANE[to.lane].cls}`}>Sent to {WHERE[to.lane]}</span>
+      {to.lane === 'ship' && unsettled && <span className="text-wait-text" title="An instruction before the intent is agreed can build the wrong thing">{unsettled}</span>}
       <span>Not right?</span>
       {LANES.filter((l) => l !== to.lane).map((l) => (
-        <button key={l} type="button" onClick={() => onMove(l)} className="rounded-md px-1.5 py-0.5 font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1">Send to {WHERE[l]}</button>
+        <button key={l} type="button" onClick={() => onMove(l)} className="rounded-chip px-1.5 py-0.5 font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1">Send to {WHERE[l]}</button>
       ))}
     </div>
   )

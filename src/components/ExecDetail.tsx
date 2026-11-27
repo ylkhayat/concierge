@@ -119,13 +119,13 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
             <Meta label="Session">
               <button onClick={() => resumeCmd && navigator.clipboard.writeText(resumeCmd).then(() => { setCopied(true); toast('Resume command copied'); setTimeout(() => setCopied(false), 1500) })}
                       className="group/sid flex items-center gap-1 font-mono text-fg-2 transition-colors hover:text-accent-text" title="Copy resume command">
-                {run.sessionId.slice(0, 8)}{copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5 opacity-0 transition-opacity group-hover/sid:opacity-100" />}
+                {run.sessionId.slice(0, 8)}{copied ? <Check className="size-3.5 text-ok-text" /> : <Copy className="size-3.5 opacity-0 transition-opacity group-hover/sid:opacity-100" />}
               </button>
             </Meta>
           </dl>
-          {run.error && <p className="mt-3 flex items-start gap-2 rounded-xl bg-fail/10 px-3 py-2 text-small text-fail-text ring-1 ring-fail/30"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{run.error}</p>}
+          {run.error && <p className="mt-3 flex items-start gap-2 rounded-ctl bg-fail/10 px-3 py-2 text-small text-fail-text ring-1 ring-fail/30"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{run.error}</p>}
           {!!run.denials?.length && (
-            <p title={run.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-xl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
+            <p title={run.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-ctl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
               <span>Denied {run.denials.length}×: {[...new Set(run.denials)].join(', ')}{run.refused?.[0] && <> (first: <code className="font-mono text-meta">{run.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed in {inSettings('workflows', 'Allowed tools')}.</span>
             </p>
@@ -147,7 +147,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
           <Meta label="State">{t.state}</Meta>
           <Meta label="Priority"><span className="flex items-center gap-1"><P.icon className={`size-3.5 ${P.tone}`} />{P.label}</span></Meta>
           <Meta label="Repository">{t.repo ?? <span className="text-wait-text">not mapped</span>}</Meta>
-          <Meta label="Branch"><span className="block max-w-[180px] truncate rounded-md bg-fill px-1.5 py-0.5 font-mono" title={t.branch}>{t.branch}</span></Meta>
+          <Meta label="Branch"><span className="block max-w-[180px] truncate rounded-chip bg-fill px-1.5 py-0.5 font-mono" title={t.branch}>{t.branch}</span></Meta>
           {ci && <Meta label="CI"><span className={ci === 'failure' ? 'font-semibold text-fail-text' : ci === 'success' ? 'text-ok-text' : ''}>{ci}</span></Meta>}
           {prs.some((p) => p.openThreads != null) && <Meta label="Open threads"><span className={threads ? 'font-semibold text-wait-text' : ''}>{threads}</span></Meta>}
           {t.labels.length > 0 && <Meta label="Labels"><span className="flex flex-wrap justify-end gap-1">{t.labels.map((l) => <span key={l} className="rounded-full bg-fill px-1.5 py-px text-micro">{l}</span>)}</span></Meta>}
@@ -182,7 +182,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
         {!t.busy && asking && <ActionCard t={t} actions={actions} toast={toast} />}
         {/* handed over to its PRs: their agent owns the next steps, so that is what shows, not the ticket's stale ones */}
         {!t.busy && t.handed ? <PanelSection title="Handed over" icon={GitPullRequest} tone="text-accent"><HandedPanel h={t.handed} onOpen={openPr} /></PanelSection>
-        : !(!t.busy && next === 'dock' && asking) && <PanelSection title={t.busy ? 'The agent is working' : 'Do next'} icon={t.busy ? LoaderCircle : ArrowRight} tone={t.busy ? 'text-run' : 'text-accent'}>
+        : !(!t.busy && next === 'dock' && asking) && <PanelSection title={t.busy ? 'The agent is working' : 'Do next'} icon={t.busy ? LoaderCircle : ArrowRight} tone={t.busy ? 'text-run-text' : 'text-accent'}>
           <div className="space-y-2">
             {t.busy ? (
               <Working why={run?.phase ? `${PHASE_LABEL[run.phase] ?? run.phase}.` : undefined} feed={feed} onStop={() => act('cancel', 'Run stopped')} bg={run ? { base: `/exec/${run.id}`, count: t.background } : undefined} toast={toast} />
@@ -225,7 +225,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
         {/* what the run was planned to use: its skills (and why), the environment it reads, the steps */}
         {(run?.planning || run?.plan) && (
           run.planning ? <p className="flex items-center gap-1.5 text-small text-fg-3"><LoaderCircle className="size-3.5 animate-spin text-accent" />Picking the skills and setup that fit {t.id}…</p> : run.plan && (
-            <details className="group/plan rounded-xl px-2.5 py-1.5 ring-1 ring-line [&[open]]:pb-2.5">
+            <details className="group/plan rounded-ctl px-2.5 py-1.5 ring-1 ring-line [&[open]]:pb-2.5">
               <summary className="flex cursor-pointer list-none items-center gap-1.5 text-small text-fg-3 hover:text-fg-1">
                 <ListChecks className="size-3.5 shrink-0 text-accent" /><span className="font-medium">Plan</span>
                 <span className="min-w-0 truncate text-fg-4">{run.plan.steps.length} steps{run.plan.skills[0] ? ` · ${run.plan.skills[0].name}` : ''}{run.plan.env ? ` · ${run.plan.env === 'prod' ? 'production' : 'development'} data` : ''}</span>
@@ -233,9 +233,9 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
               </summary>
               <div className="space-y-2 pt-2 text-small">
                 <div className="flex flex-wrap gap-1.5">
-                  {run.plan.skills.map((sk) => <span key={sk.name} title={sk.why} className="rounded-md bg-accent/10 px-1.5 py-0.5 font-mono text-meta text-accent-text">{sk.name}</span>)}
+                  {run.plan.skills.map((sk) => <span key={sk.name} title={sk.why} className="rounded-chip bg-accent/10 px-1.5 py-0.5 font-mono text-meta text-accent-text">{sk.name}</span>)}
                   {!run.plan.skills.length && <span className="text-fg-3">No skill fits especially.</span>}
-                  {run.plan.env && <span className="rounded-md bg-wait/10 px-1.5 py-0.5 text-meta font-medium text-wait-text">{run.plan.env === 'prod' ? 'production' : 'development'} data</span>}
+                  {run.plan.env && <span className="rounded-chip bg-wait/10 px-1.5 py-0.5 text-meta font-medium text-wait-text">{run.plan.env === 'prod' ? 'production' : 'development'} data</span>}
                 </div>
                 {run.plan.skills.length > 0 && <ul className="space-y-0.5 text-meta text-fg-3">{run.plan.skills.map((sk) => <li key={sk.name}><span className="font-medium text-fg-2 ">{sk.name}</span>: {sk.why}</li>)}</ul>}
                 <ol className="list-inside list-decimal space-y-0.5 text-fg-2 ">{run.plan.steps.map((x, i) => <li key={i}>{x}</li>)}</ol>
@@ -248,13 +248,13 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
   const ticketBody = (
                 <div className="space-y-4 px-5 py-4">
                   {t.agentWaiting && t.lastComment && (
-                    <div className="rounded-xl bg-wait/6 p-3.5 ring-1 ring-wait/25">
+                    <div className="rounded-ctl bg-wait/6 p-3.5 ring-1 ring-wait/25">
                       <h4 className="mb-1.5 flex items-center gap-1.5 text-meta font-semibold uppercase tracking-label text-wait-text"><MessageCircleQuestion className="size-3.5" />The agent is waiting on you</h4>
                       <Md text={t.lastComment.body} className="!text-body" />
                       <p className="mt-2 text-small text-fg-3">Answer it under “The agent asks you” on this page; the agent carries on from your answer.</p>
                     </div>
                   )}
-                  {t.description.trim() ? <Md text={t.description} /> : <p className="py-6 text-center text-sm text-fg-3">No description.</p>}
+                  {t.description.trim() ? <Md text={t.description} /> : <p className="py-6 text-center text-reading text-fg-3">No description.</p>}
                 </div>
   )
   return { panelBody, ticketBody, statusField, parentLinks, stackNav, headerActions, t, missing, feed, toast, onOpenLinked, run, runIt, act, siblings, prItems, asking, runAsks, next, openPr, chips }
@@ -286,7 +286,7 @@ function ActionCard({ t, actions, toast }: { t: TicketView; actions: Action[]; t
   return (
     <div className="relative">
     {(
-    <section className={'overflow-hidden rounded-2xl bg-surface-1 ring-1 ring-wait/30 '}>
+    <section className={'overflow-hidden rounded-card bg-surface-1 ring-1 ring-wait/30 '}>
       <header className="flex items-center gap-2 px-3.5 pt-3">
         <MessageCircleQuestion className="size-4 animate-pulse text-wait-text" />
         <h3 className="text-body font-semibold text-wait-text">The agent asks you</h3>
@@ -308,7 +308,7 @@ function ActionCard({ t, actions, toast }: { t: TicketView; actions: Action[]; t
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && note.trim() && !busy) go('reply', 'Reply') }}
                   title="Goes along with whichever you pick: posted as your reply, or handed to the run as guidance"
                   placeholder={opts.length ? 'Or write your own answer… (⌘↵ posts it)' : 'Your answer or guidance… (⌘↵ posts it)'}
-                  className="max-h-48 min-h-11 w-full resize-none [field-sizing:content] rounded-xl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-wait/50 " />
+                  className="max-h-48 min-h-11 w-full resize-none [field-sizing:content] rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-wait/50 " />
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => go('reply', 'Reply')} disabled={!note.trim() || !!busy} title="Post this on the Linear ticket as you, then run again"
                   className={secondary}><Reply className="size-4" />{busy === 'reply' ? 'Posting…' : 'Reply on Linear & run'}</button>

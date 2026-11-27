@@ -90,7 +90,7 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
           {!list.data && <Skeleton rows={2} />}
           {list.data && !repos.length && <p className="px-2.5 text-meta text-fg-3">None yet. Turn visuals on for a repository in {inSettings('repos')}.</p>}
           {repos.map((r) => (
-            <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
+            <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-ctl px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
               <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
                 {view === 'tokens' ? <SwatchBook className="size-4 text-fg-3" /> : <Component className="size-4 text-fg-3" />}
               </span>
@@ -107,12 +107,12 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
         {prs.map((p) => {
           const s = standing(p, p.latest?.sha)
           return (
-            <button key={p.id} onClick={() => pickItem(p.id)} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === p.id ? 'sel-row' : 'hover:bg-hover'}`}>
+            <button key={p.id} onClick={() => pickItem(p.id)} className={`flex gap-2 rounded-ctl px-2 py-1.5 text-left ${current === p.id ? 'sel-row' : 'hover:bg-hover'}`}>
               <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
                 {p.latest?.thumb ? <img src={shotUrl(p.id, p.latest.sha, p.latest.thumb)} alt="" loading="lazy" className="size-full object-cover object-top" /> : <Images className="size-4 text-fg-4" />}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1 text-small font-medium text-fg-1">{busy(p.task) && <LoaderCircle className="size-3 shrink-0 animate-spin text-run" />}<span className="truncate">{p.title}</span></span>
+                <span className="flex items-center gap-1 text-small font-medium text-fg-1">{busy(p.task) && <LoaderCircle className="size-3 shrink-0 animate-spin text-run-text" />}<span className="truncate">{p.title}</span></span>
                 <span className="block truncate text-micro text-fg-3">{p.repo.split('/')[1]}#{p.number}</span>
                 <span className={`block truncate text-micro ${TONE[s.tone]}`}>{s.text}</span>
               </span>
@@ -121,19 +121,19 @@ export function DesignWorkspace({ view = 'map', selected, onSelect, feedOf, focu
         })}
         {repos.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Maps</p>}
         {repos.map((r) => (
-          <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-lg px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
+          <button key={r.repo} onClick={() => pickItem(baselineKey(r.repo))} className={`flex gap-2 rounded-ctl px-2 py-1.5 text-left ${current === baselineKey(r.repo) ? 'sel-row' : 'hover:bg-hover'}`}>
             <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-ctl bg-fill ring-1 ring-line">
               {r.baseline?.thumb ? <img src={shotUrl(baselineKey(r.repo), r.baseline.sha, r.baseline.thumb)} alt="" loading="lazy" className="size-full object-cover object-top" /> : <LayoutTemplate className="size-4 text-fg-4" />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1 text-small font-medium text-fg-1">{busy(r.task) && <LoaderCircle className="size-3 shrink-0 animate-spin text-run" />}<span className="truncate">{r.repo.split('/')[1]}</span></span>
+              <span className="flex items-center gap-1 text-small font-medium text-fg-1">{busy(r.task) && <LoaderCircle className="size-3 shrink-0 animate-spin text-run-text" />}<span className="truncate">{r.repo.split('/')[1]}</span></span>
               <span className={`block truncate text-micro ${r.baseline ? 'text-fg-3' : 'text-wait-text'}`}>{r.baseline?.screens ? `${r.baseline.screens} screens in ${r.baseline.domains} domains` : busy(r.task) ? (r.baseline ? 'Making its blueprint…' : 'Setting its Storybook up…') : r.baseline ? 'Stories, no blueprint yet' : 'No Storybook yet'}</span>
             </span>
           </button>
         ))}
         {tickets.length > 0 && <p className="label px-2.5 pb-1 pt-3 text-fg-4">Tickets</p>}
         {tickets.map((t) => (
-          <button key={t.id} onClick={() => pickItem(`ticket:${t.id}`)} className={`rounded-lg px-2.5 py-1.5 text-left ${current === `ticket:${t.id}` ? 'sel-row' : 'hover:bg-hover'}`}>
+          <button key={t.id} onClick={() => pickItem(`ticket:${t.id}`)} className={`rounded-ctl px-2.5 py-1.5 text-left ${current === `ticket:${t.id}` ? 'sel-row' : 'hover:bg-hover'}`}>
             <span className="block truncate text-small text-fg-1">{t.title}</span>
             <span className="block truncate text-micro text-fg-3">{t.id}{t.prs.length ? ` · ${t.prs.length} PR${t.prs.length === 1 ? '' : 's'}` : ' · no PR yet'}</span>
           </button>
@@ -1549,7 +1549,7 @@ function DraftChat({ draft, task, onSay, onConfirm, onDiscard }: { draft?: Token
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
         {!turns.length && <p className="px-1 text-small text-fg-3">Say what to change: "a warmer accent", "rounder cards", "more contrast in dark". The preview shows it in seconds; nothing reaches the code until you make the PR.</p>}
         {turns.map((t, i) => (
-          <div key={i} className={t.who === 'you' ? 'ml-8 rounded-2xl rounded-br-md bg-accent/12 px-3 py-2 text-small text-fg-1' : 'mr-8 px-1 text-small text-fg-2'}>{t.text}</div>
+          <div key={i} className={t.who === 'you' ? 'ml-8 rounded-card rounded-br-chip bg-accent/12 px-3 py-2 text-small text-fg-1' : 'mr-8 px-1 text-small text-fg-2'}>{t.text}</div>
         ))}
         {draft?.busy && <p className="inline-flex items-center gap-1.5 px-1 text-small text-fg-3"><LoaderCircle className="size-3.5 animate-spin" />Drafting…</p>}
         {draft?.error && <p className="px-1 text-small text-wait-text">{draft.error}</p>}
@@ -1565,11 +1565,11 @@ function DraftChat({ draft, task, onSay, onConfirm, onDiscard }: { draft?: Token
         </div>
       )}
       <div className="p-2.5">
-        <div className="flex items-end gap-2 rounded-2xl bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
+        <div className="flex items-end gap-2 rounded-card bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="A warmer accent, rounder cards…"
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
                     className="max-h-[160px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
-          <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
+          <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
         </div>
       </div>
     </aside>
@@ -1589,11 +1589,11 @@ function Conversation({ id, feed, live, onSay, toast, hint, placeholder }: { id:
           : <p className="px-4 py-3 text-small text-fg-3">{hint ?? 'Say what to look at: a screen, a state, a width. The agent captures it, and keeps what you said for the next commits.'}</p>}
       </div>
       <div className="p-2.5">
-        <div className="flex items-end gap-2 rounded-2xl bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
+        <div className="flex items-end gap-2 rounded-card bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
           <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder={placeholder ?? 'Also at phone width, the empty state…'}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
                     className="max-h-[160px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
-          <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
+          <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
         </div>
       </div>
     </aside>

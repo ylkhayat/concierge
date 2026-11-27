@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-const LEFT = 108
+const LEFT = 98
 const src = new URL('..', import.meta.url).pathname
 const files = (readdirSync(src, { recursive: true }) as string[]).filter((f) => /\.tsx$/.test(f) && !f.startsWith('dev/'))
 const RAW = /\b(?:bg|text|ring|border|divide|from|to|via|fill|stroke|outline|decoration)-(?:zinc|gray|slate|neutral|stone|violet|indigo|purple|amber|orange|yellow|emerald|green|teal|sky|blue|cyan|red|rose|pink|fuchsia|lime)-\d+/g
@@ -34,4 +34,24 @@ test('a page of Settings is named through copy.ts (inSettings), so a renamed pag
   const said = all.flatMap((f) => readFileSync(join(src, f), 'utf8').split('\n')
     .filter((l) => /(?<!Developer |→ )Settings (→|›) /.test(l.replace(/\/\/.*$/, '').replace(/\/\*.*$/, '')) && !/^\s*(\/\/|\*|\/\*)/.test(l)).map((l) => `${f}: ${l.trim().slice(0, 90)}`))
   assert.deepEqual(said, [], "Write inSettings('repos') (src/copy.ts) instead of the page's name")
+})
+
+// What still goes around the tokens, counted: each number only goes down (lower it when you clean some), so the scale
+// of sizes, corners and shadows in tokens.css stays the whole scale, and buttons come from the recipes.
+const count = (rx: RegExp) => files.reduce((n, f) => n + (readFileSync(join(src, f), 'utf8').match(rx) ?? []).length, 0)
+for (const [what, rx, most, use] of [
+  ['text sizes off the scale', /(?<![\w-])text-(?:\[\d[\d.]*px\]|xs|sm|base|lg|xl|[2-9]xl)(?![\w-])/g, 4, 'text-micro, -meta, -small, -body, -reading, -title or -display'],
+  ['corners off the scale', /(?<![\w-])rounded(?:-(?:[trbl]|tl|tr|bl|br))?-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]+\])(?![\w-])/g, 26, 'rounded-chip, -ctl, -card or -panel'],
+  ['shadows off the scale', /(?<![\w-])shadow-(?:sm|md|lg|xl|2xl|\[[^\]]+\])(?![\w-])/g, 79, 'shadow-e1, -e2 or -e3'],
+] as const) {
+  test(`${what}: no more than there are`, () => {
+    const n = count(rx)
+    assert.ok(n <= most, `${n} ${what} (at most ${most}). Use ${use} (src/design/tokens.css).`)
+  })
+}
+
+test('buttons with a look of their own: no more than there are', () => {
+  const MOST = 558
+  const own = files.reduce((n, f) => n + [...readFileSync(join(src, f), 'utf8').matchAll(/<button\b[^>]*>/g)].filter((m) => !/\bbtn-(primary|quiet|outline|ghost)\b/.test(m[0])).length, 0)
+  assert.ok(own <= MOST, `${own} buttons styled by hand (at most ${MOST}). Use btn-primary, btn-outline, btn-quiet or btn-ghost (src/design/recipes.css).`)
 })

@@ -8,7 +8,7 @@ import { usePhone } from '../components/NextPanel.tsx'
 
 export type Tone = 'ok' | 'wait' | 'fail' | 'run' | 'quiet'
 const TONE: Record<Tone, string> = {
-  ok: 'bg-ok/12 text-ok', wait: 'bg-wait/14 text-wait', fail: 'bg-fail/12 text-fail', run: 'bg-run/12 text-run', quiet: 'bg-hover text-fg-3',
+  ok: 'bg-ok/12 text-ok-text', wait: 'bg-wait/14 text-wait-text', fail: 'bg-fail/12 text-fail-text', run: 'bg-run/12 text-run-text', quiet: 'bg-hover text-fg-3',
 }
 
 /** A short status, coloured by what it means. */
@@ -94,7 +94,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
   // the bottom row: the box under the chat, the next step under the panel; with no box the next step takes the chat's place
   const nextShown = next || undefined
   // held: the box says why instead, and the next step is shown but off
-  const box = held ? <p className="flex items-start gap-2 rounded-xl bg-fill px-3 py-2.5 text-small text-fg-3"><CloudOff className="mt-0.5 size-3.5 shrink-0 text-wait-text" /><span>Actions are off here: no machine can work on this application now ({held}). Everything stays to read; they come back when a machine it is allowed on is online.</span></p> : composer
+  const box = held ? <p className="flex items-start gap-2 rounded-ctl bg-fill px-3 py-2.5 text-small text-fg-3"><CloudOff className="mt-0.5 size-3.5 shrink-0 text-wait-text" /><span>Actions are off here: no machine can work on this application now ({held}). Everything stays to read; they come back when a machine it is allowed on is online.</span></p> : composer
   const step = held && nextShown ? <Off why={held} layout="flex min-h-0 flex-col justify-end">{nextShown}</Off> : nextShown
   const left = box || step, under = box ? step : undefined
   // a phone: only the box stays docked at the bottom (while the chat shows: a tab open has the screen to read in); the
@@ -275,11 +275,11 @@ export function WorkingBar({ title, sub, stop, children }: { title: string; sub?
   return (
     <section aria-label="The agent is working" className="flex max-h-full min-h-0 flex-col card">
       <div className="flex shrink-0 items-center gap-3 px-4 py-2">
-        <LoaderCircle aria-hidden className="size-4 shrink-0 animate-spin text-run" />
+        <LoaderCircle aria-hidden className="size-4 shrink-0 animate-spin text-run-text" />
         <span className="min-w-0 flex-1 truncate text-small"><span className="font-semibold text-fg-1">{title}</span>{sub && <span className="text-fg-3"> · {sub}</span>}</span>
-        {stop && <button onClick={stop} className="rounded-lg px-2.5 py-1 text-small font-medium text-fg-2 hov hover:text-fail">Stop</button>}
+        {stop && <button onClick={stop} className="rounded-ctl px-2.5 py-1 text-small font-medium text-fg-2 hov hover:text-fail-text">Stop</button>}
         {children && (
-          <button onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? 'Hide the details' : 'Show the details'} className="rounded-lg p-1 text-fg-3 hov hover:text-fg-1">
+          <button onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? 'Hide the details' : 'Show the details'} className="rounded-ctl p-1 text-fg-3 hov hover:text-fg-1">
             <ChevronRight className={`size-4 transition-transform duration-200 ${open ? 'rotate-90' : '-rotate-90'}`} />
           </button>
         )}
@@ -291,5 +291,5 @@ export function WorkingBar({ title, sub, stop, children }: { title: string; sub?
 
 /** The composer's frame: the box to steer the agent, docked under the conversation. */
 export const Composer = ({ children }: { children: ReactNode }) => (
-  <div className="max-h-[45vh] overflow-y-auto rounded-2xl bg-surface-1 p-3 shadow-[var(--e1),0_12px_40px_-16px_rgb(0_0_0/0.35)]">{children}</div>
+  <div className="max-h-[45vh] overflow-y-auto rounded-card bg-surface-1 p-3 shadow-[var(--e1),0_12px_40px_-16px_rgb(0_0_0/0.35)]">{children}</div>
 )

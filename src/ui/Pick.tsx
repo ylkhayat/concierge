@@ -36,7 +36,7 @@ export function Pick<T extends string | number>(props: { label: string; options:
         const on = isOn(o.value)
         return (
           <button key={String(o.value)} type="button" disabled={o.disabled} title={o.hint} onClick={() => click(o.value)}
-                  {...(props.multi ? { 'aria-pressed': on } : { role: 'radio', 'aria-checked': on })} className={`${pill(on, o.mono, wrap)} ${wrap ? 'rounded-2xl' : ''}`}>
+                  {...(props.multi ? { 'aria-pressed': on } : { role: 'radio', 'aria-checked': on })} className={`${pill(on, o.mono, wrap)} ${wrap ? 'rounded-card' : ''}`}>
             {props.multi && (on ? <Check className="size-3 shrink-0" /> : <Plus className="size-3 shrink-0 opacity-60" />)}
             <span className={wrap ? 'min-w-0 break-words' : 'truncate'}>{o.label}</span>
           </button>

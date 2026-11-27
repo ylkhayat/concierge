@@ -35,15 +35,15 @@ export function Tabs<T extends string>({ value, options, onChange, size = 'md', 
   const pad = size === 'sm' ? 'px-2 py-0.5 text-meta' : 'px-3 py-1 text-small'
   return (
     <div ref={box} role={as === 'tab' ? 'tablist' : 'radiogroup'} aria-label={label}
-         className={`relative ${full ? 'flex w-full' : 'inline-flex'} shrink-0 rounded-xl bg-fill p-1`}>
-      {pill && <span aria-hidden className="absolute inset-y-1 rounded-lg bg-surface-1 shadow-sm ring-1 ring-black/[0.04] transition-all duration-300 ease-[var(--ease-snappy)] dark:ring-white/[0.06]"
+         className={`relative ${full ? 'flex w-full' : 'inline-flex'} shrink-0 rounded-ctl bg-fill p-1`}>
+      {pill && <span aria-hidden className="absolute inset-y-1 rounded-ctl bg-surface-1 shadow-sm ring-1 ring-black/[0.04] transition-all duration-300 ease-[var(--ease-snappy)] dark:ring-white/[0.06]"
                      style={{ left: pill.left, width: pill.width }} />}
       {options.map((o) => {
         const on = o.id === value
         return (
           <button key={o.id} data-tab type="button" title={o.title} onClick={() => onChange(o.id)}
                   role={as === 'tab' ? 'tab' : 'radio'} {...(as === 'tab' ? { 'aria-selected': on } : { 'aria-checked': on })}
-                  className={`relative z-10 inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors ${pad} ${full ? 'flex-1' : ''} ${on ? 'text-fg-1' : 'text-fg-3 hover:text-fg-1'}`}>
+                  className={`relative z-10 inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl font-medium transition-colors ${pad} ${full ? 'flex-1' : ''} ${on ? 'text-fg-1' : 'text-fg-3 hover:text-fg-1'}`}>
             {o.icon && <o.icon className="size-3.5" aria-hidden />}
             {o.label}
             {o.dot && <span aria-hidden className={`size-1.5 rounded-full ${DOT[o.dot]}`} />}

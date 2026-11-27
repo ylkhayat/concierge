@@ -49,7 +49,7 @@ export function HandedPanel({ h, onOpen }: { h: Handed; onOpen: (p: { repo: stri
         </div>
       )}
       {!!h.carry?.length && (
-        <details className="rounded-xl px-2.5 py-1.5 text-small ring-1 ring-line">
+        <details className="rounded-ctl px-2.5 py-1.5 text-small ring-1 ring-line">
           <summary className="cursor-pointer list-none text-fg-3 hover:text-fg-1">
             {h.carry.length} step{h.carry.length === 1 ? '' : 's'} left open here {h.carriedAt ? `went to #${h.main}’s agent ${ago(h.carriedAt)}` : `go to #${h.main}’s agent with the next word it gets`}
           </summary>

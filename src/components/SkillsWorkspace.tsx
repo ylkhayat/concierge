@@ -99,7 +99,7 @@ function DayChart({ perDay, days, label }: { perDay: Record<string, number>; day
       <svg width={W} height={H + 18} className="block overflow-visible" role="img" aria-label={`${label}: ${total} runs, at most ${max} a day`} onMouseLeave={() => setAt(undefined)}>
         <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} stroke="var(--line)" />
         <line x1="0" x2={W} y1="0.5" y2="0.5" stroke="var(--line)" strokeDasharray="2 4" />
-        <text x={W} y="11" textAnchor="end" className="fill-fg-4 text-[10px] tabular-nums">{max} a day</text>
+        <text x={W} y="11" textAnchor="end" className="fill-fg-4 text-micro tabular-nums">{max} a day</text>
         {ds.map((d, i) => {
           const v = perDay[d] ?? 0, bh = (v / max) * (H - 4)
           return <g key={d} onMouseEnter={() => setAt(i)}>
@@ -107,7 +107,7 @@ function DayChart({ perDay, days, label }: { perDay: Record<string, number>; day
             {v > 0 && <rect x={i * (bw + gap)} y={H - bh} width={bw} height={bh} rx={Math.min(3, bw / 2)} fill="var(--accent)" opacity={at == null || at === i ? 1 : 0.45} />}
           </g>
         })}
-        {[0, Math.floor(ds.length / 2), ds.length - 1].map((i) => <text key={i} x={i * (bw + gap) + bw / 2} y={H + 14} textAnchor={i === 0 ? 'start' : i === ds.length - 1 ? 'end' : 'middle'} className="fill-fg-4 text-[10px]">{shortDay(ds[i])}</text>)}
+        {[0, Math.floor(ds.length / 2), ds.length - 1].map((i) => <text key={i} x={i * (bw + gap) + bw / 2} y={H + 14} textAnchor={i === 0 ? 'start' : i === ds.length - 1 ? 'end' : 'middle'} className="fill-fg-4 text-micro">{shortDay(ds[i])}</text>)}
       </svg>
       </div>
     </figure>
@@ -155,9 +155,9 @@ function Matrix({ rows, onPick }: { rows: Row[]; onPick: (n: string) => void }) 
           <line x1={P.l} x2={W - P.r} y1={y(80)} y2={y(80)} stroke="var(--line-strong)" strokeDasharray="3 4" />
           <line x1={x(busy)} x2={x(busy)} y1={P.t} y2={H - P.b} stroke="var(--line-strong)" strokeDasharray="3 4" />
           <line x1={P.l} x2={W - P.r} y1={H - P.b + 0.5} y2={H - P.b + 0.5} stroke="var(--line)" />
-          {[lo, 80, 100].map((v) => <text key={v} x={P.l - 6} y={y(v) + 3} textAnchor="end" className="fill-fg-4 text-[10px] tabular-nums">{v}</text>)}
-          {[1, 10, 100, 1000].filter((v) => v <= Math.max(10, maxRuns)).map((v) => <text key={v} x={x(v)} y={H - 8} textAnchor="middle" className="fill-fg-4 text-[10px] tabular-nums">{v}</text>)}
-          <text x={W - P.r} y={H - 8} textAnchor="end" className="fill-fg-4 text-[10px]">runs →</text>
+          {[lo, 80, 100].map((v) => <text key={v} x={P.l - 6} y={y(v) + 3} textAnchor="end" className="fill-fg-4 text-micro tabular-nums">{v}</text>)}
+          {[1, 10, 100, 1000].filter((v) => v <= Math.max(10, maxRuns)).map((v) => <text key={v} x={x(v)} y={H - 8} textAnchor="middle" className="fill-fg-4 text-micro tabular-nums">{v}</text>)}
+          <text x={W - P.r} y={H - 8} textAnchor="end" className="fill-fg-4 text-micro">runs →</text>
           {quad(W - P.r - 4, P.t + 12, 'Carries the work', 'end')}
           {quad(W - P.r - 4, H - P.b - 6, 'Fix first', 'end')}
           {quad(P.l + 6, P.t + 12, 'Healthy, rarely used', 'start')}
@@ -167,13 +167,13 @@ function Matrix({ rows, onPick }: { rows: Row[]; onPick: (n: string) => void }) 
               <circle cx={x(r.runs)} cy={y(r.score)} r="12" fill="transparent" />
               <circle cx={x(r.runs)} cy={y(r.score)} r={hover === r.name ? 6 : 4.5} stroke="var(--surface-1)" strokeWidth="2"
                       fill={r.verdict === 'good' ? 'var(--st-ok)' : r.verdict === 'watch' ? 'var(--st-wait)' : 'var(--st-fail)'} />
-              {labels.has(r.name) && hover !== r.name && <text x={labels.get(r.name)!.x} y={y(r.score) + 3} textAnchor={labels.get(r.name)!.anchor} className="pointer-events-none fill-fg-2 font-mono text-[10.5px]">{r.name}</text>}
+              {labels.has(r.name) && hover !== r.name && <text x={labels.get(r.name)!.x} y={y(r.score) + 3} textAnchor={labels.get(r.name)!.anchor} className="pointer-events-none fill-fg-2 font-mono text-micro">{r.name}</text>}
             </g>
           ))}
         </svg>
         </div>
         {h && (
-          <div className="pointer-events-none absolute z-10 w-56 rounded-xl bg-surface-2 px-3 py-2 text-meta shadow-e2 ring-1 ring-line"
+          <div className="pointer-events-none absolute z-10 w-56 rounded-ctl bg-surface-2 px-3 py-2 text-meta shadow-e2 ring-1 ring-line"
                style={{ left: `${Math.min(70, (x(h.runs) / W) * 100)}%`, top: `${Math.max(0, (y(h.score) / H) * 100 - 6)}%`, transform: 'translate(12px, -100%)' }}>
             <div className="truncate font-mono text-small text-fg-1">{h.name}</div>
             <div className="mt-0.5 flex items-center gap-1.5 text-fg-2"><span className={`size-2 rounded-full ${VERDICT[h.verdict].dot}`} />{VERDICT[h.verdict].label} · score {h.score}</div>
@@ -348,7 +348,7 @@ function Overview({ v, rows, feature, onPick, toast }: { v: View; rows: Row[]; f
             <span className="min-w-0 flex-1 text-body font-medium text-fg-1">{unused.length} skill{unused.length === 1 ? '' : 's'} no run loaded in {v.days} days</span>
             <span className="text-meta text-fg-3">{showUnused ? 'Hide' : 'Show'}</span>
           </button>
-          {showUnused && <div className="mt-3 flex flex-wrap gap-1">{unused.map((r) => <button key={r.name} onClick={() => onPick(r.name)} className="rounded-md bg-hover px-1.5 py-0.5 font-mono text-meta text-fg-2 hover:text-fg-1">{r.name}</button>)}</div>}
+          {showUnused && <div className="mt-3 flex flex-wrap gap-1">{unused.map((r) => <button key={r.name} onClick={() => onPick(r.name)} className="rounded-chip bg-hover px-1.5 py-0.5 font-mono text-meta text-fg-2 hover:text-fg-1">{r.name}</button>)}</div>}
         </div>
       )}
       <div className="card p-4">
@@ -358,7 +358,7 @@ function Overview({ v, rows, feature, onPick, toast }: { v: View; rows: Row[]; f
         </div>
         {ai && <div className="mt-3 space-y-3 border-t border-line pt-3">
           <p className="text-meta text-fg-4">Written {ago(ai.at)} over {ai.days} days · from {ai.from} of your messages · ${ai.costUsd.toFixed(3)}</p>
-          {ai.suggestions.map((s, i) => <div key={i}><div className="flex items-center gap-2"><span className={`rounded-full px-2 py-px text-meta font-medium ${ADVICE[s.kind].cls}`}>{ADVICE[s.kind].label}</span><span className="text-body font-medium text-fg-1">{s.title}</span></div><p className="mt-0.5 text-small text-fg-2">{s.why}</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-hover px-3 py-2 text-small text-fg-1">{s.change}</p></div>)}
+          {ai.suggestions.map((s, i) => <div key={i}><div className="flex items-center gap-2"><span className={`rounded-full px-2 py-px text-meta font-medium ${ADVICE[s.kind].cls}`}>{ADVICE[s.kind].label}</span><span className="text-body font-medium text-fg-1">{s.title}</span></div><p className="mt-0.5 text-small text-fg-2">{s.why}</p><p className="mt-1 whitespace-pre-wrap rounded-ctl bg-hover px-3 py-2 text-small text-fg-1">{s.change}</p></div>)}
         </div>}
       </div>
     </section>
@@ -397,7 +397,7 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
         <Tabs<Owner> size="sm" label="Belongs to" value={owner} onChange={(o) => o !== owner && own(o)}
                      options={([role, 'shared'] as Owner[]).map((o) => ({ id: o, label: o === 'shared' ? 'Every role' : `${ROLES[role].label} only` }))} />
       </div>
-    ) : <p className="rounded-xl bg-hover/60 px-3 py-2 text-small text-fg-2">{OWNER_LABEL(owner)}'s skill: you can use it as {ROLES[role].label}, but change it only as {OWNER_LABEL(owner)}, or share it with every role from there.</p>}
+    ) : <p className="rounded-ctl bg-hover/60 px-3 py-2 text-small text-fg-2">{OWNER_LABEL(owner)}'s skill: you can use it as {ROLES[role].label}, but change it only as {OWNER_LABEL(owner)}, or share it with every role from there.</p>}
     <div className="card grid grid-cols-2 divide-line lg:grid-cols-4 lg:divide-x">
       <Kpi label="Score" value={judged ? <span className="inline-flex items-center gap-2">{r.score}<span className={`rounded-full px-2 py-px text-meta font-medium ${VERDICT[r.verdict].soft} ${VERDICT[r.verdict].text}`}>{VERDICT[r.verdict].label}</span></span> : '–'} sub={judged ? 'out of 100' : 'needs 3 runs to judge'} />
       <Kpi label="Runs" value={r.runs} sub={<span className="inline-flex items-center gap-1.5">{early} → {late} by half <Trend now={late} before={early} /></span>} />
@@ -429,12 +429,12 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
         <p className="text-small text-fg-1"><b className="font-semibold">{imp.verdict === 'keep' ? 'Keep it' : imp.verdict === 'change' ? 'Change it' : 'Remove it'}.</b> {imp.why}</p>
         {imp.changes.map((c, i) => (
           <div key={i}><p className="text-small font-medium text-fg-1">{c.title}</p><p className="text-small text-fg-3">{c.why}</p>
-            <div className="mt-1 flex items-start gap-2 rounded-lg bg-hover px-3 py-2"><p className="min-w-0 flex-1 whitespace-pre-wrap text-small text-fg-1">{c.edit}</p><button onClick={() => navigator.clipboard.writeText(c.edit).then(() => toast('Copied'))} className="shrink-0 text-meta text-fg-3 hover:text-fg-1">Copy</button></div></div>
+            <div className="mt-1 flex items-start gap-2 rounded-ctl bg-hover px-3 py-2"><p className="min-w-0 flex-1 whitespace-pre-wrap text-small text-fg-1">{c.edit}</p><button onClick={() => navigator.clipboard.writeText(c.edit).then(() => toast('Copied'))} className="shrink-0 text-meta text-fg-3 hover:text-fg-1">Copy</button></div></div>
         ))}
-        <div className="rounded-xl bg-accent-soft px-3 py-2 text-small text-fg-1"><b className="font-semibold">Tokens:</b> {tok(imp.tokensNow)} → {tok(imp.tokensNew ?? imp.tokens.after)} a load. {imp.tokens.how}</div>
+        <div className="rounded-ctl bg-accent-soft px-3 py-2 text-small text-fg-1"><b className="font-semibold">Tokens:</b> {tok(imp.tokensNow)} → {tok(imp.tokensNew ?? imp.tokens.after)} a load. {imp.tokens.how}</div>
         {imp.rewrite && (
           // the new look of the skill, whole: copy it and paste it over the old file
-          <div className="rounded-xl ring-1 ring-line">
+          <div className="rounded-ctl ring-1 ring-line">
             <div className="flex flex-wrap items-center gap-2 px-3 py-2">
               <span className="min-w-0 flex-1 text-small"><b className="font-semibold text-fg-1">The new skill</b> <span className="text-fg-3">· {tok(imp.tokensNew)} tokens{imp.file ? ` · paste it over ${imp.file}` : ''}</span></span>
               <button onClick={() => navigator.clipboard.writeText(imp.rewrite).then(() => toast(`Copied${imp.file ? `: paste it over ${imp.file}` : ''}`))}
@@ -448,7 +448,7 @@ function Detail({ r, days, toast, onRemoved, owner, role, feature }: { r: Row; d
         )}
         {imp.newSkills?.map((n) => (
           // a part the rewrite moves out: its whole file, to save next to the others before using the rewrite
-          <div key={n.name} className="rounded-xl ring-1 ring-line">
+          <div key={n.name} className="rounded-ctl ring-1 ring-line">
             <div className="flex flex-wrap items-center gap-2 px-3 py-2">
               <span className="min-w-0 flex-1 text-small"><b className="font-semibold text-fg-1">New skill <span className="font-mono">{n.name}</span></b> <span className="text-fg-3">· {tok(Math.round(n.content.length / 4))} tokens · save it as ~/.claude/skills/{n.name}/SKILL.md</span><span className="block text-fg-3">{n.why}</span></span>
               <button onClick={() => navigator.clipboard.writeText(n.content).then(() => toast(`Copied: save it as ~/.claude/skills/${n.name}/SKILL.md`))} className="inline-flex items-center gap-1.5 btn-quiet btn-sm"><Copy className="size-3.5" />Copy {n.name}</button>

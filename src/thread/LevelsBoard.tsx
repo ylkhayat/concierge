@@ -10,7 +10,7 @@ import { BookOpen, Check, Cloud, Cpu, Database, ExternalLink, Lightbulb, ListChe
 import { createContext, Fragment, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { DIMS, linksAt, type Dim, type Levels, type Term } from '../../server/levels.ts'
 import { edgeTypes } from '../components/Explain.tsx'
-import { api, enc } from '../lib.ts'
+import { api, enc, calm } from '../lib.ts'
 
 /** A card on a board: a change said in words. strong: the one the lane is about; faded: set aside. */
 export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[]; story?: string; href?: string; mono?: boolean
@@ -176,7 +176,7 @@ export function LaneBoard({ prId, board, lanes, links, top, children, ask }: { p
   // fitted again whenever the board's own size changes (the side panel opening, the window, the meter's level)
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined
-    const fit = () => { clearTimeout(t); t = setTimeout(() => void rf.fitView({ padding: 0.08, maxZoom: 1, duration: 200 }), 40) }
+    const fit = () => { clearTimeout(t); t = setTimeout(() => void rf.fitView({ padding: 0.08, maxZoom: 1, duration: calm() ? 0 : 200 }), 40) }
     fit()
     const o = new ResizeObserver(fit); if (box.current) o.observe(box.current)
     return () => { clearTimeout(t); o.disconnect() }

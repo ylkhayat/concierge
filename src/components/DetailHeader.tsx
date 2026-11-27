@@ -30,7 +30,7 @@ export function StatusField({ label, tone = 'violet', icon: Icon, spin, steps, a
         <ChevronDown className="size-3 opacity-50" />
       </button>
       <div id={id} popover="auto" style={{ positionAnchor: `--${id}`, positionArea: 'bottom span-right', positionTryFallbacks: 'flip-inline, flip-block', inset: 'auto' } as CSSProperties}
-           className="m-0 mt-1.5 w-60 rounded-2xl border-0 bg-surface-1 p-3 text-fg-2 shadow-xl ring-1 ring-line ">
+           className="m-0 mt-1.5 w-60 rounded-card border-0 bg-surface-1 p-3 text-fg-2 shadow-xl ring-1 ring-line ">
         <ol className="relative space-y-2.5">
           <span aria-hidden className="absolute bottom-2 left-[9px] top-2 w-px bg-fill-strong" />
           {steps.map((s, i) => {

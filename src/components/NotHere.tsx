@@ -7,7 +7,7 @@ import { setScope } from '../scope.ts'
 export function NotHere({ repo, what }: { repo: string; what: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-      <span className="flex size-11 items-center justify-center rounded-2xl bg-fill text-fg-3"><FolderLock className="size-5" /></span>
+      <span className="flex size-11 items-center justify-center rounded-card bg-fill text-fg-3"><FolderLock className="size-5" /></span>
       <p className="text-reading font-semibold text-fg-1">Not available on this machine</p>
       <p className="max-w-sm text-small text-fg-3">This {what} is in <span className="font-mono text-fg-2">{repo}</span>, which isn't checked out here. Allow it on this machine to open it.</p>
       <button onClick={openRepoSettings} className="btn-primary inline-flex items-center gap-1.5"><Settings2 className="size-3.5" />Open repository settings</button>
@@ -32,7 +32,7 @@ export function HeldBanner({ held }: { held: [string, string][] }) {
           {' '}{one ? 'Its' : 'Their'} pull requests and tickets are here to read; reviews, runs and explanations wait until a machine {one ? 'it is' : 'they are'} allowed on is back.</p>
         {!one && <ul className="mt-1 space-y-0.5 text-small">{held.map(([r, why]) => <li key={r}><span className="font-mono">{r}</span>: {said(r, why)}</li>)}</ul>}
       </div>
-      <button onClick={openRepoSettings} className="shrink-0 rounded-lg px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Where it's allowed</button>
+      <button onClick={openRepoSettings} className="shrink-0 rounded-ctl px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Where it's allowed</button>
     </div>
   )
 }
@@ -42,7 +42,7 @@ export function HeldBanner({ held }: { held: [string, string][] }) {
 export function AwayRepo({ repo, onAllApps }: { repo: string; onAllApps: () => void }) {
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-fill text-fg-3"><FolderLock className="size-5" /></span>
+      <span className="flex size-12 items-center justify-center rounded-card bg-fill text-fg-3"><FolderLock className="size-5" /></span>
       <p className="text-title font-semibold text-fg-1"><span className="font-mono">{repo}</span> isn't on this machine</p>
       <p className="max-w-md text-small text-fg-3">It isn't allowed here, so its pull requests, tickets and agents live on the machines it is allowed on. This view shows only what this machine works on.</p>
       <div className="mt-1 flex flex-wrap items-center justify-center gap-2">

@@ -120,10 +120,10 @@ export function TicketThread(props: TicketThreadProps) {
         : ticketBody}
     >
       <div className="flex items-center justify-between gap-3">
-        {t.busy ? <span className="flex items-center gap-1.5 text-meta text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />live</span> : <span />}
+        {t.busy ? <span className="flex items-center gap-1.5 text-meta text-run-text"><span className="size-1.5 animate-pulse rounded-full bg-run" />live</span> : <span />}
         {count > 0 && <FeedMode />}
       </div>
-      {siblings && <p className="rounded-xl bg-hover px-3 py-2 text-small text-fg-3">One run works {siblings.join(' → ')} together, so their activity is the same. A reply here goes to that run too.</p>}
+      {siblings && <p className="rounded-ctl bg-hover px-3 py-2 text-small text-fg-3">One run works {siblings.join(' → ')} together, so their activity is the same. A reply here goes to that run too.</p>}
       {run || all.length
         ? <ActivityFeed feed={all} live={t.busy} bg={run && { base: `/exec/${run.id}`, count: t.background }} toast={toast} />
         : feedLoading ? <p className="flex items-center justify-center gap-2 py-6 text-body text-fg-3"><LoaderCircle className="size-4 animate-spin" />Loading the activity…</p>

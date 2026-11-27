@@ -41,7 +41,7 @@ export function List({ v, base, toast }: { v: View; base: string; toast: (m: str
       {v.tasks.map((t) => {
         const K = KIND[t.kind]
         return (
-          <div key={t.id} className={`space-y-2 rounded-xl p-3 ring-1 ${t.outlived ? 'bg-wait/6 ring-wait/30' : 'ring-line '}`}>
+          <div key={t.id} className={`space-y-2 rounded-ctl p-3 ring-1 ${t.outlived ? 'bg-wait/6 ring-wait/30' : 'ring-line '}`}>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-meta">
               <span className={`size-2 shrink-0 rounded-full ${t.alive ? 'animate-pulse bg-ok' : 'bg-fg-4'}`} />
               <K.icon className="size-3.5 shrink-0 text-fg-3" />
@@ -49,15 +49,15 @@ export function List({ v, base, toast }: { v: View; base: string; toast: (m: str
               <span className="whitespace-nowrap text-fg-3">{t.alive ? `running since ${ago(t.at, now)}` : t.stoppedAt ? `stopped ${ago(t.stoppedAt, now)}` : `ended${t.endedAt ? ` ${ago(t.endedAt, now)}` : ''}`}</span>
               {t.alive && t.pids.length > 0 && <span className="ml-auto flex items-center gap-1 whitespace-nowrap font-mono text-micro text-fg-3"><Cpu className="size-3" />{t.cpu}% · {t.mb} MB</span>}
             </div>
-            <code className="block whitespace-pre-wrap break-all rounded-lg bg-fill px-2 py-1.5 font-mono text-meta text-fg-2 ">{t.cmd}</code>
+            <code className="block whitespace-pre-wrap break-all rounded-ctl bg-fill px-2 py-1.5 font-mono text-meta text-fg-2 ">{t.cmd}</code>
             {t.outlived && <p className="text-meta font-medium text-wait-text">Still running after the agent ended: nothing will read or stop it.</p>}
-            {t.tail ? <pre className="max-h-40 overflow-auto rounded-lg bg-zinc-950 p-2 font-mono text-micro leading-snug text-zinc-200">{t.tail.split('\n').slice(-30).join('\n')}</pre>
+            {t.tail ? <pre className="max-h-40 overflow-auto rounded-ctl bg-zinc-950 p-2 font-mono text-micro leading-snug text-zinc-200">{t.tail.split('\n').slice(-30).join('\n')}</pre>
               : t.output ? <p className="text-meta text-fg-3">Output goes to <span className="font-mono">{t.output}</span> (nothing yet)</p>
               : <p className="text-meta text-fg-3">{t.kind === 'agent' ? 'A subagent: its progress shows in the feed when it reports back.' : 'Its output isn’t written anywhere Concierge can read.'}</p>}
             <div className="flex items-center gap-3 text-meta text-fg-3">
               {t.checkedAt && <span>the agent checked it {ago(t.checkedAt, now)}</span>}
               {t.alive && t.kind !== 'agent' && (
-                <button onClick={() => arm(t.id, () => stop({ task: t.id }, 'it'))} className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 font-medium text-fg-2 ring-1 ring-line-strong hover:text-fail-text">
+                <button onClick={() => arm(t.id, () => stop({ task: t.id }, 'it'))} className="ml-auto inline-flex items-center gap-1 rounded-ctl px-2 py-1 font-medium text-fg-2 ring-1 ring-line-strong hover:text-fail-text">
                   <Square className="size-3 fill-current" />{armed === t.id ? <ArmLabel>Confirm stop</ArmLabel> : 'Stop'}
                 </button>
               )}
@@ -66,7 +66,7 @@ export function List({ v, base, toast }: { v: View; base: string; toast: (m: str
         )
       })}
       {v.procs.length > 0 && (
-        <details className="rounded-xl p-3 ring-1 ring-line ">
+        <details className="rounded-ctl p-3 ring-1 ring-line ">
           <summary className="cursor-pointer text-meta font-medium text-fg-2 ">{v.procs.length} other process{v.procs.length === 1 ? '' : 'es'} under the agent</summary>
           <ul className="mt-2 space-y-1.5">
             {v.procs.map((p) => (
@@ -107,12 +107,12 @@ export function BgNow({ base, count, parked, open: start = false, toast }: { bas
   const stop = (body: { task?: string; pid?: number }, what: string) => api(`${base}/background/stop`, body).then(
     (r: { stopped: number }) => toast?.(r.stopped ? `Stopped ${what}` : `${what}: nothing was running`), (e: Error) => toast?.(e.message, 'error'))
   const stopBtn = (key: string, go: () => void) => (
-    <button onClick={() => arm(key, go)} className="shrink-0 rounded-md px-1.5 py-0.5 text-meta font-medium text-fg-3 ring-1 ring-line hover:text-fail">{armed === key ? <ArmLabel>Stop?</ArmLabel> : 'Stop'}</button>
+    <button onClick={() => arm(key, go)} className="shrink-0 rounded-chip px-1.5 py-0.5 text-meta font-medium text-fg-3 ring-1 ring-line hover:text-fail-text">{armed === key ? <ArmLabel>Stop?</ArmLabel> : 'Stop'}</button>
   )
   const now = Date.now()
   const name = (t: Task) => (t.kind === 'agent' ? t.cmd : brief(t.cmd))
   return (
-    <div className="rounded-xl bg-run/[0.05] ring-1 ring-run/20">
+    <div className="rounded-ctl bg-run/[0.05] ring-1 ring-run/20">
       <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2 text-left text-small">
         <span className="relative flex size-2 shrink-0"><span className="absolute inset-0 animate-ping rounded-full bg-run/60" /><span className="size-2 rounded-full bg-run" /></span>
         <span className="shrink-0 font-medium text-fg-1">{parked ? 'Waiting on' : 'Running in the background'} · {running.length + procs.length}</span>
@@ -131,7 +131,7 @@ export function BgNow({ base, count, parked, open: start = false, toast }: { bas
                 <span className="shrink-0 text-meta tabular-nums text-fg-4">for {ago(t.at, now).replace(/ ago$/, '')}</span>
                 {t.kind !== 'agent' && stopBtn(t.id, () => stop({ task: t.id }, 'it'))}
               </p>
-              {t.tail ? <pre className="mt-1 max-h-28 overflow-auto rounded-lg bg-zinc-950 px-2 py-1.5 font-mono text-micro leading-snug text-zinc-200">{t.tail.split('\n').slice(-6).join('\n')}</pre>
+              {t.tail ? <pre className="mt-1 max-h-28 overflow-auto rounded-ctl bg-zinc-950 px-2 py-1.5 font-mono text-micro leading-snug text-zinc-200">{t.tail.split('\n').slice(-6).join('\n')}</pre>
                 : <p className="mt-0.5 pl-5.5 text-meta text-fg-4">{t.kind === 'agent' ? 'A subagent: it reports back when done.' : 'No output yet.'}</p>}
             </li>
           ))}

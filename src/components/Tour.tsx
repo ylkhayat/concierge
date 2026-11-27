@@ -5,7 +5,7 @@ import {
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type TouchEvent } from 'react'
 import type { Overlay, Shape, Tour as TourData } from '../../server/explain.ts'
 import type { StackTour } from '../../server/stackTour.ts'
-import { api, enc, isTyping, param, setParam, type PrView } from '../lib.ts'
+import { api, enc, isTyping, param, setParam, type PrView, smooth } from '../lib.ts'
 import { Md } from './Md.tsx'
 
 type Step = { key: string; title: string; kicker: string } & (
@@ -49,10 +49,10 @@ export function Tour(props: { pr: PrView; o: Overlay; onExplain: () => void; bus
   const [scope, setScopeState] = useState<'pr' | 'stack'>(() => (props.pr.stack && param('tour') === 'stack' ? 'stack' : 'pr'))
   const setScope = (v: 'pr' | 'stack') => { switchedAt = Date.now(); setScopeState(v); setParam('tour', v === 'stack' ? 'stack' : null) }
   const switcher = props.pr.stack && (
-    <div role="tablist" aria-label="Tour scope" className="mx-3 mt-3 grid grid-cols-2 rounded-lg bg-fill/60 p-0.5 text-meta font-semibold">
+    <div role="tablist" aria-label="Tour scope" className="mx-3 mt-3 grid grid-cols-2 rounded-ctl bg-fill/60 p-0.5 text-meta font-semibold">
       {(['pr', 'stack'] as const).map((v) => (
         <button key={v} role="tab" aria-selected={scope === v} onClick={() => setScope(v)}
-                className={`rounded-md py-1 transition-all ${scope === v ? 'sel text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
+                className={`rounded-chip py-1 transition-all ${scope === v ? 'sel text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
           {v === 'pr' ? 'This PR' : `Whole stack · ${props.pr.stack!.length}`}
         </button>
       ))}
@@ -83,7 +83,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
     const n = Math.max(0, Math.min(steps.length - 1, i))
     const next = { i: n, seen: new Set(pos.seen).add(n) }
     at.set(pr.id, next); setPos(next); setParam('step', n || null)
-    document.getElementById('tour-body')?.scrollTo({ top: 0, behavior: 'smooth' })
+    document.getElementById('tour-body')?.scrollTo({ top: 0, behavior: smooth() })
   }
   // a swipe sideways is a step (mostly sideways and far enough, so scrolling a long step never turns it)
   const touch = useRef<{ x: number; y: number } | null>(null)
@@ -111,7 +111,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         {switcher && <div className="w-64">{switcher}</div>}
-        <span className="flex size-14 items-center justify-center rounded-2xl bg-accent/10"><Compass className="size-7 text-accent" /></span>
+        <span className="flex size-14 items-center justify-center rounded-card bg-accent/10"><Compass className="size-7 text-accent" /></span>
         <h3 className="text-reading font-semibold">A guided tour of this PR</h3>
         <p className="max-w-md text-body text-fg-3">Step by step through what it brings, in the order that makes it easy to follow, with what to check and the diff right there, and anything that does not belong flagged. This explanation was made before tours existed.</p>
         <button onClick={onExplain} disabled={busy} className="inline-flex items-center gap-1.5 btn-primary btn-lg shadow-sm transition-all disabled:opacity-50">
@@ -142,7 +142,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
       {stepsOpen && <button aria-label="Close the steps" onClick={() => setStepsOpen(false)} className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[2px] md:hidden" />}
       {/* the route: every stop, where you are, what you have seen (a column; on a phone a sheet from the bottom) */}
       <nav aria-label="Tour steps" onClick={(e) => { if ((e.target as HTMLElement).closest('li button')) setStepsOpen(false) }}
-           className={`${stepsOpen ? 'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] animate-[sheet-in_260ms_var(--ease-snappy)] rounded-t-3xl bg-fill/60 pb-[env(safe-area-inset-bottom)] shadow-2xl' : 'hidden'} flex-col md:static md:z-auto md:flex md:max-h-none md:w-[264px] md:shrink-0 md:animate-none md:rounded-none md:border-r md:border-line md:bg-fill/60 md:pb-0 md:shadow-none`}>
+           className={`${stepsOpen ? 'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] animate-[sheet-in_260ms_var(--ease-snappy)] rounded-t-panel bg-fill/60 pb-[env(safe-area-inset-bottom)] shadow-2xl' : 'hidden'} flex-col md:static md:z-auto md:flex md:max-h-none md:w-[264px] md:shrink-0 md:animate-none md:rounded-none md:border-r md:border-line md:bg-fill/60 md:pb-0 md:shadow-none`}>
         {switcher}
         <div className={`flex min-h-0 flex-1 flex-col ${slide ? 'animate-[drawer-in-left_260ms_var(--ease-snappy)]' : ''}`}>
         <div className="px-4 pb-3 pt-4">
@@ -155,7 +155,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
             return (
               <li key={s.key}>
                 <button onClick={() => go(i)} aria-current={on}
-                        className={`group flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-all ${on ? 'sel ' : 'hover:bg-white/70 dark:hover:bg-zinc-900/50'}`}>
+                        className={`group flex w-full items-start gap-2.5 rounded-chip px-2.5 py-2 text-left transition-all ${on ? 'sel ' : 'hover:bg-white/70 dark:hover:bg-zinc-900/50'}`}>
                   <span className={`mt-px flex size-5 shrink-0 items-center justify-center rounded-full text-micro font-semibold transition-colors ${on ? 'bg-accent text-on-accent' : seen ? 'bg-accent/15 text-accent-text' : 'bg-fill-strong text-fg-3'}`}>
                     {s.type === 'scope' ? <Flag className="size-3" /> : seen && !on ? <Check className="size-3" strokeWidth={3} /> : i + 1}
                   </span>
@@ -221,7 +221,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
                   <span className={`rounded-full px-2 py-0.5 label ${RISK[o.business.risk]}`}>{o.business.risk} risk</span>{o.business.riskWhy}
                 </p>
                 {t.focus && (
-                  <div className="flex items-start gap-3 rounded-2xl bg-accent/6 p-4 ring-1 ring-accent/25">
+                  <div className="flex items-start gap-3 rounded-card bg-accent/6 p-4 ring-1 ring-accent/25">
                     <Crosshair className="mt-0.5 size-5 shrink-0 text-accent" />
                     <div><h4 className="text-meta font-semibold text-accent-text">In the code, if you read one thing</h4><Md text={t.focus} className="mt-0.5 !text-reading font-medium [&_p]:!m-0" /></div>
                   </div>
@@ -232,7 +232,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
             {cur.type === 'overview' && (
               <>
                 {t.focus && (
-                  <div className="flex items-start gap-3 rounded-2xl bg-accent/6 p-4 ring-1 ring-accent/25">
+                  <div className="flex items-start gap-3 rounded-card bg-accent/6 p-4 ring-1 ring-accent/25">
                     <Crosshair className="mt-0.5 size-5 shrink-0 text-accent" />
                     <div><h4 className="text-meta font-semibold text-accent-text">If you read one thing</h4><Md text={t.focus} className="mt-0.5 !text-reading font-medium [&_p]:!m-0" /></div>
                   </div>
@@ -249,7 +249,7 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
                 <p className="flex flex-wrap items-center gap-2 text-small text-fg-2 ">
                   <span className={`rounded-full px-2 py-0.5 label ${RISK[o.business.risk]}`}>{o.business.risk} risk</span>{o.business.riskWhy}
                 </p>
-                <div className="rounded-2xl bg-accent/5 p-4 ring-1 ring-accent/20">
+                <div className="rounded-card bg-accent/5 p-4 ring-1 ring-accent/20">
                   <h4 className="mb-2 flex items-center gap-1.5 text-meta font-semibold text-accent-text"><MapIcon className="size-3.5" />The route</h4>
                   <ol className="space-y-1 text-body text-fg-2 ">
                     {t.steps.map((s, i) => <li key={i} className="flex gap-2"><span className="w-5 shrink-0 text-right tabular-nums text-fg-3">{i + 2}.</span><span>{s.title} <span className="text-fg-3">· {s.paths.length} file{s.paths.length === 1 ? '' : 's'}</span></span></li>)}
@@ -269,14 +269,14 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
                   </dl>
                 ) : cur.s.narrative && <Md text={cur.s.narrative} className="!text-reading" />}
                 {!!(cur.s.check ?? cur.s.lookFor)?.length && (
-                  <div className="rounded-2xl bg-wait/6 p-4 ring-1 ring-wait/20">
+                  <div className="rounded-card bg-wait/6 p-4 ring-1 ring-wait/20">
                     <h4 className="mb-2 flex items-center gap-1.5 text-meta font-semibold text-wait-text"><ListChecks className="size-3.5" />Check while reading</h4>
                     <ul className="space-y-1">
                       {(cur.s.check ?? cur.s.lookFor)!.map((l, i) => {
                         const k = `${cur.key}:${i}`, on = done.has(k)
                         return (
                           <li key={i}>
-                            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-1.5 py-1 text-body transition-colors hover:bg-wait/6">
+                            <label className="flex cursor-pointer items-start gap-2.5 rounded-ctl px-1.5 py-1 text-body transition-colors hover:bg-wait/6">
                               <input type="checkbox" checked={on} onChange={() => tick(k)} className="mt-0.5 size-3.5 shrink-0 accent-accent" />
                               <span className={on ? 'text-fg-3 line-through' : 'text-fg-2 '}><Md text={l} className="!text-body [&_p]:!m-0" /></span>
                             </label>
@@ -312,23 +312,23 @@ function PrTour({ pr, o, onExplain, busy, switcher, onFinish }: { pr: PrView; o:
                   )
                 })()}
                 <a href={`https://github.com/${pr.repo}/pull/${pr.number}/files`} target="_blank" rel="noreferrer"
-                   className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-body font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">Files on GitHub<ArrowUpRight className="size-3.5" /></a>
+                   className="inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-body font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">Files on GitHub<ArrowUpRight className="size-3.5" /></a>
               </div>
             )}
           </article>
         </div>
 
         <footer className="flex shrink-0 items-center gap-2 border-t border-line px-3 py-2.5 sm:px-6 sm:py-3 ">
-          <button onClick={() => go(pos.i - 1)} disabled={pos.i === 0} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-reading font-medium sm:py-1.5 sm:text-body text-fg-2 transition-colors hov hover:text-fg-1 disabled:opacity-30 "><ArrowLeft className="size-4" />Back</button>
+          <button onClick={() => go(pos.i - 1)} disabled={pos.i === 0} className="inline-flex items-center gap-1.5 rounded-ctl px-3 py-2.5 text-reading font-medium sm:py-1.5 sm:text-body text-fg-2 transition-colors hov hover:text-fg-1 disabled:opacity-30 "><ArrowLeft className="size-4" />Back</button>
           <span className="hidden flex-1 text-center text-meta text-fg-3 sm:block"><kbd className="rounded bg-fill px-1 font-mono">←</kbd> <kbd className="rounded bg-fill px-1 font-mono">→</kbd> to move</span>
           <span className="flex-1 sm:hidden" />
           {pos.i === steps.length - 1 && onFinish && (
-            <button onClick={onFinish.go} className="inline-flex min-w-0 items-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-reading font-medium text-on-accent shadow-sm sm:py-1.5 sm:text-body">
+            <button onClick={onFinish.go} className="inline-flex min-w-0 items-center gap-1.5 rounded-ctl bg-accent px-4 py-2.5 text-reading font-medium text-on-accent shadow-sm sm:py-1.5 sm:text-body">
               <span className="truncate">{onFinish.label}</span><ArrowRight className="size-4 shrink-0" />
             </button>
           )}
           {pos.i < steps.length - 1 && (
-            <button onClick={() => go(pos.i + 1)} className="group inline-flex min-w-0 items-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-reading sm:py-1.5 sm:text-body font-medium text-on-accent shadow-sm transition-all">
+            <button onClick={() => go(pos.i + 1)} className="group inline-flex min-w-0 items-center gap-1.5 rounded-ctl bg-accent px-4 py-2.5 text-reading sm:py-1.5 sm:text-body font-medium text-on-accent shadow-sm transition-all">
               <span className="truncate">{pos.i === 0 ? 'Start the tour' : `Next: ${steps[pos.i + 1].title}`}</span><ArrowRight className="size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
             </button>
           )}
@@ -347,7 +347,7 @@ function FileCard({ pr, path, status, t, flag }: { pr: PrView; path: string; sta
     if (!diff) api(`/prs/${enc(pr.id)}/diff?path=${encodeURIComponent(path)}`).then((r: { diff: string }) => setDiff(r.diff), (e: Error) => setDiff(`Could not load the diff: ${e.message}`))
   }
   return (
-    <div className={`overflow-hidden rounded-2xl bg-surface-1 ring-1 ${flag ? 'ring-wait/30' : 'ring-line '}`}>
+    <div className={`overflow-hidden rounded-card bg-surface-1 ring-1 ${flag ? 'ring-wait/30' : 'ring-line '}`}>
       <button onClick={toggle} aria-expanded={open} className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-hover">
         <FileCode className={`mt-0.5 size-4 shrink-0 ${status ? CHANGE[status as keyof typeof CHANGE] ?? 'text-fg-3' : 'text-fg-3'}`} />
         <span className="min-w-0 flex-1">
@@ -448,7 +448,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
               return (
                 <li key={c?.number ?? 'stack'}>
                   <button onClick={() => setI(n)} disabled={!t} aria-current={on} title={c ? `#${c.number} ${c.title} · its explanation: ${st}` : 'The whole stack'}
-                          className={`group flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-all disabled:opacity-50 ${on ? 'sel ' : 'hover:bg-white/70 dark:hover:bg-zinc-900/50'}`}>
+                          className={`group flex w-full items-start gap-2.5 rounded-chip px-2.5 py-2 text-left transition-all disabled:opacity-50 ${on ? 'sel ' : 'hover:bg-white/70 dark:hover:bg-zinc-900/50'}`}>
                     <span className={`mt-px flex size-5 shrink-0 items-center justify-center rounded-full transition-colors ${on ? 'bg-accent' : past ? 'bg-accent/15' : 'bg-fill-strong'}`}>
                       {c ? <span className={`size-1.5 rounded-full ${on ? 'bg-white' : DOT[st]}`} /> : <Layers className={`size-3 ${on ? 'text-white' : 'text-fg-3'}`} />}
                     </span>
@@ -501,7 +501,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
         {t === undefined ? <p className="flex items-center gap-2 p-6 text-body text-fg-3"><LoaderCircle className="size-4 animate-spin" />Loading…</p>
           : !t ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-              <span className="flex size-14 items-center justify-center rounded-2xl bg-accent/10"><Layers className="size-7 text-accent" /></span>
+              <span className="flex size-14 items-center justify-center rounded-card bg-accent/10"><Layers className="size-7 text-accent" /></span>
               <h3 className="text-reading font-semibold">How the {chain.length} PRs fit together</h3>
               <p className="max-w-md text-body text-fg-3">One short story for the stack, then each PR bottom to top: what it adds and what it relies on. Written from each PR’s explanation, in a few seconds, about a cent.</p>
               {(() => {
@@ -510,7 +510,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
                 const top = [...chain].reverse().map((c) => prs.find((x) => x.number === c.number && x.repo === pr.repo)).find(Boolean)
                 return lacking.length > 0 && top && (
                   <button onClick={() => api(`/prs/${enc(top.id)}/explain-stack`, {}).then(() => toast('Explaining the stack bottom up'), (e: Error) => toast(e.message, 'error'))}
-                          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-small font-medium text-accent-text ring-1 ring-accent/30 transition-all hover:bg-accent/10">
+                          className="inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-small font-medium text-accent-text ring-1 ring-accent/30 transition-all hover:bg-accent/10">
                     <Layers className="size-3.5" />{lacking.length} of {chain.length} not explained yet · explain them first
                   </button>
                 )
@@ -522,7 +522,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
           ) : (
             <article key={i} className="mx-auto max-w-3xl animate-[rise-in_280ms_var(--ease-snappy)] space-y-6 px-6 py-8">
               {stale && (
-                <p className="flex items-center gap-2 rounded-xl bg-accent/5 px-3 py-2 text-small text-accent-text ring-1 ring-accent/15">
+                <p className="flex items-center gap-2 rounded-ctl bg-accent/5 px-3 py-2 text-small text-accent-text ring-1 ring-accent/15">
                   <RefreshCw className="size-3.5" />A PR in the stack changed since this was written.
                   <button onClick={write} disabled={writing} className="font-semibold underline-offset-2 hover:underline">{writing ? 'Writing…' : 'Refresh it'}</button>
                 </p>
@@ -530,7 +530,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
               <p className="text-meta font-semibold uppercase tracking-[0.14em] text-accent-text">{i === 0 ? `A stack of ${chain.length}` : `Part ${i} of ${chain.length} · bottom to top`}</p>
               {i === 0 ? (
                 <>
-                  <h2 className="text-balance text-[28px] font-semibold leading-[1.15] tracking-[-0.02em]">How it plays together</h2>
+                  <h2 className="text-balance text-display font-semibold leading-[1.15] tracking-[-0.02em]">How it plays together</h2>
                   <p className="text-title leading-relaxed text-fg-2 ">{t.story}</p>
                   {/* the parts in order; a big screen lists them in the column already */}
                   <ol className="relative space-y-3 border-l border-accent/25 pl-5 md:hidden">
@@ -546,7 +546,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
                   </ol>
                   <p className="text-body text-fg-3">{t.order}</p>
                   {t.watch.length > 0 && (
-                    <div className="rounded-2xl bg-wait/6 p-4 ring-1 ring-wait/20">
+                    <div className="rounded-card bg-wait/6 p-4 ring-1 ring-wait/20">
                       <h4 className="mb-1.5 flex items-center gap-1.5 text-meta font-semibold text-wait-text"><Eye className="size-3.5" />Across the stack</h4>
                       <ul className="space-y-1 text-body text-fg-2 ">{t.watch.map((w, n) => <li key={n} className="flex gap-2"><span className="mt-2 size-1 shrink-0 rounded-full bg-wait" />{w}</li>)}</ul>
                     </div>
@@ -554,7 +554,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
                 </>
               ) : s && (
                 <>
-                  <h2 className="text-balance text-[26px] font-semibold leading-[1.2] tracking-[-0.02em]">{s.title}</h2>
+                  <h2 className="text-balance text-display font-semibold leading-[1.2] tracking-[-0.02em]">{s.title}</h2>
                   {/* what this one stands on: every PR below it */}
                   {i > 1 && (
                     <p className="flex flex-wrap items-center gap-1.5 text-small text-fg-3">
@@ -572,12 +572,12 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {tracked && s.number !== pr.number && (
-                      <button onClick={() => openTour(tracked.id)} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-body font-medium text-accent-text ring-1 ring-accent/30 transition-all hover:bg-accent/10">
+                      <button onClick={() => openTour(tracked.id)} className="inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-body font-medium text-accent-text ring-1 ring-accent/30 transition-all hover:bg-accent/10">
                         <Compass className="size-4" />Its tour
                       </button>
                     )}
-                    {s.number === pr.number && <span className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-small text-fg-3 ring-1 ring-line-strong">You are here: switch to “This PR” for its tour</span>}
-                    <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-body text-fg-2 ring-1 ring-line-strong transition-all">GitHub<ArrowUpRight className="size-3.5" /></a>
+                    {s.number === pr.number && <span className="inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-small text-fg-3 ring-1 ring-line-strong">You are here: switch to “This PR” for its tour</span>}
+                    <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-ctl px-3 py-1.5 text-body text-fg-2 ring-1 ring-line-strong transition-all">GitHub<ArrowUpRight className="size-3.5" /></a>
                   </div>
                 </>
               )}
@@ -586,7 +586,7 @@ function StackTourView({ pr, prs, onSelect, toast, switcher }: { pr: PrView; prs
       </div>
       {t && (
         <footer className="flex shrink-0 items-center gap-3 border-t border-line px-6 py-3 ">
-          <button onClick={() => setI(i - 1)} disabled={i === 0} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-body font-medium text-fg-2 transition-colors hov disabled:opacity-30 "><ArrowLeft className="size-4" />Back</button>
+          <button onClick={() => setI(i - 1)} disabled={i === 0} className="inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-body font-medium text-fg-2 transition-colors hov disabled:opacity-30 "><ArrowLeft className="size-4" />Back</button>
           {/* where you are in the slides */}
           <span className="flex flex-1 items-center justify-center gap-1.5">
             {slides.map((label, n) => <button key={label} onClick={() => setI(n)} aria-label={label} className={`h-1.5 rounded-full transition-all duration-300 ${n === i ? 'w-6 bg-accent' : 'w-1.5 bg-fill-strong hover:bg-fg-4'}`} />)}
@@ -611,14 +611,14 @@ function Lane({ name, lane, muted, delay = 0 }: { name: string; lane: { shapes: 
     neutral: 'bg-surface-1 text-fg-2 ring-line-strong',
   }
   return (
-    <section className={`rounded-2xl p-4 ring-1 ${muted ? 'bg-fill/60 ring-line ' : 'bg-accent/4 ring-accent/20'}`}>
+    <section className={`rounded-card p-4 ring-1 ${muted ? 'bg-fill/60 ring-line ' : 'bg-accent/4 ring-accent/20'}`}>
       <h4 className={`mb-3 text-meta font-semibold ${muted ? 'text-fg-3' : 'text-accent-text'}`}>{name}</h4>
       <ol className="flex flex-wrap items-center gap-y-2">
         {lane.shapes.map((x, i) => (
           <li key={i} className="flex items-center">
             {i > 0 && <ArrowRight className="mx-1.5 size-4 shrink-0 text-fg-4" />}
             <span style={{ animationDelay: `${(delay + i) * 90}ms` }}
-                  className={`inline-flex animate-[rise-in_360ms_var(--ease-snappy)_both] items-center gap-1.5 rounded-xl px-3 py-2 text-body font-medium ring-1 ${TONE[x.tone] ?? TONE.neutral} ${x.tone === 'bad' ? 'shadow-[0_0_0_4px_rgb(244_63_94/0.06)]' : x.tone === 'ok' ? 'shadow-[0_0_0_4px_rgb(16_185_129/0.07)]' : ''}`}>
+                  className={`inline-flex animate-[rise-in_360ms_var(--ease-snappy)_both] items-center gap-1.5 rounded-ctl px-3 py-2 text-body font-medium ring-1 ${TONE[x.tone] ?? TONE.neutral} ${x.tone === 'bad' ? 'shadow-[0_0_0_4px_rgb(244_63_94/0.06)]' : x.tone === 'ok' ? 'shadow-[0_0_0_4px_rgb(16_185_129/0.07)]' : ''}`}>
               {x.tone === 'bad' && <CircleX className="size-3.5 shrink-0" />}{x.tone === 'ok' && <CircleCheck className="size-3.5 shrink-0" />}{x.label}
             </span>
           </li>

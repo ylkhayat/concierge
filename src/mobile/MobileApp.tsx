@@ -93,7 +93,7 @@ export function MobileApp() {
       <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-line bg-white/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl dark:bg-zinc-950/85">
         {([['tickets', TicketIcon, 'Tickets', ticketsWaiting], ['prs', GitPullRequest, 'Pull requests', prsWaiting], ['read', BookOpen, 'Read', toRead], ['agents', Bot, 'Agents', working]] as const).map(([k, Icon, label, n]) => (
           <button key={k} onClick={() => setTab(k)} aria-current={tab === k} className="group relative flex h-[60px] items-center justify-center">
-            <span className={`flex h-[52px] w-[72px] flex-col items-center justify-center gap-0.5 rounded-2xl transition-[background-color,color,scale] duration-200 group-active:scale-95 ${tab === k ? 'bg-accent/12 text-accent-text' : 'text-fg-3'}`}>
+            <span className={`flex h-[52px] w-[72px] flex-col items-center justify-center gap-0.5 rounded-card transition-[background-color,color,scale] duration-200 group-active:scale-95 ${tab === k ? 'bg-accent/12 text-accent-text' : 'text-fg-3'}`}>
             <span className="relative flex h-7 items-center justify-center">
               <Icon className="size-[22px]" />
               {n > 0 && <span className={`absolute -right-3.5 -top-1 min-w-[18px] rounded-full px-1 text-center text-micro font-bold leading-[18px] text-white ring-2 ring-white dark:ring-zinc-950 ${k === 'agents' ? 'bg-run' : 'bg-wait'}`}>{n}</span>}
@@ -123,7 +123,7 @@ function Head({ title, sub, onMenu, machine, children }: { title: string; sub: s
     <header className={`sticky top-0 z-20 pt-[env(safe-area-inset-top)] backdrop-blur-xl transition-[background-color,box-shadow] duration-200 ${slim ? 'bg-fill/80 shadow-[0_1px_0_rgb(0_0_0/0.06)] dark:shadow-[0_1px_0_rgb(255_255_255/0.06)]' : 'bg-fill/60'}`}>
       <div className={`flex items-center gap-3 px-5 transition-[padding] duration-200 ${slim ? 'pb-1.5 pt-1.5' : 'pb-2 pt-3'}`}>
         <div className="min-w-0 flex-1">
-          <h1 className={`origin-left truncate font-bold leading-tight tracking-tight transition-[font-size] duration-200 ease-[var(--ease-out)] ${slim ? 'text-title' : 'text-[30px]'}`}>{title}</h1>
+          <h1 className={`origin-left truncate font-bold leading-tight tracking-tight transition-[font-size] duration-200 ease-[var(--ease-out)] ${slim ? 'text-title' : 'text-display'}`}>{title}</h1>
           {!slim && <p className="truncate text-body text-fg-3">{sub}{machine && <span className="text-fg-3"> · on {machine[0].toUpperCase() + machine.slice(1)}</span>}</p>}
         </div>
         <button onClick={onMenu} aria-label="More" className={`flex shrink-0 items-center justify-center rounded-full text-fg-2 transition-all active:scale-90 ${slim ? 'size-8' : 'size-10 bg-surface-1 shadow-sm ring-1 ring-line '}`}><MoreHorizontal className="size-5" /></button>
@@ -246,8 +246,8 @@ function TicketSheet({ t, prs, feed, now, toast, onClose, onPr }: { t: TicketVie
            title={<><p className="flex flex-wrap items-center gap-x-2 text-small text-fg-3"><span className={`size-2 rounded-full ${g.dot}`} />{g.title}<span className="font-mono">{t.id}</span><span>{t.team}</span></p>
              <h2 className="mt-1 text-display font-semibold leading-snug tracking-tight">{t.title}</h2></>}
            footer={t.busy
-             ? <button onClick={stop} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-fill text-reading font-semibold text-fg-2 "><Square className="size-4 fill-current" />Stop the agent</button>
-             : !asksOnLinear && t.repo ? <button onClick={start} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-accent text-reading font-semibold text-on-accent"><Play className="size-4 fill-current" />{armed === 'run' ? 'Tap again to start the agent' : run ? 'Run again' : 'Start the agent'}</button>
+             ? <button onClick={stop} className="flex h-12 w-full items-center justify-center gap-2 rounded-card bg-fill text-reading font-semibold text-fg-2 "><Square className="size-4 fill-current" />Stop the agent</button>
+             : !asksOnLinear && t.repo ? <button onClick={start} className="flex h-12 w-full items-center justify-center gap-2 rounded-card bg-accent text-reading font-semibold text-on-accent"><Play className="size-4 fill-current" />{armed === 'run' ? 'Tap again to start the agent' : run ? 'Run again' : 'Start the agent'}</button>
              : undefined}>
       <div className="space-y-5 pt-1">
         <Vitals inline shipping={<ShippingVital title={t.busy ? 'The agent is working' : g.title} tone={t.busy ? 'run' : g.id === 'needs-you' ? 'wait' : 'run'} busy={t.busy} at={t.busy ? 1 : run ? 2 : 1} />}
@@ -255,7 +255,7 @@ function TicketSheet({ t, prs, feed, now, toast, onClose, onPr }: { t: TicketVie
         {t.busy && <Live feed={feed} />}
         {run && <Bg base={`/exec/${run.id}`} count={t.background} live={t.busy} toast={toast} />}
         {asksOnLinear && (
-          <div className="space-y-2 rounded-2xl bg-wait/7 p-4 ring-1 ring-wait/25">
+          <div className="space-y-2 rounded-card bg-wait/7 p-4 ring-1 ring-wait/25">
             <p className="text-body font-semibold text-wait-text">It asks on Linear</p>
             <Md text={t.lastComment!.body.slice(0, 1500)} className="!text-reading [&_p]:!my-1" />
             <a href={t.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-reading font-semibold text-wait-text">Answer on Linear<ArrowUpRight className="size-4" /></a>
@@ -278,7 +278,7 @@ function TicketSheet({ t, prs, feed, now, toast, onClose, onPr }: { t: TicketVie
         {linked.length > 0 && (
           <div className="space-y-2">
             <p className="text-body font-semibold text-fg-3">Pull requests</p>
-            <ol className="overflow-hidden rounded-2xl ring-1 ring-line ">
+            <ol className="overflow-hidden rounded-card ring-1 ring-line ">
               {linked.map((p) => 'id' in p
                 ? <Row key={p.id} onClick={() => onPr(p.id)} dot={statusMeta(p.status, p.mine).dot} top={<span className="font-mono">#{p.number}</span>} title={p.title} meta={<span>{statusMeta(p.status, p.mine).label}</span>} />
                 : <li key={p.url} className="border-b border-line px-4 py-3 last:border-0 "><a href={p.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-reading"><span className="font-mono text-fg-3">#{p.number}</span><span className="min-w-0 flex-1 truncate">{p.title ?? p.url}</span><ArrowUpRight className="size-4 text-fg-3" /></a></li>)}
@@ -315,9 +315,9 @@ function Prs({ prs, now, onOpen, onMenu, machine }: { prs: PrView[]; now: number
     <>
       <Head machine={machine} title="Pull requests" sub={`${asks.length + needs.length} waiting on you · ${work.length} agent${work.length === 1 ? '' : 's'} at work`} onMenu={onMenu}>
         <div className="px-5 pb-3">
-          <div className="grid grid-cols-2 rounded-xl bg-fill/70 p-1">
+          <div className="grid grid-cols-2 rounded-ctl bg-fill/70 p-1">
             {(['review', 'mine'] as const).map((v) => (
-              <button key={v} onClick={() => setSide(v)} className={`h-9 rounded-lg text-reading font-semibold transition-all ${side === v ? 'sel' : 'text-fg-3'}`}>
+              <button key={v} onClick={() => setSide(v)} className={`h-9 rounded-ctl text-reading font-semibold transition-all ${side === v ? 'sel' : 'text-fg-3'}`}>
                 {v === 'review' ? 'To review' : 'Mine'} <span className="tabular-nums opacity-50">{open.filter((p) => !!p.mine === (v === 'mine')).length}</span>
                 {/* what waits on you on each side, so the other side's never hides */}
                 {((w) => w > 0 && <span className="ml-1.5 inline-block min-w-[18px] rounded-full bg-wait px-1 align-[1px] text-meta font-bold leading-[18px] text-white">{w}</span>)(open.filter((p) => !!p.mine === (v === 'mine') && !busyPr(p) && (p.flow.state === 'asks' || waiting(p))).length)}
@@ -360,7 +360,7 @@ function PrSheet({ pr, feed, now, toast, onClose, onTour, onTicket }: { pr: PrVi
     <Sheet onClose={onClose}
            title={<><p className="flex flex-wrap items-center gap-x-2 text-small text-fg-3"><span className={`size-2 rounded-full ${m.dot}`} />{m.label}<span className="font-mono">{pr.repo.split('/')[1]}#{pr.number}</span>{pr.stack && <span>{pr.stack.findIndex((s) => s.number === pr.number) + 1}/{pr.stack.length} in stack</span>}</p>
              <h2 className="mt-1 text-display font-semibold leading-snug tracking-tight">{pr.title}</h2></>}
-           footer={busy ? <button onClick={() => api(`/prs/${enc(pr.id)}/cancel`, {}).then(() => toast('Stopped'), (e: Error) => toast(e.message, 'error'))} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-fill text-reading font-semibold text-fg-2 "><Square className="size-4 fill-current" />Stop the agent</button> : undefined}>
+           footer={busy ? <button onClick={() => api(`/prs/${enc(pr.id)}/cancel`, {}).then(() => toast('Stopped'), (e: Error) => toast(e.message, 'error'))} className="flex h-12 w-full items-center justify-center gap-2 rounded-card bg-fill text-reading font-semibold text-fg-2 "><Square className="size-4 fill-current" />Stop the agent</button> : undefined}>
       <div className="space-y-5 pt-1">
         <Vitals inline shipping={<ShippingVital title={busy ? 'The agent is working' : m.label} tone={busy ? 'run' : pr.flow.state === 'asks' ? 'wait' : 'run'} busy={busy} at={busy ? 1 : 2} why={pr.flow.why} />}
                 topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, toast, here: pr.number }} />
@@ -370,14 +370,14 @@ function PrSheet({ pr, feed, now, toast, onClose, onTour, onTicket }: { pr: PrVi
         {/* an explanation always has a place: the one there is (while a newer one is written), it being written, or a way to start one */}
         {!line && (
           pr.explain?.state === 'running' || pr.explain?.state === 'queued'
-            ? <p className="flex items-center gap-3 rounded-2xl bg-accent/7 p-4 text-reading text-fg-2 ring-1 ring-accent/25 "><LoaderCircle className="size-5 shrink-0 animate-spin text-accent" />{pr.explain.state === 'queued' ? 'Its explanation waits its turn…' : 'Its explanation is being written…'}</p>
+            ? <p className="flex items-center gap-3 rounded-card bg-accent/7 p-4 text-reading text-fg-2 ring-1 ring-accent/25 "><LoaderCircle className="size-5 shrink-0 animate-spin text-accent" />{pr.explain.state === 'queued' ? 'Its explanation waits its turn…' : 'Its explanation is being written…'}</p>
             : line === null || !pr.explain ? <button onClick={() => api(`/prs/${enc(pr.id)}/explain`, {}).then(() => toast('Explaining this PR'), (e: Error) => toast(e.message, 'error'))}
-                      className="flex w-full items-center gap-3 rounded-2xl bg-accent/7 p-4 text-left text-reading font-semibold text-accent-text ring-1 ring-accent/25 active:scale-[0.99]">
+                      className="flex w-full items-center gap-3 rounded-card bg-accent/7 p-4 text-left text-reading font-semibold text-accent-text ring-1 ring-accent/25 active:scale-[0.99]">
                 <Sparkles className="size-5 shrink-0" />{pr.explain?.state === 'failed' ? 'Its explanation failed: try again' : 'Explain this PR'}</button>
             : null
         )}
         {line && (
-          <button onClick={onTour} className="flex w-full items-start gap-3 rounded-2xl bg-accent/7 p-4 text-left ring-1 ring-accent/25 active:scale-[0.99]">
+          <button onClick={onTour} className="flex w-full items-start gap-3 rounded-card bg-accent/7 p-4 text-left ring-1 ring-accent/25 active:scale-[0.99]">
             <BookOpen className="mt-0.5 size-5 shrink-0 text-accent" />
             <span className="min-w-0 flex-1">
               <span className="block text-reading font-semibold leading-snug">{line.headline}</span>
@@ -401,9 +401,9 @@ function PrSheet({ pr, feed, now, toast, onClose, onTour, onTicket }: { pr: PrVi
           <div className="flex flex-wrap gap-2">{pr.linked.filter((l) => l.kind === 'ticket').map((l) => <button key={l.id} onClick={() => onTicket(l.id)} className="flex h-9 items-center gap-1.5 rounded-full bg-fill px-3 text-body font-medium"><TicketIcon className="size-3.5" />{l.id}</button>)}</div>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <a href={pr.url} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-fill text-reading font-medium"><GitPullRequest className="size-4" />GitHub</a>
-          {crit ? <a href={crit} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-fill text-reading font-medium"><MessagesSquare className="size-4" />crit</a>
-            : <span className="flex h-11 items-center justify-center rounded-2xl bg-fill/60 text-body text-fg-3">crit isn't running</span>}
+          <a href={pr.url} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-card bg-fill text-reading font-medium"><GitPullRequest className="size-4" />GitHub</a>
+          {crit ? <a href={crit} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-1.5 rounded-card bg-fill text-reading font-medium"><MessagesSquare className="size-4" />crit</a>
+            : <span className="flex h-11 items-center justify-center rounded-card bg-fill/60 text-body text-fg-3">crit isn't running</span>}
         </div>
       </div>
     </Sheet>
@@ -482,7 +482,7 @@ function Live({ feed }: { feed: Activity[] }) {
   const since = feed.findLastIndex((a) => a.kind === 'section')
   const steps = feed.slice(since + 1).filter((a) => a.kind === 'tool' || a.kind === 'text').slice(-4)
   return (
-    <div className="rounded-2xl bg-run/6 p-4 ring-1 ring-run/20">
+    <div className="rounded-card bg-run/6 p-4 ring-1 ring-run/20">
       <p className="flex items-center gap-2 text-body font-semibold text-run-text"><ActivityIcon className="size-4 animate-pulse" />The agent is working</p>
       <ol className="mt-2 space-y-1.5">
         {steps.length ? steps.map((a, i) => <li key={i} className={`line-clamp-2 text-body ${i === steps.length - 1 ? 'text-fg-1 ' : 'text-fg-3'}`}>{a.kind === 'tool' && <span className="mr-1.5 font-mono text-small text-run-text">{a.tool}</span>}{a.kind === 'tool' ? a.text : plain(a.text)}</li>)
@@ -496,7 +496,7 @@ function Live({ feed }: { feed: Activity[] }) {
 function Said({ text, at, now }: { text: string; at?: string; now: number }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded-2xl bg-fill/60 p-4 ring-1 ring-line ">
+    <div className="rounded-card bg-fill/60 p-4 ring-1 ring-line ">
       <p className="mb-1.5 flex items-center gap-2 text-body font-semibold text-fg-3"><Bot className="size-4" />What the agent said<span className="ml-auto font-normal normal-case tracking-normal">{ago(at, now)}</span></p>
       <div className={open ? '' : 'max-h-28 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]'}><Md text={text} className="!text-reading [&_p]:!my-1" /></div>
       <button onClick={() => setOpen(!open)} className="mt-1 text-body font-semibold text-accent-text">{open ? 'Show less' : 'Show all'}</button>
@@ -510,7 +510,7 @@ function Menu({ health, toast, onClose }: { health: ReturnType<typeof useDeck>['
   const item = 'flex h-14 w-full items-center gap-3 px-4 text-left text-reading active:bg-hover'
   return (
     <Sheet onClose={onClose} title={<p className="pt-1 text-title font-semibold">Concierge</p>}>
-      <ol className="overflow-hidden rounded-2xl bg-fill/60 ring-1 ring-line [&>li+li]:border-t [&>li+li]:border-zinc-100 dark:[&>li+li]:border-zinc-800">
+      <ol className="overflow-hidden rounded-card bg-fill/60 ring-1 ring-line [&>li+li]:border-t [&>li+li]:border-zinc-100 dark:[&>li+li]:border-zinc-800">
         <li><button className={item} onClick={() => api('/poll', {}).then(() => toast('Checking GitHub now'))}><RefreshCw className="size-5 text-fg-3" />Refresh<span className="ml-auto text-body text-fg-3">{health?.lastPollAt ? `synced ${ago(health.lastPollAt, Date.now())}` : ''}</span></button></li>
         <li><button className={item} onClick={() => health && api('/auto-start', { on: !health.autoStart }).then((h: { autoStart: boolean }) => toast(h.autoStart ? 'Auto-review on' : 'Auto-review off'))}><Zap className={`size-5 ${health?.autoStart ? 'fill-accent text-accent' : 'text-fg-3'}`} />Auto-review<span className="ml-auto text-body text-fg-3">{health?.autoStart ? 'on' : 'off'}</span></button></li>
         <li><button className={item} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun className="size-5 text-fg-3" /> : <Moon className="size-5 text-fg-3" />}{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button></li>

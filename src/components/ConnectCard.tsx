@@ -35,13 +35,13 @@ export function ConnectCard({ onRun, toast, compact }: { onRun?: () => void; toa
   return (
     <div className="space-y-2">
       {done.length > 0 && (
-        <div className="space-y-2 rounded-xl bg-ok/7 p-3 text-small ring-1 ring-ok/20">
+        <div className="space-y-2 rounded-ctl bg-ok/7 p-3 text-small ring-1 ring-ok/20">
           <p className="text-ok-text"><span className="font-semibold">{done.join(' and ')} {done.length === 1 ? 'is' : 'are'} connected</span> for the agents. Runs from now on can use {done.length === 1 ? 'it' : 'them'}.</p>
-          {onRun && <button onClick={onRun} className="inline-flex items-center gap-1.5 rounded-lg bg-ok px-2.5 py-1 text-small font-medium text-white hover:bg-ok"><RotateCcw className="size-3.5" />Run again</button>}
+          {onRun && <button onClick={onRun} className="inline-flex items-center gap-1.5 rounded-ctl bg-ok px-2.5 py-1 text-small font-medium text-white hover:bg-ok"><RotateCcw className="size-3.5" />Run again</button>}
         </div>
       )}
       {fixable.map((c) => compact && open !== c.fix ? (
-        <p key={c.name} className="flex items-center gap-2 rounded-lg bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">
+        <p key={c.name} className="flex items-center gap-2 rounded-ctl bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">
           <PlugZap className="size-3.5 shrink-0" /><span className="flex-1">Agents can&apos;t reach {SERVICE[c.fix!] ?? c.name}.</span>
           <button onClick={() => setOpen(c.fix)} className="font-medium underline decoration-wait/40 hover:decoration-current">Connect</button>
           <button onClick={() => hide(c.fix!)} title={`Dismiss (${inSettings('connections')} still has it)`} aria-label="Dismiss"><X className="size-3.5" /></button>
@@ -65,7 +65,7 @@ function Fix({ c, toast, onDone }: { c: Connection; toast: (m: string, tone?: 'o
     call.then(onDone, (e: Error) => toast(e.message, 'error')).finally(() => setBusy(false))
   }
   return (
-    <div className="space-y-2 rounded-xl bg-wait/7 p-3 text-small ring-1 ring-wait/20">
+    <div className="space-y-2 rounded-ctl bg-wait/7 p-3 text-small ring-1 ring-wait/20">
       <p className="flex items-start gap-2 text-wait-text"><PlugZap className="mt-0.5 size-4 shrink-0" />
         <span><span className="font-semibold">The agents can&apos;t reach {name}.</span> Its browser login isn&apos;t one the agents can use on every machine.
           {c.needsKey ? ' A Sentry auth token works everywhere, set once.' : ` Your ${name} API key works everywhere, set once.`}</span></p>
@@ -77,13 +77,13 @@ function Fix({ c, toast, onDone }: { c: Connection; toast: (m: string, tone?: 'o
             {' '}(Developer Settings → Custom Integrations → Internal Integration), name it after you, and set Organization, Project and Issue &amp; Event to <b>Read</b>, the rest to No Access: the agents can then look, never change anything. Paste its token. A personal auth token with the same Read scopes works too.
           </p>
           <input value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="off" placeholder="Organization, as in its URL (e.g. acme for acme.sentry.io); optional"
-                 className="w-full rounded-lg bg-surface-1 px-2.5 py-1.5 font-mono text-small outline-none ring-1 ring-wait/30 focus:ring-2 focus:ring-wait/60" />
+                 className="w-full rounded-ctl bg-surface-1 px-2.5 py-1.5 font-mono text-small outline-none ring-1 ring-wait/30 focus:ring-2 focus:ring-wait/60" />
           <input value={token} onChange={(e) => setToken(e.target.value)} type="password" autoComplete="off" placeholder="Integration token…"
-                 className="w-full rounded-lg bg-surface-1 px-2.5 py-1.5 font-mono text-small outline-none ring-1 ring-wait/30 focus:ring-2 focus:ring-wait/60" />
+                 className="w-full rounded-ctl bg-surface-1 px-2.5 py-1.5 font-mono text-small outline-none ring-1 ring-wait/30 focus:ring-2 focus:ring-wait/60" />
         </>
       )}
       <button onClick={go} disabled={busy || (c.needsKey && token.trim().length < 20)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-wait px-2.5 py-1 text-small font-medium text-white hover:bg-wait disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 rounded-ctl bg-wait px-2.5 py-1 text-small font-medium text-white hover:bg-wait disabled:opacity-50">
         {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <PlugZap className="size-3.5" />}{c.needsKey ? `Connect ${name}` : `Connect ${name} with your API key`}
       </button>
     </div>

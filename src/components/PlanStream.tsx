@@ -229,7 +229,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                 {listing ? (
                   <foreignObject x={30} y={cy - 10} width={Math.max(0, GUTTER - 14)} height={20}>
                     <button onClick={() => (st.node ? onSelect(st.node.id) : onToggle?.(st.id))} title={`${st.title}\n${st.slots.length} ticket${st.slots.length === 1 ? '' : 's'} · ${st.points} pt · ~${fmt(st.end)}`}
-                            className="block w-full truncate text-left text-[12px] font-semibold leading-5 text-fg-1 hover:underline">{st.node?.short ?? st.title}</button>
+                            className="block w-full truncate text-left text-small font-semibold leading-5 text-fg-1 hover:underline">{st.node?.short ?? st.title}</button>
                   </foreignObject>
                 ) : (
                 <text x={x0 + 18} y={cy - t / 2 - 8} fontSize={12} fontWeight={600} className="fill-fg-1" style={{ cursor: 'pointer' }} onClick={() => (st.node ? onSelect(st.node.id) : onToggle?.(st.id))}>
@@ -255,8 +255,8 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                       <rect x={4} y={ry - ROW / 2 + 1} width={Math.max(0, w - 12)} height={ROW - 2} rx={6} fill={lit ? 'var(--surface-hover)' : 'transparent'} />
                       {/* its name, in the column: whole up to the column's width, its id before it */}
                       <foreignObject x={40} y={ry - ROW / 2} width={Math.max(0, GUTTER - 24)} height={ROW} pointerEvents="none">
-                        <div className={`flex h-full items-center gap-1.5 text-[11.5px] ${sl.done ? 'text-fg-3 line-through' : 'text-fg-1'}`}>
-                          {id && <span className="shrink-0 font-mono text-[10.5px] text-fg-3">{id}</span>}
+                        <div className={`flex h-full items-center gap-1.5 text-meta ${sl.done ? 'text-fg-3 line-through' : 'text-fg-1'}`}>
+                          {id && <span className="shrink-0 font-mono text-micro text-fg-3">{id}</span>}
                           <span className="min-w-0 truncate font-medium" title={title(sl.id)}>{name(sl.id)}</span>
                         </div>
                       </foreignObject>
@@ -310,7 +310,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                   <foreignObject pointerEvents="none" style={{ x: left + 6, y: cy - ph / 2, width: Math.max(0, width - 12), height: ph, transition: glide } as React.CSSProperties}>
                     <div className="flex h-full items-center gap-1.5 overflow-hidden">
                       <span className={`shrink-0 text-[9.5px] font-semibold tabular-nums ${sl.done ? 'text-[var(--on-accent)]' : 'text-fg-2'}`}>{sl.sized ? '' : '~'}{pts}</span>
-                      <span className={`${ph >= 40 ? 'line-clamp-3' : 'line-clamp-2'} min-w-0 flex-1 break-words text-[10.5px] font-medium leading-[12px] ${sl.done ? 'text-[var(--on-accent)] line-through' : 'text-fg-1'}`}>{name(sl.id)}</span>
+                      <span className={`${ph >= 40 ? 'line-clamp-3' : 'line-clamp-2'} min-w-0 flex-1 break-words text-micro font-medium leading-[12px] ${sl.done ? 'text-[var(--on-accent)] line-through' : 'text-fg-1'}`}>{name(sl.id)}</span>
                     </div>
                   </foreignObject>
                 )}
@@ -398,9 +398,9 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
         </div>
       )}
       {hover && !drag?.moved && (
-        <div className="pointer-events-none absolute z-10 w-[240px] -translate-x-1/2 -translate-y-full rounded-xl bg-surface-1 px-3 py-2 text-small shadow-[var(--e3)] ring-1 ring-line" style={{ left: Math.min(Math.max(hover.x, 130), w - 130), top: hover.y - 8 }}>
+        <div className="pointer-events-none absolute z-10 w-[240px] -translate-x-1/2 -translate-y-full rounded-ctl bg-surface-1 px-3 py-2 text-small shadow-[var(--e3)] ring-1 ring-line" style={{ left: Math.min(Math.max(hover.x, 130), w - 130), top: hover.y - 8 }}>
           <p className="font-medium leading-snug text-fg-1">{title(hover.slot.id)}</p>
-          {hover.slot.refine && <p className="mt-0.5 text-meta font-medium text-wait">Needs refining: {hover.slot.refine}</p>}
+          {hover.slot.refine && <p className="mt-0.5 text-meta font-medium text-wait-text">Needs refining: {hover.slot.refine}</p>}
           {hover.slot.who && <p className="mt-0.5 text-meta text-fg-2">Picked up by {hover.slot.who}</p>}
           <p className="mt-0.5 text-meta text-fg-3">{hover.slot.sized ? '' : '~'}{hover.slot.points} pt · {hover.slot.done ? 'done' : hover.slot.started ? 'going on now' : `${fmt(hover.slot.start)} → ${fmt(hover.slot.end)}`}
             {p.links.some((l) => l.to === hover.slot.id) && ` · waits for ${p.links.filter((l) => l.to === hover.slot.id).map((l) => title(l.from)).join(', ').slice(0, 60)}`}</p>
@@ -423,7 +423,7 @@ function ColorKey({ p, colorBy }: { p: Plan; colorBy: ColorBy }) {
     : [...new Set(tickets.map((n) => n.assignee).filter((x): x is string => !!x))].slice(0, 8).map((who): [string, number] => [who, nameHue(who)])
   const unset = colorBy === 'moscow' ? tickets.filter((n) => !n.moscow).length : 0
   return (
-    <div className="pointer-events-none absolute right-3 top-2 z-[2] flex max-w-[60%] flex-wrap items-center justify-end gap-x-3 gap-y-1 rounded-lg bg-surface-1/85 px-2.5 py-1 text-micro text-fg-3 shadow-e1 backdrop-blur-sm">
+    <div className="pointer-events-none absolute right-3 top-2 z-[2] flex max-w-[60%] flex-wrap items-center justify-end gap-x-3 gap-y-1 rounded-ctl bg-surface-1/85 px-2.5 py-1 text-micro text-fg-3 shadow-e1 backdrop-blur-sm">
       {items.length ? items.map(([label, hue]) => <span key={label} className="inline-flex items-center gap-1">{dot(hue)}{label}</span>) : <span>No one has picked any up yet</span>}
       {colorBy === 'moscow' && unset === tickets.length && tickets.length > 0 && <span className="text-wait-text">none set yet: ask the planner to prioritise</span>}
     </div>

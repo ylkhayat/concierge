@@ -63,6 +63,15 @@ html, body { overscroll-behavior: none; overflow-x: clip; -webkit-text-size-adju
 @keyframes mark-in { from { opacity: 0; transform: scale(1.06); } }
 @media (prefers-reduced-motion: reduce) {
   *, ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; transition: none !important; }
+  /* a spinner is the one sign that something is working: stopped, the page looks stuck. It keeps turning, slowly */
+  .animate-spin { animation: spin 1.6s linear infinite !important; }
+}
+/* No hover (a tablet, a phone): what a row shows on hover is simply shown, and what it hides on hover (the time the
+   actions take the place of) is hidden, so no control is out of reach of a finger. */
+@media (hover: none) {
+  [class*="group-hover:visible"], [class*="group-hover/"][class*=":visible"] { visibility: visible; }
+  [class*="group-hover:invisible"] { visibility: hidden; }
+  [class*="group-hover:opacity-100"], [class*="group-hover/"][class*=":opacity-100"] { opacity: 1; }
 }
 
 /* GitHub-rendered PR body */
@@ -124,7 +133,6 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
   radial-gradient(45% 40% at 95% 0%, oklch(0.65 0.16 calc(var(--accent-h) + 50) / calc(var(--aurora) * 0.7)), transparent 70%),
   radial-gradient(60% 50% at 70% 110%, oklch(0.6 0.14 calc(var(--accent-h) - 40) / calc(var(--aurora) * 0.5)), transparent 70%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .035 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
 
-/* the one selected look: an even accent wash, no bar, no outline; hover is the same wash, fainter */
 /* the one selected look: the chosen row lifts off the page as a card (the landing page's look), its text full strength */
 .sel { background: var(--surface-1); box-shadow: var(--e1); color: var(--fg-1); }
 /* the open item of a list (PRs, tickets, repos): it has to read at a glance, from across the room, not only as a slight
@@ -136,8 +144,6 @@ dialog.palette::backdrop { transition: opacity 150ms, display 150ms allow-discre
 /* every card is the same material: a surface with a hairline, a soft drop and a lit top edge, not a bare outline */
 .bg-surface-1.ring-1.ring-line:not(:focus-within), .bg-white.ring-1.ring-line:not(:focus-within) { box-shadow: var(--e1); }
 :root.dark .bg-white.ring-1.ring-line { background: var(--surface-1); }
-/* the primary action glows faintly in its own hue */
-.bg-violet-600 { box-shadow: 0 6px 20px -8px var(--glow), inset 0 1px 0 oklch(1 0 0 / 0.16); }
 .hov:hover { background: var(--surface-hover); }
 :where(button, a, [tabindex]:not(input, textarea), select):focus-visible { outline: 2px solid color-mix(in oklch, var(--accent) 65%, transparent); outline-offset: 2px; }
 /* floating things are frosted glass: what is behind them blurs and keeps its colour */

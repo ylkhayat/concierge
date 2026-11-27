@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Codebase as Data } from '../../server/explain.ts'
-import { api, flowControls, useIsDark, type Health } from '../lib.ts'
+import { api, flowControls, useIsDark, type Health, calm } from '../lib.ts'
 import { edgeTypes, layoutTree, nodeTypes, SYSTEM_ICON, viewportFor, type Card, type Link, type TNode } from './Explain.tsx'
 import { ago } from '../time.ts'
 
@@ -145,7 +145,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
       }))
       requestAnimationFrame(() => {
         if (!canvas.current || !nodes.length) return
-        rf.setViewport(viewportFor(nodes, canvas.current, { focus: focus.current }), { duration: first.current ? 0 : 420 })
+        rf.setViewport(viewportFor(nodes, canvas.current, { focus: focus.current }), { duration: first.current || calm() ? 0 : 420 })
         focus.current = undefined
         if (first.current) { first.current = false; requestAnimationFrame(() => setReady(true)) }
       })
@@ -198,37 +198,37 @@ function Map_({ repo, repos, onRepo, health, toast }: {
           {d && <span className="text-small">· {d.meta.folders} folders · mapped {ago(d.meta.mappedAt)}</span>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-mono text-xl font-semibold tracking-tight text-fg-1 2xl:text-[26px] ">{repo}</h1>
+          <h1 className="font-mono text-title font-semibold tracking-tight text-fg-1 2xl:text-display ">{repo}</h1>
         </div>
       </header>
 
       {/* the map lives in a card, like a PR's tabs */}
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.04)] ring-1 ring-line ">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.04)] ring-1 ring-line ">
         <div className="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line px-3 py-2 ">
         {d && (
-          <div className="relative grid grid-cols-2 rounded-xl bg-fill p-1">
-            <span className="absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-lg bg-surface-1 shadow-sm transition-transform duration-300 ease-[var(--ease-snappy)]" style={{ transform: business ? undefined : 'translateX(100%)' }} />
+          <div className="relative grid grid-cols-2 rounded-ctl bg-fill p-1">
+            <span className="absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-ctl bg-surface-1 shadow-sm transition-transform duration-300 ease-[var(--ease-snappy)]" style={{ transform: business ? undefined : 'translateX(100%)' }} />
             {([[true, Briefcase, 'Business'], [false, Cpu, 'Technical']] as const).map(([b, Icon, label]) => (
               <button key={label} onClick={() => { setBusiness(b); setSelected(undefined) }}
-                      className={`relative z-10 flex items-center justify-center gap-1.5 rounded-lg px-3 py-1 text-small font-semibold transition-colors ${business === b ? 'text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
+                      className={`relative z-10 flex items-center justify-center gap-1.5 rounded-ctl px-3 py-1 text-small font-semibold transition-colors ${business === b ? 'text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
                 <Icon className={`size-3.5 ${business === b ? 'text-accent' : ''}`} />{label}
               </button>
             ))}
           </div>
         )}
         {d && !business && open.size > 0 && (
-          <button onClick={() => setOpen(() => new Set())} title="Close every box" className="rounded-lg p-1.5 text-fg-3 transition-colors hov hover:text-fg-1"><Minimize2 className="size-4" /></button>
+          <button onClick={() => setOpen(() => new Set())} title="Close every box" className="rounded-ctl p-1.5 text-fg-3 transition-colors hov hover:text-fg-1"><Minimize2 className="size-4" /></button>
         )}
         <span className="flex-1" />
         {d && (
           <div className="relative">
-            <label className="flex w-72 items-center gap-2 rounded-xl bg-fill/60 px-3 py-1.5 text-body ring-1 ring-line transition-all hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60 ">
+            <label className="flex w-72 items-center gap-2 rounded-ctl bg-fill/60 px-3 py-1.5 text-body ring-1 ring-line transition-all hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60 ">
               <Search className="size-3.5 text-fg-3" />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a folder or what it does" className="w-full bg-transparent outline-none placeholder:text-fg-3"
                      onKeyDown={(e) => { if (e.key === 'Enter' && results[0]) reveal(results[0][0]); if (e.key === 'Escape') setQuery('') }} />
             </label>
             {results.length > 0 && (
-              <div className="absolute right-0 top-full z-30 mt-1.5 w-96 overflow-hidden rounded-xl bg-surface-1 shadow-xl ring-1 ring-line ">
+              <div className="absolute right-0 top-full z-30 mt-1.5 w-96 overflow-hidden rounded-ctl bg-surface-1 shadow-xl ring-1 ring-line ">
                 {results.map(([p, f]) => (
                   <button key={p} onClick={() => reveal(p)} className="block w-full px-3 py-2 text-left transition-colors hover:bg-hover">
                     <div className="truncate font-mono text-small">{p}</div>
@@ -263,7 +263,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
                 : plan.complete
                 ? <><span className="font-medium">{plan.toMap} folder{plan.toMap === 1 ? '' : 's'} changed</span> on {d.meta.branch} since this map.</>
                 : <><span className="font-medium">Partly mapped:</span> {plan.known} of {plan.folders} folders, {plan.toMap} to go.</>}</span>
-              <button onClick={() => startMap()} className="ml-auto rounded-lg bg-accent px-2.5 py-1 font-medium text-on-accent transition-all hover:bg-accent">
+              <button onClick={() => startMap()} className="ml-auto rounded-ctl bg-accent px-2.5 py-1 font-medium text-on-accent transition-all hover:bg-accent">
                 {!plan.toMap ? 'Redraw systems' : plan.complete ? 'Update' : 'Finish mapping'} · ~${plan.estimateUsd.toFixed(2)}
               </button>
             </>
@@ -277,7 +277,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
             <div className="flex h-full items-center justify-center gap-2 text-body text-fg-3"><LoaderCircle className="size-4 animate-spin text-accent" />Loading the map…</div>
           ) : d === null ? (
             <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-              <span className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
+              <span className="flex size-14 items-center justify-center rounded-card bg-gradient-to-br from-accent to-accent text-white shadow-lg shadow-accent/30"><MapIcon className="size-7" /></span>
               <div>
                 <p className="font-semibold">{mapping ? 'Mapping this codebase' : `${repo} isn’t mapped yet`}</p>
                 <p className="mt-1 max-w-sm text-body text-fg-3">{mapping ? (task?.step ?? 'Getting started') + (task?.total ? ` · ${task.done}/${task.total} folders` : '') : 'Map its default branch once to browse every system and folder, and to explain PRs against the whole picture.'}</p>
@@ -318,7 +318,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
                 <h3 className="truncate text-reading font-semibold">{card.name}</h3>
                 <p className="truncate font-mono text-micro text-fg-3">{card.kind === 'system' ? card.sub : card.path}</p>
               </div>
-              <button onClick={() => setSelected(undefined)} className="rounded-md p-1 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close"><X className="size-3.5" /></button>
+              <button onClick={() => setSelected(undefined)} className="rounded-chip p-1 text-fg-3 transition-colors hov hover:text-fg-2 " aria-label="Close"><X className="size-3.5" /></button>
             </header>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 text-body leading-relaxed">
               <p className="text-fg-2 ">{card.summary ?? <span className="italic text-fg-3">Not mapped yet</span>}</p>
@@ -336,8 +336,8 @@ function Map_({ repo, repos, onRepo, health, toast }: {
               )}
               {info && (
                 <dl className="grid grid-cols-2 gap-2 text-small">
-                  <div className="rounded-xl bg-fill/60 p-2.5"><dt className="text-fg-3">Files</dt><dd className="text-reading font-semibold tabular-nums">{info.files}</dd></div>
-                  <div className="rounded-xl bg-fill/60 p-2.5"><dt className="text-fg-3">Folders</dt><dd className="text-reading font-semibold tabular-nums">{info.children.length}</dd></div>
+                  <div className="rounded-ctl bg-fill/60 p-2.5"><dt className="text-fg-3">Files</dt><dd className="text-reading font-semibold tabular-nums">{info.files}</dd></div>
+                  <div className="rounded-ctl bg-fill/60 p-2.5"><dt className="text-fg-3">Folders</dt><dd className="text-reading font-semibold tabular-nums">{info.children.length}</dd></div>
                 </dl>
               )}
             </div>
@@ -349,7 +349,7 @@ function Map_({ repo, repos, onRepo, health, toast }: {
               )}
               {card.path && sha && (
                 <a href={`https://github.com/${repo}/tree/${sha}/${card.path}`} target="_blank" rel="noreferrer"
-                   className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">GitHub<ArrowUpRight className="size-3.5" /></a>
+                   className="flex items-center gap-1 rounded-ctl px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">GitHub<ArrowUpRight className="size-3.5" /></a>
               )}
             </footer>
           </aside>
@@ -367,7 +367,7 @@ function DeeperCard({ repo, path, count, busy, active, onMap }: { repo: string; 
     api(`/base/plan?repo=${encodeURIComponent(repo)}&under=${encodeURIComponent(path)}`).then((p: Plan) => setEst(p.estimateUsd)).catch(() => {})
   }, [repo, path])
   return (
-    <section className="space-y-2 rounded-xl border border-dashed border-accent/40 bg-accent/4 p-3">
+    <section className="space-y-2 rounded-ctl border border-dashed border-accent/40 bg-accent/4 p-3">
       <p className="text-small text-fg-2 ">
         <span className="font-semibold text-fg-1 ">{count} subfolder{count === 1 ? '' : 's'}</span> below this one aren’t mapped yet.
       </p>

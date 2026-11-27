@@ -19,15 +19,15 @@ const TOOL_ICON: Record<string, LucideIcon> = {
 
 function iconFor(a: Activity): [LucideIcon, string] {
   if (a.kind === 'text') return [Bot, 'text-accent']
-  if (a.kind === 'result') return [CircleCheck, 'text-ok']
-  if (a.kind === 'error') return [TriangleAlert, 'text-fail']
-  if (a.kind === 'denied') return [ShieldAlert, 'text-wait']
+  if (a.kind === 'result') return [CircleCheck, 'text-ok-text']
+  if (a.kind === 'error') return [TriangleAlert, 'text-fail-text']
+  if (a.kind === 'denied') return [ShieldAlert, 'text-wait-text']
   return [TOOL_ICON[a.tool ?? ''] ?? Wrench, 'text-fg-3']
 }
 
 /** Every row's badge: a small tinted square with its icon (or letter), one size for every kind of row. */
-const BADGE = 'relative z-10 flex size-[22px] shrink-0 items-center justify-center rounded-lg'
-const TINT = { you: 'bg-accent-soft text-accent-text', agent: 'bg-hover text-fg-2', ok: 'bg-ok/15 text-ok', fail: 'bg-fail/15 text-fail', warn: 'bg-wait/15 text-wait', quiet: 'bg-hover text-fg-4', run: 'bg-run/15 text-run' } as const
+const BADGE = 'relative z-10 flex size-[22px] shrink-0 items-center justify-center rounded-ctl'
+const TINT = { you: 'bg-accent-soft text-accent-text', agent: 'bg-hover text-fg-2', ok: 'bg-ok/15 text-ok-text', fail: 'bg-fail/15 text-fail-text', warn: 'bg-wait/15 text-wait-text', quiet: 'bg-hover text-fg-4', run: 'bg-run/15 text-run-text' } as const
 /** Every row's time: in its own column on the right, always shown. */
 const Time = ({ at, seconds }: { at: string; seconds?: boolean }) => <time className="hidden shrink-0 pt-[3px] font-mono text-micro tabular-nums text-fg-4 sm:block" title={stamp(at)}>{clock(at, seconds)}</time>
 
@@ -120,7 +120,7 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
             // a note from Concierge, not the agent: one quiet line in the feed's own column, never a banner; a warning
             // keeps its colour so it still stands out among them
             return (
-              <li key={k} className="relative z-10 rounded-md px-1.5 py-0.5">
+              <li key={k} className="relative z-10 rounded-chip px-1.5 py-0.5">
                 <div className={`flex items-start gap-2 text-small leading-relaxed ${warn ? 'text-fg-2' : 'text-fg-3'}`}>
                   <span className={`${BADGE} ${warn ? TINT.warn : TINT.quiet}`}><E className="size-3" aria-hidden /></span>
                   <span className="min-w-0 flex-1 pt-px">
@@ -169,12 +169,12 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
           const [Icon] = iconFor(a)
           const prose = a.kind === 'error'
           return (
-            <li key={k} className="group/ev relative flex items-start gap-2 rounded-md px-1.5 py-0.5 transition-colors duration-150 hover:bg-hover">
-              <span className={`${BADGE} ${a.kind === 'error' ? TINT.fail : a.kind === 'denied' ? TINT.warn : TINT.quiet} !size-[18px] !rounded-md`}>
+            <li key={k} className="group/ev relative flex items-start gap-2 rounded-chip px-1.5 py-0.5 transition-colors duration-150 hover:bg-hover">
+              <span className={`${BADGE} ${a.kind === 'error' ? TINT.fail : a.kind === 'denied' ? TINT.warn : TINT.quiet} !size-[18px] !rounded-chip`}>
                 <Icon className="size-3" aria-hidden />
               </span>
-              <div className={`min-w-0 flex-1 text-small leading-relaxed ${a.kind === 'error' ? 'rounded-lg bg-fail/[0.06] px-3 py-2 ring-1 ring-fail/15' : 'pt-px'}`}>
-                {a.tool && <span className={`mr-2 rounded-md px-1.5 py-px font-mono text-meta ${a.kind === 'denied' ? 'bg-wait/10 text-wait-text' : 'bg-fill text-fg-2 '}`}>{a.kind === 'denied' ? `denied ${a.tool}` : a.tool}</span>}
+              <div className={`min-w-0 flex-1 text-small leading-relaxed ${a.kind === 'error' ? 'rounded-ctl bg-fail/[0.06] px-3 py-2 ring-1 ring-fail/15' : 'pt-px'}`}>
+                {a.tool && <span className={`mr-2 rounded-chip px-1.5 py-px font-mono text-meta ${a.kind === 'denied' ? 'bg-wait/10 text-wait-text' : 'bg-fill text-fg-2 '}`}>{a.kind === 'denied' ? `denied ${a.tool}` : a.tool}</span>}
                 {/* what the agent says is markdown (lists, headings, tables, code); errors stay as they came */}
                 {<span className={prose ? 'whitespace-pre-wrap break-words text-fg-2 ' : 'break-all font-mono text-small text-fg-3 transition-colors group-hover/ev:text-fg-1'}>{prose ? <Inline text={a.text} /> : a.text}</span>}
               </div>
@@ -185,8 +185,8 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
 
   if (!feed.length) {
     return (
-      <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-fg-3">
-        <Bot className={`size-6 ${live ? 'animate-pulse text-run' : 'text-fg-4'}`} aria-hidden />
+      <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-reading text-fg-3">
+        <Bot className={`size-6 ${live ? 'animate-pulse text-run-text' : 'text-fg-4'}`} aria-hidden />
         {live ? 'Waiting for the first event…' : 'No agent run yet for this PR.'}
       </div>
     )
@@ -243,7 +243,7 @@ export function SkillPeek({ name }: { name: string }) {
     <>
       <button onMouseEnter={() => show(280)} onMouseLeave={hide} onFocus={() => show(0)} onBlur={hide} onClick={() => show(0)}
               style={{ anchorName: `--${id}` } as CSSProperties}
-              className="rounded-md bg-accent-soft px-1.5 py-px font-medium text-accent-text underline decoration-accent/30 decoration-dotted underline-offset-4 transition-colors duration-150 hover:decoration-accent">
+              className="rounded-chip bg-accent-soft px-1.5 py-px font-medium text-accent-text underline decoration-accent/30 decoration-dotted underline-offset-4 transition-colors duration-150 hover:decoration-accent">
         {name}
       </button>
       <div id={id} popover="auto" onMouseEnter={() => clearTimeout(timer.current)} onMouseLeave={hide}
@@ -302,9 +302,9 @@ function Worked({ items, until, open: start, live, render }: { items: Activity[]
   return (
     <li className="list-none">
       <button onClick={() => setFlip(!flip)} aria-expanded={open}
-              className="group/run flex max-w-full items-center gap-1.5 rounded-md py-0.5 pr-1.5 text-left text-small text-fg-3 transition-colors duration-150 hover:text-fg-1">
+              className="group/run flex max-w-full items-center gap-1.5 rounded-chip py-0.5 pr-1.5 text-left text-small text-fg-3 transition-colors duration-150 hover:text-fg-1">
         {live ? <span className="relative flex size-3.5 items-center justify-center"><span className="absolute size-2 animate-ping rounded-full bg-run/50" /><span className="size-1.5 rounded-full bg-run" /></span>
-          : <Wrench className={`size-3.5 shrink-0 ${warn ? 'text-wait' : 'text-fg-4'}`} aria-hidden />}
+          : <Wrench className={`size-3.5 shrink-0 ${warn ? 'text-wait-text' : 'text-fg-4'}`} aria-hidden />}
         <span className="min-w-0 truncate">
           <span className={live ? 'text-shimmer' : ''}>{live ? 'Working' : 'Worked'}{ms >= 1000 ? ` ${secs(ms)}` : ''}</span>
           <span className="text-fg-4">{[steps && ` · ${steps} step${steps === 1 ? '' : 's'}`, notes && ` · ${notes} note${notes === 1 ? '' : 's'}`].filter(Boolean).join('')}{names.length > 0 && ` · ${names.slice(0, 4).join(', ')}${names.length > 4 ? ` +${names.length - 4}` : ''}`}</span>
@@ -321,7 +321,7 @@ function YouSaid({ a, clamp }: { a: Activity; clamp?: boolean }) {
   return (
     <li className="group/you flex list-none flex-col items-end gap-0.5 py-0.5">
       {/* the clamp on the text, not the bubble: on the bubble the next line shows through its padding */}
-      <p className="max-w-[85%] rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-body leading-relaxed text-fg-1">
+      <p className="max-w-[85%] rounded-card rounded-br-chip bg-accent-soft px-3.5 py-2 text-body leading-relaxed text-fg-1">
         <span className={`block whitespace-pre-wrap break-words ${clamp ? 'line-clamp-3' : ''}`}>{a.text}</span>
       </p>
       <time className="font-mono text-micro tabular-nums text-fg-4 opacity-0 transition-opacity group-hover/you:opacity-100" title={stamp(a.at)}>{clock(a.at, true)}</time>
@@ -409,8 +409,8 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry, tai
               className="group/turn mb-2 flex w-full items-center gap-2 text-left text-micro text-fg-4 transition-colors hover:text-fg-2">
         <span className="h-px w-3 shrink-0 bg-line" />
         <span className="min-w-0 truncate font-semibold uppercase tracking-wide text-fg-3 group-hover/turn:text-fg-1">{label}</span>
-        {live ? <span className="flex shrink-0 items-center gap-1 font-medium text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />running</span>
-          : ok ? <CircleCheck className="size-3 shrink-0 text-ok" aria-label="finished" /> : bad ? <TriangleAlert className="size-3 shrink-0 text-fail" aria-label="ended with an error" /> : null}
+        {live ? <span className="flex shrink-0 items-center gap-1 font-medium text-run-text"><span className="size-1.5 animate-pulse rounded-full bg-run" />running</span>
+          : ok ? <CircleCheck className="size-3 shrink-0 text-ok-text" aria-label="finished" /> : bad ? <TriangleAlert className="size-3 shrink-0 text-fail-text" aria-label="ended with an error" /> : null}
         <span className="h-px min-w-3 flex-1 bg-line" />
         <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
           <span>{when(h.at)}</span>
@@ -428,7 +428,7 @@ function TurnImpl({ ch, open, live, details, onToggle, until, before, entry, tai
           : (ch.outcome || steps > 0) && (
             <li className="list-none">
               <button onClick={onToggle} className="flex w-full items-start gap-1.5 text-left text-small text-fg-3 transition-colors hover:text-fg-1">
-                {bad ? <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-fail" /> : <Bot className="mt-0.5 size-3.5 shrink-0 text-fg-4" />}
+                {bad ? <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-fail-text" /> : <Bot className="mt-0.5 size-3.5 shrink-0 text-fg-4" />}
                 <span className="line-clamp-2">{ch.outcome ? plain(ch.outcome.text) : `Worked through ${steps} step${steps === 1 ? '' : 's'}`}</span>
               </button>
             </li>

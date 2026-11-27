@@ -64,7 +64,7 @@ export function Load({ toast, onOpen }: { toast: (m: string, tone?: 'ok' | 'erro
   const hot = (load?.total.cpu ?? 0) >= 150
   const btn = (what: 'crit' | 'runs' | 'all', label: string, n: number, danger = false) => (
     <button onClick={() => stop(what)} disabled={!n}
-            className={`relative inline-flex items-center justify-center gap-1.5 rounded-lg text-meta font-medium transition-all disabled:pointer-events-none disabled:opacity-35 ${armed === what ? 'isolate overflow-hidden font-semibold' : ''} ${danger ? (n ? 'w-full bg-fail py-2 text-white shadow-sm hover:bg-rose-700' : 'w-full py-2 text-fg-3 ring-1 ring-line ') : 'px-2 py-0.5 text-fg-3 ring-1 ring-line-strong hover:text-fail-text hover:ring-fail/30'}`}>
+            className={`relative inline-flex items-center justify-center gap-1.5 rounded-ctl text-meta font-medium transition-all disabled:pointer-events-none disabled:opacity-35 ${armed === what ? 'isolate overflow-hidden font-semibold' : ''} ${danger ? (n ? 'w-full bg-fail py-2 text-white shadow-sm hover:bg-rose-700' : 'w-full py-2 text-fg-3 ring-1 ring-line ') : 'px-2 py-0.5 text-fg-3 ring-1 ring-line-strong hover:text-fail-text hover:ring-fail/30'}`}>
       {danger && <Power className="size-3.5" />}{armed === what ? <ArmLabel>{`Confirm ${label.toLowerCase()}`}</ArmLabel> : label}{armed === what && <ArmBar on={danger ? 'color' : 'plain'} />}
     </button>
   )
@@ -73,14 +73,14 @@ export function Load({ toast, onOpen }: { toast: (m: string, tone?: 'ok' | 'erro
     <>
       <button popoverTarget="load" style={{ anchorName: '--load' } as CSSProperties} onClick={read}
               title={load ? `${agents} agent${agents === 1 ? '' : 's'} · ${load.crit.length} crit · ${load.total.cpu}% CPU · ${fmt(load.total.mb)}` : 'What is running'} aria-label="What is running"
-              className={`group relative rounded-lg p-2 transition-all hover:bg-hover active:scale-95 ${hot ? 'text-fail' : count ? 'text-fg-2 ' : 'text-fg-3'}`}>
+              className={`group relative rounded-ctl p-2 transition-all hover:bg-hover active:scale-95 ${hot ? 'text-fail-text' : count ? 'text-fg-2 ' : 'text-fg-3'}`}>
         <Gauge className="size-4" />
         {!count && stopped.length > 0 && <span title={`${stopped.length} stopped`} className="absolute -right-0.5 -top-0.5 rounded-full bg-wait px-1 text-micro font-semibold tabular-nums leading-[14px] text-white">{stopped.length}</span>}
         {count > 0 && <span className={`absolute -right-0.5 -top-0.5 rounded-full px-1 text-micro font-semibold tabular-nums leading-[14px] text-white ${hot ? 'bg-fail' : 'bg-fg-3'}`}>{count}</span>}
       </button>
       <div id="load" popover="auto" onToggle={(e) => (e as unknown as ToggleEvent).newState === 'open' && readWts()}
            style={{ positionAnchor: '--load', positionArea: 'right span-top', inset: 'auto' } as CSSProperties}
-           className="m-0 ml-2 max-h-[calc(100vh/var(--z)-24px)] w-[340px] overflow-y-auto overscroll-contain rounded-2xl border-0 bg-fill/60 p-0 text-fg-2 shadow-2xl ring-1 ring-line ">
+           className="m-0 ml-2 max-h-[calc(100vh/var(--z)-24px)] w-[340px] overflow-y-auto overscroll-contain rounded-card border-0 bg-fill/60 p-0 text-fg-2 shadow-2xl ring-1 ring-line ">
         {!load ? <p className="p-4 text-small text-fg-3">Reading…</p> : (
           <div className="space-y-2.5 p-3 text-small">
             <header className="px-1">
@@ -149,7 +149,7 @@ const short = (p: string) => p.replace(/^\/Users\/[^/]+/, '~').split('/').slice(
 function Item({ target, go, dot, aside, children }: { target?: Target; go: (t: Target) => void; dot: string; aside?: string; children: ReactNode }) {
   const body = <><span className={`size-1.5 shrink-0 rounded-full ${dot}`} /><span className="min-w-0 flex-1 truncate text-left">{children}</span>{aside && <span className="font-mono text-meta text-fg-3">{aside}</span>}</>
   return target
-    ? <button onClick={() => go(target)} title="Open it" className="-mx-1.5 flex w-[calc(100%+12px)] items-center gap-2 rounded-md px-1.5 py-0.5 transition-colors hov hover:text-accent-text focus-visible:bg-fill">{body}</button>
+    ? <button onClick={() => go(target)} title="Open it" className="-mx-1.5 flex w-[calc(100%+12px)] items-center gap-2 rounded-chip px-1.5 py-0.5 transition-colors hov hover:text-accent-text focus-visible:bg-fill">{body}</button>
     : <span className="flex items-center gap-2 py-0.5">{body}</span>
 }
 
@@ -173,7 +173,7 @@ export function LoadRibbon() {
   const section = (title: string, body: ReactNode) => <span className="block space-y-1 border-t border-line pt-2 first:border-0 first:pt-0"><span className="block text-meta font-medium text-fg-3">{title}</span>{body}</span>
   return (
     <span className="group/r relative hidden md:inline-flex">
-      <button onClick={open} className="inline-flex items-center gap-1.5 rounded-md px-1.5 leading-[18px] text-fg-3 transition-colors duration-150 hov hover:text-fg-1">
+      <button onClick={open} className="inline-flex items-center gap-1.5 rounded-chip px-1.5 leading-[18px] text-fg-3 transition-colors duration-150 hov hover:text-fg-1">
         <span className={`size-1.5 rounded-full ${issues.length ? 'bg-wait' : running ? 'animate-pulse bg-run' : 'bg-ok'}`} />
         <span>{doing}{load.queued > 0 && `, ${load.queued} queued`}</span>
         {issues.length > 0 && <span className="text-fg-1">· {issues.join(', ')}</span>}
@@ -183,7 +183,7 @@ export function LoadRibbon() {
           {load.runs.length ? load.runs.slice(0, 6).map((r) => <span key={r.key} className="flex items-center gap-1.5"><span className="size-1.5 shrink-0 animate-pulse rounded-full bg-run" /><span className="truncate">{r.label}</span></span>) : <span className="block text-fg-3">None running, {m.slots} can run at once.</span>}
           {load.runs.length > 6 && <span className="block text-fg-3">+{load.runs.length - 6} more</span>}
           {load.queued > 0 && line('Queued', String(load.queued))}{load.crit.length > 0 && line('crit servers', String(load.crit.length))}
-          {load.strays > 0 && <span className="block text-wait">{load.strays} left over from a restart</span>}
+          {load.strays > 0 && <span className="block text-wait-text">{load.strays} left over from a restart</span>}
         </>)}
         {section('This machine', <>
           {line('CPU', `${Math.round(total.cpu / m.cores)}% of ${m.cores} cores${(m.count ?? 1) > 1 ? ` (${m.count} machines)` : ''}`)}{line('Memory', `${fmt(total.mb)} used · ${fmt(m.freeMb)} free`)}
@@ -206,14 +206,14 @@ function WorktreesSection({ wts, cleaning, armed, onClean, auto, onAuto }: {
   return (
     <section className="card p-3 ">
       <div className="flex items-center gap-2">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-fill text-fg-3"><FolderGit2 className="size-3.5" /></span>
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-ctl bg-fill text-fg-3"><FolderGit2 className="size-3.5" /></span>
         <span className="min-w-0 flex-1">
           <span className="block text-small font-semibold">Worktrees {wts && <span className="font-normal tabular-nums text-fg-3">{wts.length} · {sizing ? 'sizing…' : gb(sum(wts))}</span>}</span>
           <span className="block truncate text-meta text-fg-3">{!wts ? 'Reading the repos…' : `${go.length ? `${go.length} can go` : 'Nothing to clean up'}${stay.length ? ` · ${stay.length} stay` : ''}${auto?.on ? ' · auto' : ''}`}</span>
         </span>
         {!wts ? <LoaderCircle className="size-3.5 animate-spin text-fg-3" /> : (
           <button onClick={onClean} disabled={!go.length || cleaning}
-                  className={`relative inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-0.5 text-meta font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fail-text hover:ring-fail/30 disabled:pointer-events-none disabled:opacity-35 ${armed ? 'isolate overflow-hidden font-semibold' : ''}`}>
+                  className={`relative inline-flex shrink-0 items-center gap-1.5 rounded-ctl px-2 py-0.5 text-meta font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fail-text hover:ring-fail/30 disabled:pointer-events-none disabled:opacity-35 ${armed ? 'isolate overflow-hidden font-semibold' : ''}`}>
             {cleaning && <LoaderCircle className="size-3.5 animate-spin" />}
             {armed ? <ArmLabel>{`Confirm: remove ${go.length}`}</ArmLabel> : `Clean up${go.length && !go.some((w) => w.mb == null) ? ` · ${gb(sum(go))}` : ''}`}{armed && <ArmBar on="plain" />}
           </button>
@@ -249,7 +249,7 @@ function WorktreesSection({ wts, cleaning, armed, onClean, auto, onAuto }: {
 /** A small gauge: label, value, what it is out of, and a thin bar (rose when it runs hot). */
 function Meter({ label, value, of, fill, hot }: { label: string; value: string; of: string; fill: number; hot?: boolean }) {
   return (
-    <span className="min-w-0 rounded-lg bg-surface-1 px-2 py-1.5 ring-1 ring-line " title={`${value} ${of}`}>
+    <span className="min-w-0 rounded-ctl bg-surface-1 px-2 py-1.5 ring-1 ring-line " title={`${value} ${of}`}>
       <span className="block text-micro uppercase tracking-label text-fg-3">{label}</span>
       <span className={`block truncate text-small font-semibold tabular-nums leading-tight ${hot ? 'text-fail-text' : 'text-fg-1 '}`}>{value}</span>
       <span className="block truncate text-micro tabular-nums text-fg-3">{of}</span>
@@ -262,7 +262,7 @@ function Meter({ label, value, of, fill, hot }: { label: string; value: string; 
 function Card({ icon: Icon, title, meta, action, children }: { icon: typeof Bot; title: string; meta: string; action: ReactNode; children: ReactNode }) {
   return (
     <section className="space-y-2 card p-3 ">
-      <h4 className="flex items-center gap-2 text-small font-semibold"><span className="flex size-6 items-center justify-center rounded-lg bg-fill text-fg-3"><Icon className="size-3.5" /></span>{title}<span className="font-normal tabular-nums text-fg-3">{meta}</span><span className="ml-auto">{action}</span></h4>
+      <h4 className="flex items-center gap-2 text-small font-semibold"><span className="flex size-6 items-center justify-center rounded-ctl bg-fill text-fg-3"><Icon className="size-3.5" /></span>{title}<span className="font-normal tabular-nums text-fg-3">{meta}</span><span className="ml-auto">{action}</span></h4>
       {children}
     </section>
   )

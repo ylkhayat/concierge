@@ -15,8 +15,8 @@ export function RepoList({ selected, onSelect, now, version }: { selected: strin
         const mapping = b.task?.state === 'running' || b.task?.state === 'queued'
         return (
           <button key={b.repo} onClick={() => onSelect(b.repo)} aria-current={on}
-                  className={`group relative flex w-full items-start gap-3 overflow-hidden rounded-md px-3 py-2.5 text-left transition-colors ${on ? 'sel-row' : 'hov'}`}>
-            <span className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg ${on ? 'bg-accent/10 text-accent-text' : 'bg-fill text-fg-3'}`}>
+                  className={`group relative flex w-full items-start gap-3 overflow-hidden rounded-chip px-3 py-2.5 text-left transition-colors ${on ? 'sel-row' : 'hov'}`}>
+            <span className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-ctl ${on ? 'bg-accent/10 text-accent-text' : 'bg-fill text-fg-3'}`}>
               {mapping ? <LoaderCircle className="size-4 animate-spin" /> : <MapIcon className="size-4" />}
             </span>
             <span className="min-w-0 flex-1">

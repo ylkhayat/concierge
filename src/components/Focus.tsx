@@ -61,7 +61,7 @@ export function Focus({ prs, tickets, rules, onRead, onOpenPr, onOpenTicket, toa
   if (!card) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-        <span className="flex size-14 items-center justify-center rounded-3xl bg-ok/10"><CheckCheck className="size-7 text-ok" /></span>
+        <span className="flex size-14 items-center justify-center rounded-panel bg-ok/10"><CheckCheck className="size-7 text-ok-text" /></span>
         <p className="text-title font-semibold">Nothing needs you</p>
         <p className="text-body text-fg-3">New reviews, answers and agents' questions land here as they come.</p>
       </div>
@@ -88,15 +88,15 @@ export function Focus({ prs, tickets, rules, onRead, onOpenPr, onOpenTicket, toa
 
       {/* the way through: back, later, forward; thumb height, clear of the tab bar */}
       <div className="flex shrink-0 items-center gap-2 px-3 pb-2">
-        <button onClick={() => go(i - 1)} disabled={i === 0} aria-label="Previous" className="flex size-12 items-center justify-center rounded-2xl bg-surface-1 text-fg-2 ring-1 ring-line active:scale-95 disabled:opacity-30 "><ChevronLeft className="size-5" /></button>
-        <button onClick={laterOn} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-surface-1 text-reading font-medium text-fg-2 ring-1 ring-line active:scale-[0.98] "><Clock className="size-4" />Later</button>
-        <button onClick={() => go(i + 1)} disabled={i >= list.length - 1} aria-label="Next" className="flex size-12 items-center justify-center rounded-2xl bg-surface-1 text-fg-2 ring-1 ring-line active:scale-95 disabled:opacity-30 "><ChevronRight className="size-5" /></button>
+        <button onClick={() => go(i - 1)} disabled={i === 0} aria-label="Previous" className="flex size-12 items-center justify-center rounded-card bg-surface-1 text-fg-2 ring-1 ring-line active:scale-95 disabled:opacity-30 "><ChevronLeft className="size-5" /></button>
+        <button onClick={laterOn} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-card bg-surface-1 text-reading font-medium text-fg-2 ring-1 ring-line active:scale-[0.98] "><Clock className="size-4" />Later</button>
+        <button onClick={() => go(i + 1)} disabled={i >= list.length - 1} aria-label="Next" className="flex size-12 items-center justify-center rounded-card bg-surface-1 text-fg-2 ring-1 ring-line active:scale-95 disabled:opacity-30 "><ChevronRight className="size-5" /></button>
       </div>
     </div>
   )
 }
 
-const big = 'flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-reading font-semibold transition-transform active:scale-[0.98] disabled:opacity-40'
+const big = 'flex h-12 w-full items-center justify-center gap-2 rounded-card text-reading font-semibold transition-transform active:scale-[0.98] disabled:opacity-40'
 const violet = `${big} bg-accent text-on-accent`
 const green = `${big} bg-ok text-white`
 const quiet = `${big} bg-fill text-fg-2 `
@@ -130,7 +130,7 @@ function PrCard({ card, onRead, onOpen, done, toast }: { card: Extract<Card, { k
 
       {/* what the explanation says, and the tour a tap away */}
       {pr.explain?.state === 'done' && (
-        <button onClick={() => onRead(pr.id)} className="flex items-start gap-3 rounded-2xl bg-accent/6 p-3.5 text-left ring-1 ring-accent/20 active:scale-[0.99]">
+        <button onClick={() => onRead(pr.id)} className="flex items-start gap-3 rounded-card bg-accent/6 p-3.5 text-left ring-1 ring-accent/20 active:scale-[0.99]">
           <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
           <span className="min-w-0 flex-1">
             <span className="block text-reading font-medium leading-snug text-fg-1 ">{line === undefined ? 'Reading the explanation…' : line?.headline ?? 'Its explanation'}</span>

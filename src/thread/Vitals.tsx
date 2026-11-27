@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import type { Action, Diagram, Discussion as D, Topic } from '../../server/discussions.ts'
 import { CardDiagram } from './CardDiagram.tsx'
-import { api, type Activity } from '../lib.ts'
+import { api, type Activity, smooth } from '../lib.ts'
 import { ago } from '../time.ts'
 import { Md } from '../components/Md.tsx'
 import { Tabs } from '../components/Tabs.tsx'
@@ -220,7 +220,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
         <li key={x.number} className={`flex items-start gap-2.5 px-2.5 py-1.5 text-small ${x.number === here ? 'bg-accent-soft' : ''}`}>
           <span className="shrink-0 font-mono font-medium text-fg-1">#{x.number}</span>
           <span className="min-w-0 flex-1 text-fg-2"><span className="line-clamp-2">{x.decision}</span>{x.steer && <span className="mt-0.5 line-clamp-1 text-meta text-fg-3"><b className="font-medium text-fg-1">Its agent:</b> {x.steer}</span>}</span>
-          {x.steer && (x.sentAt ? <span className="shrink-0 text-meta text-fg-4">Sent</span> : <button onClick={() => sendPr(x.number, x.steer!)} className="shrink-0 rounded-md px-2 py-0.5 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft">Send</button>)}
+          {x.steer && (x.sentAt ? <span className="shrink-0 text-meta text-fg-4">Sent</span> : <button onClick={() => sendPr(x.number, x.steer!)} className="shrink-0 rounded-chip px-2 py-0.5 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft">Send</button>)}
         </li>
       ))}
     </ul>
@@ -250,7 +250,7 @@ export function topicVital({ target, topic, d, onChange, onSteer, onSteerPr, onV
       {d?.steer && (
         <div className="flex items-start gap-2 rounded-ctl bg-fill px-2.5 py-2">
           <span className="min-w-0 flex-1 text-small text-fg-1"><b className="font-semibold">For the agent:</b> {d.steer}</span>
-          {d.sentAt ? <span className="inline-flex shrink-0 items-center gap-1 text-meta text-fg-3"><CheckCircle2 className="size-3.5 text-ok" />Sent</span> : <button onClick={sendSteer} className="btn-primary btn-sm inline-flex shrink-0 items-center gap-1.5"><Send className="size-3.5" />Send</button>}
+          {d.sentAt ? <span className="inline-flex shrink-0 items-center gap-1 text-meta text-fg-3"><CheckCircle2 className="size-3.5 text-ok-text" />Sent</span> : <button onClick={sendSteer} className="btn-primary btn-sm inline-flex shrink-0 items-center gap-1.5"><Send className="size-3.5" />Send</button>}
         </div>
       )}
       {!!d?.actions?.length && (
@@ -375,7 +375,7 @@ export function slidesOf(b: { long: string; at: string; diagram?: Diagram } | un
   }
   const asked = (x: (typeof qa)[number], i: number): Slide => ({ key: `qa${i}:${x.at}`, label: 'You asked', at: x.at, body: (
     <>
-      {x.q && <p className="mb-2 ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-accent-soft px-3 py-1.5 text-small text-fg-1">{x.q}</p>}
+      {x.q && <p className="mb-2 ml-auto w-fit max-w-[90%] rounded-card rounded-br-chip bg-accent-soft px-3 py-1.5 text-small text-fg-1">{x.q}</p>}
       {x.a ? <Md text={x.a} className="text-small leading-relaxed [&>*:first-child]:!mt-0" /> : <p className="text-small text-fg-4">Answering…</p>}
     </>
   ) })
@@ -409,7 +409,7 @@ function Slides({ slides }: { slides: Slide[] }) {
     inner.current.forEach((el) => el && ro.observe(el))
     return () => ro.disconnect()
   }, [slides.length])
-  const go = (i: number) => box.current?.scrollTo({ top: i * box.current.clientHeight, behavior: 'smooth' })
+  const go = (i: number) => box.current?.scrollTo({ top: i * box.current.clientHeight, behavior: smooth() })
   // a short nudge (one notch of a wheel) would snap back to where it was: it moves one slide that way instead
   const nudge = useRef({ from: 0, dy: 0, t: 0 })
   useEffect(() => {

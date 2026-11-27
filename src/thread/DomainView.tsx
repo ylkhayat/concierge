@@ -8,7 +8,7 @@ import { api } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
 
 type Read = { domain: Domain | null; stale: boolean; writing: boolean; explained: boolean }
-const MARK = { added: ['+', 'text-ok'], changed: ['~', 'text-wait'], removed: ['−', 'text-fail line-through'], same: ['', 'text-fg-3'] } as const
+const MARK = { added: ['+', 'text-ok-text'], changed: ['~', 'text-wait-text'], removed: ['−', 'text-fail-text line-through'], same: ['', 'text-fg-3'] } as const
 // event storming's colours
 const NOTE = {
   event: 'bg-wait/20 text-wait-text',
@@ -97,7 +97,7 @@ export function DomainView({ path, focus }: { path: string; focus: 'product' | '
   )
   const screens = !!d.screens.length && (
     <Section title="What people see" hint="screens, words and states">
-      <ul className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
+      <ul className="divide-y divide-line overflow-hidden rounded-ctl ring-1 ring-line">
         {d.screens.map((s) => <li key={s.name} className="px-3 py-2"><p className="text-small font-semibold text-fg-1">{s.name}</p><p className="text-small text-fg-2">{s.change}</p>{s.states && <p className="mt-0.5 text-meta text-fg-3">States: {s.states}</p>}</li>)}
       </ul>
     </Section>
@@ -120,12 +120,12 @@ export function DomainView({ path, focus }: { path: string; focus: 'product' | '
       <header className="space-y-1.5">
         <div className="flex items-start gap-2">
           <p className="min-w-0 flex-1 text-reading font-semibold leading-snug text-fg-1">{d.headline}</p>
-          <button onClick={write} disabled={r!.writing} title="Write it again" className="shrink-0 rounded-lg p-1.5 text-fg-3 hov hover:text-fg-1 disabled:opacity-50">
+          <button onClick={write} disabled={r!.writing} title="Write it again" className="shrink-0 rounded-ctl p-1.5 text-fg-3 hov hover:text-fg-1 disabled:opacity-50">
             {r!.writing ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           </button>
         </div>
         <p className="text-body text-fg-2">{d.outcome}</p>
-        {r!.stale && <p className="text-meta text-wait">Written for an earlier push: the refresh button reads the latest.</p>}
+        {r!.stale && <p className="text-meta text-wait-text">Written for an earlier push: the refresh button reads the latest.</p>}
       </header>
       {focus === 'design'
         ? <>{journey}{screens}{glossary}{questions}{contextMap}{events}{rules}</>

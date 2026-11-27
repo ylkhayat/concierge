@@ -8,7 +8,7 @@ export function ReviewIn({ setup, onSaved }: { setup: SetupView; onSaved: (s: Se
   const critInstalled = setup.critInstalled
   const save = (reviewIn: 'crit' | 'concierge') => api('/config', { reviewIn }).then(onSaved, () => {})
   return (
-    <div className="space-y-2 rounded-2xl px-3.5 py-3 ring-1 ring-line">
+    <div className="space-y-2 rounded-card px-3.5 py-3 ring-1 ring-line">
       <p className="text-small font-medium text-fg-1">Where you read and answer reviews</p>
       <Pick label="Where you read and answer reviews" value={setup.reviewIn} onChange={save} options={[
         { value: 'concierge', label: 'In Concierge', hint: 'The findings show on the PR page; you keep or drop each, then post. Nothing else to install.' },

@@ -87,12 +87,12 @@ function Reader({ pr, prs, next, onSelect, toast }: { pr: PrView; prs: PrView[];
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-2 ">
-        <button onClick={() => onSelect(undefined)} aria-label="All explanations" className="rounded-xl p-2 text-fg-3 active:bg-hover"><ArrowLeft className="size-5" /></button>
+        <button onClick={() => onSelect(undefined)} aria-label="All explanations" className="rounded-ctl p-2 text-fg-3 active:bg-hover"><ArrowLeft className="size-5" /></button>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-reading font-semibold leading-tight">{pr.title}</span>
           <span className="block truncate font-mono text-meta text-fg-3">{pr.repo}#{pr.number}{pr.stack ? ` · ${pr.stack.findIndex((s) => s.number === pr.number) + 1}/${pr.stack.length}` : ''}</span>
         </span>
-        <a href={pr.url} target="_blank" rel="noreferrer" aria-label="Open on GitHub" className="rounded-xl p-2 text-fg-3 active:bg-hover"><ArrowUpRight className="size-5" /></a>
+        <a href={pr.url} target="_blank" rel="noreferrer" aria-label="Open on GitHub" className="rounded-ctl p-2 text-fg-3 active:bg-hover"><ArrowUpRight className="size-5" /></a>
       </header>
       <div className="min-h-0 flex-1">
         {o === undefined ? <div className="flex h-full items-center justify-center"><LoaderCircle className="size-5 animate-spin text-fg-3" /></div>

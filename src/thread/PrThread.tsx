@@ -156,13 +156,13 @@ export function PrThread(props: PrThreadProps) {
   // conversation out of view. One line stands in for it, and brings it back when you'd rather answer this PR alone
   const viaStack = pane === 'stack' && !!stackNext && covers.includes(pr.id) && ownFor !== pr.id
   const viaStackLine = viaStack ? (
-    <div className="flex items-center gap-2 rounded-xl bg-surface-1 px-3 py-2 text-small ring-1 ring-line">
+    <div className="flex items-center gap-2 rounded-ctl bg-surface-1 px-3 py-2 text-small ring-1 ring-line">
       <Layers className="size-4 shrink-0 text-accent-text" /><span className="min-w-0 flex-1 truncate text-fg-2">This PR’s questions are in the stack’s answer, in the panel</span>
       <button onClick={() => setOwnFor(pr.id)} className="btn-ghost btn-sm shrink-0">Answer only this PR</button>
     </div>
   ) : null
   const stackLine = stackNext && pane !== 'stack' ? (
-    <button onClick={() => setPane('stack')} className="mb-2 flex w-full items-center gap-2 rounded-xl bg-accent/6 px-3 py-2 text-left text-small ring-1 ring-accent/20 transition-colors hover:bg-accent/10">
+    <button onClick={() => setPane('stack')} className="mb-2 flex w-full items-center gap-2 rounded-ctl bg-accent/6 px-3 py-2 text-left text-small ring-1 ring-accent/20 transition-colors hover:bg-accent/10">
       <Layers className="size-4 shrink-0 text-accent-text" /><span className="font-semibold text-fg-1">The stack waits on you</span>
       <span className="min-w-0 flex-1 truncate text-fg-3">{covers.length} PRs, answered at once</span><span className="shrink-0 font-medium text-accent-text">Open</span>
     </button>
@@ -212,7 +212,7 @@ export function PrThread(props: PrThreadProps) {
           : <Description pr={pr} />}
       >
         <div className="flex items-center justify-between gap-3">
-          {live ? <span className="flex items-center gap-1.5 text-meta text-run"><span className="size-1.5 animate-pulse rounded-full bg-run" />live</span> : <span />}
+          {live ? <span className="flex items-center gap-1.5 text-meta text-run-text"><span className="size-1.5 animate-pulse rounded-full bg-run" />live</span> : <span />}
           {count > 0 && <FeedMode />}
         </div>
         {count > 0

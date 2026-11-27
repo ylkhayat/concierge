@@ -48,11 +48,11 @@ function InlineList({ value, options, onPick, empty = 'Nothing to pick' }: { val
   const shown = options.filter((o) => `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()))
   return (
     <div className="space-y-1 animate-[detail-in_160ms_var(--ease-snappy)]">
-      {options.length > 6 && <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus placeholder="Find" className="w-full rounded-lg bg-hover px-2.5 py-1 text-small text-fg-1 outline-none placeholder:text-fg-4 focus:ring-1 focus:ring-accent/40" />}
+      {options.length > 6 && <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus placeholder="Find" className="w-full rounded-ctl bg-hover px-2.5 py-1 text-small text-fg-1 outline-none placeholder:text-fg-4 focus:ring-1 focus:ring-accent/40" />}
       <div className="max-h-[220px] space-y-0.5 overflow-y-auto">
         {shown.map((o) => (
           <button key={o.value} onClick={() => onPick(o.value)} aria-current={o.value === value}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${o.value === value ? 'bg-accent-soft' : 'hover:bg-hover'}`}>
+                  className={`flex w-full items-center gap-2 rounded-ctl px-2 py-1.5 text-left transition-colors ${o.value === value ? 'bg-accent-soft' : 'hover:bg-hover'}`}>
             <span className="flex size-3.5 shrink-0 items-center justify-center">{o.value === value && <Check className="size-3.5 text-accent-text" />}</span>
             <span className="min-w-0 flex-1"><span className="block truncate text-small text-fg-1">{o.label}</span>{o.hint && <span className="block truncate text-micro text-fg-3">{o.hint}</span>}</span>
           </button>
@@ -76,21 +76,21 @@ function Inspector({ p, id, onOps, onMove, onClose }: { p: Plan; id: string; onO
   const name = (x: string) => p.nodes.find((y) => y.id === x)?.title ?? x
   const childKind: Kind = n.kind === 'goal' ? (p.method === 'waterfall' ? 'milestone' : 'epic') : 'ticket'
   const addChild = () => { const nid = `${childKind[0]}${Date.now().toString(36).slice(-4)}`; onOps([{ op: 'add', id: nid, kind: childKind, title: `New ${KIND[childKind].label.toLowerCase()}`, parent: id }]) }
-  const field = 'w-full rounded-lg bg-hover/60 px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-transparent focus:ring-accent/40'
+  const field = 'w-full rounded-ctl bg-hover/60 px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-transparent focus:ring-accent/40'
   return (
-    <aside className="absolute inset-y-3 right-3 z-10 flex w-[320px] max-w-[calc(100%-24px)] animate-[drawer-in_200ms_var(--ease-snappy)] flex-col overflow-hidden rounded-2xl bg-surface-1 shadow-[var(--e3)] ring-1 ring-line">
+    <aside className="absolute inset-y-3 right-3 z-10 flex w-[320px] max-w-[calc(100%-24px)] animate-[drawer-in_200ms_var(--ease-snappy)] flex-col overflow-hidden rounded-card bg-surface-1 shadow-[var(--e3)] ring-1 ring-line">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <span className={`rounded-md px-1.5 py-0.5 text-micro font-semibold ${KIND[n.kind].cls}`}>{KIND[n.kind].label}</span>
-        {n.created && <a href={n.created.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-meta text-ok hover:underline">{n.created.identifier ?? 'In Linear'}<ExternalLink className="size-3" /></a>}
-        <button onClick={onClose} aria-label="Close" className="ml-auto rounded-md p-1 text-fg-3 hov hover:text-fg-1"><X className="size-4" /></button>
+        <span className={`rounded-chip px-1.5 py-0.5 text-micro font-semibold ${KIND[n.kind].cls}`}>{KIND[n.kind].label}</span>
+        {n.created && <a href={n.created.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-meta text-ok-text hover:underline">{n.created.identifier ?? 'In Linear'}<ExternalLink className="size-3" /></a>}
+        <button onClick={onClose} aria-label="Close" className="ml-auto rounded-chip p-1 text-fg-3 hov hover:text-fg-1"><X className="size-4" /></button>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {fixed && (n.created!.url.includes('github.com')
-          ? <p className="rounded-lg bg-hover/60 px-2.5 py-1.5 text-meta text-fg-3">A GitHub issue now: its words change there. Moves above (order, epic, priority, owner, cut) change this plan only.</p>
-          : <p className="rounded-lg bg-hover/60 px-2.5 py-1.5 text-meta text-fg-3">In Linear{n.state ? ` · ${n.state.name}` : ''}{n.assignee ? ` · ${n.assignee}` : ''}. Its words change there; Sync brings them here. Moves above (order, epic, priority, owner, cut) are tried here and written to Linear on Apply.</p>)}
+          ? <p className="rounded-ctl bg-hover/60 px-2.5 py-1.5 text-meta text-fg-3">A GitHub issue now: its words change there. Moves above (order, epic, priority, owner, cut) change this plan only.</p>
+          : <p className="rounded-ctl bg-hover/60 px-2.5 py-1.5 text-meta text-fg-3">In Linear{n.state ? ` · ${n.state.name}` : ''}{n.assignee ? ` · ${n.assignee}` : ''}. Its words change there; Sync brings them here. Moves above (order, epic, priority, owner, cut) are tried here and written to Linear on Apply.</p>)}
         {refineOf(n) && (
-          <div className="flex items-start gap-2 rounded-lg border border-dashed border-wait/50 bg-wait/10 px-2.5 py-1.5 text-meta">
-            <span className="min-w-0 flex-1 text-fg-2"><b className="font-semibold text-wait">Needs refining</b> · {refineOf(n)}</span>
+          <div className="flex items-start gap-2 rounded-ctl border border-dashed border-wait/50 bg-wait/10 px-2.5 py-1.5 text-meta">
+            <span className="min-w-0 flex-1 text-fg-2"><b className="font-semibold text-wait-text">Needs refining</b> · {refineOf(n)}</span>
             {n.refine && !fixed && <button onClick={() => set({ refine: '' })} className="shrink-0 font-medium text-accent-text hover:underline">Settled</button>}
           </div>
         )}
@@ -120,14 +120,14 @@ function Inspector({ p, id, onOps, onMove, onClose }: { p: Plan; id: string; onO
         </div>
       </div>
       <div className="flex items-center gap-2 border-t border-line px-3 py-2">
-        {n.kind !== 'ticket' && <button onClick={addChild} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-small font-medium text-accent-text hover:bg-accent-soft"><Plus className="size-3.5" />{KIND[childKind].label}</button>}
-        {!fixed && <button onClick={() => { onOps([{ op: 'remove', id }]); onClose() }} className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-small text-fg-3 hover:text-fail"><Trash2 className="size-3.5" />Remove{p.nodes.some((x) => x.parent === id) ? ' with what’s under it' : ''}</button>}
+        {n.kind !== 'ticket' && <button onClick={addChild} className="inline-flex items-center gap-1 rounded-ctl px-2 py-1 text-small font-medium text-accent-text hover:bg-accent-soft"><Plus className="size-3.5" />{KIND[childKind].label}</button>}
+        {!fixed && <button onClick={() => { onOps([{ op: 'remove', id }]); onClose() }} className="ml-auto inline-flex items-center gap-1 rounded-ctl px-2 py-1 text-small text-fg-3 hover:text-fail-text"><Trash2 className="size-3.5" />Remove{p.nodes.some((x) => x.parent === id) ? ' with what’s under it' : ''}</button>}
       </div>
     </aside>
   )
 }
 const Dep = ({ label, onRemove }: { label: string; onRemove: () => void }) => (
-  <div className="flex items-center gap-1.5 rounded-lg bg-hover/50 px-2 py-1"><GitBranch className="size-3 shrink-0 text-accent-text" /><span className="min-w-0 flex-1 truncate">{label}</span><button onClick={onRemove} aria-label="Remove" className="text-fg-4 hover:text-fail"><X className="size-3.5" /></button></div>
+  <div className="flex items-center gap-1.5 rounded-ctl bg-hover/50 px-2 py-1"><GitBranch className="size-3 shrink-0 text-accent-text" /><span className="min-w-0 flex-1 truncate">{label}</span><button onClick={onRemove} aria-label="Remove" className="text-fg-4 hover:text-fail-text"><X className="size-3.5" /></button></div>
 )
 
 // --- where the plan stands: brief, shape, slice, fit, Linear -----------------------------------------------------------
@@ -227,7 +227,7 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore
       <p className="label text-fg-4">Not explored yet</p>
       {notes.map((g) => { const ar = areaOf(g), I = ar.icon; return (
         <button key={g.id} onClick={() => onExplore?.(g)} disabled={p.busy} title={`${ar.label}: ${g.why}`}
-                className="group/gap flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-small text-fg-2 transition-colors hover:bg-hover hover:text-fg-1 disabled:opacity-50">
+                className="group/gap flex w-full items-start gap-2 rounded-ctl px-2 py-1.5 text-left text-small text-fg-2 transition-colors hover:bg-hover hover:text-fg-1 disabled:opacity-50">
           <I className="mt-0.5 size-3.5 shrink-0" style={{ color: `oklch(0.7 0.13 ${ar.hue})` }} />
           <span className="min-w-0 flex-1"><span className="block">{g.title}</span><span className="block text-meta text-fg-3">{g.why}</span></span>
           <span className="shrink-0 text-meta font-medium text-accent-text opacity-0 transition-opacity group-hover/gap:opacity-100">Take it on</span>
@@ -254,14 +254,14 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore
         {feed.length > 0 && <ActivityFeed feed={feed} live={!!p.busy} toast={toast} pin={false} after={(a) => a.turn && <TurnChanges id={p.id} turn={a.turn} onSelect={onSelect} onReplay={onReplay} />} />}
         <div className="flex flex-col gap-4 px-4 pb-4">
           {p.busy && <p className="flex items-center gap-2 text-small text-accent-text"><Sparkles className="size-4 animate-pulse" />Drafting on the board…</p>}
-          {p.error && <div className="flex flex-wrap items-center gap-2 rounded-xl bg-fail/10 px-3 py-2 text-small text-fail">
+          {p.error && <div className="flex flex-wrap items-center gap-2 rounded-ctl bg-fail/10 px-3 py-2 text-small text-fail-text">
             <span className="min-w-0 flex-1">{p.error}</span>
             {/* GitHub refused for want of its project permission: sign in again right here, the new sign-in asks for it */}
             {/"project" permission/.test(p.error) && <GithubSignIn onDone={(m, bad) => toast(bad ? m : `${m}. Now Add to a GitHub project`, bad ? 'error' : 'ok')} />}
           </div>}
           <div className="xl:hidden">
           {asks.length > 0 && (
-            <div className="space-y-2.5 rounded-2xl bg-surface-1 p-3 shadow-e1 ring-1 ring-accent/20">
+            <div className="space-y-2.5 rounded-card bg-surface-1 p-3 shadow-e1 ring-1 ring-accent/20">
               <p className="label text-accent-text">{asks.length === 1 ? 'A question' : `${asks.length} questions`}</p>
               {asks.map((a, i) => (
                 <div key={i} className="space-y-1.5">
@@ -282,24 +282,24 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore
         {suggest.length > 0 && !asks.length && (
           <div className="flex flex-wrap gap-1.5" aria-label="What to do next">
             {suggest.map((x) => (
-              <button key={x} onClick={() => send(x)} className="inline-flex max-w-full items-center gap-1.5 rounded-xl bg-surface-1 px-3 py-1.5 text-left text-small text-fg-2 shadow-e1 transition-colors hover:text-fg-1">
+              <button key={x} onClick={() => send(x)} className="inline-flex max-w-full items-center gap-1.5 rounded-ctl bg-surface-1 px-3 py-1.5 text-left text-small text-fg-2 shadow-e1 transition-colors hover:text-fg-1">
                 <Sparkles className="size-3.5 shrink-0 text-accent-text" /><span className="truncate">{x}</span>
               </button>
             ))}
           </div>
         )}
         </div>
-        <div className="flex items-end gap-2 rounded-2xl bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
+        <div className="flex items-end gap-2 rounded-card bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
           <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder={placeholder}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (asks.length) answer(); else send(text) } }}
                     className="max-h-[200px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
-          <button onClick={() => (asks.length ? answer() : send(text))} disabled={(!text.trim() && !answers.length) || p.busy} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent disabled:opacity-40">{p.busy ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</button>
+          <button onClick={() => (asks.length ? answer() : send(text))} disabled={(!text.trim() && !answers.length) || p.busy} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40">{p.busy ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</button>
         </div>
       </div>
         </div>
         <aside aria-label="What to do" className="hidden w-[clamp(240px,26%,380px)] shrink-0 flex-col gap-4 overflow-y-auto border-l border-line px-4 py-3 xl:flex">
           {asks.length > 0 && (
-            <div className="space-y-2.5 rounded-2xl bg-surface-1 p-3 shadow-e1 ring-1 ring-accent/20">
+            <div className="space-y-2.5 rounded-card bg-surface-1 p-3 shadow-e1 ring-1 ring-accent/20">
               <p className="label text-accent-text">{asks.length === 1 ? 'A question' : `${asks.length} questions`}</p>
               {asks.map((a, i) => (
                 <div key={i} className="space-y-1.5">
@@ -315,7 +315,7 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore
             <div className="space-y-1.5" aria-label="What to do next">
               <p className="label text-fg-4">What to do next</p>
               {suggest.map((x) => (
-                <button key={x} onClick={() => send(x)} disabled={p.busy} className="flex w-full items-start gap-2 rounded-xl bg-surface-1 px-3 py-2 text-left text-small text-fg-2 shadow-e1 transition-colors hover:text-fg-1 disabled:opacity-50">
+                <button key={x} onClick={() => send(x)} disabled={p.busy} className="flex w-full items-start gap-2 rounded-ctl bg-surface-1 px-3 py-2 text-left text-small text-fg-2 shadow-e1 transition-colors hover:text-fg-1 disabled:opacity-50">
                   <Sparkles className="mt-0.5 size-3.5 shrink-0 text-accent-text" /><span>{x}</span>
                 </button>
               ))}
@@ -339,7 +339,7 @@ function MoveControls({ p, n, onMove }: { p: Plan; n: PlanNode; onMove: (m: Move
   const cut = n.parent === LATER
   const chip = (on: boolean) => `rounded-full px-2.5 py-1 text-meta transition-colors ${on ? 'bg-accent-soft font-medium text-accent-text ring-1 ring-accent/40' : 'bg-fill text-fg-2 hover:bg-fill-strong hover:text-fg-1'}`
   return (
-    <div className="space-y-2.5 rounded-xl bg-accent-soft/40 p-2.5 ring-1 ring-accent/15">
+    <div className="space-y-2.5 rounded-ctl bg-accent-soft/40 p-2.5 ring-1 ring-accent/15">
       <p className="label text-accent-text">Try a move</p>
       {!cut && at >= 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-meta">
@@ -366,7 +366,7 @@ function MoveControls({ p, n, onMove }: { p: Plan; n: PlanNode; onMove: (m: Move
           {people.map((name) => { const m = p.members?.find((x) => x.name === name); return <button key={name} onClick={() => onMove({ op: 'move', id: n.id, assignee: n.assignee === name ? null : name, assigneeId: n.assignee === name ? null : m?.id ?? null })} className={chip(n.assignee === name)}>{name}</button> })}
         </div>
       )}
-      <button onClick={() => onMove({ op: 'move', id: n.id, cut: !cut })} className={`w-full rounded-lg px-2.5 py-1.5 text-small font-medium transition-colors ${cut ? 'bg-surface-1 text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft' : 'bg-surface-1 text-fg-2 ring-1 ring-line hover:text-fail-text'}`}>
+      <button onClick={() => onMove({ op: 'move', id: n.id, cut: !cut })} className={`w-full rounded-ctl px-2.5 py-1.5 text-small font-medium transition-colors ${cut ? 'bg-surface-1 text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft' : 'bg-surface-1 text-fg-2 ring-1 ring-line hover:text-fail-text'}`}>
         {cut ? 'Restore it to the plan' : 'Cut it to Later'}
       </button>
     </div>
@@ -406,7 +406,7 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
       {plays.map((x) => (
         <span key={x.id} className="relative inline-flex">
           <button title={x.hint} onMouseEnter={() => setHover(x.id)} onMouseLeave={() => setHover(undefined)} onFocus={() => setHover(x.id)} onBlur={() => setHover(undefined)} onClick={() => onTry(x.ops)} className={chip}><Zap className="size-3" />{x.label}</button>
-          {shown?.id === x.id && <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 whitespace-nowrap rounded-lg bg-surface-1 px-2.5 py-1.5 text-meta text-fg-2 shadow-[var(--e3)] ring-1 ring-line animate-[detail-in_160ms_var(--ease-out)]">{preview(shown.ops)}</span>}
+          {shown?.id === x.id && <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 whitespace-nowrap rounded-ctl bg-surface-1 px-2.5 py-1.5 text-meta text-fg-2 shadow-[var(--e3)] ring-1 ring-line animate-[detail-in_160ms_var(--ease-out)]">{preview(shown.ops)}</span>}
         </span>
       ))}
       {ASK.map(([id, label, text]) => <button key={id} disabled={busy} title="The planner proposes it as a scenario to try" onClick={() => onAsk(text)} className={chip}><Sparkles className="size-3" />{label}</button>)}
@@ -473,7 +473,7 @@ function Readiness({ whatIf, company, checksOff, org, teamKey, people, pace, poi
           ) : (
             <ul className="space-y-1">{cov.filter((x) => x.ob.area === open).map(({ ob, by }) => (
               <li key={ob.id} className="flex items-start gap-2 text-small">
-                {by ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok" /> : <span className="mt-1 size-3 shrink-0 rounded-full border border-dashed border-wait" />}
+                {by ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok-text" /> : <span className="mt-1 size-3 shrink-0 rounded-full border border-dashed border-wait" />}
                 <span className="min-w-0 flex-1"><span className="block font-medium text-fg-1">{ob.title}</span><span className="block text-meta text-fg-3">{by ? <>Covered by <button onClick={() => onSelect(by.id)} className="text-accent-text hover:underline">{by.created?.identifier ?? by.title}</button></> : ob.why}</span></span>
                 {!by && <span className="inline-flex shrink-0 gap-1"><button onClick={() => onAdd(ob)} className="btn-quiet btn-sm">Add a ticket</button><button onClick={() => onAsk(`Cover "${ob.title}" (${ob.id}) in the plan: ${ob.why}. Add the tickets it needs where they belong, mark them covers:["${ob.id}"], estimate them, and say in a sentence what you added.`)} className="btn-quiet btn-sm">Ask the planner</button></span>}
               </li>
@@ -548,7 +548,7 @@ function History({ p, onBack }: { p: Plan; onBack: (undo: boolean) => unknown })
     addEventListener('keydown', key); return () => removeEventListener('keydown', key)
   }, [])
   const off = p.busy || p.creating
-  const btn = 'rounded-lg p-1.5 text-fg-3 transition-colors hover:bg-hover hover:text-fg-1 disabled:pointer-events-none disabled:opacity-30'
+  const btn = 'rounded-ctl p-1.5 text-fg-3 transition-colors hover:bg-hover hover:text-fg-1 disabled:pointer-events-none disabled:opacity-30'
   return (
     <span className="inline-flex items-center">
       <button disabled={off || !p.undo} onClick={() => onBack(true)} title={`Undo (⌘Z)${p.undo ? ` · ${p.undo} step${p.undo === 1 ? '' : 's'}` : ''}`} aria-label="Undo" className={btn}><Undo2 className="size-4" /></button>
@@ -588,7 +588,7 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet, gh }: { p: Plan; w
         {i.writes.length > 0 && <span className="text-fg-2">{i.writes.length} Linear change{i.writes.length === 1 ? '' : 's'}</span>}
         <button onClick={() => setOpen(!open)} aria-expanded={open} className="text-meta font-medium text-accent-text hover:underline">{open ? 'Hide details' : 'Details'}</button>
         <span className="ml-auto inline-flex items-center gap-1.5">
-          <button onClick={() => void onSet([])} className="rounded-lg px-2 py-1 text-meta font-medium text-fg-2 hover:bg-hover hover:text-fail-text">Discard</button>
+          <button onClick={() => void onSet([])} className="rounded-ctl px-2 py-1 text-meta font-medium text-fg-2 hover:bg-hover hover:text-fail-text">Discard</button>
           <button disabled={busy || p.busy} title={p.busy ? 'It is still drafting' : undefined} onClick={() => (i.writes.length ? arm('apply', apply) : apply())} className="btn-primary btn-sm relative inline-flex items-center gap-1.5 overflow-hidden">
             {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
             {armed === 'apply' ? <><ArmLabel>{`Confirm: write ${i.writes.length} to Linear`}</ArmLabel><ArmBar on="color" /></> : 'Apply'}
@@ -741,15 +741,15 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
                className="min-w-[140px] flex-1 bg-transparent text-title font-semibold tracking-tight text-fg-1 outline-none" />
         <History p={p} onBack={back} />
         <StageBar stages={stages} onStep={step} />
-        {p.creating ? <span className="inline-flex items-center gap-1.5 text-small text-run"><LoaderCircle className="size-3.5 animate-spin" />Creating {made}/{p.nodes.length}…</span>
+        {p.creating ? <span className="inline-flex items-center gap-1.5 text-small text-run-text"><LoaderCircle className="size-3.5 animate-spin" />Creating {made}/{p.nodes.length}…</span>
           : made === p.nodes.length && made > 0 ? (gh && !p.ghProject
             ? <button onClick={() => void api(`${path}/github-project`, {}).then((r: Plan) => remember(path, r), (e: Error) => toast(e.message, 'error'))} disabled={p.busy}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40"><Flag className="size-3.5" />Add to a GitHub project</button>
-            : p.ghProject ? <a href={p.ghProject.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-small font-medium text-ok hover:underline"><Check className="size-4" />In its GitHub project<ExternalLink className="size-3" /></a>
-            : <span className="inline-flex items-center gap-1 text-small font-medium text-ok"><Check className="size-4" />{gh ? 'On GitHub' : 'In Linear'}</span>)
+                      className="inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40"><Flag className="size-3.5" />Add to a GitHub project</button>
+            : p.ghProject ? <a href={p.ghProject.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-small font-medium text-ok-text hover:underline"><Check className="size-4" />In its GitHub project<ExternalLink className="size-3" /></a>
+            : <span className="inline-flex items-center gap-1 text-small font-medium text-ok-text"><Check className="size-4" />{gh ? 'On GitHub' : 'In Linear'}</span>)
           : <button disabled={!items.length || p.busy} title={gh ? `As issues in ${checks.data?.repo ?? 'its repository'}` : !p.team && !p.project ? 'Pick the Linear team first' : undefined}
                     onClick={() => (gh || p.team ? arm('create', create) : (setTeamsOn(true), setCfg('team')))}
-                    className="relative inline-flex items-center gap-1.5 overflow-hidden rounded-lg px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40">
+                    className="relative inline-flex items-center gap-1.5 overflow-hidden rounded-ctl px-3 py-1.5 text-small font-semibold text-fg-1 ring-1 ring-line transition-colors hover:bg-hover disabled:opacity-40">
               <Flag className="size-3.5" />{armed === 'create' ? <><ArmLabel>{`Confirm: ${p.nodes.length - made} ${gh ? 'on GitHub' : 'in Linear'}`}</ArmLabel><ArmBar on="plain" /></> : made ? `Create the other ${p.nodes.length - made}` : `Create ${gh ? 'on' : 'in'} ${where}`}
             </button>}
       </header>
@@ -853,7 +853,7 @@ function PlanBar({ p, set, toast, say, refining, level, onLevel, legend, onLegen
         {pr && (
           <span className="ml-auto inline-flex items-center gap-2 text-meta text-fg-3">
             <a href={pr.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-fg-2 hover:text-fg-1" title={pr.lead ? 'You lead it: the plan may propose a new vision, applied when you accept it' : `Led by ${pr.leadName ?? 'someone else'}: the plan only adds tickets to it`}>{pr.lead ? 'You lead it' : 'Adds tickets only'}<ExternalLink className="size-3" /></a>
-            <button onClick={sync} disabled={syncing} title={`Synced ${new Date(pr.syncedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-fg-2 hover:bg-hover disabled:opacity-50">{syncing ? <LoaderCircle className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}Sync</button>
+            <button onClick={sync} disabled={syncing} title={`Synced ${new Date(pr.syncedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`} className="inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 font-medium text-fg-2 hover:bg-hover disabled:opacity-50">{syncing ? <LoaderCircle className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}Sync</button>
           </span>
         )}
       </div>
@@ -883,12 +883,12 @@ function VisionCard({ p, set, toast }: { p: Plan; set: SetPlan; toast: Toast }) 
   const { armed, arm } = useArm()
   const apply = () => api(`/plans/${p.id}/vision`, {}).then((r: Plan) => { remember(`/plans/${p.id}`, r); toast('The project’s vision is updated in Linear') }, (e: Error) => toast(e.message, 'error'))
   return (
-    <div className="m-3 mb-0 space-y-2 rounded-2xl bg-accent-soft/60 p-3 ring-1 ring-accent/20">
+    <div className="m-3 mb-0 space-y-2 rounded-card bg-accent-soft/60 p-3 ring-1 ring-accent/20">
       <p className="text-small font-semibold text-fg-1">A new vision for {p.project?.name ?? 'the project'}</p>
-      <div className="max-h-40 overflow-y-auto rounded-lg bg-surface-1 px-3 py-2"><Md text={p.vision!} className="!text-small" /></div>
+      <div className="max-h-40 overflow-y-auto rounded-ctl bg-surface-1 px-3 py-2"><Md text={p.vision!} className="!text-small" /></div>
       <div className="flex items-center gap-2">
         {p.project?.lead && <button onClick={() => arm('vision', apply)} className="relative overflow-hidden btn-primary btn-sm">{armed === 'vision' ? <><ArmLabel>Confirm: update it in Linear</ArmLabel><ArmBar on="color" /></> : 'Update it in Linear'}</button>}
-        <button onClick={() => set({ vision: '' })} className="rounded-lg px-2.5 py-1 text-small text-fg-3 hover:text-fg-1">Discard</button>
+        <button onClick={() => set({ vision: '' })} className="rounded-ctl px-2.5 py-1 text-small text-fg-3 hover:text-fg-1">Discard</button>
       </div>
     </div>
   )
@@ -914,14 +914,14 @@ function NewPlan({ onMade, toast }: { onMade: (id: string) => void; toast: Toast
   }
   // for the application in focus, its organization (its compliance profile); none in focus: decided by the server (yours)
   const pitch = () => start('new', { title, brief, method, appetite, org: new URLSearchParams(location.search).get('focus')?.split('/')[0] || undefined }, undefined, 'Break this down.')
-  const field = 'w-full rounded-xl bg-surface-1 px-3 py-2 text-body text-fg-1 outline-none ring-1 ring-line transition-shadow placeholder:text-fg-4 focus:ring-2 focus:ring-accent/40'
+  const field = 'w-full rounded-ctl bg-surface-1 px-3 py-2 text-body text-fg-1 outline-none ring-1 ring-line transition-shadow placeholder:text-fg-4 focus:ring-2 focus:ring-accent/40'
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[620px] px-5 py-10">
           <div className="space-y-4 card p-5">
             <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-text"><Sparkles className="size-5" /></span>
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-ctl bg-accent-soft text-accent-text"><Sparkles className="size-5" /></span>
               <div><h2 className="text-title font-semibold tracking-tight text-fg-1">Pitch a new project</h2>
                 <p className="text-small text-fg-3">Write the brief. An agent breaks it down into a map while you watch; you shape it together, and it goes to Linear when you say so.</p></div>
             </div>
@@ -978,11 +978,11 @@ function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProjec
           </div>
         )}
         <p className="text-meta text-fg-3">{q.data?.source === 'github' ? 'Its description comes in as the plan’s context.' : 'Its vision, tickets and timeline come in. If you lead it, the plan may reshape its vision; otherwise it only adds tickets.'}</p>
-        <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`Find a project in ${where}`} className="w-full rounded-lg bg-hover px-2.5 py-1.5 text-small text-fg-1 outline-none placeholder:text-fg-4 focus:ring-1 focus:ring-accent/40" />
+        <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`Find a project in ${where}`} className="w-full rounded-ctl bg-hover px-2.5 py-1.5 text-small text-fg-1 outline-none placeholder:text-fg-4 focus:ring-1 focus:ring-accent/40" />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {q.isLoading ? <div className="px-2"><Skeleton rows={7} /></div>
-          : q.error ? <p className="px-3 py-2 text-small text-fail">{(q.error as Error).message}</p>
+          : q.error ? <p className="px-3 py-2 text-small text-fail-text">{(q.error as Error).message}</p>
           : !list.length ? <p className="px-3 py-2 text-small text-fg-3">{find ? 'No project matches.' : `No open projects in ${where}${o ? ` for ${o.owner}` : ''}.`}</p>
           : list.map((x, i) => (
             <div key={x.id} className="animate-[rise-in_220ms_var(--ease-snappy)_both]" style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}>
@@ -998,7 +998,7 @@ function ProjectList({ busy, onPlan }: { busy?: string; onPlan: (x: LinearProjec
               {open === x.id && (
                 <div className="mx-2 mb-2 mt-1 space-y-2 animate-[detail-in_160ms_var(--ease-snappy)]">
                   <textarea value={ask} onChange={(e) => setAsk(e.target.value)} rows={3} placeholder="What to add (optional): leave empty and it finds what is missing to reach the vision"
-                            className="w-full resize-none rounded-lg bg-surface-1 px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/40" />
+                            className="w-full resize-none rounded-ctl bg-surface-1 px-2.5 py-1.5 text-small text-fg-1 outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/40" />
                   <button onClick={() => onPlan(x, ask, q.data?.source ?? 'linear', o?.owner)} disabled={!!busy} className="inline-flex w-full items-center justify-center gap-1.5 btn-primary disabled:opacity-50">
                     {busy === x.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <ArrowRight className="size-3.5" />}{q.data?.source === 'github' ? 'Plan for it' : `Plan into ${x.mine ? 'your project' : 'it: tickets only'}`}
                   </button>
@@ -1019,10 +1019,10 @@ export function PlansWorkspace({ toast }: { toast: Toast }) {
   return (
     <div className="flex h-full min-h-0">
       <nav aria-label="Plans" className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex">
-        <button onClick={() => setOpen('new')} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-small font-medium ${current === 'new' ? 'sel' : 'text-accent-text hover:bg-hover'}`}><Plus className="size-4" />New plan</button>
+        <button onClick={() => setOpen('new')} className={`flex items-center gap-2 rounded-ctl px-2.5 py-2 text-small font-medium ${current === 'new' ? 'sel' : 'text-accent-text hover:bg-hover'}`}><Plus className="size-4" />New plan</button>
         {plans.map((x) => (
-          <button key={x.id} onClick={() => setOpen(x.id)} className={`rounded-lg px-2.5 py-2 text-left ${current === x.id ? 'sel' : 'hover:bg-hover'}`}>
-            <span className="flex items-center gap-1.5 text-small font-medium text-fg-1">{(x.busy || x.creating) && <LoaderCircle className="size-3 animate-spin text-run" />}<span className="truncate">{x.title}</span></span>
+          <button key={x.id} onClick={() => setOpen(x.id)} className={`rounded-ctl px-2.5 py-2 text-left ${current === x.id ? 'sel' : 'hover:bg-hover'}`}>
+            <span className="flex items-center gap-1.5 text-small font-medium text-fg-1">{(x.busy || x.creating) && <LoaderCircle className="size-3 animate-spin text-run-text" />}<span className="truncate">{x.title}</span></span>
             <span className="block text-micro text-fg-3">{x.count} items{x.made ? ` · ${x.made} in Linear` : ''} · {x.method}</span>
           </button>
         ))}

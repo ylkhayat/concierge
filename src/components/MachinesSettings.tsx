@@ -50,11 +50,11 @@ function Name({ id }: { id: string }) {
   if (draft !== undefined) return (
     <input autoFocus value={draft} maxLength={40} placeholder={id} aria-label={`Name for ${id}`} onChange={(e) => setDraft(e.target.value)} onBlur={save}
            onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setDraft(undefined) }}
-           className="h-7 w-48 rounded-md bg-fill px-2 text-body font-semibold text-fg-1 outline-none ring-1 ring-accent/40" />
+           className="h-7 w-48 rounded-chip bg-fill px-2 text-body font-semibold text-fg-1 outline-none ring-1 ring-accent/40" />
   )
   return (
     <button type="button" onClick={() => setDraft(called(id))} title={called(id) === id ? 'Name this machine' : `${id}, named by you: click to rename`}
-            className="group inline-flex items-center gap-1.5 rounded-md text-body font-semibold text-fg-1 hover:text-accent-text">
+            className="group inline-flex items-center gap-1.5 rounded-chip text-body font-semibold text-fg-1 hover:text-accent-text">
       {called(id)}<Pencil className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />
       {err && <span className="text-meta font-normal text-fail-text">{err}</span>}
     </button>
@@ -112,7 +112,7 @@ export function MachinesSettings() {
   const act = (p: Promise<unknown>) => p.then(() => { setErr(undefined); return read() }, (e: Error) => setErr(e.message))
 
   if (!v) return fail
-    ? <p className="rounded-xl px-3.5 py-3 text-small text-fail-text ring-1 ring-line">Couldn&apos;t read the machines: {fail}</p>
+    ? <p className="rounded-ctl px-3.5 py-3 text-small text-fail-text ring-1 ring-line">Couldn&apos;t read the machines: {fail}</p>
     : (
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4" aria-busy="true" aria-label="Loading">
         {[0, 1, 2, 3].map((i) => <div key={i} className="h-[86px] animate-pulse card" style={{ animationDelay: `${i * 90}ms` }} />)}
@@ -139,7 +139,7 @@ export function MachinesSettings() {
         <>
           <Tiles m={all} />
           {v.several && (
-            <ul className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
+            <ul className="divide-y divide-line overflow-hidden rounded-ctl ring-1 ring-line">
               {ms.map((x) => (
                 <li key={x.name}>
                   <button onClick={() => setTab(x.name)} className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-hover">
@@ -175,7 +175,7 @@ export function MachinesSettings() {
             </span>
           </div>
           <Tiles m={m} />
-          <div className="flex flex-wrap items-center gap-3 rounded-xl px-3.5 py-2.5 ring-1 ring-line">
+          <div className="flex flex-wrap items-center gap-3 rounded-ctl px-3.5 py-2.5 ring-1 ring-line">
             <Laptop className="size-4 text-fg-3" />
             <div className="min-w-0 flex-1">
               <div className="text-small font-medium text-fg-1">Work machine</div>
@@ -190,7 +190,7 @@ export function MachinesSettings() {
             ) : <button onClick={() => void act(api('/machines', { workMachine: m.name }))} className={quiet}>Make it my work machine</button>}
           </div>
           {log?.name === m.name && (
-            <pre className="max-h-80 overflow-auto rounded-xl bg-zinc-950 p-3 font-mono text-micro leading-relaxed text-zinc-200">
+            <pre className="max-h-80 overflow-auto rounded-ctl bg-zinc-950 p-3 font-mono text-micro leading-relaxed text-zinc-200">
               {log.error ?? (log.lines ? (log.lines.length ? log.lines.join('\n') : 'Nothing logged since it started.') : 'Loading…')}
             </pre>
           )}
@@ -223,10 +223,10 @@ function SharedKeys() {
         <h3 className="text-small font-semibold text-fg-1">Shared keys</h3>
         <p className="text-meta text-fg-3">Kept once for every machine. Never shown, and removed from logs.</p>
       </header>
-      <ul className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
+      <ul className="divide-y divide-line overflow-hidden rounded-ctl ring-1 ring-line">
         {v.map((k) => (
           <li key={k.name} className="flex flex-wrap items-center gap-3 px-3.5 py-2.5">
-            <ShieldCheck className={`size-4 ${k.shared ? 'text-ok' : 'text-fg-4'}`} />
+            <ShieldCheck className={`size-4 ${k.shared ? 'text-ok-text' : 'text-fg-4'}`} />
             <div className="min-w-0 flex-1">
               <div className="text-small font-medium text-fg-1">{k.label}</div>
               <div className={`text-meta ${msg?.name === k.name && msg.bad ? 'text-fail-text' : 'text-fg-3'}`}>
@@ -236,7 +236,7 @@ function SharedKeys() {
             {open === k.name ? (
               <span className="flex items-center gap-1.5">
                 <input type="password" autoFocus autoComplete="off" spellCheck={false} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New value…" aria-label={`${k.label}: new value`}
-                       className="w-56 rounded-lg bg-surface-1 px-2.5 py-1 font-mono text-small ring-1 ring-line outline-none focus:ring-2 focus:ring-accent/50" />
+                       className="w-56 rounded-ctl bg-surface-1 px-2.5 py-1 font-mono text-small ring-1 ring-line outline-none focus:ring-2 focus:ring-accent/50" />
                 <button disabled={!draft.trim()} onClick={() => void put(k.name)} className={quiet}>Save</button>
                 <button onClick={() => { setOpen(undefined); setDraft('') }} className={quiet}>Cancel</button>
               </span>
@@ -265,6 +265,6 @@ export function GithubSignIn({ onDone }: { onDone: (text: string, bad?: boolean)
     }, 2000)
     return () => clearInterval(t)
   }, [code?.code]) // eslint-disable-line react-hooks/exhaustive-deps
-  if (code) return <a href={code.url} target="_blank" rel="noreferrer" title="Open it and enter this code" className="rounded-md bg-fill px-2 py-0.5 font-mono text-small font-semibold tracking-wider text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}</a>
+  if (code) return <a href={code.url} target="_blank" rel="noreferrer" title="Open it and enter this code" className="rounded-chip bg-fill px-2 py-0.5 font-mono text-small font-semibold tracking-wider text-fg-1 ring-1 ring-line hover:ring-accent/50">{code.code}</a>
   return <button onClick={() => void api('/github/login', {}).then(setCode, (e: Error) => onDone(e.message, true))} className={quiet}>Sign in</button>
 }

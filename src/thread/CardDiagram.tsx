@@ -58,7 +58,7 @@ export function CardDiagram({ d }: { d: Diagram }) {
               <span {...hover(i)}
                     className={`${node} flex min-w-0 items-center gap-1.5 ${x.kind === 'chosen' ? 'bg-[color-mix(in_oklch,var(--lane)_14%,transparent)] font-medium text-fg-1 ring-1 ring-[color-mix(in_oklch,var(--lane)_45%,transparent)]'
                       : x.kind === 'aside' ? 'border border-dashed border-line-strong text-fg-3' : 'text-fg-2 ring-1 ring-line'} ${i === at && x.kind !== 'chosen' ? 'bg-hover text-fg-1' : ''}`}>
-                {x.kind === 'chosen' ? <Check className="size-3 shrink-0 text-[var(--lane)]" /> : x.kind === 'aside' ? <X className="size-3 shrink-0 text-fg-4" /> : <CircleDashed className="size-3 shrink-0 text-wait" />}
+                {x.kind === 'chosen' ? <Check className="size-3 shrink-0 text-[var(--lane)]" /> : x.kind === 'aside' ? <X className="size-3 shrink-0 text-fg-4" /> : <CircleDashed className="size-3 shrink-0 text-wait-text" />}
                 <span className={`truncate ${x.kind === 'aside' ? 'line-through decoration-fg-4/50' : ''}`}>{x.label}</span>
               </span>
             </li>

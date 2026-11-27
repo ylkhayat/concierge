@@ -10,7 +10,7 @@ import { Bookmark, History, Moon,
   Users, GitMerge,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { api, prefetchFeed, type TicketView } from '../lib.ts'
+import { api, prefetchFeed, type TicketView, smooth } from '../lib.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { Missing } from './Missing.tsx'
 import { ciLabel, ciTone } from './PrStack.tsx'
@@ -106,8 +106,8 @@ export const orderedTickets = (tickets: TicketView[], q: string): TicketView[] =
 
 export const PRIORITY: Record<number, { icon: LucideIcon; label: string; tone: string }> = {
   0: { icon: Signal, label: 'No priority', tone: 'text-fg-4' },
-  1: { icon: AlertTriangle, label: 'Urgent', tone: 'text-fail' },
-  2: { icon: SignalHigh, label: 'High', tone: 'text-wait' },
+  1: { icon: AlertTriangle, label: 'Urgent', tone: 'text-fail-text' },
+  2: { icon: SignalHigh, label: 'High', tone: 'text-wait-text' },
   3: { icon: SignalMedium, label: 'Medium', tone: 'text-fg-3' },
   4: { icon: SignalLow, label: 'Low', tone: 'text-fg-3' },
 }
@@ -177,14 +177,14 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
   const inSight = useRef(false), sawIt = useRef(false)
   const sight = () => { const r = activeRef.current?.getBoundingClientRect(), b = nav.current?.getBoundingClientRect(); return !!r && !!b && r.bottom > b.top && r.top < b.bottom }
   useLayoutEffect(() => { sawIt.current = inSight.current; inSight.current = sight() })
-  useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [selected])
+  useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', behavior: smooth() }) }, [selected])
   useEffect(() => {
     // same ticket, another section: a sync or a run moved it; show where it went
     const [id, g] = was.current.split('|')
     was.current = `${selected}|${openTier ?? ''}`
     if (id !== selected || !g || !openTier || g === openTier) return
     setMoved(true)
-    if (sawIt.current) activeRef.current?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    if (sawIt.current) activeRef.current?.scrollIntoView({ block: 'nearest', behavior: smooth() })
     const t = setTimeout(() => setMoved(false), 1600)
     return () => { clearTimeout(t); setMoved(false) }
   }, [selected, openTier])
@@ -279,20 +279,20 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
   return (
     <div className="flex h-full flex-col">
       <div className="px-3 py-2.5">
-        <label className="group flex items-center gap-2 rounded-xl bg-surface-1 px-3 py-1.5 text-body shadow-sm ring-1 ring-line transition-all duration-200 hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60">
+        <label className="group flex items-center gap-2 rounded-ctl bg-surface-1 px-3 py-1.5 text-body shadow-sm ring-1 ring-line transition-all duration-200 hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60">
           <Search className="size-4 text-fg-3 transition-colors group-focus-within:text-accent" aria-hidden />
           <input data-filter value={query} onChange={(e) => onQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { if (query) { e.stopPropagation(); onQuery('') } else e.currentTarget.blur() } }} placeholder="Filter tickets" className="w-full bg-transparent outline-none placeholder:text-fg-3" />
           {query
-            ? <button onClick={() => onQuery('')} className="rounded-md p-0.5 text-fg-3 transition-colors hov hover:text-fg-2" aria-label="Clear filter"><X className="size-3.5" /></button>
-            : <kbd className="rounded-md border border-line-strong px-1.5 font-mono text-micro text-fg-3">/</kbd>}
+            ? <button onClick={() => onQuery('')} className="rounded-chip p-0.5 text-fg-3 transition-colors hov hover:text-fg-2" aria-label="Clear filter"><X className="size-3.5" /></button>
+            : <kbd className="rounded-chip border border-line-strong px-1.5 font-mono text-micro text-fg-3">/</kbd>}
         </label>
       </div>
 
       <nav ref={nav} onScroll={() => { inSight.current = sight() }} className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-4" aria-label="Tickets">
         {list.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-6 py-20 text-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-fill"><Inbox className="size-6 text-fg-3" aria-hidden /></span>
-            <p className="text-sm text-fg-3">{query ? 'Nothing matches that filter.' : 'No tickets assigned to you.'}</p>
+            <span className="flex size-12 items-center justify-center rounded-card bg-fill"><Inbox className="size-6 text-fg-3" aria-hidden /></span>
+            <p className="text-reading text-fg-3">{query ? 'Nothing matches that filter.' : 'No tickets assigned to you.'}</p>
           </div>
         )}
         {groups.map(({ tier: x, units }) => {
@@ -300,10 +300,10 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
           // the first section is always there, so the top of the list always answers "anything for me?"
           if (!units.length) return you && list.length && !query
             ? elsewhere > 0
-              ? <button key={x.id} onClick={onAllApps} className="mb-2 mt-1 flex w-full items-center gap-2 rounded-xl bg-wait/7 px-2.5 py-2 text-left text-small font-medium text-wait-text ring-1 ring-wait/25 transition-colors hover:bg-wait/12">
+              ? <button key={x.id} onClick={onAllApps} className="mb-2 mt-1 flex w-full items-center gap-2 rounded-ctl bg-wait/7 px-2.5 py-2 text-left text-small font-medium text-wait-text ring-1 ring-wait/25 transition-colors hover:bg-wait/12">
                   <MessageCircleQuestion className="size-3.5 shrink-0 text-wait-text" />Nothing here, but {elsewhere} wait{elsewhere === 1 ? 's' : ''} on you in other apps<span className="ml-auto shrink-0 text-meta text-wait-text/80">Show all</span>
                 </button>
-              : <p key={x.id} className="mb-2 mt-1 flex items-center gap-2 px-2.5 py-2 text-small text-fg-3"><CircleCheck className="size-3.5 text-ok" />Nothing waits on you</p>
+              : <p key={x.id} className="mb-2 mt-1 flex items-center gap-2 px-2.5 py-2 text-small text-fg-3"><CircleCheck className="size-3.5 text-ok-text" />Nothing waits on you</p>
             : null
           const n = x.id === 'recent' || x.id === 'pinned' || x.id === 'aside' ? units.length : units.flat().filter((t) => inTier(t, x)).length
           const shut = folded.includes(x.id) !== (x.id === 'later' || x.id === 'handed' || x.id === 'aside') && !query
@@ -351,7 +351,7 @@ export function StackEditor({ shape, onShape, planned, picked, repoOf, oneRepo, 
     const at = lane == null ? -1 : shape.lanes[lane].indexOf(id), on = sel === id
     return (
       <span key={id} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', id)} onClick={(e) => { e.stopPropagation(); setSel(on ? undefined : id) }}
-            className={`inline-flex cursor-grab items-center gap-0.5 rounded-md px-1.5 py-px font-mono text-meta transition-shadow active:cursor-grabbing ${on ? 'bg-accent-soft text-accent-text ring-2 ring-accent/60' : 'bg-surface-1 text-fg-1 ring-1 ring-line-strong hover:ring-accent/40'}`}>
+            className={`inline-flex cursor-grab items-center gap-0.5 rounded-chip px-1.5 py-px font-mono text-meta transition-shadow active:cursor-grabbing ${on ? 'bg-accent-soft text-accent-text ring-2 ring-accent/60' : 'bg-surface-1 text-fg-1 ring-1 ring-line-strong hover:ring-accent/40'}`}>
         {on && lane != null && at > 0 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, -1)) }} aria-label={`${id} one place down`} className="px-0.5 text-fg-3 hover:text-fg-1">‹</button>}
         {id}
         {on && lane != null && at < shape.lanes[lane].length - 1 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, 1)) }} aria-label={`${id} one place up`} className="px-0.5 text-fg-3 hover:text-fg-1">›</button>}
@@ -361,30 +361,30 @@ export function StackEditor({ shape, onShape, planned, picked, repoOf, oneRepo, 
   // a lane is a target while a ticket is picked (and it fits there)
   const target = (ok: boolean) => (sel && ok ? 'cursor-pointer ring-1 ring-dashed ring-accent/50 hover:bg-accent/10' : '')
   const preset = (label: string, s: Shape, show = true) => show && (
-    <button key={label} onClick={() => onShape(s)} className={`rounded-md px-2 py-0.5 text-meta font-medium ${same(shape, s) ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{label}</button>
+    <button key={label} onClick={() => onShape(s)} className={`rounded-chip px-2 py-0.5 text-meta font-medium ${same(shape, s) ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}>{label}</button>
   )
   const lanes = shape.lanes.length
   return (
-    <div className="mb-2 space-y-2 rounded-xl bg-accent/6 p-2.5 ring-1 ring-accent/15" onClick={() => setSel(undefined)}>
+    <div className="mb-2 space-y-2 rounded-ctl bg-accent/6 p-2.5 ring-1 ring-accent/15" onClick={() => setSel(undefined)}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <p className="text-small font-semibold text-accent-text">{lanes ? `${lanes} stack${lanes === 1 ? '' : 's'}` : 'No stacks'}{shape.alone.length > 0 && lanes > 0 && <span className="font-normal text-fg-3"> · {shape.alone.length} on their own</span>}</p>
-        <div className="ml-auto inline-flex rounded-lg bg-hover p-0.5">
+        <div className="ml-auto inline-flex rounded-ctl bg-hover p-0.5">
           {preset('As planned', planned)}{preset('One stack', oneStack(picked), oneRepo)}{preset('No stacks', noStacks(picked))}
         </div>
       </div>
       <p className="text-meta leading-snug text-fg-3">With a plan, every ticket is built by its own agent, all at once. A stack only opens its PRs together, bottom first, once all of it is ready.</p>
       {shape.lanes.map((l, i) => (
-        <div key={i} onClick={(e) => { e.stopPropagation(); go(i) }} {...drop(i)} className={`rounded-lg px-2 py-1.5 ${target(!!sel && fits(sel, l) && !l.includes(sel))}`}>
+        <div key={i} onClick={(e) => { e.stopPropagation(); go(i) }} {...drop(i)} className={`rounded-ctl px-2 py-1.5 ${target(!!sel && fits(sel, l) && !l.includes(sel))}`}>
           <p className="mb-1 flex items-center gap-1.5 text-micro font-semibold uppercase tracking-label text-fg-4">Stack {i + 1}<span className="font-normal normal-case tracking-normal">· {repoOf(l[0])?.split('/').pop()} · bottom first</span></p>
           <div className="flex flex-wrap items-center gap-1">{l.map((id, j) => <span key={id} className="flex items-center gap-1">{j > 0 && <span className="text-fg-4">→</span>}{chip(id, i)}</span>)}</div>
         </div>
       ))}
-      <div onClick={(e) => { e.stopPropagation(); go('alone') }} {...drop('alone')} className={`rounded-lg px-2 py-1.5 ${target(!!sel && shape.lanes.some((l) => l.includes(sel)))}`}>
+      <div onClick={(e) => { e.stopPropagation(); go('alone') }} {...drop('alone')} className={`rounded-ctl px-2 py-1.5 ${target(!!sel && shape.lanes.some((l) => l.includes(sel)))}`}>
         <p className="mb-1 text-micro font-semibold uppercase tracking-label text-fg-4">On their own</p>
         <div className="flex flex-wrap gap-1">{shape.alone.map((id) => chip(id))}{!shape.alone.length && <span className="text-meta text-fg-4">None: every ticket is in a stack</span>}</div>
       </div>
       <button onClick={(e) => { e.stopPropagation(); go('new') }} {...drop('new')} disabled={!sel}
-              className="w-full rounded-lg border border-dashed border-line-strong px-2 py-1 text-meta text-fg-3 transition-colors enabled:hover:border-accent/50 enabled:hover:text-accent-text disabled:opacity-60">
+              className="w-full rounded-ctl border border-dashed border-line-strong px-2 py-1 text-meta text-fg-3 transition-colors enabled:hover:border-accent/50 enabled:hover:text-accent-text disabled:opacity-60">
         {sel ? `New stack with ${sel}` : 'Pick a ticket, then a stack, a new one, or "on their own"'}
       </button>
       {prep && (
@@ -440,14 +440,14 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
           )}
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={note ? 3 : 1}
                     placeholder={picked.length > 1 ? `Direction for these ${picked.length} (optional): the approach, what to keep in mind…` : `Direction for ${picked[0]} (optional)…`}
-                    className="mb-2 w-full resize-y rounded-xl bg-surface-1 px-2.5 py-1.5 text-small ring-1 ring-line-strong outline-none placeholder:text-fg-3 focus:ring-accent" />
+                    className="mb-2 w-full resize-y rounded-ctl bg-surface-1 px-2.5 py-1.5 text-small ring-1 ring-line-strong outline-none placeholder:text-fg-3 focus:ring-accent" />
           <div className={`flex items-center gap-2 ${missing.length ? 'pointer-events-none opacity-40' : ''}`}>
             {picked.length === 1
               ? <button onClick={() => run()} disabled={!!busy} className={primaryCls}>{busy ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}Run {picked[0]}</button>
               : shown && !shown.error
                 ? <button onClick={() => run(shape ? stacksOf(shape) : shown.stacks)} disabled={!!busy} className={primaryCls}>{busy === 'run' ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}Run the plan</button>
                 : <button onClick={makePlan} disabled={!!busy} className={primaryCls}>{busy === 'plan' ? <><LoaderCircle className="size-4 animate-spin" />Planning…</> : <><Layers className="size-4" />Plan {picked.length} tickets</>}</button>}
-            <button onClick={() => { onPick([]); setPlan(undefined) }} className="rounded-xl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
+            <button onClick={() => { onPick([]); setPlan(undefined) }} className="rounded-ctl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
           </div>
           {picked.length > 1 && (
             <button onClick={() => arm('one', shipOne)} disabled={!!busy || !oneRepo} title={oneRepo ? `One agent works them together as one piece of work (one shared memory, shown as one group), deciding on its own (no questions), into one pull request: merged once its checks pass if its repository allows (${inSettings('repos')})` : 'One PR is one repository: pick tickets of one repository'}
@@ -467,9 +467,9 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
 function StackCard({ ids, byId, here, onOpen, onPickAll, aside, onAside, children }: { ids: string[]; byId: Map<string, TicketView>; here: Tier; onOpen: (id: string) => void; onPickAll?: () => void; aside?: boolean; onAside?: () => void; children: ReactNode }) {
   const repo = byId.get(ids.find((id) => byId.get(id)?.repo) ?? '')?.repo
   return (
-    <div style={repo ? appColor(repo).style : undefined} className="group/stack relative mb-1.5 rounded-xl bg-white/50 p-1 ring-1 ring-line dark:bg-zinc-900/30 ">
+    <div style={repo ? appColor(repo).style : undefined} className="group/stack relative mb-1.5 rounded-ctl bg-white/50 p-1 ring-1 ring-line dark:bg-zinc-900/30 ">
       {/* the whole group into the next run at once (Ship as one PR, or a plan), its free tickets only */}
-      {onPickAll && <button onClick={onPickAll} title="Pick every ticket of this group for the next run" className="absolute right-20 top-1.5 z-10 rounded-md px-1.5 text-micro font-medium text-accent-text opacity-0 transition-opacity hover:underline group-hover/stack:opacity-100 focus:opacity-100">Pick all</button>}
+      {onPickAll && <button onClick={onPickAll} title="Pick every ticket of this group for the next run" className="absolute right-20 top-1.5 z-10 rounded-chip px-1.5 text-micro font-medium text-accent-text opacity-0 transition-opacity hover:underline group-hover/stack:opacity-100 focus:opacity-100">Pick all</button>}
       <button onClick={() => onOpen(`stack:ticket:${ids.find((id) => byId.has(id)) ?? ids[0]}`)} title={`Open the stack: ${ids.join(' → ')}`}
               className="flex w-full items-center gap-2 rounded-ctl px-2 pb-1 pt-1 text-left text-meta text-fg-3 transition-colors enabled:hover:bg-hover enabled:hover:text-fg-1">
         <Layers className="size-3.5 shrink-0 text-accent" />

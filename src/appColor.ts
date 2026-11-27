@@ -11,7 +11,7 @@ const PALETTE = [
   { rgb: '217 70 239', bar: 'bg-fuchsia-500', text: 'text-fuchsia-700 dark:text-fuchsia-300', tile: 'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300' },
   { rgb: '132 204 22', bar: 'bg-lime-500', text: 'text-lime-700 dark:text-lime-300', tile: 'bg-lime-500/15 text-lime-700 dark:text-lime-300' },
   { rgb: '99 102 241', bar: 'bg-accent', text: 'text-accent-text', tile: 'bg-accent/15 text-accent-text' },
-  { rgb: '245 158 11', bar: 'bg-wait', text: 'text-wait-text', tile: 'bg-wait/15 text-wait-text' },
+  { rgb: '34 197 94', bar: 'bg-ok', text: 'text-ok-text', tile: 'bg-ok/15 text-ok-text' },
   { rgb: '20 184 166', bar: 'bg-teal-500', text: 'text-teal-700 dark:text-teal-300', tile: 'bg-teal-500/15 text-teal-700 dark:text-teal-300' },
   { rgb: '244 63 94', bar: 'bg-fail', text: 'text-fail-text', tile: 'bg-fail/15 text-fail-text' },
 ]

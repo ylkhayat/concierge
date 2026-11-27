@@ -44,7 +44,7 @@ export function StackNav({ items, current, onOpen, me, toast, keys, noun = 'PR' 
   }, [keys, at, prev?.id, next?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!items.length) return null
   const here = at >= 0 ? items[at] : undefined
-  const arrow = 'rounded-md p-0.5 text-fg-3 transition-colors hov hover:text-fg-1 disabled:opacity-30 disabled:hover:bg-transparent'
+  const arrow = 'rounded-chip p-0.5 text-fg-3 transition-colors hov hover:text-fg-1 disabled:opacity-30 disabled:hover:bg-transparent'
 
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-0.5">
@@ -67,7 +67,7 @@ export function StackNav({ items, current, onOpen, me, toast, keys, noun = 'PR' 
         </span>
       )}
       <button popoverTarget={id} style={{ anchorName: `--${id}` } as CSSProperties} title={here ? `${here.ref} ${here.title} · the whole stack` : 'The stack, bottom to top'}
-              className="group inline-flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-small text-fg-2 transition-colors hov hover:text-fg-1">
+              className="group inline-flex min-w-0 items-center gap-1.5 rounded-ctl px-1.5 py-0.5 text-small text-fg-2 transition-colors hov hover:text-fg-1">
         {!here && <Layers className="size-3.5 shrink-0 text-accent-text" />}
         {here ? (
           <>
@@ -79,7 +79,7 @@ export function StackNav({ items, current, onOpen, me, toast, keys, noun = 'PR' 
       </button>
       {here && <button onClick={() => go(next)} disabled={!next} className={arrow} aria-label="Up the stack" title={next ? `${next.ref} ${plain(next.title)} (])` : 'The top of the stack'}><ChevronRight className="size-4" /></button>}
       <div ref={pop} id={id} popover="auto" style={{ positionAnchor: `--${id}`, positionArea: 'bottom span-left', positionTryFallbacks: 'flip-inline, flip-block', inset: 'auto' } as CSSProperties}
-           className="m-0 mt-1.5 max-h-[calc(70vh/var(--z))] w-[min(460px,calc(100vw/var(--z)-24px))] overflow-y-auto rounded-2xl border-0 bg-surface-1 p-1.5 text-fg-2 shadow-xl ring-1 ring-line ">
+           className="m-0 mt-1.5 max-h-[calc(70vh/var(--z))] w-[min(460px,calc(100vw/var(--z)-24px))] overflow-y-auto rounded-card border-0 bg-surface-1 p-1.5 text-fg-2 shadow-xl ring-1 ring-line ">
         <List items={items} at={at} onOpen={go} me={me} toast={toast} />
       </div>
     </span>
@@ -101,7 +101,7 @@ function List({ items, at, onOpen, me, toast }: { items: NavItem[]; at: number; 
         const Icon = x.kind === 'ticket' ? SquareKanban : GitPullRequest
         return (
           <li key={x.id}>
-            <div className={`group flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors ${on ? 'bg-accent/10 ring-1 ring-accent/25' : 'hover:bg-hover'}`}>
+            <div className={`group flex items-center gap-2 rounded-ctl px-2 py-1.5 transition-colors ${on ? 'bg-accent/10 ring-1 ring-accent/25' : 'hover:bg-hover'}`}>
               <span className="w-4 shrink-0 text-right text-micro tabular-nums text-fg-3">{i + 1}</span>
               <button data-row autoFocus={on} onClick={() => onOpen(x)} title={`${x.title} · ${x.state}`} className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none">
                 <span className={`size-2 shrink-0 rounded-full ${x.dot}`} title={x.state} />
@@ -111,7 +111,7 @@ function List({ items, at, onOpen, me, toast }: { items: NavItem[]; at: number; 
               </button>
               {!!x.threads && <span className="inline-flex shrink-0 items-center gap-0.5 text-meta tabular-nums text-wait-text" title={`${x.threads} open thread${x.threads === 1 ? '' : 's'}`}><MessageSquare className="size-3" />{x.threads}</span>}
               {x.linked && x.linked.agent !== 'none' && <span className={`size-1.5 shrink-0 rounded-full ${DOT[x.linked.agent]}`} title={STATE[x.linked.agent]} />}
-              {x.url && <a href={x.url} target="_blank" rel="noreferrer" title={x.kind === 'ticket' ? 'Open in Linear' : 'Open on GitHub'} className="shrink-0 rounded-md p-0.5 text-fg-3 opacity-0 transition-opacity hover:text-fg-1 group-hover:opacity-100"><ArrowUpRight className="size-3.5" /></a>}
+              {x.url && <a href={x.url} target="_blank" rel="noreferrer" title={x.kind === 'ticket' ? 'Open in Linear' : 'Open on GitHub'} className="shrink-0 rounded-chip p-0.5 text-fg-3 opacity-0 transition-opacity hover:text-fg-1 group-hover:opacity-100"><ArrowUpRight className="size-3.5" /></a>}
             </div>
           </li>
         )

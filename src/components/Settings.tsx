@@ -98,7 +98,7 @@ export function More({ children }: { children: ReactNode }) {
     <>
       <button popoverTarget={id} style={{ anchorName: `--${id}` } as CSSProperties} aria-label="What is this?" className="inline-flex align-[-2px] text-fg-4 transition-colors hover:text-accent-text"><Info className="size-3.5" /></button>
       <div id={id} popover="auto" style={{ positionAnchor: `--${id}`, positionArea: 'bottom span-right', positionTryFallbacks: 'flip-block, flip-inline', inset: 'auto' } as CSSProperties}
-           className="m-0 mt-1.5 w-72 rounded-xl border-0 bg-surface-2 p-3 text-small leading-relaxed text-fg-2 shadow-e3">{children}</div>
+           className="m-0 mt-1.5 w-72 rounded-ctl border-0 bg-surface-2 p-3 text-small leading-relaxed text-fg-2 shadow-e3">{children}</div>
     </>
   )
 }
@@ -106,7 +106,7 @@ export function More({ children }: { children: ReactNode }) {
 function Row({ icon: Icon, title, hint, more, children }: { icon: LucideIcon; title: string; hint?: ReactNode; more?: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-fill text-fg-3"><Icon className="size-3.5" aria-hidden /></span>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-ctl bg-fill text-fg-3"><Icon className="size-3.5" aria-hidden /></span>
       <div className="min-w-0 flex-1 basis-48">
         <div className="flex items-center gap-1.5 text-small font-medium">{title}{more && <More>{more}</More>}</div>
         {hint && <div className="text-meta leading-snug text-fg-3">{hint}</div>}
@@ -176,7 +176,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
   return (
     <div role="dialog" aria-label="Settings" className="grain fixed inset-0 z-50 flex animate-[fade-in_160ms] flex-col pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-fg-1">
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:px-6">
-        <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1"><ArrowLeft className="size-4" />Back</button>
+        <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-ctl px-2 py-1 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1"><ArrowLeft className="size-4" />Back</button>
         <h1 className="flex items-center gap-2 text-title font-semibold"><Settings2 className="size-4 text-fg-4" />Settings</h1>
         <div className="relative ml-auto w-[min(360px,50vw)]">
           <label className="flex items-center gap-2 card px-3 py-1.5">
@@ -186,9 +186,9 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
                    className="w-full bg-transparent text-body outline-none placeholder:text-fg-4" />
           </label>
           {words.length > 0 && (
-            <ul className="absolute inset-x-0 top-full z-10 mt-1.5 overflow-hidden rounded-xl bg-surface-2 p-1 shadow-e3">
+            <ul className="absolute inset-x-0 top-full z-10 mt-1.5 overflow-hidden rounded-ctl bg-surface-2 p-1 shadow-e3">
               {hits.map(([label, t]) => (
-                <li key={label}><button onClick={() => go(t)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-body hov">
+                <li key={label}><button onClick={() => go(t)} className="flex w-full items-center gap-2 rounded-ctl px-2.5 py-1.5 text-left text-body hov">
                   <span className="min-w-0 flex-1 truncate">{label}</span><span className="text-meta text-fg-4">{PAGES.find((x) => x.id === t)?.label}</span>
                 </button></li>
               ))}
@@ -204,7 +204,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
               <p className={`px-2.5 pb-1 text-meta font-medium text-fg-4 md:block ${list ? '' : 'hidden'}`}>{g.group}</p>
               {g.pages.filter((t) => t.id !== 'workflows' || uses('review') || uses('exec')).map((t) => (
                 <button key={t.id} onClick={() => go(t.id)} aria-current={tab === t.id} title={t.hint}
-                        className={`flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-body transition-colors ${list ? 'min-h-11' : ''} ${tab === t.id && !list ? 'sel font-medium' : 'text-fg-2 hov hover:text-fg-1'}`}>
+                        className={`flex shrink-0 items-center gap-2.5 rounded-chip px-2.5 py-1.5 text-left text-body transition-colors ${list ? 'min-h-11' : ''} ${tab === t.id && !list ? 'sel font-medium' : 'text-fg-2 hov hover:text-fg-1'}`}>
                   <t.icon className={`size-4 shrink-0 ${tab === t.id ? 'text-accent-text' : 'text-fg-4'}`} />{t.label}
                 </button>
               ))}
@@ -237,7 +237,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
                 : <><LoaderCircle className="size-4 animate-spin" />Loading the repositories…</>}</p>)}
             {tab === 'connections' && <Connections toast={toast} />}
             {tab === 'machines' && <><Access toast={toast} /><MachinesSettings /><Update /><LiveUpdates toast={toast} />
-              <details className="group/adv rounded-xl ring-1 ring-line [&[open]]:pb-3">
+              <details className="group/adv rounded-ctl ring-1 ring-line [&[open]]:pb-3">
                 <summary className="cursor-pointer px-3.5 py-2.5 text-small font-medium text-fg-3 hover:text-fg-1">Advanced: control plane, sync, tailnet, machine key</summary>
                 <div className="space-y-5 px-3.5 pt-1"><JoinRequests /><Machines /><MachineKey /><Tailnet /></div>
               </details></>}
@@ -259,7 +259,7 @@ const SCALES = [{ id: 'auto', label: 'Auto' }, { id: '1', label: '100%' }, { id:
 
 function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup?: SetupView; save: Save; saveConfig: SaveConfig }) {
   const maxJobs = health?.settings?.maxJobs ?? 2
-  const step = 'flex size-7 items-center justify-center rounded-lg text-fg-3 transition-all hover:bg-surface-1 hover:text-fg-1 hover:shadow-sm active:scale-90 disabled:pointer-events-none disabled:opacity-30'
+  const step = 'flex size-7 items-center justify-center rounded-ctl text-fg-3 transition-all hover:bg-surface-1 hover:text-fg-1 hover:shadow-sm active:scale-90 disabled:pointer-events-none disabled:opacity-30'
   return (
     <>
       {setup && (
@@ -281,7 +281,7 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
       <Group title="Runs" hint="How many agents work at once. Auto-review is on the Review card above.">
         <Row icon={Layers} title="Parallel runs" hint="Agent runs at once; the rest wait in a queue."
              more="Counts every agent run: reviews, your PRs, tickets and explanations. A run past the limit waits its turn; a stack runs bottom first.">
-          <div className="inline-flex items-center gap-1 rounded-xl bg-fill p-1">
+          <div className="inline-flex items-center gap-1 rounded-ctl bg-fill p-1">
             <button className={step} disabled={maxJobs <= 1} onClick={() => save('/settings', { maxJobs: maxJobs - 1 }, `Up to ${maxJobs - 1} at once`).catch(() => {})} aria-label="Fewer"><Minus className="size-3.5" /></button>
             <span className="w-7 text-center text-reading font-semibold tabular-nums">{maxJobs}</span>
             <button className={step} disabled={maxJobs >= 8} onClick={() => save('/settings', { maxJobs: maxJobs + 1 }, `Up to ${maxJobs + 1} at once`).catch(() => {})} aria-label="More"><Plus className="size-3.5" /></button>
@@ -305,7 +305,7 @@ function Palettes({ dark }: { dark: boolean }) {
           <button key={p.id || 'default'} role="radio" aria-checked={on} onClick={() => { setPalette(p.id); setNow(p.id) }} title={p.hint}
                   className={`overflow-hidden rounded-card text-left ring-1 transition-shadow ${on ? 'ring-2 ring-accent' : 'ring-line hover:ring-line-strong'}`}>
             <span className="block p-2" style={{ background: page }}>
-              <span className="block rounded-md p-1.5" style={{ background: card }}>
+              <span className="block rounded-chip p-1.5" style={{ background: card }}>
                 <span className="block h-1.5 w-3/4 rounded-full" style={{ background: ink, opacity: 0.8 }} />
                 <span className="mt-1 block h-1.5 w-1/2 rounded-full" style={{ background: ink, opacity: 0.35 }} />
               </span>
@@ -514,10 +514,10 @@ function WorkspaceHead({ owner, personal, count, onRemoved, toast }: { owner: st
   return (
     <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
       <h3 className="font-mono text-body font-semibold text-fg-1">{owner}</h3>
-      {personal && <span className="rounded-md bg-fill px-1.5 py-px text-micro font-medium text-fg-3">you</span>}
+      {personal && <span className="rounded-chip bg-fill px-1.5 py-px text-micro font-medium text-fg-3">you</span>}
       <span className="text-meta text-fg-3">{count} repositor{count === 1 ? 'y' : 'ies'} watched</span>
       <span className="ml-auto flex items-center gap-2">
-        <button onClick={() => arm('remove', remove)} className="relative overflow-hidden rounded-lg px-2 py-1 text-meta font-medium text-fg-3 hover:bg-fail/10 hover:text-fail-text">
+        <button onClick={() => arm('remove', remove)} className="relative overflow-hidden rounded-ctl px-2 py-1 text-meta font-medium text-fg-3 hover:bg-fail/10 hover:text-fail-text">
           {armed === 'remove' ? <><ArmLabel>{count ? `Confirm: stop watching ${count}` : 'Confirm'}</ArmLabel><ArmBar on="plain" /></> : 'Remove workspace'}
         </button>
       </span>
@@ -536,17 +536,17 @@ function OwnerRepos({ owner, watched, onAdd }: { owner: string; watched: string[
     <div className="space-y-2 px-4 py-3">
       <div className="flex items-center gap-2">
         <input value={find} onChange={(e) => setFind(e.target.value)} autoFocus placeholder={`Find a repository in ${owner}`} className={`${input} flex-1`} />
-        <button onClick={() => setOpen(false)} className="rounded-lg px-2 py-1 text-meta font-medium text-fg-3 hover:bg-hover hover:text-fg-1">Done</button>
+        <button onClick={() => setOpen(false)} className="rounded-ctl px-2 py-1 text-meta font-medium text-fg-3 hover:bg-hover hover:text-fg-1">Done</button>
       </div>
       {q.isLoading ? <Skeleton rows={3} /> : q.error ? <p className="text-small text-fail-text">{(q.error as Error).message}</p> : !list.length ? <p className="text-small text-fg-3">{find ? 'None matches.' : 'Every repository here is watched.'}</p> : (
-        <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-lg ring-1 ring-line">
+        <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-ctl ring-1 ring-line">
           {list.slice(0, 100).map((r) => (
             <li key={r.repo} className="flex items-center gap-2 px-3 py-2">
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-mono text-small text-fg-1">{r.repo.split('/')[1]}{r.private && <span className="ml-1.5 font-sans text-micro text-fg-4">private</span>}</span>
                 {r.description && <span className="block truncate text-meta text-fg-3">{r.description}</span>}
               </span>
-              <button disabled={!!adding} onClick={() => { setAdding(r.repo); void onAdd(r.repo).finally(() => setAdding(undefined)) }} className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft disabled:opacity-50">
+              <button disabled={!!adding} onClick={() => { setAdding(r.repo); void onAdd(r.repo).finally(() => setAdding(undefined)) }} className="inline-flex shrink-0 items-center gap-1 rounded-ctl px-2 py-1 text-meta font-medium text-accent-text ring-1 ring-accent/30 hover:bg-accent-soft disabled:opacity-50">
                 {adding === r.repo ? <LoaderCircle className="size-3 animate-spin" /> : <Plus className="size-3" />}Watch
               </button>
             </li>
@@ -674,7 +674,7 @@ function RepoCard({ startIn, repo, path, meta, task, toast, onRemove, accounts, 
     <div className={open ? 'bg-fill/20' : ''}>
       <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover">
         <ChevronRight className={`size-4 shrink-0 text-fg-4 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-fill text-fg-3"><FolderGit2 className="size-4" /></span>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-ctl bg-fill text-fg-3"><FolderGit2 className="size-4" /></span>
         <span className="min-w-0 flex-1">
           <span className="block truncate font-mono text-body font-semibold text-fg-1">{repo.split('/')[1]}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-meta text-fg-3"><span className="truncate font-mono" title={path}>{home(path)}</span>{status && <><span className="text-fg-4">·</span><span className="truncate">{status}</span></>}</span>
@@ -740,7 +740,7 @@ function RepoCard({ startIn, repo, path, meta, task, toast, onRemove, accounts, 
           )}
           <div className="flex justify-end pt-1">
             <button onClick={() => arm('remove', onRemove)} title="Its codebase map is kept" aria-label={`Stop watching ${repo}`}
-                    className="relative isolate inline-flex items-center gap-1.5 overflow-hidden rounded-lg px-2 py-1 text-meta font-medium text-fg-3 transition-colors hover:bg-fail/10 hover:text-fail-text">
+                    className="relative isolate inline-flex items-center gap-1.5 overflow-hidden rounded-ctl px-2 py-1 text-meta font-medium text-fg-3 transition-colors hover:bg-fail/10 hover:text-fail-text">
               <Trash2 className="size-3.5" />{armed === 'remove' ? <><ArmLabel>Confirm: stop watching</ArmLabel><ArmBar on="plain" /></> : 'Stop watching'}
             </button>
           </div>
@@ -767,14 +767,14 @@ function FeatureSkills({ saveConfig }: { saveConfig: SaveConfig }) {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5">
             <div className="min-w-0 flex-1 basis-48"><div className="text-body font-medium text-fg-1">{f.label}</div><div className="text-meta text-fg-3">{f.hint}</div></div>
             <span title={f.found ? 'Installed' : 'Not installed: this feature fails until it is, or you pick another'} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-meta ${f.found ? 'bg-fill text-fg-1' : 'bg-fail/10 text-fail-text ring-1 ring-fail/30'}`}>
-              {f.found ? <CircleCheck className="size-3 text-ok" /> : <CircleAlert className="size-3" />}{f.skill}
+              {f.found ? <CircleCheck className="size-3 text-ok-text" /> : <CircleAlert className="size-3" />}{f.skill}
             </span>
             {f.skill !== f.default && <button onClick={() => void set(f.key, '', f.label)} className={quiet} title={`Back to ${f.default}`}>Default</button>}
             <button onClick={() => { setOpen(open === f.key ? undefined : f.key); setFilter('') }} className={quiet}>{open === f.key ? 'Close' : 'Change'}</button>
           </div>
           {open === f.key && (
             <div className="border-t border-line bg-fill/30 px-3.5 py-2.5">
-              <span className="mb-1.5 inline-flex items-center gap-1.5 rounded-lg bg-fill px-2 py-1"><Search className="size-3.5 text-fg-4" />
+              <span className="mb-1.5 inline-flex items-center gap-1.5 rounded-ctl bg-fill px-2 py-1"><Search className="size-3.5 text-fg-4" />
                 <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter" aria-label="Filter skills" className="w-40 bg-transparent text-small outline-none placeholder:text-fg-4" /></span>
               <ul className="max-h-64 space-y-0.5 overflow-y-auto">
                 {!all && <li className="px-2 py-1.5 text-small text-fg-3">Reading the skills on this setup…</li>}
@@ -854,7 +854,7 @@ function Skills({ setup, toast, saveConfig, reload }: { setup?: SetupView; toast
         <div className="flex flex-wrap gap-1.5 px-3.5 pb-3">
           {setup.skills.map((s) => (
             <span key={s.name} title={s.yours ? 'Yours (~/.claude/skills): the agents use it' : s.installed ? "Concierge's copy, in its own folder" : 'Not available to the agents here'} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-meta ${s.installed ? 'bg-fill text-fg-2' : 'bg-wait/10 text-wait-text ring-1 ring-wait/30'}`}>
-              {s.installed ? <CircleCheck className="size-3 text-ok" /> : <CircleAlert className="size-3" />}{s.name}
+              {s.installed ? <CircleCheck className="size-3 text-ok-text" /> : <CircleAlert className="size-3" />}{s.name}
             </span>
           ))}
           {!setup.skills.length && <span className="text-small text-fg-3">Can't read this source right now.</span>}
@@ -867,7 +867,7 @@ function Skills({ setup, toast, saveConfig, reload }: { setup?: SetupView; toast
           const pill = (s: typeof top, main?: boolean) => (
             <span key={s.name} title={s.found ? 'On this machine' : 'Missing on this machine'}
                   className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-meta ${main ? 'font-semibold text-fg-1' : 'text-fg-2'} ${s.found ? 'bg-fill' : 'bg-fail/10 text-fail-text ring-1 ring-fail/30'}`}>
-              {s.found ? <CircleCheck className="size-3 text-ok" /> : <CircleAlert className="size-3" />}/{s.name}
+              {s.found ? <CircleCheck className="size-3 text-ok-text" /> : <CircleAlert className="size-3" />}/{s.name}
             </span>
           )
           return (
@@ -1007,7 +1007,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
       <div className="space-y-3">
         <button onClick={() => setOpen(undefined)} className="inline-flex items-center gap-1 text-meta font-medium text-fg-3 hover:text-fg-1"><ArrowLeft className="size-3.5" />All accounts</button>
         <header className="card flex items-start gap-3 px-4 py-3.5">
-          <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
+          <span className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-ctl text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-body font-semibold text-fg-1">{a.label}</h3><StatusPill a={a} notReadyOn={notReady[a.id]} /></div>
             <p className="truncate text-meta text-fg-3">{accountLine(a)}</p>
@@ -1019,19 +1019,19 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
           </div>
         </header>
         {tested[a.id] && !tested[a.id].busy && (
-          <p className={`rounded-lg px-2.5 py-1.5 text-meta ring-1 [overflow-wrap:anywhere] ${tested[a.id].ok ? 'bg-ok/10 text-ok-text ring-ok/20' : 'bg-fail/10 text-fail-text ring-fail/20'}`}>
+          <p className={`rounded-ctl px-2.5 py-1.5 text-meta ring-1 [overflow-wrap:anywhere] ${tested[a.id].ok ? 'bg-ok/10 text-ok-text ring-ok/20' : 'bg-fail/10 text-fail-text ring-fail/20'}`}>
             {tested[a.id].ok ? `It answers (${((tested[a.id].ms ?? 0) / 1000).toFixed(1)}s): “${tested[a.id].text}”` : `It doesn't answer: ${tested[a.id].error}`}
           </p>
         )}
         <Tabs size="sm" label="Account section" value={at} onChange={(x) => setSub(x)} options={SUBS} />
         {at === 'overview' && (
           <div className="card space-y-2.5 px-4 py-3.5 text-meta text-fg-3">
-            {a.who?.samePlanAs && <p className="rounded-lg bg-wait/7 px-2.5 py-1.5 text-wait-text ring-1 ring-wait/20">Same claude.ai login as {a.who.samePlanAs}: runs on either spend one plan.</p>}
+            {a.who?.samePlanAs && <p className="rounded-ctl bg-wait/7 px-2.5 py-1.5 text-wait-text ring-1 ring-wait/20">Same claude.ai login as {a.who.samePlanAs}: runs on either spend one plan.</p>}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <AccountConnections a={a} first={byId.get('claude')} onMore={onConnections} />
               <Spent s={a.today} />
               <label className="ml-auto flex items-center gap-1.5">Daily budget
-                <span className="flex items-center rounded-md ring-1 ring-line focus-within:ring-accent/50"><span className="pl-1.5 text-fg-4">$</span>
+                <span className="flex items-center rounded-chip ring-1 ring-line focus-within:ring-accent/50"><span className="pl-1.5 text-fg-4">$</span>
                   <input type="number" min={0} step={1} defaultValue={v.budgets[a.id] ?? ''} placeholder="none" aria-label={`${a.label} daily budget in dollars`}
                          onBlur={(e) => { const n = e.target.value === '' ? null : Number(e.target.value); if (n !== (v.budgets[a.id] ?? null)) void set({ budgets: { [a.id]: n } }, n == null ? `${a.label}: no budget` : `${a.label}: $${n} a day`) }}
                          className="w-14 bg-transparent px-1 py-0.5 text-right tabular-nums text-fg-1 outline-none placeholder:text-fg-4" /></span>
@@ -1063,7 +1063,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
       {(() => {
         const out = [...new Map(v.routing.filter((r) => r.using !== r.chosen || r.stuck).map((r) => [r.chosen, r])).values()]
         return out.length > 0 && (
-          <p className="rounded-xl bg-wait/7 px-3.5 py-2.5 text-small text-wait-text ring-1 ring-wait/20">
+          <p className="rounded-ctl bg-wait/7 px-3.5 py-2.5 text-small text-wait-text ring-1 ring-wait/20">
             {out.map((r) => <span key={r.chosen} className="block"><b>{r.chosenLabel}</b> can't run: {blocked(byId.get(r.chosen)!)}. {r.stuck ? 'Its work waits: nothing set to stand in can take it.' : <>Fresh work goes to <b>{r.label}</b> meanwhile; a run already on {r.chosenLabel} moves only if it's out for more than half an hour.</>}</span>)}
           </p>
         )
@@ -1078,7 +1078,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
                 {v.accounts.map((a) => (
                   <th key={a.id} className="px-2 py-2.5 text-center font-medium text-fg-2">
                     <span className="inline-flex flex-col items-center gap-1">
-                      <span className={`flex size-6 items-center justify-center rounded-md text-micro font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`}>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
+                      <span className={`flex size-6 items-center justify-center rounded-chip text-micro font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`}>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
                       <span className="max-w-24 truncate text-meta" title={a.label}>{a.label}</span>
                       <span className={`size-1.5 rounded-full ${blocked(a) ? 'bg-wait' : 'bg-ok'}`} title={blocked(a) || 'Can take work'} />
                     </span>
@@ -1122,7 +1122,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
         {v.accounts.map((a) => !compact ? <AccountRow key={a.id} a={a} onOpen={() => { setOpen(a.id); setSub('overview') }} onNotReady={(ms) => setNotReady((x) => ({ ...x, [a.id]: ms }))} /> : (
           <div key={a.id} className={`card flex flex-col ${compact ? 'px-3.5 py-3' : 'px-4 py-3.5'}`}>
             <div className={`flex gap-3 ${compact ? 'items-center' : 'items-start'}`}>
-              <span className={`${compact ? '' : 'mt-0.5'} flex size-8 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
+              <span className={`${compact ? '' : 'mt-0.5'} flex size-8 shrink-0 items-center justify-center rounded-ctl text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-body font-semibold text-fg-1">{a.label}</span>
@@ -1147,11 +1147,11 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
               </div>
             </div>
             {tested[a.id] && !tested[a.id].busy && (
-              <p className={`mt-2 rounded-lg px-2.5 py-1.5 text-meta ring-1 [overflow-wrap:anywhere] ${tested[a.id].ok ? 'bg-ok/10 text-ok-text ring-ok/20' : 'bg-fail/10 text-fail-text ring-fail/20'}`}>
+              <p className={`mt-2 rounded-ctl px-2.5 py-1.5 text-meta ring-1 [overflow-wrap:anywhere] ${tested[a.id].ok ? 'bg-ok/10 text-ok-text ring-ok/20' : 'bg-fail/10 text-fail-text ring-fail/20'}`}>
                 {tested[a.id].ok ? `It answers (${((tested[a.id].ms ?? 0) / 1000).toFixed(1)}s): “${tested[a.id].text}”` : `It doesn't answer: ${tested[a.id].error}`}
               </p>
             )}
-            {a.who?.samePlanAs && <p className="mt-2 rounded-lg bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">Same claude.ai login as {a.who.samePlanAs}: runs on either spend one plan.</p>}
+            {a.who?.samePlanAs && <p className="mt-2 rounded-ctl bg-wait/7 px-2.5 py-1.5 text-meta text-wait-text ring-1 ring-wait/20">Same claude.ai login as {a.who.samePlanAs}: runs on either spend one plan.</p>}
             {signing?.id === a.id && (signing.code
               ? <p className="mt-2 text-small">Open <a href={signing.url} target="_blank" rel="noreferrer" className="font-medium text-accent-text hover:underline">{signing.url.replace('https://', '')}</a> and enter <b className="font-mono">{signing.code}</b></p>
               : <div className="mt-2 flex flex-wrap items-center gap-2 text-small">
@@ -1164,7 +1164,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
               <AccountConnections a={a} first={byId.get('claude')} onMore={onConnections} />
               <Spent s={a.today} />
               <label className="ml-auto flex items-center gap-1.5">Daily budget
-                <span className="flex items-center rounded-md ring-1 ring-line focus-within:ring-accent/50"><span className="pl-1.5 text-fg-4">$</span>
+                <span className="flex items-center rounded-chip ring-1 ring-line focus-within:ring-accent/50"><span className="pl-1.5 text-fg-4">$</span>
                   <input type="number" min={0} step={1} defaultValue={v.budgets[a.id] ?? ''} placeholder="none" aria-label={`${a.label} daily budget in dollars`}
                          onBlur={(e) => { const n = e.target.value === '' ? null : Number(e.target.value); if (n !== (v.budgets[a.id] ?? null)) void set({ budgets: { [a.id]: n } }, n == null ? `${a.label}: no budget` : `${a.label}: $${n} a day`) }}
                          className="w-14 bg-transparent px-1 py-0.5 text-right tabular-nums text-fg-1 outline-none placeholder:text-fg-4" /></span>
@@ -1190,8 +1190,8 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
             <button onClick={add} disabled={!adding.label.trim()} className={primary}><Plus className="size-3.5" />Add</button>
             <button onClick={() => setAdding(undefined)} className={quiet}>Cancel</button>
           </div>
-        ) : compact ? <button onClick={() => setAdding({ kind: 'claude', label: '', host: '' })} className="inline-flex items-center gap-1.5 justify-self-start rounded-md px-1 py-1 text-small font-medium text-fg-3 transition-colors hover:text-fg-1"><Plus className="size-3.5" />Add another account</button>
-          : <button onClick={() => setAdding({ kind: 'claude', label: '', host: '' })} className="flex min-h-24 w-full items-center justify-center gap-3 rounded-card border border-dashed border-line-strong px-4 py-3 text-small font-medium text-fg-3 transition-colors hover:border-accent/50 hover:bg-hover hover:text-fg-1"><span className="flex size-8 items-center justify-center rounded-lg border border-dashed border-line"><Plus className="size-3.5" /></span>Add an account</button>}
+        ) : compact ? <button onClick={() => setAdding({ kind: 'claude', label: '', host: '' })} className="inline-flex items-center gap-1.5 justify-self-start rounded-chip px-1 py-1 text-small font-medium text-fg-3 transition-colors hover:text-fg-1"><Plus className="size-3.5" />Add another account</button>
+          : <button onClick={() => setAdding({ kind: 'claude', label: '', host: '' })} className="flex min-h-24 w-full items-center justify-center gap-3 rounded-card border border-dashed border-line-strong px-4 py-3 text-small font-medium text-fg-3 transition-colors hover:border-accent/50 hover:bg-hover hover:text-fg-1"><span className="flex size-8 items-center justify-center rounded-ctl border border-dashed border-line"><Plus className="size-3.5" /></span>Add an account</button>}
         </div>
       </section>
 
@@ -1218,7 +1218,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
                  className={`flex cursor-grab items-center gap-2 px-3.5 py-2 text-small outline-none transition-colors focus-visible:bg-accent/6 active:cursor-grabbing ${drag && v.fallback[drag.from] === id ? 'bg-accent/8 opacity-70' : ''}`}>
               <GripVertical className="size-4 shrink-0 text-fg-4" aria-hidden />
               <span className="w-5 text-right font-semibold tabular-nums text-fg-3">{i + 1}.</span>
-              <span className={`shrink-0 rounded-md px-1.5 py-px text-micro font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`}>{KINDS.find(([k]) => k === a.kind)![1]}</span>
+              <span className={`shrink-0 rounded-chip px-1.5 py-px text-micro font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`}>{KINDS.find(([k]) => k === a.kind)![1]}</span>
               <span className="font-medium">{a.label}</span>
               {blocked(a) && <span className="truncate text-meta text-wait-text">{blocked(a)}</span>}
               <button onClick={() => set({ fallback: v.fallback.filter((x) => x !== id) }, `${a.label} is no fallback`)} aria-label={`Remove ${a.label} from the fallbacks`} className={`ml-auto ${quiet}`}><X className="size-3.5" /></button>
@@ -1300,7 +1300,7 @@ function AccountRow({ a, onOpen, onNotReady }: { a: AccountView; onOpen: () => v
   useEffect(() => { if (m) onNotReady(off) }, [key, !!m])
   return (
     <button onClick={onOpen} className="card flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover">
-      <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
+      <span className={`flex size-8 shrink-0 items-center justify-center rounded-ctl text-small font-semibold ring-1 ring-inset ${KIND_TONE[a.kind]}`} aria-hidden>{KINDS.find(([k]) => k === a.kind)![1][0]}</span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-2"><span className="truncate text-body font-semibold text-fg-1">{a.label}</span><StatusPill a={a} notReadyOn={off} /></span>
         <span className="block truncate text-meta text-fg-3">{accountLine(a)}</span>
@@ -1354,7 +1354,7 @@ function LlamaModels({ a, set }: { a: AccountView; set: (b: object, m: string) =
   const tried = other.trim() ? checks[other.trim()] : undefined
   const triedOk = !!tried && tried !== 'checking' && !tried.error
   return (
-    <div className="basis-full space-y-1.5 rounded-xl bg-fill/60 px-3 py-2.5 text-small ring-1 ring-line ">
+    <div className="basis-full space-y-1.5 rounded-ctl bg-fill/60 px-3 py-2.5 text-small ring-1 ring-line ">
       {([['large', 'Agents'], ['small', 'Quick calls']] as const).map(([size, title]) => {
         const now = a.models[size] ?? ''
         const opts = (cloud: boolean) => [...new Set([now, ...all].filter((m) => m && isCloud(m) === cloud))]
@@ -1404,7 +1404,7 @@ function AccountUsage() {
   const peak = Math.max(...a.days.map((d) => d.input + d.output), 1)
   const live = (w?: Window) => (w && w.resetsAt * 1000 > Date.now() ? w : undefined)
   const bar = (title: string, w?: Window) => (
-    <div className="min-w-0 flex-1 basis-40 rounded-xl px-3 py-2.5 ring-1 ring-line ">
+    <div className="min-w-0 flex-1 basis-40 rounded-ctl px-3 py-2.5 ring-1 ring-line ">
       <div className="flex items-baseline justify-between text-small"><span className="font-medium text-fg-2 ">{title}</span>
         <span className="font-mono font-semibold tabular-nums">{live(w) ? `${Math.round(w!.used * 100)}%` : '–'}</span></div>
       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-fill-strong"><div className={`h-full rounded-full ${(live(w)?.used ?? 0) >= 0.95 ? 'bg-fail' : (live(w)?.used ?? 0) >= 0.8 ? 'bg-wait' : 'bg-accent'}`} style={{ width: `${Math.max(2, (live(w)?.used ?? 0) * 100)}%` }} /></div>
@@ -1463,7 +1463,7 @@ function OrgSkills({ toast }: { toast: Toast }) {
   const runs = skills.reduce((n, s) => n + (s.used?.count ?? 0), 0)
   const card = (s: OrgSkill) => (
     <div key={s.name} className="flex flex-wrap items-start gap-x-3 gap-y-2 px-3.5 py-3">
-      <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${s.mode === 'off' ? 'bg-fill text-fg-3' : 'bg-accent/10 text-accent-text'}`}><Wand className="size-3.5" aria-hidden /></span>
+      <span className={`flex size-7 shrink-0 items-center justify-center rounded-ctl ${s.mode === 'off' ? 'bg-fill text-fg-3' : 'bg-accent/10 text-accent-text'}`}><Wand className="size-3.5" aria-hidden /></span>
       <div className="min-w-0 flex-1 basis-64">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-mono text-small font-semibold">{s.name}</span>
@@ -1646,7 +1646,7 @@ function ComplianceSettings({ setup, saveConfig: saveShared }: { setup?: SetupVi
               <b className="min-w-12 text-center font-semibold tabular-nums text-fg-1">{m.pace ?? '–'}<span className="font-normal text-fg-4"> /wk</span></b>
               <button onClick={() => setTeam(team.map((x) => (x.name === m.name ? { ...x, pace: Math.min(50, (x.pace ?? 5) + 1) } : x)), `${m.name}: ${Math.min(50, (m.pace ?? 5) + 1)} pt a week`)} className="px-2 py-1 text-fg-3 hover:text-fg-1" aria-label="Faster">+</button>
             </span>
-            <button onClick={() => setTeam(team.filter((x) => x.name !== m.name), `${m.name} removed`)} aria-label={`Remove ${m.name}`} className="rounded-lg p-1.5 text-fg-4 transition-colors hover:bg-fail/10 hover:text-fail-text"><Trash2 className="size-3.5" /></button>
+            <button onClick={() => setTeam(team.filter((x) => x.name !== m.name), `${m.name} removed`)} aria-label={`Remove ${m.name}`} className="rounded-ctl p-1.5 text-fg-4 transition-colors hover:bg-fail/10 hover:text-fail-text"><Trash2 className="size-3.5" /></button>
           </div>
         ))}
         <div className="flex flex-wrap items-center gap-2 px-3.5 py-2.5">
@@ -1679,7 +1679,7 @@ function Access({ toast }: { toast: Toast }) {
       {!v.proxied && <p className="px-4 py-2.5 text-small text-fg-3">You opened it on this machine, where it always opens. Through the tailnet link, Tailscale tells Concierge who is asking, so only the people below get in: no password needed.</p>}
       {v.logins.map((l) => (
         <Row key={l} icon={UsersRound} title={l} hint={l === v.you ? 'You' : v.fromEnv.includes(l) ? 'From CONCIERGE_ALLOW in .env' : undefined}>
-          {l !== v.you && !v.fromEnv.includes(l) && <button onClick={() => void save(v.logins.filter((x) => x !== l), `${l} can no longer open it`)} aria-label={`Remove ${l}`} className="rounded-lg p-1.5 text-fg-4 transition-colors hover:bg-fail/10 hover:text-fail-text"><Trash2 className="size-3.5" /></button>}
+          {l !== v.you && !v.fromEnv.includes(l) && <button onClick={() => void save(v.logins.filter((x) => x !== l), `${l} can no longer open it`)} aria-label={`Remove ${l}`} className="rounded-ctl p-1.5 text-fg-4 transition-colors hover:bg-fail/10 hover:text-fail-text"><Trash2 className="size-3.5" /></button>}
         </Row>
       ))}
       {!v.logins.length && <p className="px-4 py-3 text-small text-fg-3">Nobody yet. Once this machine is on your tailnet, the person whose devices are on it is let in by themselves; on a tailnet several people share, the first to open it through the link becomes its owner.</p>}
@@ -1732,7 +1732,7 @@ function WorkspaceTeams({ setup, owner, saveConfig }: { setup: SetupView; owner:
         const on = all || x.teams.includes(k), repo = x.repoByPrefix[k]
         return (
           <div key={k} className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 transition-opacity ${on ? '' : 'opacity-55'}`}>
-            <span className="flex h-7 min-w-11 shrink-0 items-center justify-center rounded-lg bg-fill px-1.5 font-mono text-meta font-semibold text-fg-1">{k}</span>
+            <span className="flex h-7 min-w-11 shrink-0 items-center justify-center rounded-ctl bg-fill px-1.5 font-mono text-meta font-semibold text-fg-1">{k}</span>
             <div className="min-w-0 flex-1 basis-32">
               <div className="truncate text-small font-medium text-fg-1">{known.find((t) => t.key === k)?.name ?? k}</div>
               <div className="text-meta text-fg-3">{!on ? 'Hidden from Ship' : repo ? <>Worked in <span className="font-mono">{repo}</span></> : <span className="text-wait-text">Pick its repository here, or leave it to another workspace</span>}</div>
@@ -1838,7 +1838,7 @@ function Usage({ health, setup, save, saveConfig }: { health?: Health; setup?: S
             {days.map((d, i) => (
               <div key={d.day} className="group relative flex h-full flex-1 flex-col justify-end">
                 <span className="pointer-events-none absolute -top-5 left-1/2 -translate-x-1/2 font-mono text-micro text-fg-3 opacity-0 transition-opacity group-hover:opacity-100">${d.usd.toFixed(2)}</span>
-                <span className={`w-full rounded-md transition-all duration-500 ${i === days.length - 1 ? tone : 'bg-fill-strong group-hover:bg-fill-strong'}`}
+                <span className={`w-full rounded-chip transition-all duration-500 ${i === days.length - 1 ? tone : 'bg-fill-strong group-hover:bg-fill-strong'}`}
                       style={{ height: `${Math.max(3, (d.usd / peak) * 100)}%` }} />
               </div>
             ))}
@@ -1944,7 +1944,7 @@ function About({ setup, onSetup }: { setup?: SetupView; onSetup: () => void }) {
         <div className="grid gap-x-6 gap-y-2.5 px-4 py-4 sm:grid-cols-2">
           {keys.map(([k, label]) => (
             <div key={k} className="flex items-center gap-3 text-small">
-              <kbd className="min-w-12 rounded-md border border-b-2 border-line-strong bg-surface-1 px-1.5 py-0.5 text-center font-mono text-meta text-fg-2 ">{k}</kbd>
+              <kbd className="min-w-12 rounded-chip border border-b-2 border-line-strong bg-surface-1 px-1.5 py-0.5 text-center font-mono text-meta text-fg-2 ">{k}</kbd>
               <span className="text-fg-2 ">{label}</span>
             </div>
           ))}
@@ -1995,9 +1995,9 @@ function Update() {
           {phase === 'draining' && <button onClick={() => ask({ now: true })} title="Agents continue after, in the same conversation, but what they ran in the background is lost" className={quiet}>Restart now anyway</button>}
         </span>
       </Row>
-      {err && <p role="alert" className="mx-3.5 mb-3 rounded-lg bg-fail/10 px-3 py-2 text-small text-fail">{err}</p>}
+      {err && <p role="alert" className="mx-3.5 mb-3 rounded-ctl bg-fail/10 px-3 py-2 text-small text-fail-text">{err}</p>}
       {/* one machine: no standby to build it, and the app (which runs agents) may not drive Docker: you run it */}
-      {u && !u.standby && (asking || u.asked) && !busy && <p className="mx-3.5 mb-3 rounded-lg bg-fill px-3 py-2 text-small text-fg-2">
+      {u && !u.standby && (asking || u.asked) && !busy && <p className="mx-3.5 mb-3 rounded-ctl bg-fill px-3 py-2 text-small text-fg-2">
         Updating builds the new version on your computer and restarts Concierge with it, which Concierge can’t do from inside Docker. Run <code className="font-mono">bin/update</code> in its checkout (a cron line of yours with <code className="font-mono">--if-asked</code> does it for this button).</p>}
       {u?.upstream && <Upstream up={u.upstream} busy={busy || asking} onMerge={() => ask({ upstream: true })} />}
       {(busy || phase === 'updated') && at >= 0 && (
@@ -2032,7 +2032,7 @@ export function UpdateChip({ onOpen }: { onOpen?: () => void }) {
   const [watched, setWatched] = useState(false)
   useEffect(() => { if (busy || (gone && u?.status?.busy)) setWatched(true) }, [busy, gone, u?.status?.busy])
   useEffect(() => { if (watched && stale && !u?.status?.busy) location.reload() }, [watched, stale, u?.status?.busy])
-  const chip = 'inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-meta font-medium transition-colors'
+  const chip = 'inline-flex items-center gap-1.5 rounded-ctl px-2 py-1 text-meta font-medium transition-colors'
   const update = () => { setAsking(true); setErr(undefined); api('/update', {}).then(() => read(), (e: Error) => { setErr({ what: 'Update refused', why: e.message }); return read() }).finally(() => setAsking(false)) }
   const check = () => {
     setChecked('checking'); setErr(undefined)
@@ -2063,7 +2063,7 @@ export function UpdateChip({ onOpen }: { onOpen?: () => void }) {
     <button onClick={check} disabled={checked === 'checking'} aria-label="Check for updates"
             title={err?.why ?? (u?.version ? `Concierge ${label(u.version)}: check for a newer one now` : 'Check for a newer Concierge now')}
             className={`${chip} ${err ? 'text-fail-text' : 'text-fg-3'} hover:bg-hover hover:text-fg-1`}>
-      {checked === 'checking' ? <LoaderCircle className="size-3.5 animate-spin" /> : checked === 'current' ? <Check className="size-3.5 text-ok" /> : <CircleArrowUp className="size-3.5" />}
+      {checked === 'checking' ? <LoaderCircle className="size-3.5 animate-spin" /> : checked === 'current' ? <Check className="size-3.5 text-ok-text" /> : <CircleArrowUp className="size-3.5" />}
       {checked === 'checking' ? 'Checking…' : checked === 'current' ? 'Up to date' : err?.what}
     </button>
   )
@@ -2073,7 +2073,7 @@ export function UpdateChip({ onOpen }: { onOpen?: () => void }) {
 function Upstream({ up, busy, onMerge }: { up: NonNullable<UpdateView['upstream']>; busy: boolean; onMerge: () => void }) {
   const conflict = !!up.note && /conflict/.test(up.note)
   return (
-    <div className="mx-3.5 mb-3 rounded-lg border border-line px-3 py-2.5">
+    <div className="mx-3.5 mb-3 rounded-ctl border border-line px-3 py-2.5">
       <div className="flex items-center gap-3">
         <p className="min-w-0 flex-1 text-small text-fg-2">
           {up.behind
@@ -2083,7 +2083,7 @@ function Upstream({ up, busy, onMerge }: { up: NonNullable<UpdateView['upstream'
         </p>
         {!!up.behind && <button disabled={busy} onClick={onMerge} title="Merges them into your fork, pushes it, then updates as usual. A conflict changes nothing." className={`${quiet} shrink-0 disabled:opacity-60`}>Merge and update</button>}
       </div>
-      {conflict && <p role="alert" className="mt-2 rounded-md bg-fail/10 px-2.5 py-1.5 text-meta text-fail">They conflict with your changes: run <code>git merge upstream/main</code> in the repo and resolve them.</p>}
+      {conflict && <p role="alert" className="mt-2 rounded-chip bg-fail/10 px-2.5 py-1.5 text-meta text-fail-text">They conflict with your changes: run <code>git merge upstream/main</code> in the repo and resolve them.</p>}
       {!!up.commits.length && (
         <details className="mt-1.5 text-meta">
           <summary className="cursor-pointer text-fg-3">What's new</summary>
@@ -2121,7 +2121,7 @@ function JoinRequests() {
           </span>
         </Row>
       ))}
-      {err && <p role="alert" className="mx-3.5 mb-3 rounded-lg bg-fail/10 px-3 py-2 text-small text-fail">{err}</p>}
+      {err && <p role="alert" className="mx-3.5 mb-3 rounded-ctl bg-fail/10 px-3 py-2 text-small text-fail-text">{err}</p>}
     </Group>
   )
 }
@@ -2171,7 +2171,7 @@ export function ThemeButton({ theme, onTheme }: { theme: Theme; onTheme: (t: The
   const isDark = theme === 'dark' || (theme === 'system' && document.documentElement.classList.contains('dark'))
   return (
     <button onClick={() => onTheme(isDark ? 'light' : 'dark')} title={isDark ? 'Switch to light' : 'Switch to dark'} aria-label="Toggle theme"
-            className="group relative rounded-lg p-1.5 text-fg-3 transition-all duration-200 hover:bg-hover hover:text-fg-1 active:scale-95">
+            className="group relative rounded-ctl p-1.5 text-fg-3 transition-all duration-200 hover:bg-hover hover:text-fg-1 active:scale-95">
       <Sun className={`size-4 transition-all duration-500 ${isDark ? 'rotate-90 scale-0 opacity-0' : 'rotate-0 scale-100 opacity-100 group-hover:rotate-45'}`} />
       <Moon className={`absolute inset-0 m-auto size-4 transition-all duration-500 ${isDark ? 'rotate-0 scale-100 opacity-100 group-hover:-rotate-12' : '-rotate-90 scale-0 opacity-0'}`} />
     </button>
@@ -2280,8 +2280,8 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
   return (
     <div className="space-y-3">
       {joined.length > 1 && (
-        <div role="tablist" aria-label="Role" className="inline-flex rounded-xl bg-hover p-1">
-          {joined.map((r) => { const R = ROLES[r]; return <button key={r} role="tab" aria-selected={r === role} onClick={() => setShown(r)} className={`flex items-center gap-1.5 rounded-lg px-3 py-1 text-small font-medium ${r === role ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}><R.icon className="size-3.5" />{R.label}{r === working && <span className="text-micro text-fg-4">· now</span>}</button> })}
+        <div role="tablist" aria-label="Role" className="inline-flex rounded-ctl bg-hover p-1">
+          {joined.map((r) => { const R = ROLES[r]; return <button key={r} role="tab" aria-selected={r === role} onClick={() => setShown(r)} className={`flex items-center gap-1.5 rounded-ctl px-3 py-1 text-small font-medium ${r === role ? 'sel' : 'text-fg-3 hover:text-fg-1'}`}><R.icon className="size-3.5" />{R.label}{r === working && <span className="text-micro text-fg-4">· now</span>}</button> })}
         </div>
       )}
       <p className="text-small text-fg-2">
@@ -2294,7 +2294,7 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
           <ol className="grid gap-2 md:grid-cols-[repeat(4,minmax(0,1fr))]">
             {f.steps.map((x, i) => (
               <li key={x.k} className="relative">
-                <button onClick={() => go(x.at)} title={x.tip} className="group h-full w-full rounded-lg bg-hover px-3 py-2 text-left transition-colors hover:bg-active">
+                <button onClick={() => go(x.at)} title={x.tip} className="group h-full w-full rounded-ctl bg-hover px-3 py-2 text-left transition-colors hover:bg-active">
                   <span className="block label text-fg-4">{x.k}</span>
                   <span className={`mt-0.5 block text-small leading-snug text-fg-1 ${x.mono ? 'break-all font-mono' : ''}`}>{x.v}</span>
                 </button>
@@ -2388,7 +2388,7 @@ export function WorkflowCard({ work, title, icon: Icon, value, trigger, account,
       {!editing && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line bg-fill/40 px-4 py-2.5 text-meta">
           {value ? <>
-            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-1 px-2 py-1 font-mono text-small text-fg-1 shadow-e1">
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-ctl bg-surface-1 px-2 py-1 font-mono text-small text-fg-1 shadow-e1">
               <span className={`size-1.5 shrink-0 rounded-full ${!all ? 'bg-fg-4' : skill ? 'bg-ok' : 'bg-wait'}`} title={!all ? 'Checking' : skill ? `Found: ${skill.source}` : 'Not found on this setup: it runs as typed'} />
               <span className="truncate">{value}</span>
             </span>
@@ -2413,14 +2413,14 @@ export function WorkflowCard({ work, title, icon: Icon, value, trigger, account,
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-meta text-fg-3">
               <span>Fills in</span>
-              {(TOKENS[work] ?? []).map((t) => <button key={t} onClick={() => setText((x) => `${x.trimEnd()} ${t}`)} title={`Add ${t} (e.g. ${SAMPLE[t]})`} className="rounded-md bg-fill px-1.5 py-0.5 font-mono text-fg-2 hover:bg-fill-strong hover:text-fg-1">{t}</button>)}
+              {(TOKENS[work] ?? []).map((t) => <button key={t} onClick={() => setText((x) => `${x.trimEnd()} ${t}`)} title={`Add ${t} (e.g. ${SAMPLE[t]})`} className="rounded-chip bg-fill px-1.5 py-0.5 font-mono text-fg-2 hover:bg-fill-strong hover:text-fg-1">{t}</button>)}
               {text.trim() && <span className="ml-auto truncate font-mono text-fg-4" title={preview(text)}>runs {preview(text)}</span>}
             </div>
           </div>
           <div>
             <div className="mb-1.5 flex items-center gap-2">
               <p className="label text-fg-4">Or pick a skill on this setup</p>
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-fill px-2 py-1"><Search className="size-3.5 text-fg-4" />
+              <span className="ml-auto inline-flex items-center gap-1.5 rounded-ctl bg-fill px-2 py-1"><Search className="size-3.5 text-fg-4" />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter" aria-label="Filter skills" className="w-32 bg-transparent text-small outline-none placeholder:text-fg-4" /></span>
             </div>
             <ul className="max-h-64 space-y-0.5 overflow-y-auto">
@@ -2474,7 +2474,7 @@ function RolesSettings() {
             </Row>
           )
         })}
-        {err && <p role="alert" className="mx-3.5 mb-3 rounded-lg bg-fail/10 px-3 py-2 text-small text-fail">{err}</p>}
+        {err && <p role="alert" className="mx-3.5 mb-3 rounded-ctl bg-fail/10 px-3 py-2 text-small text-fail-text">{err}</p>}
       </Group>
       {v.joined.filter((r) => r !== 'developer' && !ROLES[r].pending).map((r) => <RoleSlots key={r} role={r} v={v} onSaved={(x) => remember('/roles', { ...v, ...x })} />)}
     </>

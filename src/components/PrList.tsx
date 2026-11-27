@@ -4,7 +4,7 @@ import { appColor } from '../appColor.ts'
 import { askLine } from '../../server/reply.ts'
 import { Archive, Bookmark, ChevronRight, CircleCheck, EyeOff, GitPullRequestDraft, Inbox, Layers, LoaderCircle, MessageSquareWarning, Play, Plus, Search, UserRound, X } from 'lucide-react'
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { api, prefetchFeed, useStable, type PrView } from '../lib.ts'
+import { api, prefetchFeed, useStable, type PrView, smooth } from '../lib.ts'
 import { treeOf } from '../desk.ts'
 import { useDragPick } from '../pick.ts'
 import { reviewPlan } from '../plan.ts'
@@ -129,7 +129,7 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
     { id: 'mine', label: 'My PRs', icon: UserRound },
   ]
   const activeRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [selected])
+  useEffect(() => { activeRef.current?.scrollIntoView({ block: 'nearest', behavior: smooth() }) }, [selected])
   // picking, for a planned batch of reviews: the avatar (a stack's node) is the pick box, or drag across rows
   const drag = useDragPick(picked, onPick)
   const toggle = useStable((id: string) => onPick(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]))
@@ -139,15 +139,15 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
   return (
     <div className="flex h-full flex-col">
       <div className="px-3 pt-3">
-        <div role="tablist" className="relative grid grid-cols-2 rounded-xl bg-fill/60 p-1">
-          <span className="absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-lg bg-surface-1 shadow-sm ring-1 ring-black/5 transition-transform duration-300 ease-[var(--ease-snappy)] dark:ring-white/5"
+        <div role="tablist" className="relative grid grid-cols-2 rounded-ctl bg-fill/60 p-1">
+          <span className="absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-ctl bg-surface-1 shadow-sm ring-1 ring-black/5 transition-transform duration-300 ease-[var(--ease-snappy)] dark:ring-white/5"
                 style={{ transform: tab === 'mine' ? 'translateX(100%)' : undefined }} />
           {tabs.map((t) => {
             const n = prs.filter((p) => tabOf(p) === t.id && waiting(p)).length
             const on = tab === t.id
             return (
               <button key={t.id} role="tab" aria-selected={on} onClick={() => onTab(t.id)}
-                      className={`group relative z-10 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-body font-medium transition-colors ${on ? 'text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
+                      className={`group relative z-10 flex items-center justify-center gap-1.5 rounded-ctl py-1.5 text-body font-medium transition-colors ${on ? 'text-fg-1 ' : 'text-fg-3 hover:text-fg-1'}`}>
                 <t.icon className={`size-3.5 transition-transform duration-200 group-hover:scale-110 ${on ? 'text-accent' : ''}`} />{t.label}
                 {n > 0 && <span className={`min-w-4 rounded-full px-1 text-micro font-semibold tabular-nums ${on ? 'bg-accent text-on-accent' : 'bg-fill-strong text-fg-2 '}`}>{n}</span>}
               </button>
@@ -156,7 +156,7 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
         </div>
       </div>
       <div className="px-3 py-2.5">
-        <label className="group flex items-center gap-2 rounded-xl bg-surface-1 px-3 py-1.5 text-body shadow-sm ring-1 ring-line transition-all duration-200 hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60">
+        <label className="group flex items-center gap-2 rounded-ctl bg-surface-1 px-3 py-1.5 text-body shadow-sm ring-1 ring-line transition-all duration-200 hover:ring-line-strong focus-within:ring-2 focus-within:ring-accent/60">
           <Search className="size-4 text-fg-3 transition-colors group-focus-within:text-accent" aria-hidden />
           <input
             data-filter
@@ -167,16 +167,16 @@ export function PrList({ prs: given, selected, onSelect, query, onQuery, now, ta
             className="w-full bg-transparent outline-none placeholder:text-fg-3"
           />
           {query
-            ? <button onClick={() => onQuery('')} className="rounded-md p-0.5 text-fg-3 transition-colors hov hover:text-fg-2" aria-label="Clear filter"><X className="size-3.5" /></button>
-            : <kbd className="rounded-md border border-line-strong px-1.5 font-mono text-micro text-fg-3">/</kbd>}
+            ? <button onClick={() => onQuery('')} className="rounded-chip p-0.5 text-fg-3 transition-colors hov hover:text-fg-2" aria-label="Clear filter"><X className="size-3.5" /></button>
+            : <kbd className="rounded-chip border border-line-strong px-1.5 font-mono text-micro text-fg-3">/</kbd>}
         </label>
       </div>
 
       <nav ref={nav} className="relative flex-1 overflow-y-auto px-2 pb-4" aria-label="Pull requests">
         {list.length === 0 && (
           <div className="flex animate-[fade-in_240ms] flex-col items-center gap-2 px-6 py-20 text-center">
-            <span className={`mb-1 flex size-12 items-center justify-center rounded-2xl ${query ? 'bg-hover' : 'bg-ok/10 ring-1 ring-ok/20'}`}>
-              <Inbox className={`size-6 ${query ? 'text-fg-4' : 'text-ok'}`} aria-hidden />
+            <span className={`mb-1 flex size-12 items-center justify-center rounded-card ${query ? 'bg-hover' : 'bg-ok/10 ring-1 ring-ok/20'}`}>
+              <Inbox className={`size-6 ${query ? 'text-fg-4' : 'text-ok-text'}`} aria-hidden />
             </span>
             <p className="text-reading font-semibold text-fg-1">{query ? 'Nothing matches' : 'Inbox zero'}</p>
             <p className="max-w-[240px] text-small leading-relaxed text-fg-3">{query ? <>No pull request here has “{query}” in it. <kbd className="rounded bg-hover px-1 font-sans text-meta">Esc</kbd> clears the filter.</> : 'No reviews wait on you. New requests land here, and start on their own with Auto-review on.'}</p>
@@ -309,7 +309,7 @@ const Stack = memo(function Stack({ prs, here, byNumber, selected, onSelect, now
   const all = treeOf(prs), repo = prs[0].repo
   const authors = [...new Map(prs.map((p) => [p.author.login, p.author])).values()]
   return (
-    <div style={appColor(repo).style} className="mb-1.5 rounded-xl bg-white/50 p-1 ring-1 ring-line dark:bg-zinc-900/30 ">
+    <div style={appColor(repo).style} className="mb-1.5 rounded-ctl bg-white/50 p-1 ring-1 ring-line dark:bg-zinc-900/30 ">
       {/* the stack itself is a row: it opens the stack's page (its PRs at a glance, one answer for all of them) */}
       <button onClick={() => onSelect(`stack:${prs[0].id}`)} aria-current={selected?.startsWith('stack:') && prs.some((p) => `stack:${p.id}` === selected)} title={`Open the stack: ${all.map((s) => `#${s.number}`).join(' → ')}`}
               className="group/stk flex w-full items-center gap-2 rounded-ctl px-2 pb-1 pt-1 text-left text-meta text-fg-3 transition-colors hover:bg-hover hover:text-fg-1 aria-[current=true]:bg-accent-soft/60 aria-[current=true]:text-fg-1">
@@ -422,22 +422,22 @@ function ReviewBar({ prs, picked, onPick, toast }: { prs: PrView[]; picked: stri
   return (
     <div className="shrink-0 animate-[toast-in_200ms_var(--ease-snappy)] border-t border-line bg-white/80 p-2.5 backdrop-blur dark:bg-zinc-900/80">
       {picked.length > 1 && (
-        <div className="mb-2 space-y-1.5 rounded-xl bg-accent/6 p-2.5 ring-1 ring-accent/15">
+        <div className="mb-2 space-y-1.5 rounded-ctl bg-accent/6 p-2.5 ring-1 ring-accent/15">
           <p className="text-small font-semibold text-accent-text">{stacks.length === 1 ? 'One stack, bottom first' : `${stacks.length} side by side`}</p>
           <ol className="space-y-1">{stacks.map((s) => (
             <li key={s.join()} className="flex flex-wrap items-center gap-1 font-mono text-meta">
-              {s.map((id, i) => <span key={id} className="flex items-center gap-1">{i > 0 && <span className="text-fg-3">→</span>}<span className="rounded-md bg-surface-1 px-1.5 py-px ring-1 ring-line-strong">{num(id)}</span></span>)}
+              {s.map((id, i) => <span key={id} className="flex items-center gap-1">{i > 0 && <span className="text-fg-3">→</span>}<span className="rounded-chip bg-surface-1 px-1.5 py-px ring-1 ring-line-strong">{num(id)}</span></span>)}
             </li>
           ))}</ol>
           {chained && <p className="text-meta leading-snug text-fg-2 ">{together ? 'All at once: none waits for another.' : 'In a stack each review starts once the one below it is done.'}</p>}
-          {chained && <button onClick={() => setTogether(!together)} className="rounded-lg px-2 py-1 text-meta font-medium text-fg-3 ring-1 ring-line-strong transition-colors hover:text-accent-text hover:ring-accent/30">{together ? 'Bottom first instead' : 'All at once instead'}</button>}
+          {chained && <button onClick={() => setTogether(!together)} className="rounded-ctl px-2 py-1 text-meta font-medium text-fg-3 ring-1 ring-line-strong transition-colors hover:text-accent-text hover:ring-accent/30">{together ? 'Bottom first instead' : 'All at once instead'}</button>}
         </div>
       )}
       <div className="flex items-center gap-2">
         <button onClick={run} disabled={busy} className="group flex flex-1 items-center justify-center gap-1.5 btn-primary btn-lg shadow-sm transition-all disabled:pointer-events-none disabled:opacity-40">
           {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4 fill-current" />}Review {picked.length === 1 ? num(picked[0]) : `${picked.length} PRs`}
         </button>
-        <button onClick={() => { onPick([]); setTogether(false) }} className="rounded-xl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
+        <button onClick={() => { onPick([]); setTogether(false) }} className="rounded-ctl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
       </div>
     </div>
   )
