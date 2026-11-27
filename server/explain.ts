@@ -17,7 +17,7 @@ import {
 import { fill } from './config.ts'
 import { ticketBrief } from './linear.ts'
 import { config, STATE_DIR, type Pr } from './store.ts'
-import { providerFor, spawnAgent, tokensOf, type ProviderId } from './providers.ts'
+import { kindOf, providerFor, spawnAgent, tokensOf, type ProviderId } from './providers.ts'
 
 // --- shapes ----------------------------------------------------------------------------------
 
@@ -497,8 +497,11 @@ export function callClaude<T = Result>(prompt: string, cwd: string, signal: Abor
   const provider = providerFor(model === 'haiku' ? 'small' : 'review', repo)
   return new Promise((resolve, reject) => {
     // Lean session: no MCP, skills, hooks or user settings. A bare call costs ~$0.01 instead of ~$1.50.
+    // a prompt past what one argument can hold (128 KB on Linux: a big PR's diff and files) goes in on stdin instead,
+    // which has no limit; Claude Code reads it there when -p comes without one. Other tools keep the argument
+    const big = Buffer.byteLength(prompt) > 100_000 && kindOf(provider) === 'claude'
     const child = spawnAgent(provider, [
-      '-p', prompt,
+      '-p', ...(big ? [] : [prompt]),
       '--json-schema', JSON.stringify(schema),
       '--output-format', 'stream-json', '--verbose',
       '--tools', 'Read', 'Grep', 'Glob', 'Bash',
@@ -507,7 +510,8 @@ export function callClaude<T = Result>(prompt: string, cwd: string, signal: Abor
       '--system-prompt', system,
       '--max-budget-usd', String(budget),
       ...(model ? ['--model', model] : []),
-    ], { cwd, signal })
+    ], { cwd, signal, stdin: big })
+    if (big) { child.stdin!.on('error', () => {}); child.stdin!.end(prompt) }
     let buf = '', stderr = '', done: { result: T; cost: number; provider: ProviderId; tokens?: { input: number; output: number } } | undefined, error: string | undefined
     child.stdout!.on('data', (chunk: Buffer) => {
       buf += chunk
