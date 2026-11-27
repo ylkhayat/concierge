@@ -257,7 +257,7 @@ export function UnderstandingMap({ prId, path, toast }: { prId: string; path?: s
     <ReactFlowProvider>
       <div className="flex h-full min-h-0 flex-col gap-3">
         {q.data?.stale && <p className="text-micro text-wait-text">Drawn for an earlier push: Explain catches it up.</p>}
-        {o.levels ? <>{o.levels.v !== 2 && <Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} />}<LevelsBoard prId={prId} levels={o.levels} /></> : <><Story o={o} /><Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} /><MapCanvas o={o} /></>}
+        {o.levels ? <>{(o.levels.v ?? 0) < 3 && <Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} />}<LevelsBoard prId={prId} levels={o.levels} /></> : <><Story o={o} /><Leveling prId={prId} busy={q.data?.task?.state === 'running' || q.data?.task?.state === 'queued'} /><MapCanvas o={o} /></>}
       </div>
     </ReactFlowProvider>
   )

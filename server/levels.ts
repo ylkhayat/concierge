@@ -13,7 +13,7 @@ import type { Overlay } from './explain.ts'
 
 export const DIMS = ['behaviour', 'data', 'contract', 'logic', 'wiring', 'security', 'safety'] as const
 export type Dim = (typeof DIMS)[number]
-export type LevelNode = { id: string; parent?: string; level: 1 | 2 | 3 | 4 | 5; dim: Dim; title: string; before?: string; after: string; why?: string; path?: string; story?: string }
+export type LevelNode = { id: string; parent?: string; level: 1 | 2 | 3 | 4 | 5; dim: Dim; title: string; before?: string; after: string; why?: string; path?: string; story?: string; who?: string; when?: string } // who, when: a card's story in plain terms
 /** What a reviewer checks: what the PR claims, why this way, what must be true for it to be right and where to see it, and its risks. */
 export type Review = {
   claim: string; approach: string; why: string
@@ -33,7 +33,7 @@ export const LEVELS_SCHEMA = {
   properties: {
     nodes: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'level', 'dim', 'title', 'after', 'story'], properties: {
       id: str, parent: str, level: { type: 'integer', minimum: 1, maximum: 4 }, dim: { type: 'string', enum: [...DIMS] },
-      title: str, before: str, after: str, why: str, story: str } } },
+      title: str, before: str, after: str, why: str, story: str, who: str, when: str } } },
     links: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['from', 'to'], properties: { from: str, to: str } } },
     files: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['path', 'parent', 'title', 'story'], properties: { path: str, parent: str, title: str, story: str } } },
     glossary: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['term', 'means'], properties: { term: str, means: str } } },
@@ -59,6 +59,7 @@ links: cause → effect between nodes of the same level (3 or 4) where one chang
 files: every changed file path given, with the level 4 node it belongs to and a title of 2 to 5 words saying what it is or does (never its file or class name).
 story, on every node and every file: ${STORY_RULE} On a level 2 node it is the example that makes the problem obvious.
 review, for whoever reviews it: claim (what this PR promises, one sentence); approach (how it does it) and why (why this way); alternatives (other ways it could have gone, each with why not; only real ones, none is fine); assumptions (2 to 6 things that must be true for it to be correct, each with the changed file to read (path), its line range if you know it (lines, e.g. "40-62"), and look: exactly what to check there); risks (what could go wrong, each low, medium or high).
+who and when, on every node of levels 2 and 3 (its story in plain terms, read as labelled rows): who meets this change, as a role ("an engineer comparing two eval runs", "a caller hanging up mid-task"; never an invented name), and when it shows up (the situation, e.g. "after changing the router's input"). Short phrases, no project words a newcomer would not know.
 Ids: short, unique (e.g. c1, p1, w1, h1, a1).`
 
 /** The prompt: the explanation, without what the levels don't need. */
@@ -79,12 +80,12 @@ export function levelsOf(r: { nodes: LevelNode[]; links: { from: string; to: str
     const p = nodes.find((n) => n.id === parent)
     nodes.push({ id: `f:${t.path}`, parent, level: 5, dim: p?.dim ?? 'logic', title: f?.title ?? '', before: t.before, after: t.after, why: t.why, path: t.path, story: f?.story })
   }
-  return { v: 2, nodes, links: r.links.filter((l) => ids.has(l.from) && ids.has(l.to) && l.from !== l.to).map((l) => [l.from, l.to]), glossary: r.glossary ?? [], review: r.review }
+  return { v: 3, nodes, links: r.links.filter((l) => ids.has(l.from) && ids.has(l.to) && l.from !== l.to).map((l) => [l.from, l.to]), glossary: r.glossary ?? [], review: r.review }
 }
 
 /** What shows at a level: that level's cards; on the board (3 and down) also its shallower ones that don't go deeper. Context and the problem stay on their own levels. */
 export function visibleAt(lv: Levels, level: number): LevelNode[] {
-  const hasKids = new Set(lv.nodes.map((n) => n.parent).filter(Boolean)), board = lv.v === 2 ? 3 : 1
+  const hasKids = new Set(lv.nodes.map((n) => n.parent).filter(Boolean)), board = (lv.v ?? 1) >= 2 ? 3 : 1
   return lv.nodes.filter((n) => n.level === level || (level >= board && n.level >= board && n.level < level && !hasKids.has(n.id)))
 }
 /** A link drawn at a level: each end lifted to the box that shows it (a deeper node: its ancestor on the board). */

@@ -6,15 +6,15 @@
 // the next): it never depends on where the browser measured a card, so it sits right at any window size and zoom.
 import { Background, BackgroundVariant, Handle, MarkerType, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { ArrowRight, Check, Cloud, Cpu, Database, ExternalLink, Lightbulb, ListChecks, MessageCircleQuestion, Radio, ShieldAlert, TriangleAlert, UserRound, X, type LucideIcon } from 'lucide-react'
+import { BookOpen, Check, Cloud, Cpu, Database, ExternalLink, Lightbulb, ListChecks, MessageCircleQuestion, Radio, ShieldAlert, TriangleAlert, UserRound, X, type LucideIcon } from 'lucide-react'
 import { createContext, Fragment, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { DIMS, linksAt, visibleAt, type Dim, type Levels, type Term } from '../../server/levels.ts'
+import { DIMS, linksAt, type Dim, type Levels, type Term } from '../../server/levels.ts'
 import { edgeTypes } from '../components/Explain.tsx'
-import { Tabs } from '../components/Tabs.tsx'
 import { api, enc } from '../lib.ts'
 
 /** A card on a board: a change said in words. strong: the one the lane is about; faded: set aside. */
-export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[]; story?: string; href?: string; mono?: boolean } // story: its example, written with the board; href: where to check it (a file at the PR's head)
+export type Card = { id: string; title: string; line?: string; before?: string; why?: string; tone?: 'strong' | 'faded' | 'ok' | 'wait' | 'bad'; more?: string[]; story?: string; href?: string; mono?: boolean
+  who?: string; when?: string; deeper?: { title: string; line?: string }[]; files?: { title: string; path: string }[] } // story: its example, written with the board; href: where to check it (a file at the PR's head)
 export type Lane = { id: string; label: string; hint: string; icon: LucideIcon; cards: Card[]; skip?: boolean } // skip: left out when empty, unnamed
 
 const W = 260, H = 124, GAP = 24, LABEL_W = 168, LANE_GAP = 28, COLS = 4
@@ -198,15 +198,49 @@ export function LaneBoard({ prId, board, lanes, links, top, children, ask }: { p
         <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-card bg-surface-1 ring-1 ring-line max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:max-h-[60%] max-md:w-auto max-md:shadow-e3">
           <p className="flex items-center gap-2 border-b border-line px-3 py-2 text-small font-semibold text-fg-1"><span className={`min-w-0 flex-1 ${sel.mono ? 'font-mono' : ''}`}>{sel.mono ? said(sel.title) : <Termed text={sel.title} />}</span>
             <button onClick={() => setOn(undefined)} aria-label="Close" className="text-fg-4 hover:text-fg-1 max-md:-m-2 max-md:p-2.5"><X className="size-3.5" /></button></p>
-          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-2.5">
-            {!sel.href && <Story prId={prId} board={board} c={sel} />}
-            {sel.before && <div><p className="label text-fg-4">Before</p><p className="text-small leading-snug text-fg-3"><Termed text={sel.before} /></p></div>}
-            {sel.line && <div><p className="label text-accent-text">{sel.href ? 'What to check' : sel.before ? 'Now' : 'What'}</p><p className="text-small leading-snug text-fg-1"><Termed text={sel.line} /></p></div>}
-            {sel.why && <div><p className="label text-fg-4">Why</p><p className="text-small leading-snug text-fg-2"><Termed text={sel.why} /></p></div>}
-            {sel.href && <a href={sel.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-small font-medium text-accent-text hover:underline">Open these lines on GitHub<ExternalLink className="size-3" /></a>}
-            {!!sel.more?.length && <div><p className="label text-fg-4">Inside, one level deeper</p><ul className="mt-0.5 space-y-0.5">{sel.more.map((m) => <li key={m} className="text-small text-fg-2">{said(m)}</li>)}</ul></div>}
-          </div>
+          <Insights prId={prId} board={board} c={sel} />
         </aside>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A card, opened: its story in plain terms, as labelled rows (who it's for, when it shows up, before, now, why it
+ * matters), a real example, then one level deeper: how it works, and the files it lives in.
+ */
+function Insights({ prId, board, c }: { prId: string; board: 'understanding' | 'intent'; c: Card }) {
+  const rows: [string, string | undefined, string][] = [
+    ["Who it's for", c.who, 'text-fg-1'], ['When', c.when, 'text-fg-1'],
+    ['Before', c.before, 'text-fg-3'], [c.href ? 'What to check' : c.before ? 'Now' : 'What', c.line, 'text-fg-1'], ['Why it matters', c.why, 'text-fg-2'],
+  ]
+  return (
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3.5 py-3">
+      <dl className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
+        {rows.filter(([, t]) => t).map(([label, t, tone]) => (
+          <Fragment key={label}><dt className="label pt-0.5 text-fg-4">{label}</dt><dd className={`text-small leading-snug ${tone}`}><Termed text={t} /></dd></Fragment>
+        ))}
+      </dl>
+      {c.href && <a href={c.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-small font-medium text-accent-text hover:underline">Open these lines on GitHub<ExternalLink className="size-3" /></a>}
+      {!c.href && <Story prId={prId} board={board} c={c} />}
+      {!!c.deeper?.length && (
+        <section>
+          <p className="label text-fg-4">How it works</p>
+          <ul className="mt-1.5 space-y-2">
+            {c.deeper.map((d) => <li key={d.title}><p className="text-small font-medium text-fg-1"><Termed text={d.title} /></p>{d.line && <p className="text-meta leading-snug text-fg-2"><Termed text={d.line} /></p>}</li>)}
+          </ul>
+        </section>
+      )}
+      {!!c.files?.length && (
+        <section>
+          <p className="label text-fg-4">Where it lives</p>
+          <ul className="mt-1.5 space-y-1.5">
+            {c.files.map((f) => <li key={f.path}><p className="text-small text-fg-1">{said(f.title)}</p><p className="truncate font-mono text-micro text-fg-4" title={f.path}>{f.path}</p></li>)}
+          </ul>
+        </section>
+      )}
+      {!c.deeper?.length && !!c.more?.length && (
+        <section><p className="label text-fg-4">Inside</p><ul className="mt-1 space-y-0.5">{c.more.map((m) => <li key={m} className="text-small text-fg-2"><Termed text={m} /></li>)}</ul></section>
       )}
     </div>
   )
@@ -217,9 +251,6 @@ export const STORY_ICONS = { why: Lightbulb, decided: ListChecks, change: Radio,
 
 // --- Understanding: the levels ----------------------------------------------------------------------------------
 
-// the ladder (server/levels.ts v2): from what this is at all to each file; an explanation drawn before it keeps its own
-const STOPS = [['Context', 'what this part of the product is'], ['The problem', 'what went wrong, with an example'], ['What changes', 'what is possible or different now'], ['How it works', 'the mechanisms'], ['Code', 'each file']] as const
-const STOPS_V1 = [['Purpose', 'what it is for'], ['Capabilities', 'what it makes possible'], ['Parts', 'what changed'], ['Mechanics', 'how it works'], ['Code', 'each file']] as const
 const DIM: Record<Dim, { label: string; hint: string; icon: LucideIcon }> = {
   behaviour: { label: 'Behaviour', hint: 'what a user or caller notices', icon: UserRound },
   data: { label: 'Data', hint: 'what is stored or sent', icon: Database },
@@ -229,115 +260,36 @@ const DIM: Record<Dim, { label: string; hint: string; icon: LucideIcon }> = {
   security: { label: 'Security', hint: 'access, secrets, privacy', icon: ShieldAlert },
   safety: { label: 'Safety net', hint: 'tests and checks', icon: Check },
 }
-// a PR first opened starts at the obvious end (its context); after that, where you left it
-const remembered = (prId: string, first: number) => { try { const v = Number(localStorage.getItem(`levels:${prId}`)); return v >= 1 && v <= 5 ? v : first } catch { return first } }
 /** A file's card is titled by what it is, never its name: the model's words, else the start of what it does now. */
 const titleOf = (n: Levels['nodes'][number]) => n.path && (!n.title || n.title.includes('.') || n.title === n.path.split('/').pop()) ? (said(n.after) ?? '').split(/[.:;,(]/)[0].split(' ').slice(0, 6).join(' ') : n.title
 
-/** The meter: the app's own segmented control, floating at the foot; how deep it goes. */
-function Meter({ level, set, stops }: { level: number; set: (l: number) => void; stops: readonly (readonly [string, string])[] }) {
-  return (
-    <div className="absolute bottom-3 left-1/2 z-10 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto rounded-xl bg-surface-1 px-2 py-1 shadow-[var(--e2)]">
-      <span className="pl-1 text-micro text-fg-4 max-md:hidden">General</span>
-      <Tabs label="How deep to explain" value={String(level)} onChange={(v) => set(Number(v))}
-            options={stops.map(([name, hint], k) => ({ id: String(k + 1), label: name, title: hint }))} />
-      <span className="pr-1 text-micro text-fg-4 max-md:hidden">Detailed</span>
-    </div>
-  )
-}
-
-/** Where you are: a line for each level above this one, its gist; a click goes back to it. */
-function Trail({ levels, level, set }: { levels: Levels; level: number; set: (l: number) => void }) {
-  const rows = STOPS.slice(0, level - 1).map(([name], k) => ({ k: k + 1, name, gist: levels.nodes.filter((n) => n.level === k + 1).map((n) => titleOf(n)).join(' · ') })).filter((r) => r.gist)
-  if (!rows.length) return null
-  return (
-    <div className="flex flex-col gap-px" aria-label="So far">
-      {rows.map((r) => (
-        <button key={r.k} onClick={() => set(r.k)} className="flex min-w-0 items-baseline gap-2 rounded-ctl px-2 py-0.5 text-left text-meta transition-colors hover:bg-hover">
-          <span className="w-24 shrink-0 text-fg-4"><span className="tabular-nums">{r.k}</span> {r.name}</span>
-          <span className="min-w-0 truncate text-fg-2">{r.gist}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** Context and the problem, read like a short article: one column of cards, the example in each, the words you'll meet. */
-function Reading({ levels, level, set }: { levels: Levels; level: number; set: (l: number) => void }) {
-  const nodes = levels.nodes.filter((n) => n.level === level)
-  const terms = levels.glossary ?? []
-  const row = (label: string, text: string | undefined, tone: string) => text ? (
-    <div className="grid gap-x-4 gap-y-0.5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
-      <p className="label pt-0.5 text-fg-4">{label}</p>
-      <p className={`text-body leading-relaxed ${tone}`}><Termed text={text} /></p>
-    </div>
-  ) : null
-  return (
-    <div className="mx-auto flex w-full max-w-[680px] flex-col gap-3 px-4 pb-24 pt-5">
-      {nodes.map((n) => (
-        <article key={n.id} className="card p-5">
-          <h3 className="text-reading font-semibold leading-snug text-fg-1"><Termed text={n.title} /></h3>
-          {level === 1 ? <p className="mt-2 text-body leading-relaxed text-fg-2"><Termed text={n.after} /></p> : (
-            <div className="mt-3 flex flex-col gap-2.5">
-              {row('Before', n.before, 'text-fg-3')}
-              {row('Once this lands', n.after, 'text-fg-1')}
-              {row('Why it matters', n.why, 'text-fg-2')}
-            </div>
-          )}
-          {n.story && (
-            <div className="mt-4 rounded-ctl bg-fill px-3.5 py-3">
-              <p className="label text-fg-4">Example</p>
-              <p className="mt-1 text-small leading-relaxed text-fg-1"><Termed text={n.story} /></p>
-            </div>
-          )}
-        </article>
-      ))}
-      {level === 1 && terms.length > 0 && (
-        <section className="card p-5">
-          <h3 className="label text-fg-4">Words you'll meet</h3>
-          <dl className="mt-2.5 grid gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]">
-            {terms.map((t) => <Fragment key={t.term}><dt className="text-small font-semibold text-fg-1">{t.term}</dt><dd className="text-small leading-snug text-fg-2">{t.means}</dd></Fragment>)}
-          </dl>
-        </section>
-      )}
-      <button onClick={() => set(level + 1)} className="btn-quiet btn-sm self-end">Next: {STOPS[level][0]}<ArrowRight className="size-3.5" /></button>
-    </div>
-  )
-}
-
+/**
+ * Understanding, on one board: what this is (Context) and what went wrong (The problem) first, then what changes, in a
+ * lane per dimension, wired by cause. A card opens into its story in plain terms, an example, how it works and its files.
+ */
 export function LevelsBoard({ prId, levels }: { prId: string; levels: Levels }) {
-  const v2 = levels.v === 2
-  const [level, setLevel] = useState(() => remembered(prId, v2 ? 1 : 3))
-  const set = (l: number) => { setLevel(l); try { localStorage.setItem(`levels:${prId}`, String(l)) } catch { /* not kept */ } }
-  const { lanes, links } = useMemo(() => {
-    const shown = visibleAt(levels, level)
-    const kids = (id: string) => levels.nodes.filter((n) => n.parent === id).map(titleOf)
-    const order = new Map(levels.nodes.map((n, k) => [n.id, k]))
-    const rank = (n: Levels['nodes'][number]) => (n.path ? (order.get(n.parent ?? '') ?? 0) + order.get(n.id)! / 1e4 : order.get(n.id)!)
-    const lanes: Lane[] = DIMS.map((d) => ({ id: d, ...DIM[d], cards: shown.filter((n) => n.dim === d).sort((a, b) => rank(a) - rank(b)).map((n) => ({
-      id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, story: n.story, more: kids(n.id), tone: n.level === 1 ? 'strong' as const : undefined,
-    })) }))
-    return { lanes, links: linksAt(levels, level) }
-  }, [levels, level])
-  const ask = useMemo(() => levels.nodes.map((n) => ({ id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, story: n.story })), [levels])
-  const unchanged = lanes.filter((l) => !l.cards.length).map((l) => l.label)
-  const stops = v2 ? STOPS : STOPS_V1
-  const trail = v2 ? <Trail levels={levels} level={level} set={set} /> : null
-  const meter = <Meter level={level} set={set} stops={stops} />
+  const { lanes, links, ask } = useMemo(() => {
+    const kids = (id: string) => levels.nodes.filter((n) => n.parent === id)
+    const card = (n: Levels['nodes'][number]): Card => {
+      const deeper = n.level === 3 ? kids(n.id) : []
+      const files = deeper.flatMap((d) => kids(d.id)).filter((f) => f.path).map((f) => ({ title: titleOf(f), path: f.path! }))
+      return { id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, story: n.story, who: n.who, when: n.when,
+        deeper: deeper.filter((d) => !d.path).map((d) => ({ title: titleOf(d), line: d.after })), files, more: deeper.length ? deeper.map(titleOf) : undefined }
+    }
+    const at = (l: number) => levels.nodes.filter((n) => n.level === l)
+    const changes = at(3)
+    const lanes: Lane[] = [
+      { id: 'context', label: 'Context', hint: 'what this is, for someone new to it', icon: BookOpen, cards: at(1).map((n) => ({ ...card(n), tone: 'strong' as const })) },
+      { id: 'problem', label: 'The problem', hint: 'what went wrong, and why it matters', icon: TriangleAlert, cards: at(2).map(card) },
+      ...DIMS.map((d) => ({ id: d, ...DIM[d], cards: changes.filter((n) => n.dim === d).map(card) })),
+    ]
+    return { lanes, links: linksAt(levels, 3), ask: levels.nodes.map((n) => ({ id: n.id, title: titleOf(n), line: n.after, before: n.before, why: n.why, story: n.story })) }
+  }, [levels])
+  const unchanged = lanes.slice(2).filter((l) => !l.cards.length).map((l) => l.label)
   return (
     <Glossary.Provider value={levels.glossary ?? []}>
-      {v2 && level <= 2 ? (
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
-          {trail}
-          <div className="relative min-h-0 flex-1 overflow-y-auto rounded-card bg-[var(--bg-app)] ring-1 ring-line">
-            <Reading levels={levels} level={level} set={set} />
-            <div className="sticky bottom-0 h-0">{meter}</div>
-          </div>
-        </div>
-      ) : (
-        <LaneBoard prId={prId} board="understanding" lanes={lanes} links={links} ask={ask}
-                   top={<>{trail}{unchanged.length > 0 && <p className="px-2 text-meta text-fg-3"><span className="text-fg-4">Unchanged:</span> {unchanged.join(' · ')}</p>}</>}>{meter}</LaneBoard>
-      )}
+      <LaneBoard prId={prId} board="understanding" lanes={lanes} links={links} ask={ask}
+                 top={unchanged.length ? <p className="px-2 text-meta text-fg-3"><span className="text-fg-4">Unchanged:</span> {unchanged.join(' · ')}</p> : undefined} />
     </Glossary.Provider>
   )
 }
