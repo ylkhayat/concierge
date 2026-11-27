@@ -715,10 +715,13 @@ const app = new Hono().basePath('/api')
 // comes from (Sec-Fetch-Site); anything changing state from another site is refused. This page's own calls are
 // same-origin, and scripts and the other machines send no such header.
 app.use('*', async (c, next) => {
-  const m = c.req.method
-  if (m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS' && (c.req.header('sec-fetch-site') === 'cross-site' || c.req.header('sec-fetch-site') === 'same-site' || !originOk(c.req.header('origin'), extraHosts()))) {
+  const m = c.req.method, site = c.req.header('sec-fetch-site')
+  if (m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS' && (site === 'cross-site' || site === 'same-site' || !originOk(c.req.header('origin'), extraHosts()))) {
     return c.json({ error: 'Refused: this request came from another website' }, 403)
   }
+  // a read from another site's page is refused too (an <img> or a link there pointing here): it couldn't see the
+  // answer, but some reads start work that is paid for (a ticket's environment, an agent's next steps)
+  if (site === 'cross-site') return c.json({ error: 'Refused: this request came from another website' }, 403)
   await next()
 })
 // what is sent is bounded (a snapshot of a page is the largest thing a page sends: a few megabytes), so one request
@@ -3452,9 +3455,13 @@ async function stepsOf(holder: { summary?: string; next?: NextSteps; state: stri
   // the agent's own block, or read before (one saved before checklists: its decisions and moves as one)
   if (msg && holder.next?.for === hashOf(msg)) return holder.next.steps ? holder.next : { ...holder.next, steps: toSteps(holder.next.decisions, holder.next.actions) }
   if (!msg || msg.length < 40) return null
-  holder.next = await nextSteps(msg)
-  if (holder.next.costUsd || holder.next.tokens) addSpend(holder.next.costUsd ?? 0, holder.next.provider, holder.next.tokens)
-  save()
+  // two reads at once share one call (next.ts): its cost is counted once, by whichever comes back first
+  const got = await nextSteps(msg)
+  if (holder.next?.for !== got.for) {
+    holder.next = got
+    if (got.costUsd || got.tokens) addSpend(got.costUsd ?? 0, got.provider, got.tokens)
+    save()
+  }
   return holder.next
 }
 // each PR has its own agent: one never changes another PR's branch, it names the work and Concierge hands it over
