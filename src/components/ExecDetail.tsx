@@ -67,7 +67,7 @@ export type TicketThreadProps = {
 export function useTicketThread({ t, actions, missing = [], feed, onSelect, toast, sync, onOpenLinked, compact }: TicketThreadProps) {
   const run = t.run
   // opening a ticket reads its environment from Sentry once (cached), so Investigate goes to the right data
-  useEffect(() => { api(`/exec/tickets/${t.id}/env`).catch(() => {}) }, [t.id])
+  useEffect(() => { api(`/exec/tickets/${t.id}/env`, {}).catch(() => {}) }, [t.id])
   const [copied, setCopied] = useState(false)
   const g = groupOf(t)
   const P = PRIORITY[t.priority] ?? PRIORITY[0]

@@ -1435,8 +1435,7 @@ app.post('/works/unlink', async (c) => {
 app.get('/works', (c) => {
   const key = String(c.req.query('member') ?? '')
   if (!/^(pr|ticket):/.test(key)) return c.json({ error: 'member is pr:… or ticket:…' }, 400)
-  const { w, members } = workOfMember(key)
-  save()
+  const { w, members } = workOfMember(key) // (a work made here is kept with the next thing saved: a read doesn't write)
   return c.json({ id: w.id, target: `work:${w.id}`, members, links: w.links, said: w.said.slice(-20) })
 })
 // a card asked (or, with no words, written): answered from the card, which is written again first when the work moved on
@@ -1924,7 +1923,12 @@ function ticketTools(id: string) {
   const linked = t.pr && state.prs[`${t.pr.repo}#${t.pr.number}`]
   return { t, defs, linked }
 }
+// a ticket's environment: what is known (a read), and looking it up in Sentry (a paid agent call: asked for, never a read's doing)
 app.get('/exec/tickets/:id/env', (c) => {
+  const t = execBoard.tickets.find((x) => x.id === c.req.param('id'))
+  return t ? c.json(envOf(t)) : c.json({ error: 'Unknown ticket' }, 404)
+})
+app.post('/exec/tickets/:id/env', (c) => {
   const t = execBoard.tickets.find((x) => x.id === c.req.param('id'))
   if (!t) return c.json({ error: 'Unknown ticket' }, 404)
   askEnv(t)
@@ -2823,7 +2827,8 @@ app.get('/visuals', async (c) => {
 app.get('/prs/:id/visuals', async (c) => {
   const p = state.prs[decodeURIComponent(c.req.param('id'))]
   if (!p) return c.json({ error: 'No such PR' }, 404)
-  if (!p.ui && config.repos[p.repo]) await checkUi(p).catch(() => undefined)
+  // whether it changes what people see is worked out beside the read (GitHub is asked), and the page reads again when it is known
+  if (!p.ui && config.repos[p.repo]) void checkUi(p).then(() => stale(`/prs/${encodeURIComponent(p.id)}/visuals`), () => undefined)
   return c.json(await visualsView(p))
 })
 // capture now, say something about the screens (the conversation), stop it, or turn this PR on or off
@@ -3410,13 +3415,17 @@ app.post('/prs/:id/explain', async (c) => {
 /** The run's final message: stored since this feature, else the last result in its log. */
 const finalMessage = (job: { summary?: string } | undefined, feedId: string) =>
   job?.summary ?? [...activity(feedId)].reverse().find((a) => a.kind === 'result')?.text
-const stepsFor = async (holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string) => withoutCiWatch(await stepsOf(holder, feedId))
-async function stepsOf(holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string) {
+/** A read may not pay for a model call: when the steps aren't read yet, it says so, and the page asks for them (a POST). */
+const ASK = Symbol('ask')
+const stepsFor = async (holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string) => withoutCiWatch((await stepsOf(holder, feedId)) as NextSteps | null)
+const stepsKnown = (holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string) => stepsOf(holder, feedId, false).then((n) => (n === ASK ? ASK : withoutCiWatch(n as NextSteps | null)))
+async function stepsOf(holder: { summary?: string; next?: NextSteps; state: string } | undefined, feedId: string, pay = true): Promise<NextSteps | null | typeof ASK> {
   if (!holder || holder.state === 'running' || holder.state === 'queued') return null
   const msg = finalMessage(holder, feedId)
   // the agent's own block, or read before (one saved before checklists: its decisions and moves as one)
   if (msg && holder.next?.for === hashOf(msg)) return holder.next.steps ? holder.next : { ...holder.next, steps: toSteps(holder.next.decisions, holder.next.actions) }
   if (!msg || msg.length < 40) return null
+  if (!pay) return ASK
   // two reads at once share one call (next.ts): its cost is counted once, by whichever comes back first
   const got = await nextSteps(msg)
   if (holder.next?.for !== got.for) {
@@ -3447,18 +3456,23 @@ app.post('/stacks/steps-review', async (c) => {
   if (r.costUsd || r.tokens) { addSpend(r.costUsd, r.provider, r.tokens); save() }
   return c.json({ duplicates: r.duplicates, conflicts: r.conflicts })
 })
-app.get('/prs/:id/next', async (c) => {
-  const p = pr(c.req.param('id'))
+const prNext = (pay: boolean) => async (c: Context) => {
+  const p = pr(c.req.param('id') ?? '')
   try {
     if (p && answered(p)) return c.json({ steps: null }) // answered with the whole stack: its agent took them up
-    const n = await stepsFor(p?.job, p?.id ?? '')
+    const n = pay ? await stepsFor(p?.job, p?.id ?? '') : await stepsKnown(p?.job, p?.id ?? '')
+    if (n === ASK) return c.json({ pending: true, ask: `/prs/${encodeURIComponent(p?.id ?? '')}/next` })
     // a step already handed over isn't offered again: the same wording, compared by hash (case, punctuation and spacing
     // aside), so a new suggestion worded the same is recognised and one worded differently is shown
     const gone = new Set((p?.handoffs ?? []).map((h) => stepHash(h.text)))
     const handed = (text: string) => gone.has(stepHash(text))
     return c.json({ steps: n && gone.size ? { ...n, steps: (n.steps ?? []).filter((x) => !handed(x.text)) } : n })
   } catch (e) { return c.json({ error: (e as Error).message }, 502) }
-})
+}
+// what the agent's last message asks of you. Read: what is known (it is read when a run ends). Not read yet: the page
+// is told to ask, and asking (POST) is what may cost a small model call
+app.get('/prs/:id/next', prNext(false))
+app.post('/prs/:id/next', prNext(true))
 // --- a task handed to another agent from a PR's discussion or chat: onto the ticket it names, or a new ticket made in
 // the workspace's tracker (Linear for an organization that manages its work there, else the repo's GitHub issues),
 // assigned to you; then its own Ship run starts with the brief, and the PR's feed says where it went
@@ -3625,13 +3639,18 @@ function sendReply(p: Pr, msg: string): string | undefined {
   enqueue(p, 'reply', msg + REPLY_NOTE, msg)
   return 'started'
 }
-app.get('/exec/:run/next', async (c) => {
-  const run = state.execs[c.req.param('run')]
+const runNext = (pay: boolean) => async (c: Context) => {
+  const run = state.execs[c.req.param('run') ?? ''] as ExecRun | undefined
   // handed over to its PRs: these steps are stale, and the PR's agent's are the ones offered (never both)
   const h = run && run.ids.map((id) => state.handed?.[id]).find((x) => x?.run === run.id)
   if (h) return c.json({ steps: null, handed: { to: h.to.map((p) => p.number), at: h.at } })
-  try { return c.json({ steps: await stepsFor(run, `exec:${run?.id}`) }) } catch (e) { return c.json({ error: (e as Error).message }, 502) }
-})
+  try {
+    const n = pay ? await stepsFor(run, `exec:${run?.id}`) : await stepsKnown(run, `exec:${run?.id}`)
+    return n === ASK ? c.json({ pending: true, ask: `/exec/${run?.id}/next` }) : c.json({ steps: n })
+  } catch (e) { return c.json({ error: (e as Error).message }, 502) }
+}
+app.get('/exec/:run/next', runNext(false))
+app.post('/exec/:run/next', runNext(true))
 app.post('/exec/:run/reply', async (c) => {
   const run = state.execs[c.req.param('run')]
   const { text } = await c.req.json() as { text?: string }

@@ -14,7 +14,8 @@ const roleHeader = (): Record<string, string> => {
   const s = chosen() // this machine or the fleet, when picked in this tab (scope.ts); else the server's default
   try { const r = localStorage.getItem('role'); return { ...(r && { 'x-concierge-role': r }), ...(s && { 'x-concierge-scope': s }) } } catch { return s ? { 'x-concierge-scope': s } : {} }
 }
-export const api = (path: string, body?: unknown) =>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const api = (path: string, body?: unknown): Promise<any> =>
   fetch(`/api${path}`, body === undefined ? { headers: roleHeader() } : {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...roleHeader() }, body: JSON.stringify(body),
   }).then(async (r) => {
@@ -23,6 +24,8 @@ export const api = (path: string, body?: unknown) =>
     let json: any
     try { json = text ? JSON.parse(text) : {} } catch { throw new Error(r.ok ? `Unreadable answer from ${path}` : `${r.status} ${text.slice(0, 200) || r.statusText}`) }
     if (!r.ok) throw new Error(json.error ?? r.statusText)
+    // a read never pays: when what it wants isn't worked out yet, the server says where to ask for it, and that is asked
+    if (body === undefined && json?.pending === true && typeof json.ask === 'string') return api(json.ask, {})
     return json
   })
 
