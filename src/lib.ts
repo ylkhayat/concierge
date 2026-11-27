@@ -278,6 +278,13 @@ export const flowControls = '!m-3 !overflow-hidden !rounded-ctl !border-0 !shado
 export const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 export const smooth = (): ScrollBehavior => (calm() ? 'auto' : 'smooth')
 
+/**
+ * The key that sends, the same in every box you write to an agent in: Enter (Shift+Enter is a new line; ⌘/Ctrl+Enter
+ * sends too). On a touch keyboard, which has no Shift+Enter, Enter is a new line and the button sends.
+ */
+export const sendKey = (e: { key: string; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; nativeEvent?: { isComposing?: boolean } }) =>
+  e.key === 'Enter' && !e.nativeEvent?.isComposing && (e.metaKey || e.ctrlKey || (!e.shiftKey && !matchMedia('(pointer: coarse)').matches))
+
 export const isTyping = (e: KeyboardEvent) => {
   const el = e.target as HTMLElement | null
   return !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || el.isContentEditable)

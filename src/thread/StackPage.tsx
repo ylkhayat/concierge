@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { askLine } from '../../server/reply.ts'
 import type { StackCheck } from '../../server/stackCheck.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
-import { api, type Activity, type PrView, type TicketView } from '../lib.ts'
+import { api, type Activity, type PrView, type TicketView, sendKey } from '../lib.ts'
 import { refresh, remember, useApi } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 import { plain } from '../components/StackNav.tsx'
@@ -117,10 +117,10 @@ export function StackPage({ stack, prs, waiting, onSelect, onTicket, toast }: {
       composer={members.length > 0 && (
         <Composer>
           <div className="flex items-end gap-2">
-            <textarea value={words} onChange={(e) => setWords(e.target.value)} rows={2} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); say() } }}
+            <textarea value={words} onChange={(e) => setWords(e.target.value)} rows={2} onKeyDown={(e) => { if (sendKey(e)) { e.preventDefault(); say() } }}
                       placeholder="Tell the stack: one agent works it through, bottom first…" aria-label="A message to the whole stack"
                       className="max-h-40 min-h-[52px] flex-1 resize-none rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line placeholder:text-fg-4 focus:ring-accent/50" />
-            <button onClick={say} disabled={!words.trim() || !to.length || sending} className="inline-flex items-center gap-1.5 btn-primary" title="Send (⌘↵)">{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}Send</button>
+            <button onClick={say} disabled={!words.trim() || !to.length || sending} className="inline-flex items-center gap-1.5 btn-primary" title="Send (Enter)">{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}Send</button>
           </div>
         </Composer>
       )}

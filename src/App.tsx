@@ -1,4 +1,4 @@
-import { ClipboardList, Clock, Coins, GitPullRequestArrow, Library, Network, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Component, SwatchBook, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff, Palette as Swatch } from 'lucide-react'
+import { Clock, Coins, GitPullRequestArrow, PanelLeftClose, PanelLeftOpen, Rocket, Settings2, Map as MapIcon, Wallet, LoaderCircle, RefreshCw, TriangleAlert, WifiOff } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { Avatar, ordered, PrList, tabOf, waiting, type Tab } from './components/PrList.tsx'
 import { AccountNow, Load, LoadRibbon } from './components/Load.tsx'
@@ -43,9 +43,15 @@ import { deckKey, designOn, designViewOf, readPlace, workspaceFor, type DesignFr
 const CodebaseView = lazy(() => import('./components/Codebase.tsx'))
 import { ago, api, critUrl, enc, isTyping, param, prefetchFeed, setParam, useDeck, useNow, useTheme, type PrView, type TicketView } from './lib.ts'
 import { inSettings, SAY } from './copy.ts'
+import { viewLabel, viewsFor } from './views.ts'
+import { shortcuts } from './shortcuts.ts'
 
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
+
+// a view with a list and what is open beside it (Review, Ship): the same column and the same wait in both
+const LIST_COL = 'w-full shrink-0 flex-col border-r border-line lg:flex lg:w-[320px] 2xl:w-[360px]'
+const ListSkeleton = () => <div className="space-y-2 p-3 pt-14">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-ctl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>
 
 const modeOf = (): Mode => {
   const p = location.pathname
@@ -125,6 +131,7 @@ export function App() {
   const [repos, setRepos] = useState<string[]>([])
   const [visuals, setVisuals] = useState<Visuals>() // where Design is on (Settings → Repositories)
   const [spaces, setSpaces] = useState<Mode[]>(['review', 'exec'])
+  const views = viewsFor(role, spaces) // this role's views: the rail, ⌘K and the g keys all read it
   const [linearApp, setLinearApp] = useState(false)
   const [missing, setMissing] = useState<string[]>([]) // skills the settings run that this machine lacks
   const [machines, setMachines] = useState(0)
@@ -265,7 +272,7 @@ export function App() {
   useEffect(() => { document.documentElement.dataset.mode = codebaseRepo ? 'codebase' : mode }, [mode, codebaseRepo])
   useEffect(() => {
     const n = mode === 'exec' ? execWaiting : needsYou
-    document.title = `${n ? `(${n}) ` : ''}${codebaseRepo ? 'Codebase' : { exec: 'Ship', review: 'Review', read: 'Read', focus: 'Focus', standup: 'Standup', skills: 'Skills', plans: 'Plans', design: { map: 'Map', components: 'Components', tokens: 'Tokens' }[designView] }[mode]} · Concierge`
+    document.title = `${n ? `(${n}) ` : ''}${codebaseRepo ? 'Codebase' : viewLabel(mode, designView)} · Concierge`
   }, [needsYou, execWaiting, mode, designView, codebaseRepo])
 
   // g then r / e / s / c: to a view; g then h: the open PR on GitHub
@@ -284,9 +291,11 @@ export function App() {
       else if (listed && ids.length && (e.key === 'k' || e.key === 'ArrowUp')) select(ids[Math.max(i - 1, 0)])
       else if (e.key === '/' && filter) filter.focus()
       else if (pr && e.key === 'o') { const u = critUrl(pr); if (u) open(u, '_blank') }
-      else if (chord.current && Date.now() - chord.current < 900 && 'resch'.includes(e.key)) {
+      else if (chord.current && Date.now() - chord.current < 900 && (e.key === 'h' || e.key === 'c' || views.some((v) => v.chord === e.key))) {
+        // g then a view's key: only the views this role has (views.ts), so the rail always shows where you are
         chord.current = 0
-        if (e.key === 'h') { if (pr?.url) open(pr.url, '_blank') } else if (e.key === 'c') goCodebase(); else setMode(({ r: 'review', e: 'exec', s: 'standup' } as const)[e.key as 'r' | 'e' | 's'])
+        const to = views.find((v) => v.chord === e.key)
+        if (e.key === 'h') { if (pr?.url) open(pr.url, '_blank') } else if (e.key === 'c') { if (role === 'developer') goCodebase() } else if (to) setMode(to.mode, to.design)
       }
       else if (e.key === 'g') chord.current = Date.now()
       else if (pr?.job && e.key === 'r') api(`/prs/${enc(pr.id)}/resume-terminal`, {}).then(() => toast('Opened the session in Terminal'))
@@ -329,7 +338,7 @@ export function App() {
     </span>
   )
   const refreshBtn = (
-    <button onClick={mode === 'exec' ? () => { setRefreshing(true); api('/exec/poll', {}).finally(() => setRefreshing(false)) } : refresh} title={mode === 'exec' ? 'Check Linear now' : 'Check GitHub now'} aria-label="Refresh" className="group rounded-chip p-1 transition-colors hover:bg-hover hover:text-fg-1">
+    <button onClick={mode === 'exec' ? () => { setRefreshing(true); api('/exec/poll', {}).finally(() => setRefreshing(false)) } : refresh} title={mode === 'exec' ? 'Refresh from Linear' : 'Refresh from GitHub'} aria-label="Refresh" className="group rounded-chip p-1 transition-colors hover:bg-hover hover:text-fg-1">
       <RefreshCw className={`size-3.5 transition-transform duration-500 ${refreshing ? 'animate-spin' : 'group-hover:rotate-90'}`} />
     </button>
   )
@@ -394,19 +403,13 @@ export function App() {
         </span>
       )}
       <Head>Views</Head>
-      {/* the workspaces; one accent pill slides to the active one (railPill) */}
+      {/* the role's views (views.ts); one accent pill slides to the active one (railPill) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
-      {([['review', GitPullRequestArrow, 'Review', needsYou, 'Review pull requests (g r)'], ['exec', Rocket, 'Ship', execWaiting, 'Ship your Linear tickets (g e)'], ['standup', ClipboardList, 'Standup', 0, 'What you did and what is next, for the standup (g s)'], ['skills', Library, 'Skills', 0, 'Your skills and the company’s: how much each is used, how well it works, and what to change'], ['plans', Network, 'Plans', 0, 'Break a brief down into a project with an agent, then create it in Linear'], ['design', Swatch, 'Design', 0, 'What the pull requests look like, before and after, without opening them']] as const).filter(([m]) => ROLES[role].rail.includes(m) && (m === 'standup' || m === 'skills' || m === 'plans' || m === 'design' || spaces.includes(m))).sort((a, b) => ROLES[role].rail.indexOf(a[0]) - ROLES[role].rail.indexOf(b[0]))
-        // Design is the mode already: on the rail it is its views, each its own place
-        // Design is the mode already: on the rail it is its views, each its own place
-        .flatMap(([m, Icon, label, n, hint]): { m: Mode; Icon: typeof MapIcon; label: string; n: number; hint: string; view?: DesignView }[] => m !== 'design' ? [{ m, Icon, label, n, hint }]
-          : [{ m, Icon: MapIcon, label: 'Map', n: 0, hint: 'The screens of each app, by domain and step, and what each PR changes', view: 'map' },
-             { m, Icon: Component, label: 'Components', n: 0, hint: 'Every component: its states and where it is used', view: 'components' },
-             { m, Icon: SwatchBook, label: 'Tokens', n: 0, hint: 'Each app\u2019s design tokens: colours, type, spacing, radii, shadows', view: 'tokens' }])
-        .map(({ m, Icon, label, n, hint, view }) => {
+      {views.map((v) => ({ m: v.mode, Icon: v.icon, label: v.label, hint: v.hint, view: v.design, chord: v.chord, n: v.mode === 'review' ? needsYou : v.mode === 'exec' ? execWaiting : 0 }))
+        .map(({ m, Icon, label, n, hint, view, chord }) => {
         const on = mode === m && !(m === 'review' && codebaseRepo) && (!view || view === designView)
         return (
-          <button key={view ? `design:${view}` : m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m, view); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}`} aria-current={on}
+          <button key={view ? `design:${view}` : m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m, view); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}${chord ? ` (g ${chord})` : ''}`} aria-current={on}
                   className={`group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-ctl py-1 transition-[background-color,scale] duration-150 active:scale-[0.96] md:flex-none md:py-0 ${W('md:size-10', 'md:h-9 md:w-full md:flex-row md:justify-start md:gap-2.5 md:px-1')} ${on ? '' : 'md:hover:bg-hover'}`}>
             <span data-rail-icon className={`relative flex size-8 items-center justify-center transition-colors duration-150 ${on ? 'text-accent-text' : 'text-fg-3 group-hover:text-fg-1'}`}>
               <Icon className="size-[18px]" />
@@ -434,7 +437,7 @@ export function App() {
       <span className={`hidden md:flex md:items-center md:gap-0.5 ${W('md:flex-col', 'md:flex-row md:px-0.5')} [&>button]:flex [&>button]:size-9 [&>button]:shrink-0 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-ctl [&>button]:p-0`}>
         <Load toast={toast} onOpen={(t) => (t.kind === 'pr' ? goPr(t.id) : t.kind === 'ticket' ? goTicket(t.id) : goCodebase(t.id))} />
         <ThemeButton theme={theme} onTheme={setTheme} />
-        <button onClick={openSettings} title={`Settings · ${mode === 'exec' ? 'Ship' : 'Review'}`} aria-label="Settings" className="group text-fg-3 transition-colors hov hover:text-fg-1">
+        <button onClick={openSettings} title="Settings" aria-label="Settings" className="group text-fg-3 transition-colors hov hover:text-fg-1">
           <Settings2 className="size-4 transition-transform duration-500 group-hover:rotate-90" />
         </button>
         <button onClick={() => setWide(!wide)} title={wide ? 'Close the sidebar: icons only' : 'Open the sidebar: roles and views by name'} aria-label={wide ? 'Close the sidebar' : 'Open the sidebar'}
@@ -455,7 +458,7 @@ export function App() {
 
   const reviewFrame = (
     <div className="relative flex min-h-0 flex-1">
-      <aside className={`w-full shrink-0 flex-col border-r border-line transition-[width] duration-300 ease-[var(--ease-snappy)] lg:flex lg:w-[300px] xl:w-[320px] 2xl:w-[360px] ${detailOpen ? 'hidden' : 'flex'}`}>
+      <aside className={`${LIST_COL} ${detailOpen ? 'hidden' : 'flex'}`}>
         <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-1 pt-4">
           <a href="#" onClick={(e) => { e.preventDefault(); select(undefined) }} className="text-title font-semibold tracking-tight">{codebaseRepo ? 'Codebase' : 'Review'}</a>
           {!codebaseRepo && waitingBadge(needsYou)}
@@ -464,7 +467,7 @@ export function App() {
           {/* in Codebase the left column picks the repository; elsewhere it is the PR list */}
           {codebaseRepo ? <RepoList selected={codebaseRepo} onSelect={(r) => { setFocus(r); select(`codebase:${r}`) }} now={now} version={health?.lastPollAt} />
             : focusedPrs ? <PrList prs={focusedPrs} selected={selected} onSelect={select} query={query} onQuery={setQuery} now={now} tab={tab} onTab={setTab} picked={pickedPrs} onPick={setPickedPrs} toast={toast} />
-            : <div className="space-y-2 p-3 pt-16">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[46px] animate-pulse rounded-ctl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
+            : <ListSkeleton />}
         </div>
       </aside>
       <main data-detail className={`min-w-0 flex-1 overflow-hidden lg:block ${detailOpen ? 'block' : 'hidden'}`}>
@@ -492,7 +495,7 @@ export function App() {
   // Exec has Review's shape: tickets on the left, the open one on the right; the accent and the work differ
   const execFrame = (
     <div className="relative flex min-h-0 flex-1">
-      <aside className={`w-full shrink-0 flex-col border-r border-line lg:flex lg:w-[320px] 2xl:w-[360px] ${ticket ? 'hidden' : 'flex'}`}>
+      <aside className={`${LIST_COL} ${ticket ? 'hidden' : 'flex'}`}>
         <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-1 pt-4">
           <a href="/ship" onClick={(e) => { e.preventDefault(); select(undefined) }} className="text-title font-semibold tracking-tight">Ship</a>
           {waitingBadge(execWaiting)}
@@ -501,7 +504,7 @@ export function App() {
           {exec && !exec.configured ? <ExecSetupHint onOpen={() => setSettingsOpen('exec')} hasKey={exec.hasKey} />
             : exec?.at ? <ExecList tickets={scoped} selected={selected} onSelect={select} picked={picked} onPick={setPicked} onRun={runPicked} missing={exec?.missing} query={query} onQuery={setQuery} now={now} toast={toast}
                           elsewhere={focus ? execWaiting - scoped.filter((t) => !t.dimmed && ['needs-you', 'tend'].includes(groupOf(t).id)).length : 0} onAllApps={() => setFocus(undefined)} />
-            : <div className="space-y-2 p-3 pt-6">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-[52px] animate-pulse rounded-ctl bg-fill/50" style={{ animationDelay: `${i * 120}ms` }} />)}</div>}
+            : <ListSkeleton />}
         </div>
       </aside>
       <main data-detail className={`@container min-w-0 flex-1 overflow-hidden lg:block ${ticket || stack ? 'block' : 'hidden'}`}>
@@ -578,11 +581,9 @@ export function App() {
 
       <SettingsDialog open={!!settingsOpen} tab={settingsOpen || 'general'} onTab={(t) => setParam('settings', t)} onClose={() => setSettingsOpen(false)} health={health} theme={theme} onTheme={setTheme} toast={toast}
                       onSetup={() => setSetupOpen(true)} />
-      <Palette prs={prs ?? []} tickets={tickets} onPr={goPr} onTicket={goTicket} commands={[
-        { id: 'review', label: 'Go to Review', run: () => setMode('review') },
-        { id: 'standup', label: 'Go to Standup', hint: 'what you did and what is next', run: () => setMode('standup') },
-        ...(spaces.includes('exec') ? [{ id: 'exec', label: 'Go to Ship', run: () => setMode('exec') }] : []),
-        ...repos.map((r) => ({ id: `map:${r}`, label: `Codebase map: ${r}`, run: () => goCodebase(r) })),
+      <Palette prs={prs ?? []} tickets={tickets} onPr={goPr} onTicket={goTicket} keys={shortcuts(views, role === 'developer' && repos.length > 0)} commands={[
+        ...views.map((v) => ({ id: v.key, label: `Go to ${v.label}`, hint: v.hint, run: () => setMode(v.mode, v.design) })),
+        ...(role === 'developer' ? repos.map((r) => ({ id: `map:${r}`, label: `Codebase map: ${r}`, run: () => goCodebase(r) })) : []),
         { id: 'today', label: 'Today', hint: 'what waits on you', run: () => { goPr(''); select(undefined) } },
         { id: 'sync', label: SAY.refresh, hint: 'GitHub and Linear', run: refresh },
         { id: 'running', label: 'What is running', hint: 'agents, crit servers', run: () => document.getElementById('load')?.showPopover() },

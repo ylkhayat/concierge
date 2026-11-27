@@ -26,6 +26,8 @@ import { AccountMachinesFor, notReadyOn, useAccountMachines } from './AccountMac
 import { AccountSecurity } from './AccountSecurity.tsx'
 import type { Mode, OrgSkill } from '../../server/orgSkills.ts'
 import { inSettings, SETTINGS } from '../copy.ts'
+import { shortcuts } from '../shortcuts.ts'
+import { viewsFor } from '../views.ts'
 
 export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
   // older names, still used by links around the app
@@ -1931,7 +1933,7 @@ function Runs() {
 // --- About -----------------------------------------------------------------------------------------
 
 function About({ setup, onSetup }: { setup?: SetupView; onSetup: () => void }) {
-  const keys: [string, string][] = [['j / k', 'Next / previous PR'], ['o', 'Open crit'], ['r', 'Resume the agent session'], ['g h', 'Open on GitHub'], ['/', 'Filter the list'], ['Esc', 'Close the top modal, then the PR']]
+  const keys = shortcuts(viewsFor(useRole(), ['review', 'exec']), true).filter(([k]) => k !== '?' && k !== '⌘K')
   return (
     <>
       <Group title="Setup">

@@ -6,7 +6,7 @@ import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, 
 import type { Activity } from '../../server/runner.ts'
 import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'
-import { api, enc, useIsDark } from '../lib.ts'
+import { api, enc, useIsDark, sendKey } from '../lib.ts'
 import type { DesignView } from '../modes.ts'
 import type { Token, TokenBook } from '../../server/tokens.ts'
 import type { DraftChange, TokenDraft } from '../../server/tokenDraft.ts'
@@ -1567,7 +1567,7 @@ function DraftChat({ draft, task, onSay, onConfirm, onDiscard }: { draft?: Token
       <div className="p-2.5">
         <div className="flex items-end gap-2 rounded-card bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder="A warmer accent, rounder cards…"
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+                    onKeyDown={(e) => { if (sendKey(e)) { e.preventDefault(); send() } }}
                     className="max-h-[160px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
           <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
         </div>
@@ -1591,7 +1591,7 @@ function Conversation({ id, feed, live, onSay, toast, hint, placeholder }: { id:
       <div className="p-2.5">
         <div className="flex items-end gap-2 rounded-card bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
           <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder={placeholder ?? 'Also at phone width, the empty state…'}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+                    onKeyDown={(e) => { if (sendKey(e)) { e.preventDefault(); send() } }}
                     className="max-h-[160px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
           <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
         </div>

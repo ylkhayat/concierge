@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PinButton } from './PinButton.tsx'
-import { api, duration, type Activity, type ExecView, type TicketView, resumed } from '../lib.ts'
+import { api, duration, type Activity, type ExecView, type TicketView, resumed, sendKey } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { Md } from './Md.tsx'
 import { Pick } from '../ui/Pick.tsx'
@@ -305,9 +305,9 @@ function ActionCard({ t, actions, toast }: { t: TicketView; actions: Action[]; t
                 options={opts.map((o, i) => ({ value: o, hint: o, label: <><span className="mr-1.5 font-mono text-micro text-fg-4">{i + 1}</span>{o}</> }))} />
         )}
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && note.trim() && !busy) go('reply', 'Reply') }}
+                  onKeyDown={(e) => { if (sendKey(e)) { e.preventDefault(); if (note.trim() && !busy) go('reply', 'Reply') } }}
                   title="Goes along with whichever you pick: posted as your reply, or handed to the run as guidance"
-                  placeholder={opts.length ? 'Or write your own answer… (⌘↵ posts it)' : 'Your answer or guidance… (⌘↵ posts it)'}
+                  placeholder={opts.length ? 'Or write your own answer… (Enter posts it)' : 'Your answer or guidance… (Enter posts it)'}
                   className="max-h-48 min-h-11 w-full resize-none [field-sizing:content] rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 ring-line transition-all placeholder:text-fg-3 hover:ring-line-strong focus:ring-2 focus:ring-wait/50 " />
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => go('reply', 'Reply')} disabled={!note.trim() || !!busy} title="Post this on the Linear ticket as you, then run again"

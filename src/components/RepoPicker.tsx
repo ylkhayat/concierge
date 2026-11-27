@@ -21,13 +21,8 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
     return () => el.removeEventListener('toggle', t)
   }, [])
   const pick = (r?: string) => { onChange(r); pop.current?.hidePopover() }
-  // it opens as you point at it (a moment's wait, so passing by doesn't), and closes a moment after you leave both it
-  // and the list: one click to switch. A click (or touch, or Enter) opens it too
-  const timer = useRef(0)
-  const show = (ms: number) => { clearTimeout(timer.current); timer.current = window.setTimeout(() => { try { pop.current?.showPopover() } catch { /* open */ } }, ms) }
-  const hide = () => { clearTimeout(timer.current); timer.current = window.setTimeout(() => { try { if (!pop.current?.contains(document.activeElement)) pop.current?.hidePopover() } catch { /* shut */ } }, 280) }
-  const stay = () => clearTimeout(timer.current)
-  useEffect(() => () => clearTimeout(timer.current), [])
+  // a click opens it (a touch, Enter): nothing opens because the pointer passed over it
+  const show = () => { try { pop.current?.togglePopover() } catch { /* not supported: stays shut */ } }
   const row = (label: string, n: number, waiting: number, on: boolean, r?: string, away?: boolean, held?: string) => (
     <button key={r ?? 'all'} onClick={() => pick(r)} aria-current={on} title={away ? `${r}: not on this machine` : held ? `${r}: no machine can work on it now (${held})` : undefined}
             className={`flex w-full items-center gap-2.5 rounded-ctl px-2.5 py-2 text-left text-body transition-colors ${on ? 'bg-accent/10' : 'hov '} ${away ? 'text-fg-4' : ''}`}>
@@ -42,7 +37,7 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
   )
   return (
     <>
-      <button onClick={() => show(0)} onMouseEnter={() => show(120)} onMouseLeave={hide} aria-haspopup="dialog" style={{ anchorName: '--repo-picker' } as CSSProperties} title={`Focus: ${value ?? 'all workspaces'} · ${current?.tickets ?? total} ${unit}s`}
+      <button onClick={show} aria-haspopup="true" style={{ anchorName: '--repo-picker' } as CSSProperties} title={`Showing ${value ?? 'all repositories'} · ${current?.tickets ?? total} ${unit}s`}
               className={`group flex w-full ${wide ? 'items-center gap-2.5 rounded-ctl px-1.5 py-1 text-left hover:bg-hover' : 'flex-col items-center gap-1 py-1'}`}>
         <span className={`relative flex size-10 items-center justify-center rounded-card font-mono text-body font-bold uppercase ring-1 transition-all group-hover:scale-105 ${value
           ? `${appColor(value).tile} ring-transparent` : 'bg-surface-1 text-fg-3 ring-line-strong'}`}>
@@ -52,7 +47,7 @@ export function RepoPicker({ value, repos, total, onChange, unit, wide }: { valu
         {wide ? <span className="min-w-0 flex-1"><span className="block truncate font-mono text-small font-semibold text-fg-1">{value ? value.split('/')[1] : 'All repositories'}</span><span className="block truncate text-micro text-fg-3">{value ? value.split('/')[0] : `${repos.length} repositories`}</span></span>
           : <span className="w-full truncate px-0.5 text-center text-micro font-medium text-fg-2 ">{value ? value.split('/')[1] : 'All repositories'}</span>}
       </button>
-      <div id="repo-picker" ref={pop} popover="auto" onMouseEnter={stay} onMouseLeave={hide}
+      <div id="repo-picker" ref={pop} popover="auto"
            style={{ positionAnchor: '--repo-picker', positionArea: 'right span-bottom', inset: 'auto' } as CSSProperties}
            className="m-0 ml-2 max-h-[calc(70vh/var(--z))] w-[280px] overflow-y-auto rounded-card border-0 bg-surface-1 p-1.5 text-fg-2 shadow-xl ring-1 ring-line ">
         <p className="px-2.5 pb-1.5 pt-1 label text-fg-3">Show one repository</p>

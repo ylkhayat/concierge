@@ -5,16 +5,6 @@ import { isTyping, type PrView, type TicketView } from '../lib.ts'
 export type Command = { id: string; label: string; hint?: string; run: () => void }
 type Entry = { key: string; icon: typeof Search; ref?: string; label: string; hint?: string; group: string; run: () => void }
 
-// every key the app answers to, for the ? sheet (keep in step with App.tsx, StackNav.tsx, Tour.tsx and NextSteps.tsx)
-const KEYS: [string, string][] = [
-  ['⌘K', 'Jump anywhere, run a command'], ['?', 'These shortcuts'],
-  ['g r · g e · g s · g c', 'Review, Ship, Standup, Codebase'], ['g h', 'Open the PR on GitHub'],
-  ['j / k', 'Next and previous in the list'], ['/', 'Filter the list'], ['Esc', 'Clear the filter, close'],
-  ['[ / ]', 'Down and up the stack'], ['← / →', 'Back and next in a tour'],
-  ['o', 'Open crit'], ['r', 'Resume the agent session in Terminal'],
-  ['⌘↵', 'Send to the agent'], ['Alt ↑ / ↓', 'Move an account in the fallback order'],
-]
-
 const RECENT = 'palette:recent'
 const recent = (): string[] => { try { return JSON.parse(localStorage.getItem(RECENT) ?? '[]') as string[] } catch { return [] } }
 const remember = (key: string) => { try { localStorage.setItem(RECENT, JSON.stringify([key, ...recent().filter((k) => k !== key)].slice(0, 6))) } catch { /* private window */ } }
@@ -33,7 +23,8 @@ function score(e: Entry, words: string[]): number {
  * last and the commands. Every word typed must appear in the entry (number, id, title, repo), in any order. ? lists
  * every shortcut.
  */
-export function Palette({ prs, tickets, commands, onPr, onTicket }: {
+export function Palette({ prs, tickets, commands, keys: allKeys, onPr, onTicket }: {
+  keys: [string, string][] // every key the app answers to (shortcuts.ts), for the ? sheet
   prs: PrView[]; tickets: TicketView[]; commands: Command[]
   onPr: (id: string) => void; onTicket: (id: string) => void
 }) {
@@ -79,7 +70,7 @@ export function Palette({ prs, tickets, commands, onPr, onTicket }: {
       </label>
       {keys ? (
         <dl className="grid max-h-[calc(55vh/var(--z))] grid-cols-[auto_1fr] gap-x-6 gap-y-2 overflow-y-auto px-5 py-4 text-body">
-          {KEYS.map(([k, what]) => [
+          {allKeys.map(([k, what]) => [
             <dt key={`k${k}`} className="text-right"><kbd className="rounded-chip bg-hover px-1.5 py-0.5 font-sans text-small text-fg-1 ring-1 ring-line">{k}</kbd></dt>,
             <dd key={`d${k}`} className="text-fg-2">{what}</dd>,
           ])}

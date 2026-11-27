@@ -6,7 +6,7 @@ import { ArrowRight, ArrowUp, Check, CheckCircle2, Zap, ExternalLink, Flag, GitB
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Kind, Op, Plan, PlanNode } from '../../server/plans.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
-import { api } from '../lib.ts'
+import { api, sendKey } from '../lib.ts'
 import { refresh, remember, useApi } from '../query.ts'
 import { Skeleton } from './Connections.tsx'
 import { Md } from './Md.tsx'
@@ -291,7 +291,7 @@ function Chat({ p, toast, stage, settings, onSelect, onReplay, angles, onExplore
         </div>
         <div className="flex items-end gap-2 rounded-card bg-surface-1 p-2 shadow-e1 ring-1 ring-line focus-within:ring-accent/40">
           <textarea ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={1} placeholder={placeholder}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (asks.length) answer(); else send(text) } }}
+                    onKeyDown={(e) => { if (sendKey(e)) { e.preventDefault(); if (asks.length) answer(); else send(text) } }}
                     className="max-h-[200px] flex-1 resize-none bg-transparent px-2 py-1.5 text-body outline-none placeholder:text-fg-4" />
           <button onClick={() => (asks.length ? answer() : send(text))} disabled={(!text.trim() && !answers.length) || p.busy} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40">{p.busy ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}</button>
         </div>

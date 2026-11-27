@@ -31,14 +31,14 @@ export function RoleSwitch({ onJoin, wide }: { onJoin: () => void; wide?: boolea
       })}
     </div>
   )
-  // open: the modes side by side in one row, the one you are in raised; a + adds another
+  // open: the roles side by side in one row, each as wide as its name needs, the one you work as raised; a + adds another
   return (
     <div role="radiogroup" aria-label="Role" className="hidden gap-1 rounded-ctl bg-fill/60 p-1 md:flex">
       {joined.map((r) => {
         const x = ROLES[r], on = r === role
         return (
           <button key={r} role="radio" aria-checked={on} onClick={() => !on && setRole(r)} title={`${x.label} · ${x.hint}`}
-                  className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-ctl px-1.5 py-1.5 text-small transition-colors ${on ? 'sel font-semibold' : 'font-medium text-fg-3 hover:text-fg-1'}`}>
+                  className={`flex min-w-0 flex-auto items-center justify-center gap-1.5 rounded-ctl px-1.5 py-1.5 text-small transition-colors ${on ? 'sel font-semibold' : 'font-medium text-fg-3 hover:text-fg-1'}`}>
             <span data-role-tile={r} style={on ? { viewTransitionName: 'role-tile' } : undefined} className={`flex size-5 shrink-0 items-center justify-center rounded-chip text-white ${on ? '' : 'opacity-60'}`}><x.icon className="size-3" /></span>
             <span className="truncate">{x.short}</span>
           </button>

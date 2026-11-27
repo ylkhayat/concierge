@@ -4,7 +4,7 @@ import type { NextSteps as Steps } from '../../server/next.ts'
 import type { Routed, RouteTo } from '../../server/handover.ts'
 import { composeChecklist, type Step } from '../../server/reply.ts'
 import { laneOf, type Lane } from '../../server/lanes.ts'
-import { api } from '../lib.ts'
+import { api, sendKey } from '../lib.ts'
 import { useDraft } from '../draft.ts'
 import { ArmBar, ArmLabel, armedCls, useArm } from '../arm.tsx'
 import { useMention, useSlash, type Command } from '../ui/Slash.tsx'
@@ -255,7 +255,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, placeholder, draf
           <textarea ref={box} data-composer value={text} onChange={(e) => setText(e.target.value)} rows={stepper ? 2 : 3}
                     onKeyDown={(e) => {
                       if (mention.onKeyDown(e) || slash.onKeyDown(e)) return
-                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!blocked) send() } }} maxLength={6000}
+                      if (sendKey(e)) { e.preventDefault(); if (!blocked) send() } }} maxLength={6000}
                     placeholder={`${nothing ? placeholder ?? 'Tell the agent what to do next…' : 'Steer: anything else, or a change of plan (optional)…'}${commands ? '  ( / for actions, @ to link a ticket or PR )' : ''}`}
                     className={`max-h-[240px] w-full resize-none rounded-ctl bg-surface-1 px-3 py-2 text-body outline-none ring-1 transition-all duration-300 placeholder:text-fg-3 focus:ring-2 ring-line hover:ring-line-strong focus:ring-accent/50`} />
           </div>
@@ -264,7 +264,7 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, placeholder, draf
             {steps?.source === 'read' && <span className="text-micro text-fg-3" title="The agent didn't hand back a checklist; this one was read from its message">read from its message</span>}
             {unanswered.length > 0 && <span className="text-meta text-wait-text">Answer {unanswered.map((x) => x.text).join(', ')}</span>}
             <span className="flex-1" />
-            <kbd className="hidden font-sans text-micro text-fg-3 sm:inline">⌘↵</kbd>
+            <kbd className="hidden font-sans text-micro text-fg-3 sm:inline" title="Enter sends · Shift+Enter for a new line">↵</kbd>
             <button disabled={blocked} onClick={send}
                     title={unanswered.length ? `Decide ${unanswered.map((x) => x.text).join(', ')} first` : publishing.length ? `Pushes or posts: ${publishing.map((x) => x.text).join('; ')}` : undefined}
                     className={`relative inline-flex items-center gap-1.5 rounded-ctl px-3.5 py-1.5 text-small font-medium text-white transition-all active:scale-[0.98] disabled:translate-y-0 disabled:bg-fill-strong disabled:text-fg-4 ${publishing.length ? 'bg-ok hover:bg-ok' : 'bg-accent hover:bg-accent'} ${armed === 'send' ? armedCls : ''}`}>
