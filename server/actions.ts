@@ -14,6 +14,7 @@ import { providerFor, spawnAgent, tokensOf } from './providers.ts'
 import { authFailed, checkClaudeAuth } from './claudeLogin.ts'
 import { transition } from './lifecycle.ts'
 import { restack } from './github.ts'
+import { shq } from './shell.ts'
 
 const run = promisify(execFile)
 const sh = async (cmd: string, args: string[], cwd?: string) => (await run(cmd, args, { cwd, maxBuffer: 64 * 1024 * 1024 })).stdout.trim()
@@ -136,7 +137,7 @@ const DEFS: Def[] = [
       if (!/^\d+$/.test(n)) throw new Error('GitHub has no stack for this PR')
       // repoPath is from config.json and n is digits only: nothing user-typed reaches the shell
       const command = fill(config.agent.stack!, { stack: n, number: p.number, repo: p.repo })
-      openTerminal(`cd ${JSON.stringify(config.repos[p.repo])} && claude ${JSON.stringify(command)}`)
+      openTerminal(`cd ${shq(config.repos[p.repo])} && claude ${shq(command)}`)
       return `opened ${command} in your terminal`
     }, mirror),
   },

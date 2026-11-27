@@ -146,6 +146,9 @@ export function call<T>(base: string, token: string, method: string, path: strin
   })
 }
 
+/** How a run ends when the machine it was sent to had no room left: it never started there. */
+export const NO_ROOM = 'no room on the machine'
+
 /**
  * The control plane's side: an agent on another machine, shaped like a local one (stdout, stderr, stdin, kill,
  * close), plus `busy` for the hang check (what runs under it is over there) and `machine`.
@@ -179,7 +182,12 @@ export function remoteAgent(machine: string, base: string, token: string, s: Spa
     if (res.statusCode !== 200) {
       let s2 = ''
       res.on('data', (c) => { s2 += c })
-      res.on('end', () => { let why = `HTTP ${res.statusCode}`; try { why = JSON.parse(s2).error ?? why } catch { /* plain */ } finish(null, null, `lost the connection to ${machine}: ${why}`) })
+      res.on('end', () => {
+        let why = `HTTP ${res.statusCode}`; try { why = JSON.parse(s2).error ?? why } catch { /* plain */ }
+        // 409: the machine had filled up since it was chosen. Nothing started and nothing was lost: said as that, so
+        // the run is placed again, not counted as a dropped connection (three of those end it)
+        finish(null, null, res.statusCode === 409 ? `${NO_ROOM}: ${why}` : `lost the connection to ${machine}: ${why}`)
+      })
       return
     }
     started = true

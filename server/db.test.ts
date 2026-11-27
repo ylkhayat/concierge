@@ -34,3 +34,22 @@ test('replace makes the entries exactly those given, and logs only the differenc
   a.setKv('applied:win', '42')
   assert.equal(a.getKv('applied:win'), '42')
 })
+
+test('the change log keeps the last changes only, cut when the database is opened and as it is written', () => {
+  const file = join(mkdtempSync(join(tmpdir(), 'rd-db-')), 'state.db')
+  const a = new StateDb(file, 5)
+  for (let i = 1; i <= 12; i++) a.write([{ key: 'k', value: String(i) }])
+  assert.equal(a.oldest(), 1) // not on every write
+  a.trim()
+  assert.equal(a.oldest(), 8)
+  assert.equal(a.head(), 12)
+  for (let i = 13; i <= 20; i++) a.write([{ key: 'k', value: String(i) }])
+  a.close()
+  // opened again (a restart): cut to what is kept, and the numbering goes on from where it was
+  const b = new StateDb(file, 5)
+  assert.equal(b.oldest(), 16)
+  assert.equal(b.head(), 20)
+  b.write([{ key: 'k', value: '21' }])
+  assert.equal(b.head(), 21)
+  assert.deepEqual([...b.all()], [['k', '21']])
+})

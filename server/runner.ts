@@ -34,7 +34,7 @@ import { mine, readLines } from './perMachine.ts'
 import { scrub } from './scrub.ts'
 import { busyUnder, newRun, watch as watchBackground } from './background.ts'
 import { draining, heldWhy, machines, place, route, slotsHere, signInFor, token, whyNowhere } from './machines.ts'
-import { remoteAgent } from './worker.ts'
+import { remoteAgent, NO_ROOM } from './worker.ts'
 import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
 import { keptMethod, skillBody, skillFor } from './method.ts'
@@ -482,6 +482,8 @@ function pausedBy(wasPaused: boolean, e: Ended, error?: string, provider: Provid
 const pausedNote = (provider: ProviderId = 'claude') => provider !== 'claude' ? `Paused: ${accountOf(provider).label} reached its limit. It continues where it left off once it can.`
   : `Paused: ${planSpent() ? spentText(planSpent()!) : "the Claude plan's limit is reached"}. It continues where it left off after that.`
 const SHUT_OUT_MS = 15 * 60_000
+/** A ticket run's id: 64 random bits, and never one in use (eight hex characters collided once a few thousand runs were kept, and the newer run silently took the older one's place). */
+const runId = () => { let id: string; do id = randomUUID().replace(/-/g, '').slice(0, 16); while (state.execs[id]); return id }
 /** It ended because the network dropped (the API server unreachable): it continues its session in a minute. */
 const netDown = (error?: string) => !!error && /agent hung|lost the connection to|Can't reach the API server|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ECONNRESET|socket hang up/i.test(error)
 const NET_NOTE = "It lost its connection to the AI (the network dropped, or a reply never came): it continues where it left off in a minute."
@@ -1307,6 +1309,10 @@ function start(pr: Pr, on?: string) {
         save(); bus.emit('change'); pump(); return
       }
       if (e.hung && !e.resulted) job.error = HUNG
+      if (job.error?.startsWith(NO_ROOM)) { // it never started: placed again, nothing counted against it
+        ev('queued', 'no room', { error: undefined, notBefore: soon() })
+        save(); bus.emit('change'); return
+      }
       if (netDown(job.error) && (job.continued ?? 0) < MAX_CONTINUES) {
         ev('queued', 'network', { continuing: true, continued: (job.continued ?? 0) + 1, error: undefined, notBefore: soon(), sessionCostBefore: e.resulted ? job.sessionCostUsd : job.sessionCostBefore })
         told('event', NET_NOTE)
@@ -1467,7 +1473,7 @@ export function enqueueExec(ids: string[], repo: string, auto = false, action?: 
   const as = currentRole()
   const run: ExecRun = {
     ...(as !== 'developer' && { as }),
-    id: randomUUID().slice(0, 8), ids, repo, sessionId: action?.resume ?? own?.id ?? randomUUID(), state: 'queued', auto, ...action,
+    id: runId(), ids, repo, sessionId: action?.resume ?? own?.id ?? randomUUID(), state: 'queued', auto, ...action,
     ...(provider !== 'claude' && { provider }),
     ...(action?.resume && { replyTo: action.resume }), // a reply: its session is the point, never swapped for a new one
     ...(own && { resume: own.id, costBefore: own.total }),
@@ -1661,6 +1667,10 @@ function startExec(run: ExecRun, on?: string) {
         return finished()
       }
       if (e.hung && !e.resulted) run.error = HUNG
+      if (run.error?.startsWith(NO_ROOM)) { // it never started: placed again, nothing counted against it
+        ev('queued', 'no room', { error: undefined, notBefore: soon() })
+        return finished()
+      }
       if (netDown(run.error) && (run.continued ?? 0) < MAX_CONTINUES) {
         ev('queued', 'network', { continuing: true, continued: (run.continued ?? 0) + 1, error: undefined, notBefore: soon(), costBefore: e.resulted ? (run.costBefore ?? 0) + (run.costUsd ?? 0) : run.costBefore })
         told('event', NET_NOTE)

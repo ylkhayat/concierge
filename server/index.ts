@@ -21,6 +21,7 @@ import { baselineId, DESIGN_LABEL, imagePath, modeOf, setsOf, storybookFile, uiC
 import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
+import { bodyLimit } from 'hono/body-limit'
 import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
@@ -96,6 +97,8 @@ import { cachedStackCheck, checkingStack, checkStack, partOf } from './stackChec
 import { directionOf, setDirection } from './stackDirection.ts'
 import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
+import { shq } from './shell.ts'
+import { hostOk, originOk } from './guard.ts'
 
 export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { aside?: boolean; queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
@@ -713,14 +716,21 @@ const app = new Hono().basePath('/api')
 // same-origin, and scripts and the other machines send no such header.
 app.use('*', async (c, next) => {
   const m = c.req.method
-  if (m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS' && (c.req.header('sec-fetch-site') === 'cross-site' || c.req.header('sec-fetch-site') === 'same-site')) {
+  if (m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS' && (c.req.header('sec-fetch-site') === 'cross-site' || c.req.header('sec-fetch-site') === 'same-site' || !originOk(c.req.header('origin'), extraHosts()))) {
     return c.json({ error: 'Refused: this request came from another website' }, 403)
   }
   await next()
 })
+// what is sent is bounded (a snapshot of a page is the largest thing a page sends: a few megabytes), so one request
+// can't make the server hold whatever it is given
+app.use('*', bodyLimit({ maxSize: 32 * 1024 * 1024, onError: (c) => c.json({ error: 'That is too large to send (32 MB at most)' }, 413) }))
 // a route that throws answers with what went wrong, as JSON like every other answer (not the framework's bare
 // "Internal Server Error", which the page can't read), and says so in the log with the route
-app.onError((e, c) => { console.error(`[api] ${c.req.method} ${c.req.path}:`, e); return c.json({ error: e instanceof Error ? e.message : String(e) }, 500) })
+app.onError((e, c) => {
+  // what was sent couldn't be read as JSON: the sender's mistake (400), not a fault here
+  if (e instanceof SyntaxError && /JSON/i.test(e.message)) return c.json({ error: 'That request wasn’t valid JSON' }, 400)
+  console.error(`[api] ${c.req.method} ${c.req.path}:`, e); return c.json({ error: e instanceof Error ? e.message : String(e) }, 500)
+})
 // an answer that hasn't changed goes back as an empty 304 (the page's browser keeps the last one and asks with its
 // ETag): the big reads (an explanation, a feed, the setup) aren't sent and parsed again. Never the live stream or a profile
 const tagged = etag({ weak: true })
@@ -1718,6 +1728,9 @@ export type ExecView = ReturnType<typeof execView>
 const TICKET_ID = /\b[A-Z]{2,5}-\d+\b/g
 const REREAD = 10 * 60_000
 const notFound = new Set<string>() // ids Linear doesn't have: not asked again until a restart
+// when each was last read, in memory: stamped on the stored ticket it made every re-read a change to save and to send
+// to the other machines, though nothing in the ticket had changed (nine tenths of the change log were these)
+const refReadAt = new Map<string, number>()
 /**
  * The tickets named here that aren't on your Linear list any more: one you handed over (still yours to drive, never
  * picked) or one closed (only its name and page, for the standup and the runs that name it). Named by a run, a written
@@ -1733,16 +1746,17 @@ async function offList(mine: Ticket[]): Promise<Ticket[]> {
   const refs = state.ticketRefs ??= {}
   for (const id of Object.keys(refs)) if (!named.has(id)) delete refs[id]
   // ponytail: 50 a poll keeps one query small; a backlog of more fills in over a few polls
-  const due = [...named].filter((id) => !notFound.has(id) && (!refs[id] || Date.now() - Date.parse(refs[id].readAt) > REREAD)).slice(0, 50)
+  const due = [...named].filter((id) => !notFound.has(id) && (!refs[id] || Date.now() - (refReadAt.get(id) ?? 0) > REREAD)).slice(0, 50)
   if (due.length) {
-    const readAt = new Date().toISOString()
     // one id Linear doesn't have (deleted, another workspace's) fails the whole query: then one at a time, and that one is skipped
     const got = await ticketsById(due).catch(async () => (await Promise.all(due.map((id) => ticketsById([id]).catch((e) => {
       if (/not found/i.test((e as Error).message)) notFound.add(id); else console.error('tickets by id:', (e as Error).message)
       return []
     })))).flat())
-    for (const t of got) if (!on.has(t.id)) refs[t.id] = { ...t, readAt }
+    for (const id of due) refReadAt.set(id, Date.now())
+    for (const t of got) if (!on.has(t.id)) refs[t.id] = t
   }
+  for (const id of refReadAt.keys()) if (!named.has(id)) refReadAt.delete(id)
   return Object.values(refs).filter((t) => !on.has(t.id)).map(({ readAt: _, ...t }) => t)
 }
 
@@ -2276,7 +2290,7 @@ app.post('/exec/:run/resume-terminal', (c) => {
   const run = state.execs[c.req.param('run')]
   const path = run && config.repos[run.repo]
   if (!run || !path) return c.json({ error: 'no session to resume' }, 400)
-  const out = resume(c, `cd ${JSON.stringify(path)} && claude --resume ${run.sessionId}`)
+  const out = resume(c, `cd ${shq(path)} && claude --resume ${shq(run.sessionId)}`)
   if (out.opened) logged(`exec:${run.id}`, `Session opened in your terminal (claude --resume ${run.sessionId.slice(0, 8)}…)`)
   return c.json(out)
 })
@@ -3834,8 +3848,8 @@ app.post('/prs/:id/resume-terminal', (c) => {
   const p = pr(c.req.param('id'))
   const repoPath = p && config.repos[p.repo]
   if (!p?.job || !repoPath) return c.json({ error: 'no session to resume' }, 400)
-  // repoPath comes from config.json and sessionId is a UUID we made: nothing user-controlled reaches the shell.
-  const out = resume(c, `cd ${JSON.stringify(repoPath)} && claude --resume ${p.job.sessionId}`)
+  // each value is one quoted word of the command (shell.ts): whatever a path holds, the shell runs none of it
+  const out = resume(c, `cd ${shq(repoPath)} && claude --resume ${shq(p.job.sessionId)}`)
   if (out.opened) logged(p.id, `Session opened in your terminal (claude --resume ${p.job.sessionId.slice(0, 8)}…)`)
   return c.json(out)
 })
@@ -4294,6 +4308,13 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 // last: root.route copies the routes app has right now, so every route must be registered above this
 const root = new Hono()
 // through the tailnet link, only the people allowed (access.ts); on this machine itself, as always
+// by the name it was asked under (guard.ts): a page elsewhere that points a name of its own at this machine is refused
+const extraHosts = () => (setting('HOSTS') ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+root.use('/*', async (c, next) => {
+  if (hostOk(c.req.header('host'), extraHosts())) return next()
+  console.warn(`refused: asked as ${c.req.header('host')} (add it to CONCIERGE_HOSTS if that is a name of yours)`)
+  return c.text('Concierge is not served under this name. If it is yours, add it to CONCIERGE_HOSTS.', 403)
+})
 root.use('/*', async (c, next) => {
   const why = refuse(whoFrom((n) => c.req.header(n)))
   if (!why) return next()

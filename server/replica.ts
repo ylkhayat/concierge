@@ -12,7 +12,7 @@
 //
 // What replaced Syncthing, which re-walked ~100k files every minute and re-sent a 7 MB state file on every change.
 import { randomUUID } from 'node:crypto'
-import { appendFile, lstat, mkdir, open, readdir, readFile, rename, stat, utimes, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, lstat, mkdir, open, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { CLAUDE_HOME, sessionDir } from './agentHome.ts'
@@ -93,6 +93,8 @@ const LOGINS = [/^accounts\/[^/]+\/claude\/\.credentials\.json$/, /^accounts\/[^
 // mcp.env: your values for the bank's connections, on this machine alone (localEnv.ts)
 const skipFile = (root: string, rel: string) => (root === 'config' && rel === 'mcp.env') || /\.tmp$|\.sync-conflict-|\.bak-|(^|\/)\.st(folder|ignore|versions)/.test(rel) || (root === 'config' && (LOGINS.some((r) => r.test(rel)) || LINKED.test(rel)))
 const MAX = 512 * 1024 * 1024 // a file bigger than this is someone's mistake, not state
+/** The mode a pulled file is written with: the settings folder holds keys and sign-ins, so only you read it. */
+const privateOf = (k: string) => (k.startsWith('config:') ? 0o600 : 0o644)
 
 type Entry = { size: number; mtimeMs: number; v: number }
 const index = new Map<string, Entry>() // "<root>:<rel>"
@@ -185,14 +187,18 @@ async function pullFiles() {
       // how far it is, while it goes (a first pull takes a while): Settings → Machines and bin/standby read it
       const progress = () => pulled.set(peer.name, { proc: was?.proc ?? '', ver: was?.ver ?? 0, at: was?.at ?? 0, pending: left, ...(failed.length && { skipped: failed.length }) })
       if (todo.length) progress()
+      const made = new Map<string, string>() // the temporary file each is written under, to take away if it fails
       for (const [k, size, mtimeMs] of todo) try {
         const i = k.indexOf(':'), root = travels(k.slice(0, i), k.slice(i + 1))!, abs = join(root.dir, k.slice(i + 1))
         const here = index.get(k)
         // a log that only grew: the new part; anything else: all of it
         let from = here && size > here.size && /\.(jsonl|log|md|txt)$/.test(k) ? here.size : 0
         const append = from > 0, tmp = `${abs}.${proc.slice(0, 8)}.tmp`
+        if (!append) made.set(k, tmp)
         await mkdir(dirname(abs), { recursive: true })
-        if (!append) await writeFile(tmp, '') // a whole file lands under a temporary name, then takes its place
+        // a whole file lands under a temporary name, then takes its place; what comes from the settings folder (keys,
+        // sign-ins) is readable by you alone, here as where it came from
+        if (!append) await writeFile(tmp, '', { mode: privateOf(k) })
         while (from < size) {
           const p = await call<{ data: string }>(peer.base, token(), 'POST', '/x/replica-file', { key: k, from }, 120_000)
           const buf = Buffer.from(p.data, 'base64')
@@ -200,7 +206,7 @@ async function pullFiles() {
           await appendFile(append ? abs : tmp, buf)
           from += buf.length
         }
-        if (!append) await rename(tmp, abs)
+        if (!append) { await rename(tmp, abs); await chmod(abs, privateOf(k)).catch(() => {}) }
         // the main server's settings apply at once, not at the next 5-minute check, and the clones follow them
         if (k === 'config:config.json') void reloadConfig().then(() => import('./setup.ts')).then((m) => m.ensureClones())
         // their time on our copy: the other side then sees the same file, and never pulls it back
@@ -212,6 +218,7 @@ async function pullFiles() {
         // this one can't be written here (a folder that is a link on this machine, a path it can't have): skipped and
         // said, so the rest still come over and the machines still count as in step
         left--; failed.push(k)
+        { const t = made.get(k); if (t) await rm(t, { force: true }).catch(() => {}) } // a pull that failed leaves nothing half-written behind
         if (failed.length <= 3) console.warn(`replica: can't take ${k} from ${peer.name}: ${(e as Error).message}`)
       }
       pulled.set(peer.name, { proc: r.proc, ver: r.ver, at: Date.now(), pending: left, ...(failed.length && { skipped: failed.length }) })
@@ -256,7 +263,7 @@ async function pullSettings() {
     const here = st && { size: st.size, mtimeMs: Math.floor(st.mtimeMs) }
     if (!takes(k, peer, { size, mtimeMs }, here, false)) continue
     const tmp = `${abs}.${proc.slice(0, 8)}.tmp`
-    await writeFile(tmp, '')
+    await writeFile(tmp, '', { mode: 0o600 })
     for (let from = 0; from < size;) {
       const p = await call<{ data: string }>(peer.base, token(), 'POST', '/x/replica-file', { key: k, from }, 120_000)
       const buf = Buffer.from(p.data, 'base64')
@@ -264,6 +271,7 @@ async function pullSettings() {
       await appendFile(tmp, buf); from += buf.length
     }
     await rename(tmp, abs)
+    await chmod(abs, 0o600).catch(() => {})
     await utimes(abs, new Date(), new Date(mtimeMs)).catch(() => {})
     if (k === 'config:config.json') { await reloadConfig(); void import('./setup.ts').then((m) => m.ensureClones()) }
     console.log(`replica: took the settings' ${k.slice(7)} from ${peer.name} first`)
@@ -312,6 +320,26 @@ export const replicaExtras = {
   'replica-status': async () => replicaStatus(),
   'replica-settings': async () => settingsHere(),
 }
+
+/**
+ * At start: what holds keys or sign-ins in the settings folder is made readable by you alone (pulls before this fix
+ * left them readable by every user and every agent on the machine), and temporary files a failed pull left are removed.
+ */
+export async function tidy(config = CONFIG_DIR, state = STATE_DIR) {
+  const priv = async (p: string) => { await chmod(p, 0o600).catch(() => {}) }
+  await priv(join(config, 'secrets.json'))
+  for (const dir of ['secrets', 'azure']) for (const f of await readdir(join(config, dir)).catch(() => [] as string[])) {
+    const p = join(config, dir, f)
+    if ((await lstat(p).catch(() => undefined))?.isFile()) await priv(p)
+  }
+  const old = Date.now() - 3600_000 // not one a pull is writing now
+  for (const dir of [config, join(state, 'logs')]) for (const f of await readdir(dir).catch(() => [] as string[])) {
+    if (!/\.[0-9a-f]{8}\.tmp$/.test(f)) continue
+    const p = join(dir, f), st = await stat(p).catch(() => undefined)
+    if (st?.isFile() && st.mtimeMs < old) await rm(p, { force: true }).catch(() => {})
+  }
+}
+void tidy()
 
 if (fleet.machine) {
   let busy = false, filesBusy = false

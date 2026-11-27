@@ -7,18 +7,38 @@
 import { DatabaseSync } from 'node:sqlite'
 
 export type Change = { seq: number; key: string; value: string | null; at: string } // value null: the entry was deleted
-const KEEP = 100_000 // changes kept for a follower to catch up from; one further behind gets every entry instead
+// Changes kept for a follower to catch up from; one further behind takes every entry instead, which is the smaller
+// download anyway (the whole state is a few megabytes, the log of a day far more). So the log is kept short.
+const KEEP = 20_000
+const TRIM_EVERY = 10 * 60_000 // and trimmed by the clock: a count of this process's writes never got there across restarts
 
 export class StateDb {
   private db: DatabaseSync
-  private writes = 0
-  constructor(file: string) {
+  private trimmedAt = 0
+  private keep: number
+  constructor(file: string, keep = KEEP) {
+    this.keep = keep
     this.db = new DatabaseSync(file)
     // WAL: a write never waits for a read; NORMAL: durable at each checkpoint, which is what a crash can cost here
     this.db.exec(`PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;
       CREATE TABLE IF NOT EXISTS entries (key TEXT PRIMARY KEY, value TEXT NOT NULL, at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, value TEXT, at TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL) STRICT;`)
+    // on opening: an old log is cut to what is kept, and the room it held given back to the disk
+    this.trim()
+    this.compact()
+  }
+  /** Cut the change log to the last `keep` changes. */
+  trim() {
+    this.trimmedAt = Date.now()
+    this.db.prepare('DELETE FROM changes WHERE seq <= ?').run(this.head() - this.keep)
+  }
+  /** Give freed pages back to the disk when they are most of the file (a log that was never trimmed): a rewrite of what is live. */
+  private compact() {
+    const n = (q: string) => Object.values(this.db.prepare(q).get() as Record<string, number>)[0]
+    const pages = n('PRAGMA page_count'), free = n('PRAGMA freelist_count')
+    if (pages < 2560 || free < pages / 2) return // under 10 MB, or mostly live: nothing worth a rewrite
+    try { this.db.exec('VACUUM; PRAGMA wal_checkpoint(TRUNCATE);') } catch { /* another reader has it open: next start */ }
   }
   /** Every entry, by key (its JSON). */
   all(): Map<string, string> {
@@ -39,7 +59,7 @@ export class StateDb {
       this.db.exec('COMMIT')
     } catch (e) { this.db.exec('ROLLBACK'); throw e }
     // the log is trimmed now and then, not on every write
-    if (++this.writes % 500 === 0) this.db.prepare('DELETE FROM changes WHERE seq <= ?').run(this.head() - KEEP)
+    if (Date.now() - this.trimmedAt > TRIM_EVERY) this.trim()
   }
   /** Make the entries exactly these (a follower that was too far behind takes every entry), logged as changes. */
   replace(entries: Map<string, string>, at = new Date().toISOString()) {

@@ -282,7 +282,7 @@ type State = {
   standups?: Record<string, Written> // written standups, by "<day>|<teams>": what the model made of the facts, and from which
   // tickets that left your Linear list (handed over, closed) but are still named here (a run, a standup, a PR title):
   // kept so their name and page still work, re-read now and then, dropped once nothing names them
-  ticketRefs?: Record<string, import('./linear.ts').Ticket & { readAt: string }>
+  ticketRefs?: Record<string, import('./linear.ts').Ticket & { readAt?: string }> // readAt: only on ones stored before it moved to memory
   turns?: Record<string, import('./turns.ts').Turns> // how each PR changed direction, push by push
   customConnectors?: Record<string, string> // connectors you added by address (name → URL), re-added when the container is rebuilt
   mutedConnectors?: string[] // connectors you don't use: folded away in Settings → Connections
