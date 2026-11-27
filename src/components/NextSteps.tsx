@@ -305,6 +305,9 @@ export function NextSteps({ nextUrl, replyUrl, version, toast, title, placeholde
  */
 function RouteBar({ d, open, onGo, onKeep }: { d: Routed; open: boolean; onGo: (to: RouteTo) => void; onKeep: () => void }) {
   const other: RouteTo = d.to === 'pr' ? 'stack' : 'pr'
+  // the moment left, as a number too: the draining bar is motion, which some people have turned off
+  const [left, setLeft] = useState(5)
+  useEffect(() => { const t = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000); return () => clearInterval(t) }, [])
   const say = (to: RouteTo) => (to === 'pr' ? `#${d.pr}’s agent` : open ? `a new PR stacked on #${d.pr}` : 'a new PR')
   return (
     <div role="status" className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-micro text-fg-3 animate-[detail-in_200ms_var(--ease-snappy)]">
@@ -314,7 +317,7 @@ function RouteBar({ d, open, onGo, onKeep }: { d: Routed; open: boolean; onGo: (
       <span className="min-w-0 truncate" title={d.by === 'model' ? 'Read by a small model from your words and the PR' : 'By rule'}>{d.why}{d.by === 'model' ? ' · read by a small model' : ''}</span>
       <span className="flex-1" />
       <button type="button" onClick={() => onGo(d.to)} className={`${armedCls} rounded-md px-1.5 py-0.5 font-medium text-fg-1 ring-1 ring-line`}>
-        Send now<span aria-hidden className="pointer-events-none absolute inset-0 -z-10 origin-right animate-[arm_5s_linear_forwards] bg-current opacity-[0.12]" />
+        Send now<span className="ml-1 tabular-nums text-fg-3">{left}s</span><span aria-hidden className="pointer-events-none absolute inset-0 -z-10 origin-right animate-[arm_5s_linear_forwards] bg-current opacity-[0.12]" />
       </button>
       {!(other === 'pr' && d.fixed) && <button type="button" onClick={() => onGo(other)} className="rounded-md px-1.5 py-0.5 font-medium text-fg-2 ring-1 ring-line transition-colors hover:text-fg-1">To {say(other)} instead</button>}
       <button type="button" onClick={onKeep} className="rounded-md px-1.5 py-0.5 font-medium text-fg-3 transition-colors hover:text-fg-1">Keep editing</button>

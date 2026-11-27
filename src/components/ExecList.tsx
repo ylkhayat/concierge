@@ -11,6 +11,7 @@ import { Bookmark, History, Moon,
 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api, prefetchFeed, type TicketView } from '../lib.ts'
+import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { Missing } from './Missing.tsx'
 import { ciLabel, ciTone } from './PrStack.tsx'
 import { short } from '../time.ts'
@@ -373,7 +374,7 @@ export function StackEditor({ shape, onShape, planned, picked, repoOf, oneRepo, 
           {preset('As planned', planned)}{preset('One stack', oneStack(picked), oneRepo)}{preset('No stacks', noStacks(picked))}
         </div>
       </div>
-      <p className="text-meta leading-snug text-fg-3">Every ticket is built by its own agent, all at once. A stack only opens its PRs together, bottom first, once all of it is ready.</p>
+      <p className="text-meta leading-snug text-fg-3">With a plan, every ticket is built by its own agent, all at once. A stack only opens its PRs together, bottom first, once all of it is ready.</p>
       {shape.lanes.map((l, i) => (
         <div key={i} onClick={(e) => { e.stopPropagation(); go(i) }} {...drop(i)} className={`rounded-lg px-2 py-1.5 ${target(!!sel && fits(sel, l) && !l.includes(sel))}`}>
           <p className="mb-1 flex items-center gap-1.5 text-micro font-semibold uppercase tracking-label text-fg-4">Stack {i + 1}<span className="font-normal normal-case tracking-normal">· {repoOf(l[0])?.split('/').pop()} · bottom first</span></p>
@@ -405,7 +406,8 @@ export function StackEditor({ shape, onShape, planned, picked, repoOf, oneRepo, 
  */
 export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missing?: string[]; tickets: TicketView[]; picked: string[]; onPick: (ids: string[]) => void; onRun: (stacks?: string[][], note?: string, prep?: Prep, mode?: 'one-pr') => Promise<unknown> }) {
   const [busy, setBusy] = useState<'plan' | 'run' | 'one'>()
-  const [plan, setPlan] = useState<{ for: string; stacks: string[][]; why: string; prep?: Prep; error?: string }>()
+  const [plan, setPlan] = useState<{ for: string; note: string; stacks: string[][]; why: string; prep?: Prep; error?: string }>()
+  const { armed, arm } = useArm() // one PR, no questions, merged on green where allowed: a second click
   const [note, setNote] = useState('') // your direction for these tickets: shapes the plan, and each run gets it
   // the stacks as you shape them, from the plan's: which PRs are submitted together (each ticket is built on its own anyway)
   const [shape, setShape] = useState<Shape>()
@@ -421,7 +423,7 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
   const shipOne = () => { setBusy('one'); onRun(undefined, note.trim() || undefined, undefined, 'one-pr').then(() => { setPlan(undefined); setNote('') }).finally(() => setBusy(undefined)) }
   const makePlan = () => {
     setBusy('plan')
-    api('/exec/plan', { ids: picked, note: note.trim() || undefined }).then((r: { stacks: string[][]; why: string; prep?: Prep }) => setPlan({ for: key, ...r }), (e: Error) => setPlan({ for: key, stacks: [], why: '', error: e.message }))
+    api('/exec/plan', { ids: picked, note: note.trim() || undefined }).then((r: { stacks: string[][]; why: string; prep?: Prep }) => setPlan({ for: key, note: note.trim(), ...r }), (e: Error) => setPlan({ for: key, note: note.trim(), stacks: [], why: '', error: e.message }))
       .finally(() => setBusy(undefined))
   }
   const primaryCls = 'group flex flex-1 items-center justify-center gap-1.5 btn-primary btn-lg shadow-sm transition-all disabled:pointer-events-none disabled:opacity-40'
@@ -434,7 +436,11 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
           )}
           {shown?.error && <p className="mb-2 text-meta text-fail-text">{shown.error}</p>}
           <Missing names={missing} className="mb-2" />
-          <textarea value={note} onChange={(e) => { setNote(e.target.value); setPlan(undefined) }} rows={note ? 3 : 1}
+          {/* a plan stays when the direction changes after it: said, with the way to plan again, not thrown away */}
+          {shown && !shown.error && shown.note !== note.trim() && (
+            <p className="mb-2 flex items-center gap-2 text-meta text-wait-text">The direction changed since this plan.<button onClick={makePlan} disabled={!!busy} className="font-medium underline decoration-wait/40 hover:decoration-current">Plan again</button></p>
+          )}
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={note ? 3 : 1}
                     placeholder={picked.length > 1 ? `Direction for these ${picked.length} (optional): the approach, what to keep in mind…` : `Direction for ${picked[0]} (optional)…`}
                     className="mb-2 w-full resize-y rounded-xl bg-surface-1 px-2.5 py-1.5 text-small ring-1 ring-line-strong outline-none placeholder:text-fg-3 focus:ring-accent" />
           <div className={`flex items-center gap-2 ${missing.length ? 'pointer-events-none opacity-40' : ''}`}>
@@ -446,9 +452,9 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
             <button onClick={() => { onPick([]); setPlan(undefined) }} className="rounded-xl px-2.5 py-2 text-small font-medium text-fg-3 transition-colors hov hover:text-fg-1">Clear</button>
           </div>
           {picked.length > 1 && (
-            <button onClick={shipOne} disabled={!!busy || !oneRepo} title={oneRepo ? `One agent works them together as one piece of work (one shared memory, shown as one group), deciding on its own (no questions), into one pull request: merged once its checks pass if its repository allows (${inSettings('repos')})` : 'One PR is one repository: pick tickets of one repository'}
-                    className={`mt-2 flex w-full items-center justify-center gap-1.5 ${quiet} disabled:opacity-40`}>
-              {busy === 'one' ? <LoaderCircle className="size-3.5 animate-spin" /> : <GitMerge className="size-3.5" />}Ship {picked.length} as one PR
+            <button onClick={() => arm('one', shipOne)} disabled={!!busy || !oneRepo} title={oneRepo ? `One agent works them together as one piece of work (one shared memory, shown as one group), deciding on its own (no questions), into one pull request: merged once its checks pass if its repository allows (${inSettings('repos')})` : 'One PR is one repository: pick tickets of one repository'}
+                    className={`relative isolate mt-2 flex w-full items-center justify-center gap-1.5 overflow-hidden ${quiet} disabled:opacity-40`}>
+              {busy === 'one' ? <LoaderCircle className="size-3.5 animate-spin" /> : <GitMerge className="size-3.5" />}{armed === 'one' ? <><ArmLabel>{`Confirm: ${picked.length} as one PR, no questions, merged when green if allowed`}</ArmLabel><ArmBar on="plain" /></> : `Ship ${picked.length} as one PR`}
             </button>
           )}
           {picked.length > 1 && !shown && <p className="mt-1.5 text-center text-meta text-fg-3">See which build on each other before anything runs.</p>}

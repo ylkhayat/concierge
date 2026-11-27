@@ -960,6 +960,7 @@ const moved = <T,>(list: T[], from: number, to: number) => { const next = [...li
 
 export function Agents({ toast, onConnections, compact }: { toast: Toast; onConnections: () => void; compact?: boolean }) {
   const [drag, setDrag] = useState<{ from: number; over: number }>()
+  const { armed, arm } = useArm() // removing an account takes its sign-in with it: a second click
   const [v, setV] = useState<ProvidersView>()
   const [signing, setSigning] = useState<{ id: string; kind: Kind; url: string; code?: string }>()
   const [paste, setPaste] = useState('')
@@ -1018,7 +1019,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <button onClick={() => test(a)} disabled={tested[a.id]?.busy} className={`${quiet} px-2`} title="Test: ask it one tiny question, the way a run would, and show what comes back" aria-label={`Test ${a.label}`}>{tested[a.id]?.busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}Test</button>
-            {!a.builtIn && <button onClick={() => { void remove(a); setOpen(undefined) }} className={`${quiet} px-2 hover:text-fail-text`} title="Remove this account"><Trash2 className="size-3.5" />Remove</button>}
+            {!a.builtIn && <button onClick={() => arm(`rm-${a.id}`, () => { void remove(a); setOpen(undefined) })} className={`${quiet} relative isolate overflow-hidden px-2 hover:text-fail-text`} title="Remove this account and its sign-in"><Trash2 className="size-3.5" />{armed === `rm-${a.id}` ? <><ArmLabel>Confirm: remove</ArmLabel><ArmBar on="plain" /></> : 'Remove'}</button>}
           </div>
         </header>
         {tested[a.id] && !tested[a.id].busy && (
@@ -1146,7 +1147,7 @@ export function Agents({ toast, onConnections, compact }: { toast: Toast; onConn
                   ? <button onClick={() => signIn(a)} className={primary}>Sign in</button>
                   : <button onClick={() => signIn(a)} className={`${quiet} px-2`} title="Sign in again" aria-label={`Sign ${a.label} in again`}><RotateCcw className="size-3.5" /></button>)}
                 {!compact && <button onClick={() => test(a)} disabled={tested[a.id]?.busy} className={`${quiet} px-2`} title="Test: ask it one tiny question, the way a run would, and show what comes back" aria-label={`Test ${a.label}`}>{tested[a.id]?.busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}</button>}
-                {!a.builtIn && <button onClick={() => remove(a)} className={`${quiet} px-2 hover:text-fail-text`} aria-label={`Remove ${a.label}`} title="Remove this account"><Trash2 className="size-3.5" /></button>}
+                {!a.builtIn && <button onClick={() => arm(`rm-${a.id}`, () => void remove(a))} className={`${quiet} relative isolate overflow-hidden px-2 hover:text-fail-text`} aria-label={`Remove ${a.label}`} title="Remove this account and its sign-in"><Trash2 className="size-3.5" />{armed === `rm-${a.id}` && <><ArmLabel>Confirm</ArmLabel><ArmBar on="plain" /></>}</button>}
               </div>
             </div>
             {tested[a.id] && !tested[a.id].busy && (

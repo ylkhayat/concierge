@@ -2,6 +2,7 @@ import { ChevronRight, CircleCheck, Copy, Eye, EyeOff, ExternalLink, LoaderCircl
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Connection } from '../../server/connections.ts'
 import { api } from '../lib.ts'
+import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { ConnectCard } from './ConnectCard.tsx'
 import { SignInSteps, useMachineSignIn } from './MachineSignIn.tsx'
 import { Tabs } from './Tabs.tsx'
@@ -50,6 +51,7 @@ function Bank({ toast }: { toast: Toast }) {
   const { scope, owners, keep } = useScope(toast)
   const [b, setB] = useState<BankView>()
   const [form, setForm] = useState<{ kind: 'address' | 'command'; name: string; url: string; key: string; command: string; env: string; was?: string }>()
+  const { armed, arm } = useArm() // removing one drops its key: a second click
   useEffect(() => { api('/bank').then(setB, () => setB({ only: false, servers: [] })) }, [])
   const post = (path: string, body: object, said: string) => api(path, body).then((v: BankView) => { setB(v); toast(said); return true }, (e: Error) => { toast(e.message, 'error'); return false })
   if (!b) return <Skeleton rows={2} />
@@ -68,7 +70,7 @@ function Bank({ toast }: { toast: Toast }) {
             <span className="shrink-0 text-meta text-fg-3" title={s.how === 'key' ? 'It signs in with a key Concierge holds: every tool can use it' : 'It signs in in the browser, into a Claude account: Codex and Copilot can’t use it'}>{s.how === 'key' ? 'Every tool' : 'Claude accounts only'}</span>
             {s.mine && s.edit && <button onClick={() => setForm(s.edit!.kind === 'command' ? { kind: 'command', name: s.name, url: '', key: '', command: s.edit!.command, env: s.edit!.env.map((k) => `${k}=`).join('\n'), was: s.name } : { kind: 'address', name: s.name, url: s.edit!.url, key: '', command: '', env: '', was: s.name })} className="shrink-0 text-meta text-fg-3 hover:text-fg-1">Edit</button>}
             {owners.length > 1 && <UsedBy owners={owners} on={scope[s.name] ?? []} onToggle={(o) => keep(s.name, o)} />}
-            {s.mine && <button onClick={() => void post('/bank/remove', { name: s.name }, `${s.name} removed`)} className="shrink-0 text-meta text-fg-4 hover:text-fail-text">Remove</button>}
+            {s.mine && <button onClick={() => arm(s.name, () => void post('/bank/remove', { name: s.name }, `${s.name} removed`))} className="relative isolate shrink-0 overflow-hidden rounded px-1 text-meta text-fg-4 hover:text-fail-text">{armed === s.name ? <><ArmLabel>Confirm</ArmLabel><ArmBar on="plain" /></> : 'Remove'}</button>}
           </div>
         ))}
       </div>
