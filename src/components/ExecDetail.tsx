@@ -24,9 +24,10 @@ import { ConnectCard } from './ConnectCard.tsx'
 import { StatusField, type StatusTone } from './DetailHeader.tsx'
 import type { Linked } from '../../server/index.ts'
 import { inSettings } from '../copy.ts'
+import { PHASES } from '../phases.ts'
 
-const STEPS = ['picked', 'evidence', 'implementing', 'checking', 'self-review', 'opening-pr', 'done'] as const
-const STEP_LABEL: Record<string, string> = { picked: 'Picked', evidence: 'Evidence', implementing: 'Implement', checking: 'Checks', 'self-review': 'Self-review', 'opening-pr': 'PR', done: 'Done' }
+const STEPS = PHASES.map((p) => p.id)
+const STEP_LABEL: Record<string, string> = Object.fromEntries(PHASES.map((p) => [p.id, p.step]))
 
 /** Where a ticket stands in the exec steps: the step it is at (past the end: done), and whether it is stuck there. */
 function stageOf(t: TicketView): { at: number; broken: boolean } {

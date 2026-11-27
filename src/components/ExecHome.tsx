@@ -1,7 +1,7 @@
 import { ArrowUpRight, GitPullRequest, Layers, Map as MapIcon, Rocket } from 'lucide-react'
 import { type PrView, type TicketView } from '../lib.ts'
 import { short } from '../time.ts'
-import { GROUPS, groupOf } from './ExecList.tsx'
+import { TIERS, tierOf } from './ExecList.tsx'
 import { stackKey, stackPos } from './PrList.tsx'
 import { plain } from './StackNav.tsx'
 import { statusMeta, StatusBadge } from './StatusBadge.tsx'
@@ -23,17 +23,18 @@ export function ExecHome({ repo, tickets, prs, now, onTicket, onPr, onMap }: {
   const alone = units.filter((u) => u.length === 1).flat()
   const cards = [...units.filter((u) => u.length > 1).slice(0, 6), ...(alone.length ? [alone.slice(0, 12)] : [])]
   const assigned = tickets.filter((t) => !t.handedTo && !t.closed)
-  const counts = GROUPS.filter((g) => g.id !== 'closed').map((g) => ({ g, items: tickets.filter((t) => groupOf(t) === g) })).filter((x) => x.items.length)
+  // the list's own sections, counted: both sides of the screen sort the same tickets the same way
+  const counts = TIERS.filter((x) => x.id !== 'done').map((g) => ({ g, items: tickets.filter((t) => !t.aside && tierOf(t) === g) })).filter((x) => x.items.length)
   return (
     <div className="h-full overflow-y-auto px-6 py-6 lg:px-8 2xl:px-10">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-card bg-accent/10 text-accent-text"><Rocket className="size-5" /></span>
         <div className="min-w-0">
           <h1 className={`text-title font-semibold tracking-tight text-fg-1 ${repo ? 'font-mono' : ''}`}>{repo ?? 'All repositories'}</h1>
-          <p className="text-small text-fg-3">{assigned.length} ticket{assigned.length === 1 ? '' : 's'} assigned to you{repo ? ' here' : ''} · pick one, or tick several to run them, stacked where they depend on each other</p>
+          <p className="text-small text-fg-3">{assigned.length} ticket{assigned.length === 1 ? '' : 's'} assigned to you{repo ? ' here' : ''} · open one, or pick several in the list (the + on a row) to run them together, stacked where they depend on each other</p>
         </div>
         {repo && onMap && (
-          <button onClick={onMap} className="ml-auto inline-flex items-center gap-1.5 rounded-ctl px-3 py-1.5 text-small font-medium text-fg-2 ring-1 ring-line-strong transition-all hover:text-fg-1">
+          <button onClick={onMap} className="btn-outline ml-auto inline-flex items-center gap-1.5">
             <MapIcon className="size-4" />Codebase map
           </button>
         )}
@@ -41,13 +42,13 @@ export function ExecHome({ repo, tickets, prs, now, onTicket, onPr, onMap }: {
 
       <section className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
         {counts.map(({ g, items }) => (
-          <button key={g.id} onClick={() => onTicket(items[0].id)} title={`Open the first ${g.title} ticket`}
-                  className={`group rounded-ctl p-4 text-left transition-[box-shadow,translate] duration-150 ${g.id === 'needs-you' ? `ring-1 ${g.card}` : 'bg-surface-1 shadow-e1 hover:shadow-e2'}`}>
+          <button key={g.id} onClick={() => onTicket(items[0].id)} title={`${g.hint}. Opens the first one`}
+                  className={`group rounded-ctl p-4 text-left transition-[box-shadow,translate] duration-150 ${g.id === 'you' ? 'bg-wait/6 ring-1 ring-wait/20' : 'bg-surface-1 shadow-e1 hover:shadow-e2'}`}>
             <div className="flex items-center gap-1.5 text-small font-semibold text-fg-3">
               <g.icon className={`size-3.5 ${g.tone} ${g.id === 'running' ? 'animate-spin' : ''}`} />{g.title}
             </div>
             <div className="mt-1.5 text-display font-semibold tabular-nums text-fg-1 ">{items.length}</div>
-            <div className="mt-1 truncate text-meta text-fg-3">{items[0].id} · {items[0].title}</div>
+            <div className="mt-1 line-clamp-2 text-meta text-fg-3">{g.hint}</div>
           </button>
         ))}
       </section>

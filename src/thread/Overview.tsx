@@ -11,6 +11,7 @@ import { useApi, explainPath, keepSame } from '../query.ts'
 import { StatusBadge } from '../components/StatusBadge.tsx'
 import { Md } from '../components/Md.tsx'
 import { VisualsGlance } from '../components/DesignWorkspace.tsx'
+import { phaseDoing } from '../phases.ts'
 
 const enc = encodeURIComponent
 /** The PR's latest screens from Design, when it has any: a glance, and the way to the whole of it. */
@@ -24,10 +25,10 @@ const Panel = ({ title, aside, children }: { title: string; aside?: ReactNode; c
     <div className="px-3.5 py-3">{children}</div>
   </section>
 )
-const Fact = ({ k, tone, children }: { k: string; tone: 'ok' | 'wait' | 'fail' | 'idle'; children: ReactNode }) => (
+const Fact = ({ k, tone, children }: { k: string; tone: 'ok' | 'wait' | 'fail' | 'run' | 'idle'; children: ReactNode }) => (
   <p className="flex items-baseline gap-2.5 py-1 text-small">
     <span className="w-20 shrink-0 text-fg-3">{k}</span>
-    <span aria-hidden className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${tone === 'ok' ? 'bg-ok' : tone === 'wait' ? 'bg-wait' : tone === 'fail' ? 'bg-fail' : 'bg-fg-4'}`} />
+    <span aria-hidden className={`size-1.5 shrink-0 translate-y-[-1px] rounded-full ${tone === 'ok' ? 'bg-ok' : tone === 'wait' ? 'bg-wait' : tone === 'fail' ? 'bg-fail' : tone === 'run' ? 'animate-pulse bg-run' : 'bg-fg-4'}`} />
     <span className="min-w-0 flex-1 text-fg-1">{children}</span>
   </p>
 )
@@ -147,8 +148,8 @@ export function TicketOverview({ t, why, onPr, onOpen, onStack }: {
     <div className="space-y-3 p-3.5">
       <Panel title="Where it stands" aside={<span className="rounded-full bg-fill px-1.5 text-micro font-medium text-fg-2">{t.state}</span>}>
         {why && <p className="mb-1.5 text-small leading-snug text-fg-2">{why}</p>}
-        <Fact k="Agent" tone={t.queued ? 'idle' : t.busy ? 'wait' : run?.state === 'failed' ? 'fail' : run?.state === 'done' ? 'ok' : 'idle'}>
-          {t.queued ? `Queued: ${t.queued.why}` : t.busy ? `Working${run?.phase ? `: ${run.phase}` : ''}` : run ? `${run.label ?? 'Ship'} ${run.state}${run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''}` : 'No run yet'}
+        <Fact k="Agent" tone={t.queued ? 'idle' : t.busy ? 'run' : run?.state === 'failed' ? 'fail' : run?.state === 'done' ? 'ok' : 'idle'}>
+          {t.queued ? `Queued: ${t.queued.why}` : t.busy ? `Working${run?.phase ? `: ${phaseDoing(run.phase).toLowerCase()}` : ''}` : run ? `${run.label ?? 'Ship'} ${run.state}${run.costUsd ? ` · $${run.costUsd.toFixed(2)}` : ''}` : 'No run yet'}
         </Fact>
         {/* the one sign-in it waits for, made here (a <p> can't hold it: beside it, under its words) */}
         {t.queued?.signIn && <div className="pl-[6.625rem]"><SignInHere machine={t.queued.signIn.machine} account={t.queued.signIn.account} /></div>}

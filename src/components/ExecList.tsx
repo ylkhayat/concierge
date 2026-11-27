@@ -4,7 +4,7 @@ import type { Prep } from '../../server/plan.ts'
 import { askLine } from '../../server/reply.ts'
 import { queuedText } from '../time.ts'
 import { appColor } from '../appColor.ts'
-import { Bookmark, History, Moon,
+import { Bookmark, Moon,
   AlertTriangle, Archive, ChevronDown, MessageSquareWarning, Plus, CircleCheck, Inbox, Search, X, CircleDashed, CircleDot, Hourglass, Layers, LoaderCircle, MessageCircleQuestion, Play, Signal, SignalHigh,
   SignalLow, SignalMedium, Wrench, type LucideIcon,
   Users, GitMerge,
@@ -16,26 +16,28 @@ import { Missing } from './Missing.tsx'
 import { ciLabel, ciTone } from './PrStack.tsx'
 import { short } from '../time.ts'
 import { useDragPick } from '../pick.ts'
-import { recent, takeRecent, useTouch } from '../recent.ts'
+import { recent, useTouch } from '../recent.ts'
 import { useFlip } from '../flip.ts'
 import { ticketOrder } from '../listOrder.ts'
 import { pending, shapeKey, useSettled } from '../settle.ts'
 import { move, noStacks, oneStack, shapeOf, shift, stacksOf, type Shape } from '../stackEdit.ts'
 import { inSettings } from '../copy.ts'
+import { PHASES } from '../phases.ts'
 
 export type Group = { id: string; title: string; hint: string; icon: LucideIcon; tone: string; card: string; match: (t: TicketView) => boolean; dot?: string; badge?: string }
 
-// the exec command's own pick order, plus what is running right now
+// a ticket's state, in the order an agent picks them, plus what is running right now. Each has its own colour
+// (its dot in the list, its chip on the page); the list's sections below put them together by who acts next
 export const GROUPS: Group[] = [
-  { id: 'running', dot: 'bg-run', badge: 'text-run-text bg-run/10 ring-run/30', title: 'Running', hint: 'An exec run is working on it', icon: LoaderCircle, tone: 'text-run-text', card: 'bg-run/5 ring-run/15', match: (t) => t.busy },
+  { id: 'running', dot: 'bg-run', badge: 'text-run-text bg-run/10 ring-run/30', title: 'Running', hint: 'An agent is working on it', icon: LoaderCircle, tone: 'text-run-text', card: 'bg-run/5 ring-run/15', match: (t) => t.busy },
   { id: 'needs-you', dot: 'bg-wait', badge: 'text-wait-text bg-wait/10 ring-wait/30', title: 'Needs you', hint: 'The agent asked you something: a question on Linear, or decisions it handed back', icon: MessageCircleQuestion, tone: 'text-wait-text', card: 'bg-wait/6 ring-wait/20', match: (t) => t.bucket === 'needs-you' },
   { id: 'tend', dot: 'bg-fail', badge: 'text-fail-text bg-fail/10 ring-fail/30', title: 'Needs fixing', hint: 'In review with red CI or open threads', icon: Wrench, tone: 'text-fail-text', card: 'bg-fail/5 ring-fail/15', match: (t) => t.bucket === 'tend' },
   { id: 'stalled', dot: 'bg-wait', badge: 'text-wait-text bg-wait/10 ring-wait/30', title: 'Stalled', hint: 'In progress, untouched for a day', icon: Hourglass, tone: 'text-wait-text', card: 'bg-wait/5 ring-wait/15', match: (t) => t.bucket === 'stalled' },
   { id: 'in-progress', dot: 'bg-accent', badge: 'text-accent-text bg-accent-soft ring-accent/30', title: 'In progress', hint: 'Moving', icon: CircleDot, tone: 'text-accent-text', card: 'bg-accent/5 ring-accent/15', match: (t) => t.bucket === 'in-progress' },
-  { id: 'todo', dot: 'bg-run', badge: 'text-run-text bg-run/10 ring-run/30', title: 'Todo', hint: 'Ready to pick, by priority', icon: CircleDashed, tone: 'text-run-text', card: 'bg-run/5 ring-run/15', match: (t) => t.bucket === 'todo' },
+  { id: 'todo', dot: 'bg-fg-2', badge: 'text-fg-2 bg-fill/60 ring-line-strong', title: 'Ready', hint: 'Ready to pick, by priority', icon: CircleDashed, tone: 'text-fg-2', card: 'bg-fg-3/4 ring-line', match: (t) => t.bucket === 'todo' },
   { id: 'triage', dot: 'bg-fuchsia-500', badge: 'text-fuchsia-700 bg-fuchsia-50 ring-fuchsia-200 dark:text-fuchsia-300 dark:bg-fuchsia-500/10 dark:ring-fuchsia-500/20', title: 'Triage', hint: 'Not triaged yet: never picked on its own, but you can run it by hand', icon: Inbox, tone: 'text-fuchsia-600 dark:text-fuchsia-400', card: 'bg-fuchsia-500/[0.04] ring-fuchsia-500/15', match: (t) => t.bucket === 'triage' },
   { id: 'backlog', dot: 'bg-fg-3', badge: 'text-fg-2 bg-fill/60 ring-line-strong', title: 'Backlog', hint: 'Not planned yet: never picked on its own, but you can run it by hand', icon: Archive, tone: 'text-fg-3', card: 'bg-fg-3/4 ring-zinc-500/15', match: (t) => t.bucket === 'backlog' },
-  { id: 'shipped', dot: 'bg-ok', badge: 'text-ok-text bg-ok/10 ring-ok/30', title: 'Shipped', hint: 'In review, green, nothing waiting', icon: CircleCheck, tone: 'text-ok-text', card: 'bg-ok/5 ring-ok/15', match: (t) => t.bucket === 'shipped' },
+  { id: 'shipped', dot: 'bg-ok', badge: 'text-ok-text bg-ok/10 ring-ok/30', title: 'In review', hint: 'Its PR is open and green: nothing waits on you', icon: CircleCheck, tone: 'text-ok-text', card: 'bg-ok/5 ring-ok/15', match: (t) => t.bucket === 'shipped' },
   { id: 'handed', dot: 'bg-teal-500', badge: 'text-teal-700 bg-teal-50 ring-teal-200 dark:text-teal-300 dark:bg-teal-500/10 dark:ring-teal-500/20', title: 'Handed over', hint: "Someone else has it now: never picked, never waiting on you, but you can still steer or run it", icon: Users, tone: 'text-teal-600 dark:text-teal-400', card: 'bg-teal-500/[0.04] ring-teal-500/15', match: (t) => t.bucket === 'handed' },
   { id: 'closed', dot: 'bg-fg-4', badge: 'text-fg-2 bg-fill/60 ring-line-strong', title: 'Closed', hint: 'Done or cancelled: kept while a standup or a run names it', icon: CircleCheck, tone: 'text-fg-3', card: 'bg-fg-3/4 ring-zinc-500/15', match: (t) => t.bucket === 'closed' },
 ]
@@ -50,20 +52,22 @@ export type Tier = { id: string; title: string; hint: string; icon: LucideIcon; 
 const PINNED: Tier = { id: 'pinned', title: 'Bookmarked', hint: 'Tickets you bookmarked: kept on top until they are done, and every change of their state is an alert', icon: Bookmark, tone: 'text-accent fill-current', groups: [] }
 // what you set aside: out of the sections and the counts, one folded section at the foot until you bring it back
 const ASIDE: Tier = { id: 'aside', title: 'Set aside', hint: 'Tickets and stacks you set aside for now: out of the way until you bring them back', icon: Archive, tone: 'text-fg-3', groups: [] }
-const RECENT: Tier = { id: 'recent', title: 'Recent', hint: 'What you opened in the last day, newest first (Waiting on you stays on top)', icon: History, tone: 'text-fg-3', groups: [] }
 export const TIERS: Tier[] = [
-  { id: 'you', title: 'Waiting on you', hint: 'Your move: the agent asked you something (on Linear, or decisions it handed back), or a PR has red CI or open threads', icon: MessageCircleQuestion, tone: 'text-wait-text', groups: ['needs-you', 'tend'] },
-  { id: 'running', title: 'Agents on it', hint: 'An exec run is working on it', icon: LoaderCircle, tone: 'text-run-text', groups: ['running'] },
-  { id: 'flight', title: 'In flight', hint: 'In progress; the ones untouched for a day first', icon: CircleDot, tone: 'text-accent-text', groups: ['stalled', 'in-progress'] },
-  { id: 'next', title: 'Ready to pick', hint: 'Todo, by priority', icon: CircleDashed, tone: 'text-run-text', groups: ['todo'] },
-  { id: 'later', title: 'Later', hint: 'Triage, backlog and shipped: never picked on their own, but you can run one by hand', icon: Archive, tone: 'text-fg-3', groups: ['triage', 'backlog', 'shipped'] },
-  { id: 'handed', title: 'Handed over', hint: "Tickets you worked on that someone else has now: never picked on their own, never waiting on you; open one to steer it", icon: Users, tone: 'text-teal-600 dark:text-teal-400', groups: ['handed'] },
-  { id: 'done', title: 'Done', hint: `Done or cancelled in the last ${DONE_DAYS} days, newest first: they leave the list after that`, icon: CircleCheck, tone: 'text-ok-text', groups: ['closed'] },
+  { id: 'you', title: 'Waiting on you', hint: 'Your move: the agent asked you something, or a PR has red CI or open threads', icon: MessageCircleQuestion, tone: 'text-wait-text', groups: ['needs-you', 'tend'] },
+  { id: 'running', title: 'Running', hint: 'An agent is working on it', icon: LoaderCircle, tone: 'text-run-text', groups: ['running'] },
+  { id: 'review', title: 'In review', hint: 'Its PR is open and green: nothing waits on you', icon: CircleCheck, tone: 'text-ok-text', groups: ['shipped'] },
+  { id: 'flight', title: 'In progress', hint: 'Started; the ones untouched for a day first', icon: CircleDot, tone: 'text-accent-text', groups: ['stalled', 'in-progress'] },
+  { id: 'next', title: 'Ready', hint: 'Ready to pick, by priority', icon: CircleDashed, tone: 'text-fg-2', groups: ['todo'] },
+  { id: 'later', title: 'Later', hint: 'Triage and backlog: never picked on their own, but you can run one by hand', icon: Archive, tone: 'text-fg-3', groups: ['triage', 'backlog'] },
+  { id: 'handed', title: 'Handed over', hint: 'Someone else has it now: never waiting on you; open one to steer it', icon: Users, tone: 'text-teal-600 dark:text-teal-400', groups: ['handed'] },
+  { id: 'done', title: 'Done', hint: `Done or cancelled in the last ${DONE_DAYS} days, newest first`, icon: CircleCheck, tone: 'text-fg-3', groups: ['closed'] },
 ]
 const ORDER = TIERS.flatMap((x) => x.groups)
 /** Done or cancelled lately: shown under Done, faded, until DONE_DAYS have passed. */
 export const isDone = (t: TicketView) => t.bucket === 'closed' && !!t.doneAt && Date.now() - Date.parse(t.doneAt) < DONE_DAYS * 86_400_000
 const inTier = (t: TicketView, x: Tier) => x.groups.includes(groupOf(t).id)
+/** The section a ticket is listed under: the list and the home's counts both go by it. */
+export const tierOf = (t: TicketView) => TIERS.find((x) => inTier(t, x))!
 
 /** The tickets that ship together: their PRs stacked on GitHub, or one run's (see ticketStacks). */
 export const runKey = (t: TicketView) => t.stack?.key
@@ -86,17 +90,15 @@ export function groupedTickets(tickets: TicketView[], q: string): { tier: Tier; 
     units.set(k, [...(units.get(k) ?? []), t])
   }
   const all = [...units.values()].map((u) => u.sort((a, b) => a.stack!.ids.indexOf(a.id) - b.stack!.ids.indexOf(b.id)))
-  const tierOf = (u: TicketView[]) => TIERS.findIndex((x) => x.groups.includes(ORDER[Math.min(...u.map(gi))]))
-  // what you opened last comes after Waiting on you, which stays first
+  const tierAt = (u: TicketView[]) => TIERS.findIndex((x) => x.groups.includes(ORDER[Math.min(...u.map(gi))]))
   // bookmarked ones lead, whatever their state
   const aside = all.filter((u) => u.some((t) => t.aside)), live = all.filter((u) => !aside.includes(u))
   const pinned = live.filter((u) => u.some((t) => t.pinned)), open = live.filter((u) => !pinned.includes(u))
-  const { recent: rec, rest } = takeRecent(open.filter((u) => tierOf(u) > 0), (t) => t.id, recent('exec'))
   // dimmed ones sink to the end of their group
   const dim = (u: TicketView[]) => (u.every((t) => t.dimmed) ? 1 : 0)
   const doneAt = (u: TicketView[]) => u[0].doneAt ?? ''
-  const tiers = TIERS.map((tier, i) => ({ tier, units: (i ? rest : open).filter((u) => tierOf(u) === i).sort((a, b) => tier.id === 'done' ? doneAt(b).localeCompare(doneAt(a)) : dim(a) - dim(b)) }))
-  return [...(pinned.length ? [{ tier: PINNED, units: pinned }] : []), tiers[0], ...(rec.length ? [{ tier: RECENT, units: rec }] : []), ...tiers.slice(1), ...(aside.length ? [{ tier: ASIDE, units: aside }] : [])]
+  const tiers = TIERS.map((tier, i) => ({ tier, units: open.filter((u) => tierAt(u) === i).sort((a, b) => tier.id === 'done' ? doneAt(b).localeCompare(doneAt(a)) : dim(a) - dim(b)) }))
+  return [...(pinned.length ? [{ tier: PINNED, units: pinned }] : []), ...tiers, ...(aside.length ? [{ tier: ASIDE, units: aside }] : [])]
 }
 
 const ticketId = (t: TicketView) => t.id, tierId = (g: { tier: Tier }) => g.tier.id
@@ -125,10 +127,8 @@ export const TEAM_MARK: Record<string, string> = {
 
 export { short } from '../time.ts'
 
-export const PHASE_LABEL: Record<string, string> = {
-  picked: 'Picked', evidence: 'Gathering evidence', implementing: 'Implementing', checking: 'Running checks',
-  'self-review': 'Self-review', 'opening-pr': 'Opening PR', done: 'Done',
-}
+/** A run's phase in words (phases.ts), by its id. */
+export const PHASE_LABEL: Record<string, string> = Object.fromEntries(PHASES.map((p) => [p.id, p.doing]))
 
 export function ExecList({ tickets: given, selected, onSelect, picked, onPick, onRun, missing, query, onQuery, now, toast, elsewhere = 0, onAllApps }: {
   elsewhere?: number; onAllApps?: () => void // waiting on you in apps outside the focus
@@ -215,14 +215,15 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
     const done = isDone(t)
     return (
       <div key={t.id} data-flip={t.id} ref={active ? activeRef : undefined} onClick={() => !(t.repo && away.has(t.repo)) && onSelect(t.id)} data-away={(t.repo && away.has(t.repo)) || undefined} data-held={(!!t.repo && !!held[t.repo] && !away.has(t.repo)) || undefined} title={t.repo && held[t.repo] ? `Actions off: ${held[t.repo]}` : undefined} aria-disabled={(t.repo && away.has(t.repo)) || undefined} onMouseEnter={() => prefetchFeed(`ticket:${t.id}`)} {...drag(t.id, pickable)} role="button" tabIndex={0} aria-current={active} style={t.repo ? appColor(t.repo).style : undefined}
-           onKeyDown={(e) => e.key === 'Enter' && !(t.repo && away.has(t.repo)) && onSelect(t.id)}
+           onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && !(t.repo && away.has(t.repo))) { e.preventDefault(); onSelect(t.id) } }}
            className={`group relative ${up || down ? '' : 'mb-0.5'} flex w-full cursor-pointer ${active && moved ? 'animate-[moved_1.6s_ease-out]' : ''} items-center gap-2.5 overflow-hidden rounded-ctl px-2.5 py-2 text-left -outline-offset-2 transition-[background-color,box-shadow] duration-[120ms] ${
              active ? 'sel-row' : on ? 'bg-accent/6 ring-1 ring-accent/25' : 'hov'}`}>
         {up && <span className="absolute left-[22px] top-0 h-1/2 w-px bg-fill-strong" aria-hidden />}
         {down && <span className="absolute bottom-0 left-[22px] h-1/2 w-px bg-fill-strong" aria-hidden />}
         {t.busy && <span className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-run/10"><span className="block h-full w-1/3 animate-[shimmer_1.4s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-run to-transparent" /></span>}
         {/* the team's mark, like the Review list's avatar; it turns into the pick box on hover (or once anything is picked) */}
-        <button onClick={(e) => { e.stopPropagation(); if (pickable) toggle(t.id) }} disabled={!pickable}
+        <button onClick={(e) => { e.stopPropagation(); if (pickable) toggle(t.id) }} disabled={!pickable} aria-pressed={on}
+                aria-label={on ? `Take ${t.id} out of the next run` : `Add ${t.id} to the next run`}
                 title={!t.repo ? 'No repository mapped for this team' : held[t.repo] ? `Can't run now: ${held[t.repo]}` : t.busy ? 'Already running' : on ? `Picked #${picked.indexOf(t.id) + 1}` : 'Add to the next run'}
                 className="relative z-10 size-6 shrink-0 rounded-full transition-transform duration-200 group-hover:scale-105">
           {on
@@ -350,11 +351,13 @@ export function StackEditor({ shape, onShape, planned, picked, repoOf, oneRepo, 
   const chip = (id: string, lane?: number) => {
     const at = lane == null ? -1 : shape.lanes[lane].indexOf(id), on = sel === id
     return (
-      <span key={id} draggable onDragStart={(e) => e.dataTransfer.setData('text/plain', id)} onClick={(e) => { e.stopPropagation(); setSel(on ? undefined : id) }}
+      <span key={id} draggable role="button" tabIndex={0} aria-pressed={on} aria-label={`${id}: ${on ? 'picked, now choose where it goes' : 'pick it to move it'}`}
+            onDragStart={(e) => e.dataTransfer.setData('text/plain', id)} onClick={(e) => { e.stopPropagation(); setSel(on ? undefined : id) }}
+            onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); setSel(on ? undefined : id) } }}
             className={`inline-flex cursor-grab items-center gap-0.5 rounded-chip px-1.5 py-px font-mono text-meta transition-shadow active:cursor-grabbing ${on ? 'bg-accent-soft text-accent-text ring-2 ring-accent/60' : 'bg-surface-1 text-fg-1 ring-1 ring-line-strong hover:ring-accent/40'}`}>
-        {on && lane != null && at > 0 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, -1)) }} aria-label={`${id} one place down`} className="px-0.5 text-fg-3 hover:text-fg-1">‹</button>}
+        {on && lane != null && at > 0 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, -1)) }} aria-label={`${id} one place down`} className="-my-px min-w-5 rounded-chip px-1 text-small text-fg-2 hover:bg-accent/15 hover:text-fg-1">‹</button>}
         {id}
-        {on && lane != null && at < shape.lanes[lane].length - 1 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, 1)) }} aria-label={`${id} one place up`} className="px-0.5 text-fg-3 hover:text-fg-1">›</button>}
+        {on && lane != null && at < shape.lanes[lane].length - 1 && <button onClick={(e) => { e.stopPropagation(); onShape(shift(shape, id, 1)) }} aria-label={`${id} one place up`} className="-my-px min-w-5 rounded-chip px-1 text-small text-fg-2 hover:bg-accent/15 hover:text-fg-1">›</button>}
       </span>
     )
   }
