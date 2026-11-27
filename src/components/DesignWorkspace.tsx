@@ -190,6 +190,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   const numbers = new Map(parts.map((c, i) => [c.name, i + 1]))
   // the conversation: a click away (the onboarding and the map say where things stand)
   const showTalk = talk ?? false
+  const narrow = useNarrow() // no room for a column: the conversation is a sheet, always a tap away
   // what the agent last said, for the onboarding's progress (the whole of it is the conversation)
   const said = busy(t) ? [...feed].reverse().find((x) => x.kind === 'text' || x.kind === 'result')?.text : undefined
   const making = !!(t as { board?: boolean } | undefined)?.board || !!set
@@ -214,7 +215,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
                 </p>
               </div>
               <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
-                <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
+                <button onClick={() => setTalk(!showTalk)} aria-pressed={showTalk} title={showTalk ? 'Hide the conversation' : 'Talk to the agent that set it up'} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 max-lg:hidden ${showTalk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
                 {t?.prUrl && <a href={t.prUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm inline-flex items-center gap-1.5"><ExternalLink className="size-3.5" />Open the PR</a>}
                 {busy(t)
                   ? <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
@@ -228,7 +229,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
                              onStop={() => post({ cancel: true }, 'Stopped')} onComponents={set ? goComponents : undefined} onTalk={() => setTalk(true)} />}
         </div>
       </div>
-      {showTalk && <Conversation id={baselineKey(repo)} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast} />}
+      {(showTalk || narrow) && <Conversation id={baselineKey(repo)} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast} />}
     </div>
   )
 }
@@ -344,7 +345,8 @@ export function VisualsView({ id, feed, toast }: { id: string; feed: Activity[];
         <div className="mx-auto max-w-5xl space-y-3 p-4">
           <header className="card px-4 py-3.5">
             <div className="flex flex-wrap items-start gap-3">
-              <div className="min-w-0 flex-1">
+              {/* the title keeps a readable measure: the actions go under it before it is squeezed into a few words a line */}
+              <div className="min-w-0 flex-1 basis-80">
                 <p className="text-meta text-fg-3">{p.repo}#{p.number} · {p.author}{p.tickets.length ? ` · ${p.tickets.join(', ')}` : ''}</p>
                 <h2 className="text-title font-semibold text-fg-1">{p.title}</h2>
                 <p className={`mt-0.5 text-meta ${TONE[s.tone]}`}>{s.text}</p>
@@ -352,7 +354,7 @@ export function VisualsView({ id, feed, toast }: { id: string; feed: Activity[];
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Tabs size="sm" label="Visuals for this PR" value={p.override ?? 'repo'} onChange={(v) => post({ override: v === 'repo' ? null : v }, v === 'repo' ? `Follows ${p.repo}: ${modeWord[p.mode]}` : v === 'on' ? 'Captured for every commit' : 'Not captured')}
-                      options={[{ id: 'repo' as const, label: `As its repo · ${p.mode}` }, { id: 'on' as const, label: 'On' }, { id: 'off' as const, label: 'Off' }]} />
+                      options={[{ id: 'repo' as const, label: `Like its repository (${p.mode})` }, { id: 'on' as const, label: 'On' }, { id: 'off' as const, label: 'Off' }]} />
                 {busy(p.task)
                   ? <button onClick={() => post({ cancel: true }, 'Stopped')} className="btn-outline btn-sm inline-flex items-center gap-1.5"><Square className="size-3.5" />Stop</button>
                   : <button onClick={() => post({ capture: true }, 'Capturing its screens')} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Camera className="size-3.5" />Capture now</button>}
@@ -859,7 +861,9 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
     <figure className={`transition-opacity duration-500 ease-[var(--ease-out)] [contain-intrinsic-size:auto_160px] [content-visibility:auto] ${mode === 'dim' ? 'opacity-30' : ''}`}>
       <div ref={frame} style={live !== undefined || waiting ? { aspectRatio: `${W} / ${H}` } : undefined} title={shot.note}
            className={`group/mini relative cursor-zoom-in overflow-hidden rounded-[3px] bg-surface-1 text-fg-2 shadow-[0_1px_2px_rgb(0_0_0/0.18)] ring-1 transition-[box-shadow,transform] duration-300 ease-[var(--ease-out)] hover:-translate-y-px ${litPart ? 'ring-accent/60' : 'ring-line-strong hover:ring-fg-4'}`}
-           onMouseMove={(e) => onHover(at(e), 1000)} onMouseLeave={() => onHover(undefined, 0)} onClick={(e) => onOpen(shot, e.currentTarget.getBoundingClientRect())}>
+           onMouseMove={(e) => onHover(at(e), 1000)} onMouseLeave={() => onHover(undefined, 0)} onClick={(e) => onOpen(shot, e.currentTarget.getBoundingClientRect())}
+           // a screen on the board opens from the keyboard too
+           role="button" tabIndex={0} aria-label={`Open ${shot.name}`} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(shot, e.currentTarget.getBoundingClientRect()) } }}>
         {live !== undefined || waiting ? (!ready && <PageSkeleton />) : <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className="block w-full select-none" />}
         {live && near && (
           <iframe ref={page} src={live} title={shot.name} tabIndex={-1} aria-hidden loading="lazy" sandbox="allow-same-origin" onLoad={() => setReady(true)}
@@ -936,8 +940,10 @@ function Focus({ pr, sha, shot, origin, live, target, lit: litPart, onPart, onCl
   const hoverTimer = useRef<number | undefined>(undefined)
   const over = (m?: Mark) => { clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(() => setHoverMark(m), m ? 350 : 150) }
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
+  // opened: the keys go here (Esc, the arrows), and back to where they were when it closes
+  useEffect(() => { const was = document.activeElement as HTMLElement | null; box.current?.focus({ preventScroll: true }); return () => was?.focus?.({ preventScroll: true }) }, [])
   return (
-    <div ref={box} className="absolute inset-0 z-30 flex animate-[fade-in_240ms_var(--ease-out)_both] flex-col bg-surface-1/90 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div ref={box} role="dialog" aria-modal="true" aria-label="A screen, opened" tabIndex={-1} className="absolute inset-0 z-30 flex animate-[fade-in_240ms_var(--ease-out)_both] flex-col bg-surface-1/90 outline-none backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
       <header className="flex items-center gap-3 px-5 pb-2 pt-3.5">
         <span className="min-w-0 flex-1 truncate text-small"><b className="font-semibold text-fg-1">{shot.domain}</b><span className="text-fg-3"> · {shot.variant}</span>{shot.note && <span className="text-fg-4"> · {shot.note}</span>}</span>
         {aim && <button onClick={() => onPart('')} className="btn-ghost btn-sm inline-flex items-center gap-1.5"><ZoomOut className="size-3.5" />Whole screen</button>}
@@ -1076,9 +1082,9 @@ function Blueprint({ pr, set, screens, parts, numbers, onStates, fill }: { pr: s
 
       <div className="relative min-w-0 flex-1">
         <div className="absolute right-3 top-2.5 z-20 flex items-center gap-1.5 rounded-[4px] bg-surface-2/90 px-2 py-1 shadow-e1 ring-1 ring-line backdrop-blur">
-          <button onClick={() => zoomTo(zoom - 40)} aria-label="Smaller" className="text-fg-3 hover:text-fg-1"><ZoomOut className="size-3.5" /></button>
+          <button onClick={() => zoomTo(zoom - 40)} aria-label="Smaller" className="rounded-chip p-1.5 text-fg-3 hover:bg-hover hover:text-fg-1"><ZoomOut className="size-3.5" /></button>
           <input type="range" min={120} max={440} step={20} value={zoom} onChange={(e) => zoomTo(Number(e.target.value))} aria-label="Size of the screens" className="w-20 accent-current text-accent" />
-          <button onClick={() => zoomTo(zoom + 40)} aria-label="Larger" className="text-fg-3 hover:text-fg-1"><ZoomIn className="size-3.5" /></button>
+          <button onClick={() => zoomTo(zoom + 40)} aria-label="Larger" className="rounded-chip p-1.5 text-fg-3 hover:bg-hover hover:text-fg-1"><ZoomIn className="size-3.5" /></button>
         </div>
         {/* the board: a faint grid, moving with the screens */}
         <div className="size-full overflow-auto px-6 pb-8 pt-5" style={{ backgroundImage: 'linear-gradient(color-mix(in oklch, var(--line) 45%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--line) 45%, transparent) 1px, transparent 1px)', backgroundSize: '40px 40px', backgroundAttachment: 'local' }}>
@@ -1259,6 +1265,7 @@ function Impact({ pr, set, noBoard }: { pr: string; set: VisualSet; noBoard?: bo
  * (runner.ts enqueueChat): ask about a component or a token, or for a change, which comes back as a PR.
  */
 function Aspect({ view, repo, feed, toast }: { view: 'components' | 'tokens'; repo: string; feed: Activity[]; toast: Toast }) {
+  const narrow = useNarrow() // no room for a column: the conversation is a sheet, always a tap away
   const name = repo.split('/')[1]
   const base = useApi<{ sets: VisualSet[] }>(`/visuals/repos/${repo}`)
   const tokens = useApi<{ sha?: string; books: TokenBook[] }>(view === 'tokens' ? `/visuals/tokens/${repo}` : undefined)
@@ -1315,7 +1322,7 @@ function Aspect({ view, repo, feed, toast }: { view: 'components' | 'tokens'; re
                 </p>
               </div>
               <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
-                <button onClick={() => setTalk(!talk)} aria-pressed={talk} title={talk ? 'Hide the conversation' : `Talk about its ${view}`} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 ${talk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
+                <button onClick={() => setTalk(!talk)} aria-pressed={talk} title={talk ? 'Hide the conversation' : `Talk about its ${view}`} className={`btn-ghost btn-sm inline-flex items-center gap-1.5 max-lg:hidden ${talk ? 'text-accent-text' : ''}`}><MessageSquare className="size-3.5" />Conversation</button>
                 {view === 'tokens' && changes.length > 0 && <>
                   <button onClick={() => void postDraft({ discard: true })} className="btn-ghost btn-sm">Discard</button>
                   <button onClick={() => void confirm()} disabled={busy(t)} title={busy(t) ? 'Its agent is still on the last one' : 'The agent changes the code to these values and opens a PR'} className="btn-primary btn-sm inline-flex items-center gap-1.5"><Check className="size-3.5" />Make the PR · {changes.length}</button>
@@ -1334,8 +1341,8 @@ function Aspect({ view, repo, feed, toast }: { view: 'components' | 'tokens'; re
               : <p className="card px-4 py-3 text-small text-fg-3">No components yet: they are read with its map. Make its map (the Map view), or ask in the conversation.</p>}
         </div>
       </div>
-      {talk && view === 'tokens' && <DraftChat draft={draft} task={t} onSay={say} onConfirm={() => void confirm()} onDiscard={() => void postDraft({ discard: true })} />}
-      {talk && view !== 'tokens' && <Conversation id={`design-${view}:${repo}`} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast}
+      {(talk || narrow) && view === 'tokens' && <DraftChat draft={draft} task={t} onSay={say} onConfirm={() => void confirm()} onDiscard={() => void postDraft({ discard: true })} />}
+      {(talk || narrow) && view !== 'tokens' && <Conversation id={`design-${view}:${repo}`} feed={feed} live={busy(t)} onSay={(text) => post({ say: text })} toast={toast}
                              hint={'Ask about a component (its states, its props, where it is used), or for a change: a new state, a story, a fix. A change comes back as a PR.'}
                              placeholder={'Which states does RuleCard have?'} />}
     </div>
@@ -1533,6 +1540,36 @@ function DraftScreen({ src, shot, css }: { src: string; shot: Shot; css: string 
   )
 }
 
+/** Narrower than the room a side column needs (1024px): the conversation is a sheet, not a column. */
+function useNarrow() {
+  const q = '(max-width: 1023px)'
+  const [n, setN] = useState(() => matchMedia(q).matches)
+  useEffect(() => { const m = matchMedia(q); const f = () => setN(m.matches); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, [])
+  return n
+}
+
+/**
+ * Where a conversation sits: a column beside the page where there is room for one; where there isn't (a tablet, a narrow
+ * window), a button over the page's corner that opens it as a sheet from the bottom, low enough that the page it talks
+ * about (the preview a token change redraws) stays in sight above it. It is never out of reach.
+ */
+function TalkFrame({ children }: { children: ReactNode }) {
+  const [sheet, setSheet] = useState(false)
+  useEffect(() => { if (!sheet) return; const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setSheet(false) }; addEventListener('keydown', k); return () => removeEventListener('keydown', k) }, [sheet])
+  return (
+    <>
+      {!sheet && <button onClick={() => setSheet(true)} className="btn-primary fixed bottom-12 right-4 z-30 inline-flex items-center gap-1.5 shadow-e2 lg:hidden"><MessageSquare className="size-4" />Conversation</button>}
+      {sheet && <button aria-label="Close the conversation" onClick={() => setSheet(false)} className="fixed inset-0 z-40 animate-[fade-in_200ms] bg-black/10 lg:hidden" />}
+      <aside aria-label="Conversation" className={`${sheet ? 'flex max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-50 max-lg:h-[55dvh] max-lg:animate-[sheet-in_260ms_var(--ease-snappy)] max-lg:rounded-t-panel max-lg:bg-surface-1 max-lg:shadow-e3' : 'hidden'} w-full shrink-0 flex-col lg:flex lg:w-[clamp(300px,34%,460px)] lg:border-l lg:border-line`}>
+        <p className="label flex items-center border-b border-line px-4 py-2.5 text-fg-4">Conversation
+          <button onClick={() => setSheet(false)} aria-label="Close the conversation" className="-my-1 ml-auto rounded-chip p-1.5 text-fg-3 hover:bg-hover hover:text-fg-1 lg:hidden"><X className="size-4" /></button>
+        </p>
+        {children}
+      </aside>
+    </>
+  )
+}
+
 /**
  * The Tokens view's conversation: each message comes back in seconds as the draft (drawn on the preview), not a PR.
  * "Make the PR" hands the draft to the agent, which changes the code to it.
@@ -1544,8 +1581,7 @@ function DraftChat({ draft, task, onSay, onConfirm, onDiscard }: { draft?: Token
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [turns.length, draft?.busy])
   const send = () => { const t = text.trim(); if (!t) return; setText(''); void onSay(t) }
   return (
-    <aside aria-label="Conversation" className="hidden w-[clamp(300px,34%,460px)] shrink-0 flex-col border-l border-line lg:flex">
-      <p className="label border-b border-line px-4 py-2.5 text-fg-4">Conversation</p>
+    <TalkFrame>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
         {!turns.length && <p className="px-1 text-small text-fg-3">Say what to change: "a warmer accent", "rounder cards", "more contrast in dark". The preview shows it in seconds; nothing reaches the code until you make the PR.</p>}
         {turns.map((t, i) => (
@@ -1572,7 +1608,7 @@ function DraftChat({ draft, task, onSay, onConfirm, onDiscard }: { draft?: Token
           <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
         </div>
       </div>
-    </aside>
+    </TalkFrame>
   )
 }
 
@@ -1582,8 +1618,7 @@ function Conversation({ id, feed, live, onSay, toast, hint, placeholder }: { id:
   const shown = useMemo(() => feed, [feed])
   const send = () => { const t = text.trim(); if (!t) return; setText(''); void onSay(t) }
   return (
-    <aside aria-label="Conversation" className="hidden w-[clamp(300px,34%,460px)] shrink-0 flex-col border-l border-line lg:flex">
-      <p className="label border-b border-line px-4 py-2.5 text-fg-4">Conversation</p>
+    <TalkFrame>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {shown.length ? <ActivityFeed key={id} feed={shown} live={live} toast={toast} />
           : <p className="px-4 py-3 text-small text-fg-3">{hint ?? 'Say what to look at: a screen, a state, a width. The agent captures it, and keeps what you said for the next commits.'}</p>}
@@ -1596,7 +1631,7 @@ function Conversation({ id, feed, live, onSay, toast, hint, placeholder }: { id:
           <button onClick={send} disabled={!text.trim()} aria-label="Send" className="flex size-9 shrink-0 items-center justify-center rounded-ctl bg-accent text-on-accent disabled:opacity-40"><ArrowUp className="size-4" /></button>
         </div>
       </div>
-    </aside>
+    </TalkFrame>
   )
 }
 
