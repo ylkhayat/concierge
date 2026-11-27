@@ -21,6 +21,24 @@ export function entriesOf(s: Record<string, unknown>): Map<string, unknown> {
   return out
 }
 
+/**
+ * An entry that has stopped changing: a run that ended a while ago, a closed PR nothing works on. Most of the state is
+ * these, and a save reads every entry (as JSON) to find what changed, about once a second while a run works. So they
+ * are looked at on one save in thirty seconds, not on each (store.ts), and anything said to them late is still saved
+ * within that.
+ */
+export function settled(key: string, v: unknown, now = Date.now()): boolean {
+  if (!isMap(v)) return false
+  const busy = (s: unknown) => s === 'queued' || s === 'running'
+  const old = (at: unknown, ms: number) => typeof at === 'string' && now - Date.parse(at) > ms
+  if (key.startsWith('execs/')) return !busy(v.state) && !v.planning && old(v.endedAt ?? v.queuedAt, 15 * 60_000)
+  if (key.startsWith('prs/')) {
+    const job = v.job as { state?: unknown } | undefined, explain = v.explain as { state?: unknown } | undefined
+    return v.closed === true && !busy(job?.state) && !busy(explain?.state) && old(v.updatedAt, 86_400_000)
+  }
+  return false
+}
+
 const split = (key: string) => { const i = key.indexOf('/'); return i < 0 ? [key] : [key.slice(0, i), key.slice(i + 1)] }
 /** One entry's value, by its key (undefined: none). */
 export function valueOf(s: Record<string, unknown>, key: string): unknown {

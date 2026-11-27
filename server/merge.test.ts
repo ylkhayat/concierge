@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { emptyMeta, merge, stamp } from './merge.ts'
+import { emptyMeta, merge, stamp, settled } from './merge.ts'
 
 const T = (h: number) => `2026-11-11T0${h}:00:00.000Z`
 
@@ -41,4 +41,17 @@ test('an older snapshot without dates (state.json) counts as of its file time', 
   assert.deepEqual(into, { execAuto: true, prs: { a: 1 } })
   merge(into, meta, { execAuto: false }, emptyMeta(), T(0)) // older file: loses
   assert.equal(into.execAuto, true)
+})
+
+test('an entry that stopped changing is one a save may skip: a run that ended, a closed PR nothing works on', () => {
+  const now = Date.parse('2026-11-28T12:00:00Z'), ago = (min: number) => new Date(now - min * 60_000).toISOString()
+  assert.ok(settled('execs/a', { state: 'done', endedAt: ago(20) }, now))
+  assert.ok(!settled('execs/a', { state: 'done', endedAt: ago(5) }, now))      // just ended: its page is still being written to
+  assert.ok(!settled('execs/a', { state: 'running', startedAt: ago(90) }, now))
+  assert.ok(!settled('execs/a', { state: 'queued', queuedAt: ago(90) }, now))
+  assert.ok(settled('prs/o/r#1', { closed: true, updatedAt: ago(3 * 24 * 60), job: { state: 'done' } }, now))
+  assert.ok(!settled('prs/o/r#1', { closed: true, updatedAt: ago(3 * 24 * 60), job: { state: 'running' } }, now))
+  assert.ok(!settled('prs/o/r#1', { closed: false, updatedAt: ago(3 * 24 * 60) }, now)) // open: anything may touch it
+  assert.ok(!settled('settings/maxJobs', 2, now))
+  assert.ok(!settled('ticketRefs/AB-1', { id: 'AB-1' }, now))
 })

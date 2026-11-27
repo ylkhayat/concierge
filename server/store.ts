@@ -7,7 +7,7 @@ import { config } from './config.ts'
 import { transition, type RunState } from './lifecycle.ts'
 import { fleet } from './fleet.ts'
 import { mine } from './perMachine.ts'
-import { drop, emptyMeta, entriesOf, merge, put, type Meta } from './merge.ts'
+import { drop, emptyMeta, entriesOf, merge, put, type Meta, settled } from './merge.ts'
 import { StateDb } from './db.ts'
 export { config }
 
@@ -394,9 +394,18 @@ for (const [k, v] of entriesOf(state as unknown as Record<string, unknown>)) las
 if (db.empty && last.size) { db.write([...last].map(([key, value]) => ({ key, value }))); console.log(`state: moved ${last.size} entries into ${mine('state.db')}`) }
 
 /** What changed since the last save, entry by entry (null: deleted); `last` then holds the new JSON. */
-function changes(): { key: string; value: string | null }[] {
+let wholeAt = 0
+const WHOLE_EVERY = 30_000
+/** What changed since the last save. `whole`: every entry is read; else the ones that stopped changing (merge.ts settled) are skipped, and read on one save in thirty seconds. */
+function changes(whole = false): { key: string; value: string | null }[] {
+  const now = Date.now()
+  if (now - wholeAt >= WHOLE_EVERY) whole = true
+  if (whole) wholeAt = now
   const cur = entriesOf(state as unknown as Record<string, unknown>), out: { key: string; value: string | null }[] = []
-  for (const [k, v] of cur) { const j = JSON.stringify(v); if (j !== undefined && last.get(k) !== j) { out.push({ key: k, value: j }); last.set(k, j) } }
+  for (const [k, v] of cur) {
+    if (!whole && last.has(k) && settled(k, v, now)) continue
+    const j = JSON.stringify(v); if (j !== undefined && last.get(k) !== j) { out.push({ key: k, value: j }); last.set(k, j) }
+  }
   for (const k of [...last.keys()]) if (!cur.has(k)) { out.push({ key: k, value: null }); last.delete(k) }
   return out
 }
@@ -495,7 +504,7 @@ export function save() {
 }
 export function saveNow() {
   if (fence()) return
-  const c = changes()
+  const c = changes(true)
   if (c.length) db.write(c)
 }
 /** Logs work that held the (single) server thread long enough to be felt. */
