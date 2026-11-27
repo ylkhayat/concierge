@@ -197,16 +197,15 @@ export function MachinesSettings() {
         </>
       )}
       {err && <p className="text-meta text-fail-text">{err}</p>}
-      <SharedKeys />
     </section>
   )
 }
 
 /**
- * The keys every machine uses: taken by themselves from the machines' own .env files and kept once for all (readable
+ * The keys every machine uses (GitHub's, Linear's), shown with the connections they are for: taken by themselves from the machines' own .env files and kept once for all (readable
  * only by you, never shown). Replace is there for rotating one.
  */
-function SharedKeys() {
+export function SharedKeys() {
   const [v, setV] = useState<Key[]>()
   const [open, setOpen] = useState<string>()
   const [draft, setDraft] = useState('')
@@ -218,10 +217,10 @@ function SharedKeys() {
     (r: { who?: string }) => { setOpen(undefined); setDraft(''); setMsg({ name, text: `${r.who ? `Connected as ${r.who}. ` : ''}Every machine uses it within 30 seconds` }); return read() },
     (e: Error) => setMsg({ name, text: e.message, bad: true }))
   return (
-    <div className="space-y-2 pt-3">
-      <header>
-        <h3 className="text-small font-semibold text-fg-1">Shared keys</h3>
-        <p className="text-meta text-fg-3">Kept once for every machine. Never shown, and removed from logs.</p>
+    <div className="space-y-2">
+      <header className="px-0.5">
+        <h3 className="text-small font-semibold text-fg-1">Keys</h3>
+        <p className="text-meta text-fg-3">GitHub’s and Linear’s, kept once for every machine. Never shown, and removed from logs.</p>
       </header>
       <ul className="divide-y divide-line overflow-hidden rounded-ctl ring-1 ring-line">
         {v.map((k) => (

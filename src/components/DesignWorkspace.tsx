@@ -176,6 +176,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   const path = `/visuals/repos/${repo}`
   const [ticking, setTicking] = useState(false)
   const [talk, setTalk] = useState<boolean>()
+  const narrow = useNarrow() // no room for a column: the conversation is a sheet, always a tap away (a hook: before any early return)
   const q = useApi<{ repo: string; mode: VisualsMode; task?: VisualsTask & { prUrl?: string }; sets: VisualSet[] }>(path, { refetchInterval: ticking ? 3000 : 30_000 })
   const b = q.data, t = b?.task
   useEffect(() => setTicking(busy(t)), [t?.state])
@@ -190,7 +191,6 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
   const numbers = new Map(parts.map((c, i) => [c.name, i + 1]))
   // the conversation: a click away (the onboarding and the map say where things stand)
   const showTalk = talk ?? false
-  const narrow = useNarrow() // no room for a column: the conversation is a sheet, always a tap away
   // what the agent last said, for the onboarding's progress (the whole of it is the conversation)
   const said = busy(t) ? [...feed].reverse().find((x) => x.kind === 'text' || x.kind === 'result')?.text : undefined
   const making = !!(t as { board?: boolean } | undefined)?.board || !!set
@@ -203,7 +203,7 @@ function Baseline({ repo, feed, toast }: { repo: string; feed: Activity[]; toast
           <header className="card px-4 py-3.5">
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
-                <p className="text-meta text-fg-3">{repo} · blueprint</p>
+                <p className="text-meta text-fg-3">{repo} · map</p>
                 <h2 className="text-title font-semibold text-fg-1">{mapped ? `The map of ${repo.split('/')[1]}` : `${repo.split('/')[1]}: no map yet`}</h2>
                 <p className={`mt-0.5 text-meta ${t?.state === 'failed' ? 'text-wait-text' : busy(t) ? 'text-run-text' : 'text-fg-3'}`}>
                   {t?.state === 'running' ? `${making ? 'Making its map' : 'Setting its Storybook up'}${t.machine ? ` on ${t.machine}` : ''}…`

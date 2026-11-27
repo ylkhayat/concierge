@@ -16,8 +16,8 @@
 
 /** The Settings pages by id, as their nav names them: the one place a page's name is written. */
 export const SETTINGS = {
-  overview: 'How it works', roles: 'Roles', workflows: 'Workflows', accounts: 'Accounts', spend: 'Spend', compliance: 'Compliance',
-  repos: 'Workspaces', connections: 'Connections', machines: 'Machines', appearance: 'Appearance', about: 'About',
+  overview: 'How it works', roles: 'Roles', workflows: 'Workflows', skills: 'Skills', limits: 'Limits', accounts: 'Accounts', spend: 'Spend', compliance: 'Planning',
+  repos: 'Workspaces', connections: 'Connections', machines: 'Machines', appearance: 'Preferences', about: 'About',
 } as const
 export type SettingsPage = keyof typeof SETTINGS
 

@@ -728,7 +728,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
           {(orgsQ.data?.length ?? 0) > 1 && <Chips label="Organization" value={checks.data?.org ?? ''} options={(orgsQ.data ?? []).map((o): [string, string] => [o.owner, o.personal ? `${o.owner} (you)` : o.owner])} onChange={(o) => void set({ org: o })} />}
           <Chips label="Method" value={p.method} options={[['agile', 'Agile: epics of thin slices'], ['waterfall', 'Waterfall: phases in order']]} onChange={(m) => void set({ method: m })} />
           <div><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Planning skill</p>
-            <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'The one in Settings', hint: inSettings('workflows', 'What each feature runs') }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
+            <InlineList value={p.skill ?? ''} options={[{ value: '', label: 'The one in Settings', hint: inSettings('skills', 'What each feature runs') }, ...(skills.data ?? []).map((x) => ({ value: x.name, label: x.name }))]} onPick={(v) => void set({ skill: v })} /></div>
           {!p.project && !gh && <div onFocus={() => setTeamsOn(true)} onMouseEnter={() => setTeamsOn(true)}><p className="mb-1 font-semibold uppercase tracking-label text-fg-4">Linear team</p>
             <InlineList value={p.team} empty={teams.isLoading || !teams.data ? 'Reading your Linear teams…' : 'No teams'} options={(teams.data?.teams ?? []).map((t) => ({ value: t.id, label: t.name, hint: t.key }))} onPick={(v) => { void set({ team: v }); if (cfg === 'team') setCfg(undefined) }} /></div>}
         </div>

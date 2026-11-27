@@ -128,7 +128,7 @@ export function useTicketThread({ t, actions, missing = [], feed, onSelect, toas
           {!!run.denials?.length && (
             <p title={run.refused?.join('\n')} className="mt-3 flex items-start gap-2 rounded-ctl bg-wait/10 px-3 py-2 text-small text-wait-text ring-1 ring-wait/30">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-              <span>Denied {run.denials.length}×: {[...new Set(run.denials)].join(', ')}{run.refused?.[0] && <> (first: <code className="font-mono text-meta">{run.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed in {inSettings('workflows', 'Allowed tools')}.</span>
+              <span>Denied {run.denials.length}×: {[...new Set(run.denials)].join(', ')}{run.refused?.[0] && <> (first: <code className="font-mono text-meta">{run.refused[0].slice(0, 120)}</code>)</>}. The conversation shows each one where it happened; add what's needed in {inSettings('limits', 'Allowed tools')}.</span>
             </p>
           )}
         </Chip>

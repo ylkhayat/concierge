@@ -55,3 +55,16 @@ test('buttons with a look of their own: no more than there are', () => {
   const own = files.reduce((n, f) => n + [...readFileSync(join(src, f), 'utf8').matchAll(/<button\b(?:=>|[^>])*>/g)].filter((m) => !/\bbtn-(primary|quiet|outline|ghost)\b/.test(m[0])).length, 0)
   assert.ok(own <= MOST, `${own} buttons styled by hand (at most ${MOST}). Use btn-primary, btn-outline, btn-quiet or btn-ghost (src/design/recipes.css).`)
 })
+
+test('no React hook after an early return, in any component (the page crashes when the early return stops being taken)', () => {
+  const found: string[] = []
+  for (const f of files) {
+    let early = 0
+    readFileSync(join(src, f), 'utf8').split('\n').forEach((l, i) => {
+      if (/^(export )?(default )?function \w+|^(export )?const \w+ = (memo\()?(function|\()/.test(l)) early = 0 // a new component
+      else if (/^  if \(.*\) return\b/.test(l) || /^  if \(.*\) \{ .*return .*\}$/.test(l)) early ||= i + 1
+      else if (early && /^  (const|let|use)/.test(l) && /(?<![\w.])use[A-Z]\w*\(/.test(l)) found.push(`${f}:${i + 1} (returns early at ${early}): ${l.trim().slice(0, 80)}`)
+    })
+  }
+  assert.deepEqual(found, [], 'Call every hook before the first early return')
+})

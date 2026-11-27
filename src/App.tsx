@@ -554,7 +554,7 @@ export function App() {
           <div className="relative z-20 flex items-center gap-2.5 border-b border-wait/20 bg-wait/10 px-4 py-2 text-body text-wait-text">
             <Wallet className="size-4 shrink-0" />
             <span>Daily budget reached: ${health.spentToday.toFixed(2)} of ${health.settings.dailyBudgetUsd}. Queued runs wait until tomorrow or a higher cap.</span>
-            <button onClick={() => setSettingsOpen('usage')} className="ml-auto rounded-ctl px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Adjust</button>
+            <button onClick={() => setSettingsOpen('limits')} className="ml-auto rounded-ctl px-2.5 py-1 font-medium transition-colors hover:bg-wait/15">Adjust</button>
           </div>
         )}
         {/* one view at a time, drawn afresh on a switch (its entrance a short fade-in, never the old view fading out

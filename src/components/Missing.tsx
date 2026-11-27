@@ -12,7 +12,7 @@ export function Missing({ names, className = '' }: { names?: string[]; className
       <PackageX className="mt-px size-3.5 shrink-0" />
       <span>
         Needs <span className="font-mono">{names.map((n) => `/${n}`).join(', ')}</span>, missing on this machine. Add {names.length === 1 ? 'it' : 'them'} to{' '}
-        <span className="font-mono">~/.claude/skills</span> or sync your skills repo; {inSettings('workflows')} lists what this setup runs.
+        <span className="font-mono">~/.claude/skills</span> or sync your skills repo; {inSettings('skills')} lists what this setup runs.
       </span>
     </p>
   )

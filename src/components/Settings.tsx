@@ -8,19 +8,19 @@ import { Tabs } from './Tabs.tsx'
 import { usePhone } from './NextPanel.tsx'
 import { label, sha, VERSION } from '../version.ts'
 import { Pick, PickPill } from '../ui/Pick.tsx'
-import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { SetupView } from '../../server/index.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES as TEAM_ROLES, type Compliance, type Member } from '../../server/readiness.ts'
 import type { ComplianceSuggestion } from '../../server/complianceScan.ts'
 type Org = import('../../server/orgs.ts').Org
 import type { InfraView } from '../../server/infra.ts'
-import { api, PALETTES, paletteNow, setPalette, setTexture, TEXTURES, textureNow, type Health, type Theme } from '../lib.ts'
+import { api, PALETTES, paletteNow, setPalette, setTexture, TEXTURES, textureNow, type Health, type Theme, smooth } from '../lib.ts'
 import { refresh, remember, useApi, useLive } from '../query.ts'
 import { ROLES, setRole, useRole, type Role, type RolesView } from '../role.ts'
 import { ArmBar, ArmLabel, useArm } from '../arm.tsx'
 import { ago, clock, weekday } from '../time.ts'
 import { ClaudeAccount, Connections, Skeleton } from './Connections.tsx'
-import { MachinesSettings } from './MachinesSettings.tsx'
+import { MachinesSettings, SharedKeys } from './MachinesSettings.tsx'
 import { LiveUpdates } from './LiveUpdates.tsx'
 import { AccountMachinesFor, notReadyOn, useAccountMachines } from './AccountMachines.tsx'
 import { AccountSecurity } from './AccountSecurity.tsx'
@@ -28,20 +28,23 @@ import type { Mode, OrgSkill } from '../../server/orgSkills.ts'
 import { inSettings, SETTINGS } from '../copy.ts'
 import { shortcuts } from '../shortcuts.ts'
 import { viewsFor } from '../views.ts'
+import { SETTINGS_INDEX, type Found } from '../settingsIndex.ts'
 
-export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
+export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'skills' | 'limits' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
   // older names, still used by links around the app
-  | 'general' | 'skills' | 'exec' | 'agents' | 'usage' | 'company'
-const ALIAS: Partial<Record<SettingsTab, SettingsTab>> = { general: 'workflows', skills: 'workflows', exec: 'workflows', agents: 'accounts', usage: 'spend', company: 'compliance' }
+  | 'general' | 'exec' | 'agents' | 'usage' | 'company'
+const ALIAS: Partial<Record<SettingsTab, SettingsTab>> = { general: 'workflows', exec: 'workflows', agents: 'accounts', usage: 'spend', company: 'compliance' }
 type Page = { id: SettingsTab; label: string; hint: string; icon: LucideIcon }
 const NAV: { group: string; pages: Page[] }[] = [
   { group: 'Start', pages: [{ id: 'overview', label: SETTINGS.overview, hint: 'What runs when, with which skill, on which account', icon: Workflow }] },
   { group: 'Work', pages: [
     { id: 'roles', label: SETTINGS.roles, hint: 'The roles you work as, and what each one runs', icon: UsersRound },
-    { id: 'workflows', label: SETTINGS.workflows, hint: 'Triggers, skills and commands for reviews, your PRs and tickets', icon: Wand },
+    { id: 'workflows', label: SETTINGS.workflows, hint: 'What starts a review, a revision or a ticket, and the command each runs', icon: Wand },
+    { id: 'skills', label: SETTINGS.skills, hint: 'Where the skills come from, which one each feature runs, and your organization’s', icon: Sparkles },
+    { id: 'limits', label: SETTINGS.limits, hint: 'How much runs at once, what it may spend, and what a run may use without asking', icon: Gauge },
     { id: 'accounts', label: SETTINGS.accounts, hint: 'Claude, OpenAI or Llama, and which one takes what', icon: Bot },
-    { id: 'spend', label: SETTINGS.spend, hint: 'Budgets, limits and what the runs cost', icon: Coins },
-    { id: 'compliance', label: SETTINGS.compliance, hint: 'What each workspace’s plans are checked against (or not): where its users are, certifications, data, required reviews, and the people who build it', icon: ShieldCheck },
+    { id: 'spend', label: SETTINGS.spend, hint: 'What the runs cost, by account and by day', icon: Coins },
+    { id: 'compliance', label: SETTINGS.compliance, hint: 'What plans are checked against (regions, certifications, data, reviews) and the people who build them', icon: ShieldCheck },
   ] },
   { group: 'Sources', pages: [
     { id: 'repos', label: SETTINGS.repos, hint: 'The organizations Concierge works with and the repositories it watches in each, where they live, their codebase maps', icon: FolderGit2 },
@@ -49,27 +52,11 @@ const NAV: { group: string; pages: Page[] }[] = [
     { id: 'machines', label: SETTINGS.machines, hint: 'Where Concierge runs, your tailnet, sync and updates', icon: Network },
   ] },
   { group: 'You', pages: [
-    { id: 'appearance', label: SETTINGS.appearance, hint: 'Theme, size, links and the terminal', icon: Palette },
+    { id: 'appearance', label: SETTINGS.appearance, hint: 'How it looks in this browser, and how links and the terminal open', icon: Palette },
     { id: 'about', label: SETTINGS.about, hint: 'Setup, the settings file and shortcuts', icon: BookOpen },
   ] },
 ]
 const PAGES = NAV.flatMap((g) => g.pages)
-// every setting by name, for the search box: what you'd type, and the page it lives on
-const INDEX: [string, SettingsTab][] = [
-  ['Compliance: GDPR, SOC 2, HIPAA, PCI, regions, data, reviews', 'compliance'], ['Compliance and security checks for plans', 'compliance'], ['Capacity: the people who build it, roles and pace', 'compliance'],
-  ['Roles: developer, product, design', 'roles'], ['Join a role', 'roles'], ['Execute command per role', 'roles'],
-  ['Skill source', 'workflows'], ['Which skill each feature uses: explain, brief, standup, plans', 'workflows'],
-  ['Auto-review', 'workflows'], ['Parallel runs', 'workflows'], ['Views: Review and Ship', 'workflows'],
-  ['Review skill or command', 'workflows'], ['Revise skill or command', 'workflows'], ['Stack command', 'workflows'], ['Starter skills', 'workflows'],
-  ['Org skills', 'workflows'], ['Skills this setup runs', 'workflows'], ['Ship command', 'workflows'], ['Linear teams', 'workflows'],
-  ['Repository by ticket prefix', 'workflows'], ['Allowed tools for Ship', 'workflows'], ['Auto-release', 'workflows'], ['LINEAR_API_KEY', 'workflows'],
-  ['Accounts and sign-in', 'accounts'], ['Fallback order', 'accounts'], ['Who runs what', 'accounts'], ['Llama models', 'accounts'],
-  ['Daily budget', 'spend'], ['Budget per explanation', 'spend'], ['Runs and their cost', 'spend'],
-  ['Workspaces: organizations and their repositories', 'repos'], ['Watched repositories', 'repos'], ['Codebase map', 'repos'], ['Databases (MongoDB)', 'connections'], ['Sentry', 'connections'],
-  ['This machine', 'machines'], ['Live updates (GitHub webhooks)', 'machines'], ['Tailnet devices (Tailscale)', 'machines'], ['Sync between machines', 'machines'], ['Update now', 'machines'],
-  ['Theme', 'appearance'], ['Interface size', 'appearance'], ['Open Linear links in the app', 'appearance'], ['Terminal for Resume', 'appearance'],
-  ['Run setup again', 'about'], ['Settings file', 'about'], ['Keyboard shortcuts', 'about'],
-]
 const THEMES: { id: Theme; label: string; icon: LucideIcon }[] = [
   { id: 'system', label: 'System', icon: Monitor },
   { id: 'light', label: 'Light', icon: Sun },
@@ -150,6 +137,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
   const [tab, setTabState] = useState<SettingsTab>(ALIAS[initial] ?? initial)
   const [setup, setSetup] = useState<SetupView>()
   const [q, setQ] = useState('')
+  const main = useRef<HTMLElement>(null)
   const [setupFailed, setSetupFailed] = useState<string>()
   const loadSetup = (tries = 0): void => { setSetupFailed(undefined); api('/setup').then(setSetup, (e: Error) => (tries < 10 ? void setTimeout(() => loadSetup(tries + 1), 3000) : setSetupFailed(e.message))) }
   // the server may be restarting (an update): asked again every 3s for half a minute before it says so
@@ -173,7 +161,18 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
   const uses = (w: 'review' | 'exec') => !setup || setup.config.workspaces.includes(w)
   const current = PAGES.find((t) => t.id === tab) ?? PAGES[0]
   const words = q.toLowerCase().split(/\s+/).filter(Boolean)
-  const hits = words.length ? INDEX.filter(([label]) => words.every((w) => label.toLowerCase().includes(w))).slice(0, 8) : []
+  const hits = words.length ? SETTINGS_INDEX.filter((x) => words.every((w) => `${x.say} ${x.has}`.toLowerCase().includes(w))).slice(0, 8) : []
+  // a result opens its page and shows where the setting is: scrolled to, and lit for a moment
+  const find = (x: Found) => {
+    go(x.page)
+    setTimeout(() => {
+      const el = [...(main.current?.querySelectorAll<HTMLElement>('h3, p, span, label') ?? [])].find((e) => e.childElementCount === 0 && e.textContent?.trim() === x.has)
+      const row = el?.closest<HTMLElement>('section, [data-row]') ?? el
+      if (!row) return
+      row.scrollIntoView({ block: 'center', behavior: smooth() })
+      row.animate([{ boxShadow: '0 0 0 2px var(--accent), 0 0 0 8px var(--accent-soft)' }, { boxShadow: '0 0 0 2px transparent, 0 0 0 8px transparent' }], { duration: 1600, easing: 'ease-out' })
+    }, 320) // after the page has drawn (its rise-in)
+  }
 
   return (
     <div role="dialog" aria-label="Settings" className="grain fixed inset-0 z-50 flex animate-[fade-in_160ms] flex-col pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-fg-1">
@@ -184,14 +183,14 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
           <label className="flex items-center gap-2 card px-3 py-1.5">
             <Search className="size-4 text-fg-4" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a setting…" aria-label="Find a setting"
-                   onKeyDown={(e) => { if (e.key === 'Enter' && hits[0]) go(hits[0][1]); if (e.key === 'Escape') { e.stopPropagation(); setQ('') } }}
+                   onKeyDown={(e) => { if (e.key === 'Enter' && hits[0]) find(hits[0]); if (e.key === 'Escape') { e.stopPropagation(); setQ('') } }}
                    className="w-full bg-transparent text-body outline-none placeholder:text-fg-4" />
           </label>
           {words.length > 0 && (
             <ul className="absolute inset-x-0 top-full z-10 mt-1.5 overflow-hidden rounded-ctl bg-surface-2 p-1 shadow-e3">
-              {hits.map(([label, t]) => (
-                <li key={label}><button onClick={() => go(t)} className="flex w-full items-center gap-2 rounded-ctl px-2.5 py-1.5 text-left text-body hov">
-                  <span className="min-w-0 flex-1 truncate">{label}</span><span className="text-meta text-fg-4">{PAGES.find((x) => x.id === t)?.label}</span>
+              {hits.map((x) => (
+                <li key={x.say}><button onClick={() => find(x)} className="flex w-full items-center gap-2 rounded-ctl px-2.5 py-1.5 text-left text-body hov">
+                  <span className="min-w-0 flex-1 truncate">{x.say}</span><span className="text-meta text-fg-4">{SETTINGS[x.page]}</span>
                 </button></li>
               ))}
               {!hits.length && <li className="px-2.5 py-2 text-small text-fg-3">No setting by that name.</li>}
@@ -213,7 +212,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
             </div>
           ))}
         </nav>
-        <main className={`min-h-0 min-w-0 flex-1 overflow-y-auto ${list ? 'hidden' : ''}`}>
+        <main ref={main} className={`min-h-0 min-w-0 flex-1 overflow-y-auto ${list ? 'hidden' : ''}`}>
           <div key={tab} className="mx-auto max-w-[880px] animate-[rise-in_220ms_var(--ease-snappy)] space-y-6 px-4 pb-16 pt-6 md:px-8">
             {phone && <button onClick={() => setSections(true)} className="btn-ghost -mx-2.5 -my-2 inline-flex min-h-10 items-center gap-1.5"><ArrowLeft className="size-4" />All settings</button>}
             <header>
@@ -223,21 +222,26 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
             {tab === 'overview' && <HowItWorks setup={setup} health={health} go={go} />}
             {tab === 'workflows' && <>
               <WorkflowCards setup={setup} health={health} save={save} saveConfig={saveConfig} go={go} />
-              <Workflows health={health} setup={setup} save={save} saveConfig={saveConfig} />
+              <Workflows part="views" health={health} setup={setup} save={save} saveConfig={saveConfig} />
               {uses('review') && setup && <ReviewIn setup={setup} onSaved={setSetup} />}
-              {uses('review') && <Skills setup={setup} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />}
+            </>}
+            {tab === 'skills' && <Skills setup={setup} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />}
+            {/* every ceiling in one place: how many at once, how much money, which tools */}
+            {tab === 'limits' && <>
+              <Workflows part="runs" health={health} setup={setup} save={save} saveConfig={saveConfig} />
+              <Usage part="limits" health={health} setup={setup} save={save} saveConfig={saveConfig} />
               {uses('exec') && <Exec setup={setup} saveConfig={saveConfig} />}
             </>}
             {tab === 'roles' && <RolesSettings />}
             {tab === 'accounts' && <Agents toast={toast} onConnections={() => go('connections')} />}
             {tab === 'compliance' && <ComplianceSettings setup={setup} saveConfig={saveConfig} />}
-            {tab === 'spend' && <Usage health={health} setup={setup} save={save} saveConfig={saveConfig} />}
+            {tab === 'spend' && <Usage part="numbers" health={health} setup={setup} save={save} saveConfig={saveConfig} />}
             {tab === 'repos' && (setup ? <Repositories setup={setup} health={health} toast={toast} saveConfig={saveConfig} reload={() => api('/setup').then(setSetup)} />
               // never the workspaces drawn empty while their repositories haven't come
               : <p className="flex items-center gap-2 py-6 text-small text-fg-3">{setupFailed
                 ? <>Couldn't read the repositories ({setupFailed}). <button onClick={() => loadSetup()} className="font-medium text-accent-text hover:underline">Try again</button></>
                 : <><LoaderCircle className="size-4 animate-spin" />Loading the repositories…</>}</p>)}
-            {tab === 'connections' && <Connections toast={toast} />}
+            {tab === 'connections' && <><SharedKeys /><Connections toast={toast} /></>}
             {tab === 'machines' && <><Access toast={toast} /><MachinesSettings /><Update /><LiveUpdates toast={toast} />
               <details className="group/adv rounded-ctl ring-1 ring-line [&[open]]:pb-3">
                 <summary className="cursor-pointer px-3.5 py-2.5 text-small font-medium text-fg-3 hover:text-fg-1">Advanced: control plane, sync, tailnet, machine key</summary>
@@ -259,12 +263,12 @@ export type SaveConfig = (body: object, msg: string) => Promise<void>
 
 const SCALES = [{ id: 'auto', label: 'Auto' }, { id: '1', label: '100%' }, { id: '1.15', label: '115%' }, { id: '1.3', label: '130%' }, { id: '1.5', label: '150%' }]
 
-function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup?: SetupView; save: Save; saveConfig: SaveConfig }) {
+function Workflows({ part, health, setup, save, saveConfig }: { part: 'views' | 'runs'; health?: Health; setup?: SetupView; save: Save; saveConfig: SaveConfig }) {
   const maxJobs = health?.settings?.maxJobs ?? 2
   const step = 'flex size-7 items-center justify-center rounded-ctl text-fg-3 transition-all hover:bg-surface-1 hover:text-fg-1 hover:shadow-sm active:scale-90 disabled:pointer-events-none disabled:opacity-30'
   return (
     <>
-      {setup && (
+      {part === 'views' && setup && (
         <Group title="Views" hint="Which halves of Concierge you use. Each has its own place in the rail and its own setup.">
           {(['review', 'exec'] as const).map((w) => {
             const on = setup.config.workspaces.includes(w)
@@ -280,7 +284,7 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
           })}
         </Group>
       )}
-      <Group title="Runs" hint="How many agents work at once. Auto-review is on the Review card above.">
+      {part === 'runs' && <Group title="Runs" hint="How many agents work at once. Accounts has when to pause them (a share of the plan's limit).">
         <Row icon={Layers} title="Parallel runs" hint="Agent runs at once; the rest wait in a queue."
              more="Counts every agent run: reviews, your PRs, tickets and explanations. A run past the limit waits its turn; a stack runs bottom first.">
           <div className="inline-flex items-center gap-1 rounded-ctl bg-fill p-1">
@@ -289,7 +293,7 @@ function Workflows({ health, setup, save, saveConfig }: { health?: Health; setup
             <button className={step} disabled={maxJobs >= 8} onClick={() => save('/settings', { maxJobs: maxJobs + 1 }, `Up to ${maxJobs + 1} at once`).catch(() => {})} aria-label="More"><Plus className="size-3.5" /></button>
           </div>
         </Row>
-      </Group>
+      </Group>}
     </>
   )
 }
@@ -348,7 +352,7 @@ function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; 
   const [scale, setScale] = useState(() => { try { return localStorage.getItem('ui-scale') ?? 'auto' } catch { return 'auto' } })
   return (
     <>
-      <Group title="Look" hint="Saved in this browser.">
+      <Group title="Look" hint="Saved in this browser only.">
         <Row icon={Sun} title="Theme">
           <Segmented value={theme} options={THEMES} onChange={onTheme} />
         </Row>
@@ -364,7 +368,7 @@ function Appearance({ setup, theme, onTheme, saveConfig }: { setup?: SetupView; 
           }} />
         </Row>
       </Group>
-      <Group title="Opening things">
+      <Group title="Opening things" hint="Saved for you: the same on every machine and browser.">
         <Row icon={ExternalLink} title="Open Linear links in the app" hint="Every Linear link here opens in the Linear desktop app instead of the browser.">
           {setup && <Toggle label="Open Linear links in the app" on={setup.config.linearDesktop} onChange={(on) => saveConfig({ linearDesktop: on }, on ? 'Linear links open in the app' : 'Linear links open in the browser')} />}
         </Row>
@@ -1757,10 +1761,6 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
   const addRule = () => { const t = rule.trim(); if (!t || x.allowedTools.includes(t)) return setRule(''); save({ allowedTools: [...x.allowedTools, t] }, `Allowed: ${t}`); setRule('') }
   return (
     <>
-      <Group title="Linear teams" hint="Each workspace that manages its work in Linear sets its own teams: whose tickets show in Ship, and which of its repositories each is worked in">
-        <Row icon={FolderGit2} title="Set in Workspaces" hint={`${inSettings('repos')}: each workspace's card lists its Linear teams`} />
-      </Group>
-
       <Group title="Allowed tools" hint="What a ticket’s run may use without asking. Anything else is refused, and the ticket shows it.">
         {([['Built in', (t: string) => !/^Bash\(|^mcp__/.test(t)], ['Commands', (t: string) => t.startsWith('Bash(')], ['Connectors', (t: string) => t.startsWith('mcp__')]] as const).map(([group, is]) => {
           const list = x.allowedTools.filter(is)
@@ -1794,7 +1794,7 @@ export function Exec({ setup, saveConfig }: { setup?: SetupView; saveConfig: Sav
 
 // --- Usage --------------------------------------------------------------------------------------------
 
-function Usage({ health, setup, save, saveConfig }: { health?: Health; setup?: SetupView; save: Save; saveConfig: SaveConfig }) {
+function Usage({ part, health, setup, save, saveConfig }: { part: 'numbers' | 'limits'; health?: Health; setup?: SetupView; save: Save; saveConfig: SaveConfig }) {
   const budget = health?.settings?.dailyBudgetUsd ?? null
   const today = health?.spentToday ?? 0
   const days = health?.spendDays ?? []
@@ -1820,6 +1820,39 @@ function Usage({ health, setup, save, saveConfig }: { health?: Health; setup?: S
     ['Codebase maps', mapped.reduce((n, b) => n + (b.meta?.costUsd ?? 0), 0), `${mapped.length} repo${mapped.length === 1 ? '' : 's'}, paid once`],
   ]
 
+  if (part === 'limits') return (
+    <>
+      <Group title="Budgets" hint="When one is reached, new runs wait instead of starting. An account can have a daily budget of its own (Accounts): a run stops at whichever is reached first.">
+        <Row icon={Wallet} title="Daily budget" hint={budget != null ? `$${today.toFixed(2)} spent today` : 'Empty means no cap'}>
+          <label className={`flex w-28 items-center gap-1 ${input}`}>
+            <span className="text-fg-3">$</span>
+            <input inputMode="decimal" value={draft} placeholder="no cap" onChange={(e) => setDraft(e.target.value)}
+                   onBlur={saveBudget} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className="w-full bg-transparent tabular-nums outline-none" />
+          </label>
+        </Row>
+        {budget != null && (
+          <div className="px-4 pb-3.5">
+            <span className="flex h-1.5 overflow-hidden rounded-full bg-fill">
+              <span className={`h-full rounded-full transition-all duration-700 ${tone}`} style={{ width: `${Math.max(2, pct)}%` }} />
+            </span>
+          </div>
+        )}
+        <Row icon={MapIcon} title="Per explanation" hint="The most a single Explain run may spend.">
+          <label className={`flex w-28 items-center gap-1 ${input}`}>
+            <span className="text-fg-3">$</span>
+            <input inputMode="decimal" value={perRun} onChange={(e) => setPerRun(e.target.value)}
+                   onBlur={() => { const v = Number(perRun); if (setup && Number.isFinite(v) && v !== setup.config.explainBudgetUsd) saveConfig({ explainBudgetUsd: v }, `Explain runs capped at $${v}`) }}
+                   onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className="w-full bg-transparent tabular-nums outline-none" />
+          </label>
+        </Row>
+        {health?.github?.remaining != null && (
+          <Row icon={GitPullRequestArrow} title="GitHub API" hint={health.github.remaining < 500 ? 'Low: syncing every 5 minutes until it resets. Shared with your own gh.' : 'Shared with your own gh.'}>
+            <span className={`text-small tabular-nums ${health.github.remaining < 500 ? 'text-wait-text' : 'text-fg-2'}`}>{health.github.remaining} of 5000 left{health.github.resetAt ? ` · resets ${clock(health.github.resetAt)}` : ''}</span>
+          </Row>
+        )}
+      </Group>
+    </>
+  )
   return (
     <>
       <AccountUsage />
@@ -1852,36 +1885,6 @@ function Usage({ health, setup, save, saveConfig }: { health?: Health; setup?: S
       </Group>
 
       <Runs />
-
-      <Group title="Limits" hint="When a limit is reached, new runs wait instead of starting.">
-        <Row icon={Wallet} title="Daily budget" hint={budget != null ? `$${today.toFixed(2)} spent today` : 'Empty means no cap'}>
-          <label className={`flex w-28 items-center gap-1 ${input}`}>
-            <span className="text-fg-3">$</span>
-            <input inputMode="decimal" value={draft} placeholder="no cap" onChange={(e) => setDraft(e.target.value)}
-                   onBlur={saveBudget} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className="w-full bg-transparent tabular-nums outline-none" />
-          </label>
-        </Row>
-        {budget != null && (
-          <div className="px-4 pb-3.5">
-            <span className="flex h-1.5 overflow-hidden rounded-full bg-fill">
-              <span className={`h-full rounded-full transition-all duration-700 ${tone}`} style={{ width: `${Math.max(2, pct)}%` }} />
-            </span>
-          </div>
-        )}
-        <Row icon={MapIcon} title="Per explanation" hint="The most a single Explain run may spend.">
-          <label className={`flex w-28 items-center gap-1 ${input}`}>
-            <span className="text-fg-3">$</span>
-            <input inputMode="decimal" value={perRun} onChange={(e) => setPerRun(e.target.value)}
-                   onBlur={() => { const v = Number(perRun); if (setup && Number.isFinite(v) && v !== setup.config.explainBudgetUsd) saveConfig({ explainBudgetUsd: v }, `Explain runs capped at $${v}`) }}
-                   onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className="w-full bg-transparent tabular-nums outline-none" />
-          </label>
-        </Row>
-        {health?.github?.remaining != null && (
-          <Row icon={GitPullRequestArrow} title="GitHub API" hint={health.github.remaining < 500 ? 'Low: syncing every 5 minutes until it resets. Shared with your own gh.' : 'Shared with your own gh.'}>
-            <span className={`text-small tabular-nums ${health.github.remaining < 500 ? 'text-wait-text' : 'text-fg-2'}`}>{health.github.remaining} of 5000 left{health.github.resetAt ? ` · resets ${clock(health.github.resetAt)}` : ''}</span>
-          </Row>
-        )}
-      </Group>
     </>
   )
 }
@@ -2268,7 +2271,7 @@ function HowItWorks({ setup, health, go }: { setup?: SetupView; health?: Health;
     ] },
     { name: 'Plan a project', icon: Layers, on: role === 'product', steps: [
       { k: 'When', v: 'you write a brief, or pick a Linear project, in Plans', at: 'roles', tip: 'A new project, or one that exists: its vision, tickets and timeline come in.' },
-      { k: 'Runs', v: slot('plan', roles.data?.base.plan ?? '…'), at: 'workflows', mono: true, tip: `The planning skill: the one in ${inSettings('workflows', 'What each feature runs')}, or another picked per plan.` },
+      { k: 'Runs', v: slot('plan', roles.data?.base.plan ?? '…'), at: 'workflows', mono: true, tip: `The planning skill: the one in ${inSettings('skills', 'What each feature runs')}, or another picked per plan.` },
       { k: 'On', v: `${who('review')} (Sonnet)`, at: 'accounts', tip: 'The planner streams its reply; each change to the map lands as it writes.' },
       { k: 'Then', v: 'a live map you edit; Create in Linear when you say so. Not its lead: tickets only', at: 'roles', tip: 'If you lead the project, the agent may propose a new vision, applied only when you accept it.' },
     ] },
