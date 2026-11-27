@@ -6,7 +6,7 @@ import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo
 import type { Activity } from '../../server/runner.ts'
 import type { Kind, Mark, Part, Shot, VisualSet, VisualsMode, UiCheck } from '../../server/visuals.ts'
 import type { VisualsTask } from '../../server/store.ts'
-import { api, enc } from '../lib.ts'
+import { api, enc, useIsDark } from '../lib.ts'
 import { refresh, useApi } from '../query.ts'
 import { bare, byApp, focusOn, layout, partAt } from '../board.ts'
 import { ActivityFeed } from './ActivityFeed.tsx'
@@ -470,22 +470,47 @@ const boxOf = (m: Mark): CSSProperties => ({ left: `${m.x}%`, top: `${m.y}%`, wi
 /** Below this scale a page's text is a grey haze: the miniature draws it as a blueprint instead. */
 export const BLUEPRINT_BELOW = 0.42
 const BLUEPRINT_CSS = `
-html.bp .bp-t { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important;
-  --bp-ink: color-mix(in srgb, var(--bp-c) 50%, transparent);
-  background: linear-gradient(var(--bp-ink), var(--bp-ink)) 0 55% / 100% 58% no-repeat !important; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-html.bp .bp-t.bp-h { --bp-ink: color-mix(in srgb, var(--bp-c) 88%, transparent); }
-html.bp [data-bp-b] { outline: var(--bp-px) solid var(--bp-bc) !important; outline-offset: calc(-1 * var(--bp-px)); }
+html.bp, html.bp body { background: transparent !important; color-scheme: normal !important; scrollbar-width: none !important; }
+html.bp ::-webkit-scrollbar { display: none !important; }
+html.bp *, html.bp *::before, html.bp *::after { border-color: transparent !important; outline-color: transparent; box-shadow: none !important; text-shadow: none !important; transition: none !important; animation: none !important; }
+html.bp [data-bp-s] { background: color-mix(in srgb, var(--bp-ink) 5%, transparent) !important; }
+html.bp [data-bp-f] { background: color-mix(in srgb, var(--bp-fill) 28%, transparent) !important; }
+html.bp .bp-t { color: transparent !important; -webkit-text-fill-color: transparent !important;
+  --bp-bar: color-mix(in srgb, var(--bp-c, var(--bp-ink)) 42%, transparent);
+  background: linear-gradient(var(--bp-bar), var(--bp-bar)) 0 55% / 100% 58% no-repeat !important; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+html.bp .bp-t.bp-h { --bp-bar: color-mix(in srgb, var(--bp-c, var(--bp-ink)) 85%, transparent); }
+html.bp [data-bp-b] { outline: var(--bp-px) solid var(--bp-bc, color-mix(in srgb, var(--bp-ink) 24%, transparent)) !important; outline-offset: calc(-1 * var(--bp-px)); }
 html.bp input, html.bp textarea, html.bp select { color: transparent !important; }
 html.bp ::placeholder { color: transparent !important; }
-html.bp img, html.bp svg, html.bp video, html.bp canvas { filter: grayscale(.4) contrast(1.15); }
-html.bp *, html.bp *::before, html.bp *::after { transition: none !important; animation: none !important; }`
+html.bp svg { color: color-mix(in srgb, var(--bp-ink) 55%, transparent) !important; }
+html.bp img, html.bp video, html.bp canvas { filter: grayscale(1); opacity: .45; }`
+
+/** A colour as sRGB through a 1px canvas (so oklch, named and rgb colours read alike): its alpha, and whether it is a hue rather than a grey. */
+const tone = (() => {
+  const seen = new Map<string, { a: number; hue: boolean }>()
+  let ctx: CanvasRenderingContext2D | null = null
+  return (c: string) => {
+    let t = seen.get(c)
+    if (t) return t
+    ctx ??= Object.assign(document.createElement('canvas'), { width: 1, height: 1 }).getContext('2d', { willReadFrequently: true })
+    t = { a: 0, hue: false }
+    if (ctx) {
+      ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = '#000'; ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1)
+      const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+      t = { a: a / 255, hue: Math.max(r, g, b) - Math.min(r, g, b) > 48 }
+    }
+    seen.set(c, t)
+    return t
+  }
+})()
 
 /**
- * A kept page drawn for the board, seen from afar: each run of text becomes a solid bar in its own colour (a title or
- * a bold word darker), every edge a line that stays one screen pixel at any size, fields empty. Its layout, its
- * places and its colours stay as drawn. Marking the page is done once; `on` and the scale `k` switch it.
+ * A kept page drawn for the board, seen from afar, in no theme of its own: its grounds clear (a neutral surface a
+ * faint wash in the board's ink, a coloured one a light tint of its hue), each run of text a bar in the board's ink (a
+ * title or a bold word darker; coloured text keeps its hue), every edge a line one screen pixel wide, fields empty.
+ * The layout and its places stay as drawn. Marking the page is done once; `on`, the scale `k` and `ink` switch it.
  */
-export function blueprint(d: Document, k: number, on: boolean) {
+export function blueprint(d: Document, k: number, on: boolean, ink: string) {
   const root = d.documentElement
   if (!root.dataset.bp) {
     root.dataset.bp = '1'
@@ -500,21 +525,25 @@ export function blueprint(d: Document, k: number, on: boolean) {
       const cs = view.getComputedStyle(t.parentElement!)
       const span = d.createElement('span')
       span.className = Number(cs.fontWeight) >= 600 || parseFloat(cs.fontSize) >= 20 || /^H[1-3]$/.test(t.parentElement!.tagName) ? 'bp-t bp-h' : 'bp-t'
-      span.style.setProperty('--bp-c', cs.color)
+      if (tone(cs.color).hue) span.style.setProperty('--bp-c', cs.color)
       t.replaceWith(span); span.append(t)
     }
     for (const el of (d.body ?? root).querySelectorAll<HTMLElement>('*')) {
       if (el.classList.contains('bp-t')) continue
       const cs = view.getComputedStyle(el)
+      const bg = tone(cs.backgroundColor)
+      if (bg.a > 0.05) { if (bg.hue) { el.dataset.bpF = ''; el.style.setProperty('--bp-fill', cs.backgroundColor) } else el.dataset.bpS = '' }
       const side = (['Top', 'Right', 'Bottom', 'Left'] as const).find((s) => parseFloat(cs[`border${s}Width`]) > 0 && cs[`border${s}Style`] !== 'none')
       if (!side) continue
-      const c = cs[`border${side}Color`]
-      if (/rgba\([^)]*,\s*0\)$|transparent/.test(c)) continue
-      el.dataset.bpB = ''; el.style.setProperty('--bp-bc', c)
+      const c = cs[`border${side}Color`], line = tone(c)
+      if (line.a < 0.05) continue
+      el.dataset.bpB = ''
+      if (line.hue) el.style.setProperty('--bp-bc', c)
     }
   }
   root.classList.toggle('bp', on)
   root.style.setProperty('--bp-px', `${(1 / k).toFixed(2)}px`)
+  root.style.setProperty('--bp-ink', ink)
 }
 
 /**
@@ -666,14 +695,16 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
   const W = shot.width ?? 1280, H = shot.height ?? Math.round(W * 0.625)
   // the page itself, drawn at this size: its layout as at full width, the browser zooming it down (never a picture shrunk)
   const page = useRef<HTMLIFrameElement>(null), k = cell / W
+  const dark = useIsDark()
   useEffect(() => {
     try {
       const d = page.current?.contentDocument
       if (!d) return
       d.documentElement.style.zoom = String(k)
-      if (ready) blueprint(d, k, k < BLUEPRINT_BELOW) // from afar: the layout, not a haze of text
+      // from afar: the layout in the board's own ink, not a haze of text in the page's theme
+      if (ready && frame.current) blueprint(d, k, k < BLUEPRINT_BELOW, getComputedStyle(frame.current).color)
     } catch { /* another origin: as drawn */ }
-  }, [k, ready])
+  }, [k, ready, dark])
   const mask = `m${useId().replace(/\W/g, '')}`
   const at = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -682,7 +713,7 @@ const Mini = memo(function Mini({ src, live, waiting, shot, mode, step, cell, on
   return (
     <figure className={`transition-opacity duration-500 ease-[var(--ease-out)] [contain-intrinsic-size:auto_160px] [content-visibility:auto] ${mode === 'dim' ? 'opacity-30' : ''}`}>
       <div ref={frame} style={live !== undefined || waiting ? { aspectRatio: `${W} / ${H}` } : undefined} title={shot.note}
-           className={`group/mini relative cursor-zoom-in overflow-hidden rounded-[3px] bg-surface-1 shadow-[0_1px_2px_rgb(0_0_0/0.18)] ring-1 transition-[box-shadow,transform] duration-300 ease-[var(--ease-out)] hover:-translate-y-px ${litPart ? 'ring-accent/60' : 'ring-line-strong hover:ring-fg-4'}`}
+           className={`group/mini relative cursor-zoom-in overflow-hidden rounded-[3px] bg-surface-1 text-fg-2 shadow-[0_1px_2px_rgb(0_0_0/0.18)] ring-1 transition-[box-shadow,transform] duration-300 ease-[var(--ease-out)] hover:-translate-y-px ${litPart ? 'ring-accent/60' : 'ring-line-strong hover:ring-fg-4'}`}
            onMouseMove={(e) => onHover(at(e), 1000)} onMouseLeave={() => onHover(undefined, 0)} onClick={(e) => onOpen(shot, e.currentTarget.getBoundingClientRect())}>
         {live !== undefined || waiting ? (!ready && <PageSkeleton />) : <img src={src} alt={shot.name} loading="lazy" decoding="async" draggable={false} className="block w-full select-none" />}
         {live && near && (
