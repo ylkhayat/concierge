@@ -1,7 +1,7 @@
 import type { Env } from './envOf.ts'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { appendFile, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { config } from './config.ts'
 import { transition, type RunState } from './lifecycle.ts'
@@ -300,14 +300,45 @@ type State = {
 // never travels as a file. The JSON snapshots from before are read once, to fill a new database.
 const meta: Meta = emptyMeta()
 export const DB_FILE = mine(join(STATE_DIR, 'state.db'))
-export const db = new StateDb(DB_FILE)
+// Kept copies of the state (snapshots.ts makes one a day): what a start falls back to when the file can't be opened
+export const SNAPSHOTS = join(STATE_DIR, 'snapshots')
+const latestSnapshot = () => { try { return readdirSync(SNAPSHOTS).filter((f) => f.startsWith(`${basename(DB_FILE)}.`) && f.endsWith('.db')).sort().pop() } catch { return undefined } }
+/** Open the state. A file that can't be opened is set aside (kept, for looking at) and the last copy takes its place: a day of changes lost, not the server. */
+function openDb(): StateDb {
+  try { return new StateDb(DB_FILE) } catch (e) {
+    const aside = `${DB_FILE}.unreadable-${Date.now()}`, snap = latestSnapshot()
+    console.error(`state: ${DB_FILE} can't be opened (${(e as Error).message}). Set aside as ${aside}; starting from ${snap ? `the copy ${snap}` : 'nothing (no copy was kept yet)'}.`)
+    try { renameSync(DB_FILE, aside) } catch { /* not there */ }
+    for (const ext of ['-wal', '-shm']) try { renameSync(DB_FILE + ext, aside + ext) } catch { /* none */ }
+    if (snap) copyFileSync(join(SNAPSHOTS, snap), DB_FILE)
+    return new StateDb(DB_FILE)
+  }
+}
+export const db = openDb()
+/** Today's copy of the state, if there isn't one yet; the last seven are kept. Returns the file it made. */
+export function snapshotNow(keep = 7): string | undefined {
+  mkdirSync(SNAPSHOTS, { recursive: true })
+  const name = `${basename(DB_FILE)}.${new Date().toISOString().slice(0, 10)}.db`, dest = join(SNAPSHOTS, name)
+  if (existsSync(dest)) return undefined
+  db.snapshot(dest)
+  const mine = readdirSync(SNAPSHOTS).filter((f) => f.startsWith(`${basename(DB_FILE)}.`) && f.endsWith('.db')).sort()
+  for (const f of mine.slice(0, -keep)) rmSync(join(SNAPSHOTS, f), { force: true })
+  return dest
+}
 const readSnapshot = (file: string): { s: Record<string, unknown>; meta: Meta; mtime: string } => {
   const s = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown> & { _meta?: Meta }
   const m = s._meta ?? emptyMeta(); delete s._meta
   return { s, meta: m, mtime: statSync(file).mtime.toISOString() }
 }
 function loadState(): State | null {
-  if (!db.empty) { const into: Record<string, unknown> = {}; for (const [k, j] of db.all()) put(into, k, JSON.parse(j)); return into as unknown as State }
+  if (!db.empty) {
+    const into: Record<string, unknown> = {}
+    let bad = 0
+    // one entry that can't be read is left out and said, not the reason the server doesn't start
+    for (const [k, j] of db.all()) try { put(into, k, JSON.parse(j)) } catch { if (++bad <= 3) console.error(`state: the entry ${k} can't be read: left out`) }
+    if (bad > 3) console.error(`state: ${bad} entries couldn't be read`)
+    return into as unknown as State
+  }
   if (!fleet.machine) return existsSync(LEGACY_FILE) ? JSON.parse(readFileSync(LEGACY_FILE, 'utf8')) : null
   const files = readdirSync(STATE_DIR).filter((f) => SNAPSHOT.test(f)).map((f) => join(STATE_DIR, f))
   if (!files.length && existsSync(LEGACY_FILE)) files.push(LEGACY_FILE) // the first start since snapshots per machine

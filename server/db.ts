@@ -80,5 +80,14 @@ export class StateDb {
   }
   getKv(k: string): string | undefined { return (this.db.prepare('SELECT v FROM kv WHERE k = ?').get(k) as { v: string } | undefined)?.v }
   setKv(k: string, v: string) { this.db.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(k, v) }
+  /**
+   * A copy of the entries as they are now, in a file of its own (the change log left out: it is for followers, and a
+   * copy without it is a tenth the size). What a start falls back to when this file can't be read.
+   */
+  snapshot(dest: string) {
+    this.db.prepare('VACUUM INTO ?').run(dest)
+    const copy = new DatabaseSync(dest)
+    try { copy.exec('DELETE FROM changes; VACUUM;') } finally { copy.close() }
+  }
   close() { this.db.close() }
 }

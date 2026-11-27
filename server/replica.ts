@@ -22,6 +22,7 @@ import { token } from './machines.ts'
 import { CONFIG_DIR, STATE_DIR } from './paths.ts'
 import { applyRemote, db } from './store.ts'
 import { call } from './worker.ts'
+import { expired } from './retention.ts'
 
 // --- where the other machines answer: their heartbeats (hosts/<name>.json, bin/standby) say ------------------------
 export async function peers(): Promise<{ name: string; base: string; active?: boolean }[]> {
@@ -176,7 +177,8 @@ async function pullFiles() {
     const was = pulled.get(peer.name)
     try {
       const r = await call<Awaited<ReturnType<typeof filesSince>>>(peer.base, token(), 'POST', '/x/replica-files', { since: was?.ver ?? 0, proc: was?.proc }, 60_000)
-      const todo = r.entries.filter(([k, size, mtimeMs]) => travels(k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)) && takes(k, peer, { size, mtimeMs }, index.get(k)))
+      // never one past its keeping (retention.ts): this machine removed it, and a machine that hasn't yet would hand it back
+      const todo = r.entries.filter(([k, size, mtimeMs]) => travels(k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)) && !expired(k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1), mtimeMs) && takes(k, peer, { size, mtimeMs }, index.get(k)))
       // the settings first: a machine that just joined has thousands of files to take, and shows its onboarding until
       // these come. config.json and the other files at the top of the settings before the accounts' homes beside them
       // (each a whole agent home, sessions and all: a hundred megabytes and more)

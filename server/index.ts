@@ -83,7 +83,7 @@ import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { addToProject as addPlanToProject, applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
 import { brokenSkillLinks, checkedOut, markClones, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, mySkills, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
-import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today } from './store.ts'
+import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today, snapshotNow } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
@@ -99,6 +99,7 @@ import { planStack, type PlanItem } from './stackPlan.ts'
 import { agentHomesReady } from './agentHome.ts'
 import { shq } from './shell.ts'
 import { hostOk, originOk } from './guard.ts'
+import { sweep as expireOld } from './retention.ts'
 
 export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { aside?: boolean; queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
@@ -3996,6 +3997,13 @@ const pullSkills = () => fleet.elsewhere() ? undefined : [config.skillsRepo ?? [
 pullSkills(); setInterval(pullSkills, 3600_000)
 // a state.json that only grew: trimmed once a day (and at every start, store.ts)
 setInterval(() => { const n = prune(); if (n) { console.log(`state: pruned ${n} old closed PRs and exec runs`); save() } }, 86400_000).unref()
+// what the runs leave on disk, by its keeping (retention.ts): a few minutes after a start, then daily. Off until
+// CONCIERGE_RETENTION=1: until then it only says what would go
+const expireNow = () => void expireOld().then((x) => { if (x.files) console.log(x.removed ? `retention: removed ${x.files} files past their keeping (${Math.round(x.bytes / 1e6)} MB)` : `retention is off: ${x.files} files (${Math.round(x.bytes / 1e6)} MB) are past their keeping and would go with CONCIERGE_RETENTION=1`) }, (e: Error) => console.warn(`retention: ${e.message}`))
+setTimeout(expireNow, 5 * 60_000).unref(); setInterval(expireNow, 86400_000).unref()
+// a copy of the state a day, seven kept (store.ts): what a start falls back to if the file can't be opened
+const copyState = () => { try { const f = snapshotNow(); if (f) console.log(`state: kept a copy (${f})`) } catch (e) { console.warn(`state: couldn't keep a copy: ${(e as Error).message}`) } }
+setTimeout(copyState, 10 * 60_000).unref(); setInterval(copyState, 6 * 3600_000).unref()
 // several machines (fleet.ts): their own alerts, such as the sync between them being down
 fleet.watch?.(condition)
 // several machines: this one also runs agents another machine (the control plane) sends it (machines.ts)

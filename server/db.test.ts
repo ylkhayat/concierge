@@ -53,3 +53,14 @@ test('the change log keeps the last changes only, cut when the database is opene
   assert.equal(b.head(), 21)
   assert.deepEqual([...b.all()], [['k', '21']])
 })
+
+test('a snapshot is the entries in a file of its own, opened like any state', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rd-db-')), a = new StateDb(join(dir, 'state.db'))
+  a.write([{ key: 'prs/x#1', value: '{"n":1}' }, { key: 'settings/maxJobs', value: '2' }])
+  a.write([{ key: 'prs/x#1', value: '{"n":2}' }])
+  a.snapshot(join(dir, 'snap.db'))
+  a.write([{ key: 'prs/x#1', value: '{"n":3}' }]) // after it: not in the copy
+  const b = new StateDb(join(dir, 'snap.db'))
+  assert.deepEqual([...b.all()].sort(), [['prs/x#1', '{"n":2}'], ['settings/maxJobs', '2']])
+  assert.equal(b.since(0).length, 0)
+})
