@@ -30,7 +30,24 @@ type BankView = { only: boolean; file?: string; servers: { name: string; service
  * The connection bank: what is in it, how each signs in, whether runs get only the bank, and a way to put one in.
  * An account's own connections (below) differ per account; these are the same for every run.
  */
+/** Which workspaces may use each connection (none ticked: all of them), for the bank's rows and the connectors' alike. */
+function useScope(toast: Toast) {
+  const [scope, setScope] = useState<Record<string, string[]>>({})
+  const [owners, setOwners] = useState<string[]>([])
+  useEffect(() => {
+    api('/setup?light=1').then((d: { config: { connections?: { scope?: Record<string, string[]> } } }) => setScope(d.config.connections?.scope ?? {}), () => {})
+    api('/orgs').then((o: { owner: string }[]) => setOwners(o.map((x) => x.owner)), () => {})
+  }, [])
+  const keep = (name: string, owner: string) => {
+    const was = scope[name] ?? [], next = was.includes(owner) ? was.filter((x) => x !== owner) : [...was, owner]
+    setScope({ ...scope, [name]: next })
+    api('/connections/scope', { name, owners: next }).then(() => toast(next.length ? `${nameOf(name).name}: only ${next.join(', ')}` : `${nameOf(name).name}: every workspace`), (e: Error) => toast(e.message, 'error'))
+  }
+  return { scope, owners, keep }
+}
+
 function Bank({ toast }: { toast: Toast }) {
+  const { scope, owners, keep } = useScope(toast)
   const [b, setB] = useState<BankView>()
   const [form, setForm] = useState<{ kind: 'address' | 'command'; name: string; url: string; key: string; command: string; env: string; was?: string }>()
   useEffect(() => { api('/bank').then(setB, () => setB({ only: false, servers: [] })) }, [])
@@ -50,6 +67,7 @@ function Bank({ toast }: { toast: Toast }) {
             {!!s.missing?.length && <span className="shrink-0 rounded-full bg-wait/15 px-1.5 text-micro font-medium text-wait-text" title={`Add ${s.missing.join(', ')} to ${b.file ?? 'mcp.env'} on this machine`}>needs {s.missing.join(', ')}</span>}
             <span className="shrink-0 text-meta text-fg-3" title={s.how === 'key' ? 'It signs in with a key Concierge holds: every tool can use it' : 'It signs in in the browser, into a Claude account: Codex and Copilot can’t use it'}>{s.how === 'key' ? 'Every tool' : 'Claude accounts only'}</span>
             {s.mine && s.edit && <button onClick={() => setForm(s.edit!.kind === 'command' ? { kind: 'command', name: s.name, url: '', key: '', command: s.edit!.command, env: s.edit!.env.map((k) => `${k}=`).join('\n'), was: s.name } : { kind: 'address', name: s.name, url: s.edit!.url, key: '', command: '', env: '', was: s.name })} className="shrink-0 text-meta text-fg-3 hover:text-fg-1">Edit</button>}
+            {owners.length > 1 && <UsedBy owners={owners} on={scope[s.name] ?? []} onToggle={(o) => keep(s.name, o)} />}
             {s.mine && <button onClick={() => void post('/bank/remove', { name: s.name }, `${s.name} taken out of the bank`)} className="shrink-0 text-meta text-fg-4 hover:text-fail-text">Remove</button>}
           </div>
         ))}
@@ -234,18 +252,7 @@ function Services({ toast }: { toast: Toast }) {
   const [custom, setCustom] = useState<string[]>([])
   useEffect(() => { api('/connections').then(setList, () => setList([])); api('/connections/custom').then(setCustom, () => {}) }, [])
   const [w, again] = useWhere('claude')
-  // which workspaces may use each connection (none ticked: all of them)
-  const [scope, setScope] = useState<Record<string, string[]>>({})
-  const [owners, setOwners] = useState<string[]>([])
-  useEffect(() => {
-    api('/setup?light=1').then((d: { config: { connections?: { scope?: Record<string, string[]> } } }) => setScope(d.config.connections?.scope ?? {}), () => {})
-    api('/orgs').then((o: { owner: string }[]) => setOwners(o.map((x) => x.owner)), () => {})
-  }, [])
-  const keep = (name: string, owner: string) => {
-    const was = scope[name] ?? [], next = was.includes(owner) ? was.filter((x) => x !== owner) : [...was, owner]
-    setScope({ ...scope, [name]: next })
-    api('/connections/scope', { name, owners: next }).then(() => toast(next.length ? `${nameOf(name).name}: only ${next.join(', ')}` : `${nameOf(name).name}: every workspace`), (e: Error) => toast(e.message, 'error'))
-  }
+  const { scope, owners, keep } = useScope(toast)
   const drop = (name: string) => api('/connections/custom', { name, remove: true }).then((l: Connection[]) => { setList(l); setCustom((c) => c.filter((x) => x !== name)); toast(`${name} removed`) }, (e: Error) => toast(e.message, 'error'))
   if (!list) return <Skeleton rows={7} />
   return (
