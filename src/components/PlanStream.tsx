@@ -251,6 +251,9 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
                   const meta = [`${sl.sized ? '' : '~'}${sl.points} pt`, sl.who, state].filter(Boolean).join(' · ')
                   return (
                     <g key={sl.id} className="cursor-pointer" onClick={() => onSelect(sl.id)} onMouseEnter={() => setHover({ slot: sl, x: bx + bw / 2, y: ry - 8 })} onMouseLeave={() => setHover(undefined)}
+                       // reachable without a pointer: Tab lands on a ticket (its card shows), Enter opens it
+                       tabIndex={0} role="button" aria-label={`${id ? `${id} ` : ''}${n?.title ?? sl.id}: ${meta}`} onFocus={() => setHover({ slot: sl, x: bx + bw / 2, y: ry - 8 })} onBlur={() => setHover(undefined)}
+                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(sl.id) } }}
                        style={{ animation: `fade-in 260ms ${Math.min(j, 12) * 22}ms both` }}>
                       <rect x={4} y={ry - ROW / 2 + 1} width={Math.max(0, w - 12)} height={ROW - 2} rx={6} fill={lit ? 'var(--surface-hover)' : 'transparent'} />
                       {/* its name, in the column: whole up to the column's width, its id before it */}

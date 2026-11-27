@@ -98,16 +98,17 @@ function Inspector({ p, id, onOps, onMove, onClose }: { p: Plan; id: string; onO
         <fieldset disabled={fixed} className="space-y-3 disabled:opacity-70">
         <input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => title.trim() && title !== n.title && set({ title })} className={`${field} font-semibold`} aria-label="Title" />
         <div className="space-y-2.5">
-          <div><p className="mb-1 label text-fg-4">Priority</p>
-            <Chips label="Priority" value={n.priority ?? 0} options={PRIORITY.map((l, i) => [i, l || 'None'] as [number, string])} onChange={(v) => set({ priority: (v || undefined) as PlanNode['priority'] })} /></div>
+          {/* a ticket's priority and parent are moves (above: tried in the draft first); the same control twice, one of them writing at once, was one too many */}
+          {n.kind !== 'ticket' && <div><p className="mb-1 label text-fg-4">Priority</p>
+            <Chips label="Priority" value={n.priority ?? 0} options={PRIORITY.map((l, i) => [i, l || 'None'] as [number, string])} onChange={(v) => set({ priority: (v || undefined) as PlanNode['priority'] })} /></div>}
           <div><p className="mb-1 label text-fg-4">Estimate</p>
             <Chips label="Estimate" value={n.estimate ?? 0} options={[[0, 'None'], [1, '1'], [2, '2'], [3, '3'], [5, '5'], [8, '8'], [13, '13']]} onChange={(v) => set({ estimate: v || undefined })} /></div>
           <div><p className="mb-1 label text-fg-4">Kind</p>
             <Chips label="Kind" value={n.kind} options={(Object.keys(KIND) as Kind[]).map((k) => [k, KIND[k].label] as [Kind, string])} onChange={(v) => set({ kind: v })} /></div>
-          <div><button onClick={() => setOpenList(openList === 'under' ? undefined : 'under')} className="flex w-full items-center gap-1 text-left">
+          {n.kind !== 'ticket' && <div><button onClick={() => setOpenList(openList === 'under' ? undefined : 'under')} className="flex w-full items-center gap-1 text-left">
               <span className="label text-fg-4">Under</span><span className="ml-1 min-w-0 flex-1 truncate text-small text-fg-1">{n.parent ? name(n.parent) : 'Nothing'}</span><span className="text-meta text-accent-text">{openList === 'under' ? 'Done' : 'Change'}</span></button>
             {openList === 'under' && <InlineList value={n.parent ?? ''} options={[{ value: '', label: 'Nothing' }, ...p.nodes.filter((x) => x.id !== id && x.kind !== 'ticket').map((x) => ({ value: x.id, label: x.title, hint: KIND[x.kind].label }))]} onPick={(v) => { set({ parent: v }); setOpenList(undefined) }} />}
-          </div>
+          </div>}
         </div>
         <textarea value={desc} onChange={(e) => setDesc(e.target.value)} onBlur={() => desc !== (n.description ?? '') && set({ description: desc })} rows={6} placeholder="Why it matters, and the acceptance criteria" className={`${field} resize-y`} />
         </fieldset>
@@ -121,7 +122,7 @@ function Inspector({ p, id, onOps, onMove, onClose }: { p: Plan; id: string; onO
       </div>
       <div className="flex items-center gap-2 border-t border-line px-3 py-2">
         {n.kind !== 'ticket' && <button onClick={addChild} className="inline-flex items-center gap-1 rounded-ctl px-2 py-1 text-small font-medium text-accent-text hover:bg-accent-soft"><Plus className="size-3.5" />{KIND[childKind].label}</button>}
-        {!fixed && <button onClick={() => { onOps([{ op: 'remove', id }]); onClose() }} className="ml-auto inline-flex items-center gap-1 rounded-ctl px-2 py-1 text-small text-fg-3 hover:text-fail-text"><Trash2 className="size-3.5" />Remove{p.nodes.some((x) => x.parent === id) ? ' with what’s under it' : ''}</button>}
+        {!fixed && <button onClick={() => { onOps([{ op: 'remove', id }]); onClose() }} title="Remove it from the plan (⌘Z brings it back)" className="ml-auto inline-flex items-center gap-1 rounded-ctl px-2 py-1 text-small text-fg-3 hover:text-fail-text"><Trash2 className="size-3.5" />Remove{p.nodes.some((x) => x.parent === id) ? ' with what’s under it' : ''}</button>}
       </div>
     </aside>
   )
@@ -412,7 +413,7 @@ function Plays({ p, whatIf, people, pace, busy, onTry, onAsk, colorBy, onColorBy
       {ASK.map(([id, label, text]) => <button key={id} disabled={busy} title="The planner proposes it as a scenario to try" onClick={() => onAsk(text)} className={chip}><Sparkles className="size-3" />{label}</button>)}
       <span className="inline-flex items-center gap-1.5">
         <span className="label text-fg-4">Colour</span>
-        <Tabs size="sm" label="Colour the tickets by" value={colorBy} onChange={onColorBy} options={[{ id: 'epic', label: 'Epic' }, { id: 'owner', label: 'Owner' }, { id: 'moscow', label: 'MoSCoW' }]} />
+        <Tabs size="sm" label="Colour the tickets by" value={colorBy} onChange={onColorBy} options={[{ id: 'epic', label: 'Epic' }, { id: 'owner', label: 'Owner' }, { id: 'moscow', label: 'Priority' }]} />
       </span>
     </div>
   )
@@ -581,7 +582,7 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet, gh }: { p: Plan; w
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="inline-flex items-center gap-1.5 font-semibold text-accent-text" title={p.scenario?.why}><Sparkles className="size-3.5" />Draft: {ops.length} change{ops.length === 1 ? '' : 's'}</span>
         <span className={first ? 'text-fg-2' : days < 0 ? 'font-medium text-ok-text' : days > 0 ? 'font-medium text-wait-text' : 'text-fg-2'}>{first ? `lands ~${landing}` : `${when} (~${landing})`}</span>
-        {first && <span className="basis-full text-fg-2 sm:basis-auto">A first draft, drawn on the board: nothing is in the plan until you Apply. Ask below for changes first if you like; Linear only gets it when you Create in Linear.</span>}
+        {first && <span className="basis-full text-fg-2 sm:basis-auto">A first draft. Two steps from here: Apply puts it in the plan, then Create in Linear sends it there. Ask below for changes first if you like.</span>}
         {i.fitsAfter !== undefined && <span className={i.fitsAfter ? 'text-ok-text' : 'text-fail-text'}>{i.fitsAfter ? (i.fitsBefore ? 'fits the appetite' : 'now fits the appetite') : 'over the appetite'}</span>}
         {i.cut.length > 0 && <span className="text-fg-2">{i.cut.length} cut ({i.cut.reduce((a, x) => a + x.points, 0)} pt)</span>}
         {i.later.length > 0 && <span className="text-wait-text">{i.later.length} finish later</span>}
@@ -591,7 +592,7 @@ function ScenarioBar({ p, whatIf, people, pace, toast, onSet, gh }: { p: Plan; w
           <button onClick={() => void onSet([])} className="rounded-ctl px-2 py-1 text-meta font-medium text-fg-2 hover:bg-hover hover:text-fail-text">Discard</button>
           <button disabled={busy || p.busy} title={p.busy ? 'It is still drafting' : undefined} onClick={() => (i.writes.length ? arm('apply', apply) : apply())} className="btn-primary btn-sm relative inline-flex items-center gap-1.5 overflow-hidden">
             {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-            {armed === 'apply' ? <><ArmLabel>{`Confirm: write ${i.writes.length} to Linear`}</ArmLabel><ArmBar on="color" /></> : 'Apply'}
+            {armed === 'apply' ? <><ArmLabel>{`Confirm: write ${i.writes.length} to Linear`}</ArmLabel><ArmBar on="color" /></> : 'Apply to the plan'}
           </button>
         </span>
       </div>
@@ -738,7 +739,7 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
         <input defaultValue={p.title} key={p.id} onBlur={(e) => e.target.value.trim() && e.target.value !== p.title && set({ title: e.target.value })} aria-label="Plan name"
-               className="min-w-[140px] flex-1 bg-transparent text-title font-semibold tracking-tight text-fg-1 outline-none" />
+               className="-mx-1 min-w-[140px] flex-1 rounded-chip bg-transparent px-1 text-title font-semibold tracking-tight text-fg-1 outline-none hover:bg-hover focus-visible:bg-surface-1 focus-visible:ring-2 focus-visible:ring-accent/50" />
         <History p={p} onBack={back} />
         <StageBar stages={stages} onStep={step} />
         {p.creating ? <span className="inline-flex items-center gap-1.5 text-small text-run-text"><LoaderCircle className="size-3.5 animate-spin" />Creating {made}/{p.nodes.length}…</span>
@@ -755,13 +756,14 @@ function PlanView({ id, toast }: { id: string; toast: Toast }) {
       </header>
       {/* the board on top, the conversation docked under it (on a phone: the conversation alone) */}
       <div ref={split} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <section aria-label="The plan" className="relative hidden min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface-2/40 lg:flex">
+        <section aria-label="The plan" className="relative flex min-h-0 min-w-0 flex-[1.2] flex-col overflow-hidden bg-surface-2/40 max-lg:overflow-y-auto max-lg:border-b max-lg:border-line lg:flex-1">
           {whatIf.nodes.length > 0 && <PlanBar p={whatIf} set={set} toast={toast} say={say} refining={refining} level={level} onLevel={setLevel} legend={legend} onLegend={() => setLegend(!legend)}
                                      status={<Readiness whatIf={whatIf} company={profile} checksOff={!!profile?.off} org={checks.data?.org} teamKey={teams.data?.teams.find((t) => t.id === p.team)?.key} people={people} pace={pace} points={f.points} onAsk={(t) => void say(t)} onSelect={setSelected}
                                                 onAdd={(ob) => void ops([{ op: 'add', id: `r-${ob.id}`, kind: 'ticket', title: ob.title, description: ob.why, parent: p.nodes.find((n) => n.kind === 'goal')?.id, covers: [ob.id], moscow: 'must' }])} />}
                                      tools={<Plays p={p} whatIf={whatIf} people={people} pace={pace} busy={p.busy} onTry={(o) => void addTried(o)} onAsk={(t) => void say(t)} colorBy={colorBy} onColorBy={setColorBy} />} />}
           {tried.length > 0 && <ScenarioBar p={p} whatIf={whatIf} people={people} pace={pace} toast={toast} onSet={setTried} gh={gh} />}
-          <div className="relative min-h-0 flex-1">
+          {/* beside the conversation (lg) the map takes what is left; stacked over it (a narrow window) it keeps a height of its own and the section scrolls */}
+          <div className="relative min-h-0 flex-1 max-lg:h-[340px] max-lg:flex-none">
             {/* the plan, or the draft on top of it: a first draft (nothing applied yet) is drawn too, not only once applied */}
             {!shown.nodes.length ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
@@ -1017,7 +1019,15 @@ export function PlansWorkspace({ toast }: { toast: Toast }) {
   const plans = useMemo(() => list.data?.plans ?? [], [list.data])
   const current = open ?? (list.data ? (plans[0]?.id ?? 'new') : undefined)
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col md:flex-row">
+      {/* no room for the list beside the plan (a narrow window): the same choice as one line on top */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-line p-2 md:hidden">
+        <select aria-label="Plan" value={current ?? ''} onChange={(e) => setOpen(e.target.value)} className="field min-w-0 flex-1 text-small">
+          <option value="new">New plan</option>
+          {plans.map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
+        </select>
+        <button onClick={() => setOpen('new')} aria-label="New plan" className="btn-outline btn-sm inline-flex items-center gap-1"><Plus className="size-3.5" />New</button>
+      </div>
       <nav aria-label="Plans" className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-line p-2 md:flex">
         <button onClick={() => setOpen('new')} className={`flex items-center gap-2 rounded-ctl px-2.5 py-2 text-small font-medium ${current === 'new' ? 'sel' : 'text-accent-text hover:bg-hover'}`}><Plus className="size-4" />New plan</button>
         {plans.map((x) => (
