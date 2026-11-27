@@ -124,13 +124,18 @@ export function useDeck(key: string | undefined | ((exec?: ExecView) => string |
         staleNow([...stale]); stale.clear()
         const by = new Map<string, Activity[]>()
         for (const { id, a } of got) by.set(id, [...(by.get(id) ?? []), a])
-        for (const [id, add] of by) { const had = feedCache.get(id); if (had) cacheFeed(id, [...had, ...add].slice(-3000)) }
+        for (const [id, add] of by) { const had = feedCache.get(id); if (had) cacheFeed(id, [...had, ...add].slice(-3000)); reading.get(id)?.push(...add) }
         const mine = selectedRef.current && by.get(selectedRef.current)
         if (mine) setFeed((f) => [...f, ...mine].slice(-3000))
       }, 200)
     })
     // back after a drop (a restart, a slow server): what it missed comes in again, the open feed included
-    es.addEventListener('open', () => { const id = selectedRef.current; if (id) api(feedUrl(id)).then((f: Activity[]) => { cacheFeed(id, f); if (selectedRef.current === id) setFeed(f) }).catch(() => {}) })
+    es.addEventListener('open', () => {
+      const id = selectedRef.current
+      // the feeds kept from before the drop missed its lines: forgotten, so each is read whole when it is opened again
+      for (const k of [...feedCache.keys()]) if (k !== id) feedCache.delete(k)
+      if (id) readFeed(id).then((f) => { if (selectedRef.current === id) setFeed(f) }).catch(() => {})
+    })
     return () => { es.close(); if (flush) clearTimeout(flush) }
   }, [scopeNow]) // switching this machine / fleet reconnects with the other lists
 
@@ -139,7 +144,7 @@ export function useDeck(key: string | undefined | ((exec?: ExecView) => string |
   selectedRef.current = selected
   useEffect(() => {
     setFeed(selected ? feedCache.get(selected) ?? [] : []); setFeedFor(selected)
-    if (selected) { if (!feedCache.has(selected)) loadingFeed(selected, true); api(feedUrl(selected)).then((f: Activity[]) => { cacheFeed(selected, f); if (selectedRef.current === selected) setFeed(f) }).catch(() => {}).finally(() => loadingFeed(selected, false)) }
+    if (selected) { if (!feedCache.has(selected)) loadingFeed(selected, true); readFeed(selected).then((f) => { if (selectedRef.current === selected) setFeed(f) }).catch(() => {}).finally(() => loadingFeed(selected, false)) }
   }, [selected])
 
   // one item's feed, right from the render that opens it: `feed` while it is that item's, else what is cached (never
@@ -167,12 +172,27 @@ const feedUrl = (key: string) => key.startsWith('ticket:') ? `/exec/tickets/${ke
   : key.startsWith('setup:') ? `/visuals/setup/${key.slice(6)}/activity`
   : /^design-(components|tokens):/.test(key) ? `/visuals/chat/${key.slice(7, key.indexOf(':'))}/${key.slice(key.indexOf(':') + 1)}/activity` : `/prs/${enc(key)}/activity`
 const prefetching = new Set<string>()
+// the lines that came over the live stream while a feed was being read: the answer was made before them, so they are
+// put back after it (they were lost: the answer replaced the feed, and the run's newest lines vanished until the next)
+const reading = new Map<string, Activity[]>()
+const lineKey = (a: Activity) => `${a.at}|${a.kind}|${(a.text ?? '').slice(0, 80)}`
+/** Read a feed whole, into the cache, keeping what arrived live meanwhile. */
+function readFeed(id: string): Promise<Activity[]> {
+  const since: Activity[] = reading.get(id) ?? []
+  reading.set(id, since)
+  return api(feedUrl(id)).then((f: Activity[]) => {
+    const has = new Set(f.slice(-400).map(lineKey))
+    const whole = [...f, ...since.filter((a) => !has.has(lineKey(a)))].slice(-3000)
+    cacheFeed(id, whole)
+    return whole
+  }).finally(() => { if (reading.get(id) === since) reading.delete(id) })
+}
 /** An item's feed into the cache before it opens (a pointer resting on its row), so it opens whole instead of blank
  * for the time the fetch takes. Opening still fetches it fresh. */
 export function prefetchFeed(key: string) {
   if (feedCache.has(key) || prefetching.has(key)) return
   prefetching.add(key)
-  api(feedUrl(key)).then((f: Activity[]) => { if (!feedCache.has(key)) cacheFeed(key, f) }).catch(() => {}).finally(() => prefetching.delete(key))
+  readFeed(key).catch(() => {}).finally(() => prefetching.delete(key))
 }
 
 /** One function for the component's whole life that always runs the newest `f`: a list's rows, memoized on their props,
