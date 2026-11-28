@@ -1552,7 +1552,11 @@ app.post('/update', async (c) => {
   // one at a time: while one is under way a second ask only restarts it, so it is refused, except "now" (it's a skip)
   const lock = await stat(join(STATE_DIR, 'update.lock.d')).catch(() => undefined)
   if (!now && lock && Date.now() - lock.mtimeMs < 3 * 3600_000) return c.json({ error: 'An update is already under way: Settings → Machines shows where it stands' }, 409)
-  await writeFile(join(STATE_DIR, 'update-asked'), now ? `now ${Math.floor(Date.now() / 1000)}` : `${upstream ? 'upstream ' : ''}${new Date().toISOString()}`)
+  const text = now ? `now ${Math.floor(Date.now() / 1000)}` : `${upstream ? 'upstream ' : ''}${new Date().toISOString()}`
+  await writeFile(join(STATE_DIR, 'update-asked'), text)
+  // the other machines too: each reads its own update-asked (it never travels), so the button reached only the
+  // machine it was pressed on. A machine on an older version doesn't know the call and updates on its own schedule
+  if (!upstream && machines.size) void ask('updateAsked', { text }).catch(() => {})
   return c.json({ ok: true })
 })
 
@@ -4012,6 +4016,8 @@ serveMachine(() => state.settings.maxJobs, ownUsage, {
   connectors: (b: { custom?: Record<string, string>; connected?: string[] }) => applyConnectors(b.custom ?? {}, b.connected ?? []),
   // which connectors this machine has for an account, and in what state (the markers on Settings → Connections)
   has: async (b: { account?: string }) => connectorsHere(b.account),
+  // "Update now", pressed on the machine that runs Concierge: this one's own bin/update reads it within a minute
+  updateAsked: async (b: { text?: string }) => { if (typeof b.text === 'string' && /^(now \d+|\d{4}-\d\d-\d\dT[\d:.]+Z)$/.test(b.text)) await writeFile(join(STATE_DIR, 'update-asked'), b.text); return true },
   // this machine's numbers for the Machines page
   stats: async () => statsHere(ownUsage, hosted().size, slotsHere(state.settings.maxJobs)),
   // the keys in this machine's own .env, for the control plane to share when it lacks one (adoptKeys); tailnet only,
