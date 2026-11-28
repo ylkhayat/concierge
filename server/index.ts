@@ -1562,8 +1562,8 @@ app.post('/exec/:run/steer', async (c) => {
   return sent === 'idle' ? c.json({ error: 'That run is not running', code: 'busy' }, 409) : c.json({ ok: true, sent })
 })
 // ?tail=n: the newest part only (runner.ts tailOf)
-app.get('/exec/:run/activity', async (c) => c.json(tailOf(await loadActivity(`exec:${c.req.param('run')}`), Number(c.req.query('tail')))))
-app.get('/exec/tickets/:id/activity', async (c) => c.json(tailOf(await ticketActivity(c.req.param('id')), Number(c.req.query('tail')))))
+app.get('/exec/:run/activity', async (c) => { watchFeed(c); return c.json(tailOf(await loadActivity(`exec:${c.req.param('run')}`), Number(c.req.query('tail')))) })
+app.get('/exec/tickets/:id/activity', async (c) => { watchFeed(c); return c.json(tailOf(await ticketActivity(c.req.param('id')), Number(c.req.query('tail')))) })
 // you asked for it now: the whole list, not only what Linear says changed
 app.post('/exec/poll', async (c) => { forgetTickets(); await pollTickets(); return c.json(execView()) })
 // picked tickets, checked: every id well-formed, mapped to a repo with a checkout, none already running
@@ -2311,7 +2311,7 @@ app.post('/accounts/:id/token', async (c) => {
 // the design routes: server/routes/design.ts
 designRoutes(app, { execBoard, ticketsOf })
 app.get('/prs', (c) => { const away = scopeOf(c) === 'self' ? awayHere() : undefined; return c.json(away ? views().filter((p) => !away.has(p.repo)) : views()) })
-app.get('/prs/:id/activity', async (c) => c.json(tailOf(await loadActivity(decodeURIComponent(c.req.param('id'))), Number(c.req.query('tail')))))
+app.get('/prs/:id/activity', async (c) => { watchFeed(c); return c.json(tailOf(await loadActivity(decodeURIComponent(c.req.param('id'))), Number(c.req.query('tail')))) })
 app.post('/poll', async (c) => { await doPoll(true); return c.json(healthView()) })
 // a review request Auto-review starts on its own: in the Review workspace, with a checkout, and not started yet
 const autoReviews = (pr: Pr) => !pr.mine && workspaces().includes('review') && !!config.repos[pr.repo] && !pr.closed && statusOf(pr, undefined, true) === 'new'
@@ -3147,10 +3147,24 @@ app.get('/boot', async (c) => {
 
 // what every page gets the same: built once for all of them (each page built its own copy of the health before, and
 // each of a run's lines was turned into text once per page)
-const everyPage = new Set<(event: 'health' | 'activity', data: string) => void>()
+const everyPage = new Set<(event: 'health' | 'activity', data: string, feed?: string) => void>()
+// which feeds each connected page has read (and so keeps up to date): a run's lines go to those pages only. Before, every
+// line of every run went to every tab, three or four times for a run of several tickets (its own feed and each
+// ticket's). A page says so by reading a feed with its stream's id (?sid=&watch=); one that never does (a tab from
+// before this, a script) gets every line, as before. null: too many to list, so everything
+const watching = new Map<string, Set<string> | null>(), streams = new Set<string>()
+function watchFeed(c: Context) {
+  const sid = c.req.query('sid'), id = c.req.query('watch')
+  if (!sid || !id || !streams.has(sid)) return
+  const w = watching.get(sid)
+  if (w === null) return
+  if (!w) watching.set(sid, new Set([id]))
+  else if (w.size >= 500) watching.set(sid, null)
+  else w.add(id)
+}
 let healthSoon: ReturnType<typeof setTimeout> | undefined
 bus.on('health', () => { healthSoon ??= setTimeout(() => { healthSoon = undefined; if (!everyPage.size) return; const data = JSON.stringify(healthView()); for (const send of everyPage) send('health', data) }, 150) })
-bus.on('activity', (id: string, a: Activity) => { if (!everyPage.size) return; const data = JSON.stringify({ id, a }); for (const send of everyPage) send('activity', data) })
+bus.on('activity', (id: string, a: Activity) => { if (!everyPage.size) return; const data = JSON.stringify({ id, a }); for (const send of everyPage) send('activity', data, id) })
 
 app.get('/events', (c) => streamSSE(c, async (stream) => {
   // self: this machine's lists only (scopeOf), filtered per page from the one list every page shares
@@ -3159,7 +3173,14 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   const patch = (event: 'prs-patch', data: string, id: string) => void stream.writeSSE({ event, id, data: self ? selfPatch(data, away(), hiddenPrs) : data })
   // a burst of changes (a run's every line says 'exec') is one send, at most one a second, built once for every page
   const execPatch = (data: string, id: string) => void stream.writeSSE({ event: 'exec-patch', id, data: self ? selfPatch(data, away(), hiddenTickets) : data })
-  const same = (event: 'health' | 'activity', data: string) => void stream.writeSSE({ event, data })
+  const sid = randomUUID()
+  streams.add(sid)
+  const same = (event: 'health' | 'activity', data: string, feed?: string) => {
+    if (feed !== undefined) { const w = watching.get(sid); if (w && !w.has(feed)) return }
+    void stream.writeSSE({ event, data })
+  }
+  // first, this stream's id: the page reads its feeds with it, which is how it says which ones it follows
+  await stream.writeSSE({ event: 'hello', data: sid })
   const sendAlerts = () => stream.writeSSE({ event: 'alerts', data: JSON.stringify(alerts()) })
   // what changed, by API path: gathered for a moment so a burst of saves is one message
   let pending = new Set<string>(), flush: ReturnType<typeof setTimeout> | undefined
@@ -3191,6 +3212,7 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   live.off('stale', onStale); if (flush) clearTimeout(flush)
   execHub.leave(execPatch)
   everyPage.delete(same)
+  streams.delete(sid); watching.delete(sid)
 }))
 
 

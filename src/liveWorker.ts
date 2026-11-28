@@ -6,6 +6,7 @@ const ports = new Set<Port>()
 let open = false
 let prs: { id: string }[] | undefined, exec: { tickets: { id: string }[] } | undefined
 let health: string | undefined, alerts: string | undefined
+let hello: string | undefined // this stream's id (the server's first word): the tabs read their feeds with it
 const send = (msg: { type: string; data?: string }) => { for (const p of ports) p.postMessage(msg) }
 // what a patch says, onto the list it patches (the same as the tabs do: lib.ts)
 const patch = <T extends { id: string }>(list: T[], d: { set: T[]; del: string[]; order: string[] }) => {
@@ -20,10 +21,11 @@ const scope = /-(self|fleet)$/.exec((self as unknown as { name: string }).name)?
 const es = new EventSource(`/api/events${scope ? `?scope=${scope}` : ''}`)
 es.onopen = () => { open = true; send({ type: 'open' }) }
 es.onerror = () => { open = false; send({ type: 'error' }) }
-for (const name of ['prs', 'prs-patch', 'exec', 'exec-patch', 'health', 'alerts', 'activity', 'stale']) {
+for (const name of ['hello', 'prs', 'prs-patch', 'exec', 'exec-patch', 'health', 'alerts', 'activity', 'stale']) {
   es.addEventListener(name, (e) => {
     const data = (e as MessageEvent<string>).data
-    if (name === 'prs') prs = JSON.parse(data)
+    if (name === 'hello') hello = data
+    else if (name === 'prs') prs = JSON.parse(data)
     else if (name === 'prs-patch' && prs) prs = patch(prs, JSON.parse(data))
     else if (name === 'exec') exec = JSON.parse(data)
     else if (name === 'exec-patch' && exec) { const d = JSON.parse(data); exec = { ...exec, ...d.meta, tickets: patch(exec.tickets, d) } }
@@ -40,6 +42,7 @@ for (const name of ['prs', 'prs-patch', 'exec', 'exec-patch', 'health', 'alerts'
   port.start()
   // what is current, at once: the new tab starts where the others are
   if (open) port.postMessage({ type: 'open' })
+  if (hello) port.postMessage({ type: 'hello', data: hello })
   if (prs) port.postMessage({ type: 'prs', data: JSON.stringify(prs) })
   if (exec) port.postMessage({ type: 'exec', data: JSON.stringify(exec) })
   if (health) port.postMessage({ type: 'health', data: health })

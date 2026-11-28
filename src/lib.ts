@@ -146,6 +146,14 @@ export function useDeck(key: string | undefined | ((exec?: ExecView) => string |
         if (mine) setFeed((f) => [...f, ...mine].slice(-3000))
       }, 200)
     })
+    // the stream's id (its first word, and again after every drop): the feeds read before it aren't followed on this
+    // stream, so the ones kept are forgotten (each is read again, with the id, when opened) and the open one is read now
+    es.addEventListener('hello', (e) => {
+      streamId = (e as MessageEvent<string>).data
+      const id = selectedRef.current
+      for (const k of [...feedCache.keys()]) if (k !== id) feedCache.delete(k)
+      if (id) readFeed(id).then((f) => { if (selectedRef.current === id) setFeed(f) }).catch(() => {})
+    })
     // back after a drop (a restart, a slow server): what it missed comes in again, the open feed included
     es.addEventListener('open', () => {
       const id = selectedRef.current
@@ -196,10 +204,14 @@ const prefetching = new Set<string>()
 const reading = new Map<string, Activity[]>()
 const lineKey = (a: Activity) => `${a.at}|${a.kind}|${(a.text ?? '').slice(0, 80)}`
 const TAIL = 600 // an item opens with about its last 600 lines (whole runs); "Show earlier" reads the rest
-const tailed = (id: string) => (id.startsWith('ticket:') || id.startsWith('exec:') || !/^[a-z-]+:/.test(id) ? `${feedUrl(id)}?tail=${TAIL}` : feedUrl(id))
+// this page's live stream, by the id the server gave it: a feed read with it is one the stream then keeps up to date
+// (the server sends a run's lines only to the pages that read its feed)
+let streamId: string | undefined
+const followed = (url: string, id: string) => (streamId ? `${url}${url.includes('?') ? '&' : '?'}sid=${streamId}&watch=${encodeURIComponent(id)}` : url)
+const tailed = (id: string) => followed(id.startsWith('ticket:') || id.startsWith('exec:') || !/^[a-z-]+:/.test(id) ? `${feedUrl(id)}?tail=${TAIL}` : feedUrl(id), id)
 /** The whole of a feed, when its earlier part is asked for (ActivityFeed's "Show earlier"). */
 export function wholeFeed(id: string) {
-  return api(feedUrl(id)).then((f: Activity[]) => { cacheFeed(id, f); dispatchEvent(new CustomEvent('feed-whole', { detail: id })); return f })
+  return api(followed(feedUrl(id), id)).then((f: Activity[]) => { cacheFeed(id, f); dispatchEvent(new CustomEvent('feed-whole', { detail: id })); return f })
 }
 /** Read a feed's newest part, into the cache, keeping what arrived live meanwhile. */
 function readFeed(id: string): Promise<Activity[]> {
