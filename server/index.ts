@@ -26,7 +26,7 @@ import { basicAuth } from 'hono/basic-auth'
 import { actionsFor, alignStacks, followRemote, linkStacks, markBehind, ops, runAction, setTerminal, type Op, type Scope } from './actions.ts'
 import { critFor, critOfPr, deliberateNote, ownReviewFile, normsOf, refreshCrit, statusOf, type Crit, type Status } from './crit.ts'
 import { addException, exceptionsOf } from './norms.ts'
-import { defaultBranch, ghSend, runOwns, tokenChanged, getMe, gh, ghBudget, ghCall, githubTraffic, outside, poll, pollPrs, prHealth, prHealthMany, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
+import { ghSend, runOwns, tokenChanged, getMe, gh, ghBudget, ghCall, githubTraffic, outside, poll, pollPrs, prHealth, prHealthMany, readScopes, refreshOne, setOnStacks, slowedUntil, tokenScopes } from './github.ts'
 import { coalescer, hookLive, hookStats, listen, listening, newSecret, targetsOf, type Handler as HookHandler, type Target as HookTarget } from './hooks.ts'
 import { askDoor, connectRepo, doorAnswer, doorResult, funnelBlocker, funnelError, FUNNEL_PORT, hookUrl, pingHook, removeHook, scopesAllowHooks, type Self } from './hookSetup.ts'
 import { assignIssue, commentOnIssue, issueKeys, issueOf, keyFor, myIssues } from './issues.ts'
@@ -55,8 +55,8 @@ import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
 import { heldAfter, tailOf } from './runner.ts'
-import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
-import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
+import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
+import { callClaude, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { STORY_RULE } from './levels.ts'
 import { git } from './atlas.ts'
 import { load, ownUsage, stop, stoppedRuns } from './load.ts'
@@ -101,6 +101,7 @@ import { sweep as expireOld } from './retention.ts'
 import { plansRoutes } from './routes/plans.ts'
 import { connectionsRoutes } from './routes/connections.ts'
 import { designRoutes } from './routes/design.ts'
+import { codebaseRoutes } from './routes/codebase.ts'
 
 export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { aside?: boolean; queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
@@ -2088,36 +2089,8 @@ app.post('/exec/:run/resume-terminal', (c) => {
   return c.json(out)
 })
 
-// --- the codebase map: a summary of each repo's default branch that every PR is explained against ---
-app.get('/base', (c) => c.json(Object.keys(config.repos).map((repo) => ({ repo, meta: loadBase(repo), task: state.base[repo] }))))
-const plans = new Map<string, { at: number; plan: Promise<object> }>()
-app.get('/base/plan', async (c) => {
-  const repo = c.req.query('repo') ?? ''
-  if (!config.repos[repo]) return c.json({ error: 'unknown repo' }, 404)
-  const under = c.req.query('under') || undefined
-  const key = `${repo}:${under ?? ''}`
-  const cached = plans.get(key)
-  if (!cached || Date.now() - cached.at > 120_000) plans.set(key, { at: Date.now(), plan: defaultBranch(repo).then(async (b) => {
-    const p = await basePlan(repo, config.repos[repo], b, under)
-    // systems: the system map is missing or lumps the repo together, so a map run redraws it (about $0.30)
-    return { branch: p.branch, sha: p.sha, folders: p.scope.length, known: p.known, toMap: p.asks.length, systems: p.needSkeleton, estimateUsd: Math.round((p.estimateUsd + (p.needSkeleton ? 0.3 : 0)) * 100) / 100 }
-  }) })
-  try { return c.json({ ...(await plans.get(key)!.plan), complete: loadBase(repo)?.complete !== false, mapped: !!loadBase(repo) }) } catch (e) { plans.delete(key); return c.json({ error: (e as Error).message }, 500) }
-})
-app.get('/codebase', async (c) => {
-  const repo = c.req.query('repo') ?? ''
-  if (!config.repos[repo]) return c.json({ error: 'unknown repo' }, 404)
-  const data = await codebase(repo, config.repos[repo])
-  return data ? c.json(data) : c.json({ error: 'not mapped yet' }, 404)
-})
-app.post('/base', async (c) => {
-  const { repo, action, under } = await c.req.json() as { repo: string; action: 'start' | 'cancel'; under?: string }
-  if (!config.repos[repo]) return c.json({ error: 'unknown repo' }, 404)
-  if (under !== undefined && (typeof under !== 'string' || under.includes('..') || under.startsWith('/'))) return c.json({ error: 'bad folder' }, 400)
-  if (action === 'cancel') cancelBase(repo); else { for (const k of plans.keys()) if (k.startsWith(repo + ':')) plans.delete(k); enqueueBase(repo, under || undefined) }
-  return c.json({ ok: true })
-})
-
+// the codebase routes: server/routes/codebase.ts
+codebaseRoutes(app)
 // --- onboarding and settings: everything the app needs, saved to ~/.config/concierge/config.json ---
 const setupView = async (light = false) => ({
   configured: configured(), configFile: CONFIG_FILE, checks: light ? undefined : await checks(), skills: light ? [] : await sourceSkills().catch(() => []),
