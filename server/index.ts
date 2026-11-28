@@ -6,7 +6,7 @@ import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.t
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { profile } from './profile.ts'
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { unlinkSync, watch as fsWatch } from 'node:fs'
 import { ended as bgEnded, openTasks, stop as bgStop, stopOf as bgStopOf, view as bgView, viewOf as bgViewOf, type BgTask } from './background.ts'
 import { join, relative } from 'node:path'
@@ -1120,6 +1120,17 @@ app.get('/machines/:name/logs', async (c) => {
 })
 // restart a machine's Concierge: a note its bin/standby acts on within ~10s (sent to that machine over the machines'
 // link). The only thing it does; nothing a note can say runs anything else
+const forgetMachine = async (name?: string) => { if (typeof name === 'string' && /^[\w.-]{1,64}$/.test(name) && name !== fleet.machine) await rm(join(STATE_DIR, 'hosts', `${name}.json`), { force: true }); return true }
+// a machine that is gone for good (renamed, retired): its heartbeat is taken out of the list, here and on every machine.
+// Never this one, nor one that says it runs Concierge; one that beats again is simply back in the list
+app.post('/machines/:name/forget', async (c) => {
+  const name = c.req.param('name')
+  if (!/^[\w.-]{1,64}$/.test(name) || !fleet.machine || name === fleet.machine) return c.json({ error: 'Unknown machine' }, 400)
+  await forgetMachine(name)
+  if (machines.size) void ask('forget', { name }).catch(() => {})
+  stale('/infra', '/machines')
+  return c.json({ ok: true })
+})
 app.post('/machines/:name/restart', async (c) => {
   const name = c.req.param('name')
   if (!/^[\w.-]{1,64}$/.test(name) || !fleet.machine) return c.json({ error: 'Unknown machine' }, 400)
@@ -4016,6 +4027,8 @@ serveMachine(() => state.settings.maxJobs, ownUsage, {
   connectors: (b: { custom?: Record<string, string>; connected?: string[] }) => applyConnectors(b.custom ?? {}, b.connected ?? []),
   // which connectors this machine has for an account, and in what state (the markers on Settings → Connections)
   has: async (b: { account?: string }) => connectorsHere(b.account),
+  // a machine taken out of the list (POST /machines/:name/forget): its heartbeat file goes here too
+  forget: (b: { name?: string }) => forgetMachine(b.name),
   // "Update now", pressed on the machine that runs Concierge: this one's own bin/update reads it within a minute
   updateAsked: async (b: { text?: string }) => { if (typeof b.text === 'string' && /^(now \d+|\d{4}-\d\d-\d\dT[\d:.]+Z)$/.test(b.text)) await writeFile(join(STATE_DIR, 'update-asked'), b.text); return true },
   // this machine's numbers for the Machines page

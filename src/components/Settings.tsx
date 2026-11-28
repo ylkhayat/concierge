@@ -1996,6 +1996,7 @@ function MachineKey() {
 
 function Machines() {
   const [v, setV] = useState<InfraView>()
+  const { armed, arm } = useArm()
   useLive(['/infra'], () => api('/infra').then(setV, () => {}))
   if (!v) return null
   const since = `up since ${clock(v.startedAt)}${v.version ? ` · ${v.version}` : ''}`
@@ -2007,7 +2008,15 @@ function Machines() {
     <Group title="Control plane" hint="The primary runs Concierge; the standby takes over while it is offline.">
       {v.beats.filter((b) => !b.name.includes('.sync-conflict-')).map((b) => (
         <Row key={b.name} icon={Server} title={`${b.name}${b.name === v.machine ? ' (this one)' : ''} · ${b.role ?? '?'}`}
-             hint={`${b.handing ? 'handing over' : b.active ? 'runs Concierge' : 'waiting'} · heartbeat ${b.agoS != null ? `${b.agoS}s ago` : 'never'}${b.name === v.machine ? ` · ${since}` : ''}${v.fleetCode && b.agoS != null && b.agoS < 60 && (b.code ?? '') !== v.fleetCode ? ' · its standby runs an older script: the next update restarts it' : ''}`} />
+             hint={`${b.handing ? 'handing over' : b.active ? 'runs Concierge' : 'waiting'} · heartbeat ${b.agoS != null ? `${b.agoS}s ago` : 'never'}${b.name === v.machine ? ` · ${since}` : ''}${v.fleetCode && b.agoS != null && b.agoS < 60 && (b.code ?? '') !== v.fleetCode ? ' · its standby runs an older script: the next update restarts it' : ''}`}>
+          {/* a machine that is gone (renamed, retired): its heartbeat stays in the list for good unless it is taken out */}
+          {b.name !== v.machine && !b.active && (b.agoS == null || b.agoS > 600) && (
+            <button onClick={() => arm(`forget:${b.name}`, () => void api(`/machines/${encodeURIComponent(b.name)}/forget`, {}).then(() => refresh('/infra')).catch(() => {}))}
+                    title="Take it out of the list on every machine. It comes back by itself if it runs Concierge again" className={`${quiet} relative isolate overflow-hidden`}>
+              {armed === `forget:${b.name}` ? <><ArmLabel>Confirm: forget it</ArmLabel><ArmBar on="plain" /></> : 'Forget'}
+            </button>
+          )}
+        </Row>
       ))}
       {r && <Row icon={PlugZap}
            title={r.following ? (r.stateError ? `Not following ${r.following}` : r.caughtUp ? `In step with ${r.following}` : `Catching up with ${r.following}`) : 'Others follow this one'}
