@@ -32,6 +32,7 @@ import { SETTINGS_INDEX, type Found } from '../settingsIndex.ts'
 import { Checks, Group, input, More, primary, quiet, Row, Segmented, Select, Setting, Toggle } from '../ui/settings.tsx'
 import { Caught } from '../ui/Caught.tsx'
 import { UPDATE_STEPS as STEPS, type UpdateView } from './StatusChips.tsx'
+import { Settled } from '../ui/Settled.tsx'
 
 export type SettingsTab = 'overview' | 'roles' | 'workflows' | 'skills' | 'limits' | 'accounts' | 'spend' | 'compliance' | 'repos' | 'connections' | 'machines' | 'appearance' | 'about'
   // older names, still used by links around the app
@@ -170,6 +171,8 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
               <h2 className="text-display font-semibold">{current.label}</h2>
               <p className="mt-1 text-body text-fg-3">{current.hint}</p>
             </header>
+            {/* the page's parts read their own data: shown together once they are in, not one after another */}
+            <Settled className="space-y-6">
             {tab === 'overview' && <HowItWorks setup={setup} health={health} go={go} />}
             {tab === 'workflows' && <>
               <WorkflowCards setup={setup} health={health} save={save} saveConfig={saveConfig} go={go} />
@@ -200,6 +203,7 @@ export function SettingsDialog({ open, tab: initial = 'overview', onTab, onClose
               </details></>}
             {tab === 'appearance' && <Appearance setup={setup} theme={theme} onTheme={onTheme} saveConfig={saveConfig} />}
             {tab === 'about' && <About setup={setup} onSetup={() => { onClose(); onSetup() }} />}
+            </Settled>
           </div>
           </Caught>
         </main>

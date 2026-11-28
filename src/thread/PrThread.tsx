@@ -189,7 +189,7 @@ export function PrThread(props: PrThreadProps) {
         held={held}
         subject={pr.id}
         follow={`${pr.id}:${count}:${pr.status}:${next}`}
-        header={<ThreadHeader crumb={parentLinks} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions && <Off why={held} layout="flex items-center gap-0.5">{headerActions}</Off>}
+        header={<ThreadHeader crumb={<>{parentLinks}<WorkStrip work={work} here={`pr:${pr.id}`} toast={toast} onOpen={(k) => k.startsWith('pr:') ? props.onSelect(k.slice(3)) : x.onOpenLinked({ kind: 'ticket', id: k.slice(7), label: k.slice(7), title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' })} /></>} title={pr.title} status={<>{statusField}{people}</>} meta={chips} links={stackNav} actions={headerActions && <Off why={held} layout="flex items-center gap-0.5">{headerActions}</Off>}
                               back={<button onClick={onBack} className={`${ghost} -ml-2.5 lg:hidden`}><ArrowLeft className="size-4" />All reviews</button>} />}
         next={viaStackLine ?? (nextCard || (asking && !askFirst) || stackLine ? <>{stackLine}{nextCard}{asking && !askFirst && <NextCard icon={MessageCircleQuestion} tone="wait" title="The agent also asks you" actions={steer} />}</> : undefined)}
         composer={!asking && <Composer>{steer}</Composer>}
@@ -197,7 +197,6 @@ export function PrThread(props: PrThreadProps) {
         tab={pane === 'turns' ? 'explain' : pane} onTab={setPane}
         onAsk={(q) => appendDraft(`pr:${pr.id}`, q)}
         vitals={(<>
-            <WorkStrip work={work} here={`pr:${pr.id}`} toast={toast} onOpen={(k) => k.startsWith('pr:') ? props.onSelect(k.slice(3)) : x.onOpenLinked({ kind: 'ticket', id: k.slice(7), label: k.slice(7), title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' })} />
             <Vitals key={whole && !shared ? 'stack' : 'own'} scope={stack && !shared ? { size: stack.length, stack: whole, set: (v) => { lastWhole = v; setWhole(v) } } : undefined}
                     shipping={<ShippingVital update={lastUpdate(feed)} title={shipTitle} tone={shipTone} busy={busy && !pr.waiting} at={next ? STEP[next] ?? 1 : busy ? 1 : 4} why={pr.status === 'queued' ? queuedText(pr.queued) : next && next !== 'post' ? flow.why : !next && !busy ? 'Nothing waits on you here.' : undefined} />}
                     topics={{ target, d: talks.d, onChange: talks.set, onSteer: steerMain, onSteerPr: steerPr, onView: openView, toast, here: pr.number, prId: pr.id, explainPath: explainPath(pr), explaining: pr.explain?.state === 'running' || pr.explain?.state === 'queued' }} />

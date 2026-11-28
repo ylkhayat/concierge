@@ -90,7 +90,7 @@ export function TicketThread(props: TicketThreadProps) {
       held={held}
       subject={t.id}
       follow={`${t.id}:${count}:${t.busy}:${next}`}
-      header={<ThreadHeader crumb={parentLinks} title={t.title} status={statusField} meta={chips} links={<>{stackNav}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>} actions={headerActions && <Off why={held} layout="flex items-center gap-0.5">{headerActions}</Off>} />}
+      header={<ThreadHeader crumb={<>{parentLinks}<WorkStrip work={work} here={`ticket:${t.id}`} toast={toast} onOpen={(k) => onOpenLinked(k.startsWith('pr:') ? { kind: 'pr', id: k.slice(3), label: work?.members.find((m) => m.key === k)?.label ?? k, title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' } : { kind: 'ticket', id: k.slice(7), label: k.slice(7), title: '', agent: 'none' })} /></>} title={t.title} status={statusField} meta={chips} links={<>{stackNav}{siblings && prItems.length > 0 && <StackNav items={prItems} onOpen={(x) => onOpenLinked(x.linked ?? { kind: 'pr', id: x.id, label: x.ref, title: x.title, agent: 'none' })} me={{ kind: 'ticket', id: t.id }} toast={toast} />}</>} actions={headerActions && <Off why={held} layout="flex items-center gap-0.5">{headerActions}</Off>} />}
       next={handed ? (
         <NextCard icon={GitPullRequest} tone="run" title={`Handed over to #${handed.main}${handed.to.length > 1 ? ' and its stack' : ''}`}
                   actions={<SectionHeadings.Provider value={false}><div className="space-y-3">{panelBody}</div></SectionHeadings.Provider>} />
@@ -110,7 +110,6 @@ export function TicketThread(props: TicketThreadProps) {
       tab={pane} onTab={setPane}
       onAsk={(q) => appendDraft(`ticket:${t.id}`, q)}
       vitals={(<>
-          <WorkStrip work={work} here={`ticket:${t.id}`} toast={toast} onOpen={(k) => onOpenLinked(k.startsWith('pr:') ? { kind: 'pr', id: k.slice(3), label: work?.members.find((m) => m.key === k)?.label ?? k, title: work?.members.find((m) => m.key === k)?.title ?? '', agent: 'none' } : { kind: 'ticket', id: k.slice(7), label: k.slice(7), title: '', agent: 'none' })} />
           <Vitals shipping={<ShippingVital update={lastUpdate(feed)} title={t.queued ? 'Queued' : t.busy ? 'The agent is working' : handed ? `With #${handed.main}’s agent` : runAsks ? 'The agent asks you' : next ? TITLE[next](t) : 'All clear'} tone={t.busy ? 'run' : runAsks || asking ? 'wait' : next ? 'run' : 'ok'} busy={t.busy}
                                            at={t.busy ? 1 : next === 'run' ? (run ? 2 : 1) : next === 'dock' ? 2 : next ? 3 : 4}
                                            why={t.queued ? queuedText(t.queued) : t.busy ? [run?.phase && (PHASE_LABEL[run.phase] ?? run.phase), t.background ? `${t.background} running in the background` : ''].filter(Boolean).join(' · ') || undefined : !next ? 'Nothing waits on you here.' : undefined} />}

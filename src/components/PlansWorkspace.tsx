@@ -24,6 +24,7 @@ import { orderOf, planStream, ranksOf } from '../planStream.ts'
 import { areaOf, explore, refineOf } from '../planLook.tsx'
 import type { Gap } from '../../server/planOps.ts'
 import { inSettings } from '../copy.ts'
+import { Settled } from '../ui/Settled.tsx'
 
 type Toast = (m: string, tone?: 'ok' | 'error') => void
 // a change to a plan's own fields (its appetite in weeks; none: null)
@@ -1037,7 +1038,7 @@ export function PlansWorkspace({ toast }: { toast: Toast }) {
           </button>
         ))}
       </nav>
-      {current === 'new' ? <NewPlan onMade={setOpen} toast={toast} /> : current ? <PlanView key={current} id={current} toast={toast} /> : null}
+      {current === 'new' ? <NewPlan onMade={setOpen} toast={toast} /> : current ? <Settled fill key={current}><PlanView id={current} toast={toast} /></Settled> : null}
     </div>
   )
 }

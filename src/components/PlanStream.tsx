@@ -386,7 +386,7 @@ export function PlanStream({ p, base, colorBy = 'epic', people, pace, selected, 
         </div>
       )}
       {onMove && (
-        <div ref={laterRef} className={`mx-4 mb-3 mt-1 flex shrink-0 items-center gap-3 overflow-x-auto rounded-card border border-dashed px-3 py-1.5 transition-colors ${drag?.moved ? (drag.overLater ? 'border-fail bg-fail/10' : 'border-fg-4 bg-hover/40') : 'border-line-strong'}`}>
+        <div ref={laterRef} className={`mx-4 mb-3 mt-1 flex min-h-[38px] shrink-0 items-center gap-3 overflow-x-auto rounded-card border border-dashed px-3 py-1.5 transition-colors ${drag?.moved ? (drag.overLater ? 'border-fail bg-fail/10' : 'border-fg-4 bg-hover/40') : 'border-line-strong'}`}>
           <p className="label shrink-0 whitespace-nowrap text-fg-4">Later · cut from this plan {cutNodes.length > 0 && <span className="normal-case tracking-normal text-fg-4">· {cutNodes.length}</span>}</p>
           {cutNodes.length ? (
             <div className="flex gap-1.5">

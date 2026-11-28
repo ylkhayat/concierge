@@ -51,6 +51,7 @@ import { inSettings, SAY } from './copy.ts'
 import { viewLabel, viewsFor } from './views.ts'
 import { shortcuts } from './shortcuts.ts'
 import { Caught } from './ui/Caught.tsx'
+import { Settled } from './ui/Settled.tsx'
 
 const readHash = () => decodeURIComponent(location.hash.slice(1)) || undefined
 type Toast = { tone: 'ok' | 'error' }
@@ -573,23 +574,27 @@ export function App() {
         <Caught key={mode} what={viewLabel(mode, designView)}>
         <Suspense fallback={<Waiting />}>
         {focus && away.has(focus) && ['review', 'exec', 'focus', 'read'].includes(mode) ? <AwayRepo repo={focus} onAllApps={() => setFocus(undefined)} />
-          : mode === 'exec' ? execFrame : mode === 'standup' ? <Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace view={designView} selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false, designView) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : reviewFrame}
+          : mode === 'exec' ? execFrame : mode === 'standup' ? <Settled fill><Standup onOpenTicket={goTicket} toast={toast} tickets={tickets} /></Settled> : mode === 'skills' ? <SkillsWorkspace toast={toast} /> : mode === 'plans' ? <PlansWorkspace toast={toast} /> : mode === 'design' ? <DesignWorkspace view={designView} selected={selected} onSelect={select} feedOf={(id) => feedOf(deckKey('design', id, () => false, designView) ?? '')} focus={focus} ticketRepo={(id) => tickets.find((t) => t.id === id)?.repo} toast={toast} /> : reviewFrame}
         </Suspense>
         </Caught>
         </div>
         {/* the status bar: which machine, the sync, the account and spend, the load, what happened, auto; each opens upward */}
         {/* narrow, what doesn't fit slides sideways instead of being cut off */}
         <footer className="relative z-30 flex h-7 shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap border-t border-line bg-bg-rail px-2 text-meta text-fg-3 max-md:overflow-x-auto max-md:[scrollbar-width:none]">
+          {/* nothing here moves when something beside it changes its words: a part whose width changes sits where it
+              grows into the empty middle (the sync's words, the alerts), or in a slot of its own width (the update chip,
+              whose words go from none to "Waiting for agents…"). Before, the sync's words pushed the refresh button
+              along, and the update chip pushed the spend, the load and the alerts */}
           <Machine me={me} /><ScopeSwitch />
-          {syncState}{refreshBtn}
+          {refreshBtn}{syncState}
           <span className="flex-1" />
-          {health && <SpendChip health={health} onOpen={() => setSettingsOpen('usage')} />}
-          {/* the machine's load needs the width: below 1280 it is one click away in the rail's gauge */}
-          <span className="hidden xl:contents"><LoadRibbon /></span>
           {/* a system alert (GitHub sync, memory, the Claude login) is about Concierge itself: nothing to open */}
           {/* in a focus block the alerts wait, faded, until it ends */}
           <span className={focusBlock() ? 'pointer-events-none opacity-30' : 'contents'}><AlertDock alerts={alerts} now={now} onOpen={openAlert} /></span>
-          <UpdateChip onOpen={() => setSettingsOpen('machines')} />
+          {health && <SpendChip health={health} onOpen={() => setSettingsOpen('usage')} />}
+          {/* the machine's load needs the width: below 1280 it is one click away in the rail's gauge */}
+          <span className="hidden xl:contents"><LoadRibbon /></span>
+          <span className="flex w-44 shrink-0 justify-end max-md:w-auto"><UpdateChip onOpen={() => setSettingsOpen('machines')} /></span>
         </footer>
       </div>
 
@@ -688,6 +693,8 @@ const Boot = () => (
  *  index.css), so it just shows. What comes in after that still fades in. */
 function Detail({ children }: { children: React.ReactNode }) {
   const [fresh, setFresh] = useState(true)
-  useEffect(() => { const t = setTimeout(() => setFresh(false), 1200); return () => clearTimeout(t) }, [])
+  // each time it is shown, not only the first: a page kept alive hidden (Activity) is drawn again when you come back to
+  // it, and its entrances ran again then (the panel dipped and flashed on every return). Before the paint, so none shows
+  useLayoutEffect(() => { setFresh(true); const t = setTimeout(() => setFresh(false), 1200); return () => clearTimeout(t) }, [])
   return <div className={`h-full ${fresh ? 'fresh' : ''}`}>{children}</div>
 }

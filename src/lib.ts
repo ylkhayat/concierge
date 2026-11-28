@@ -27,8 +27,25 @@ const fromBoot = (path: string): Promise<unknown> | undefined => {
   return boot.then((b) => (b && typeof b === 'object' && path in b ? b[path] : api(path)))
 }
 
+// the reads under way, numbered in the order they were asked: a page that waits to be shown whole (ui/Settled.tsx)
+// knows by them that what it asked for when it opened is in
+let readSeq = 0
+const underWay = new Set<number>()
+export const reads = {
+  /** The number of the last read asked: one asked after it is "since" it. */
+  mark: () => readSeq,
+  /** Whether a read asked after `mark` is still under way. */
+  pendingSince: (mark: number) => { for (const n of underWay) if (n > mark) return true; return false },
+}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const api = (path: string, body?: unknown): Promise<any> =>
+export const api = (path: string, body?: unknown): Promise<any> => {
+  if (body !== undefined) return ask(path, body)
+  const n = ++readSeq
+  underWay.add(n)
+  return ask(path).finally(() => { underWay.delete(n); dispatchEvent(new Event('api-read')) })
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ask = (path: string, body?: unknown): Promise<any> =>
   (body === undefined ? fromBoot(path) : undefined) ?? fetch(`/api${path}`, body === undefined ? { headers: roleHeader() } : {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...roleHeader() }, body: JSON.stringify(body),
   }).then(async (r) => {
@@ -39,7 +56,7 @@ export const api = (path: string, body?: unknown): Promise<any> =>
     // the sentence to show, with the code and status to decide on (server: every refusal carries a code)
     if (!r.ok) throw Object.assign(new Error(json.error ?? r.statusText), { code: json.code as string | undefined, status: r.status })
     // a read never pays: when what it wants isn't worked out yet, the server says where to ask for it, and that is asked
-    if (body === undefined && json?.pending === true && typeof json.ask === 'string') return api(json.ask, {})
+    if (body === undefined && json?.pending === true && typeof json.ask === 'string') return ask(json.ask, {})
     return json
   })
 

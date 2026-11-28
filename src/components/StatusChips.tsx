@@ -36,7 +36,9 @@ export function UpdateChip({ onOpen }: { onOpen?: () => void }) {
   const [watched, setWatched] = useState(false)
   useEffect(() => { if (busy || (gone && u?.status?.busy)) setWatched(true) }, [busy, gone, u?.status?.busy])
   useEffect(() => { if (watched && stale && !u?.status?.busy) location.reload() }, [watched, stale, u?.status?.busy])
-  const chip = 'inline-flex items-center gap-1.5 rounded-ctl px-2 py-1 text-meta font-medium transition-colors'
+  // its icon last, at the bar's end, where it stays: the words come and go to its left, into the room the bar keeps
+  // for them (App.tsx), so neither the icon nor anything else in the bar moves when it says something
+  const chip = 'inline-flex h-[22px] flex-row-reverse items-center gap-1.5 whitespace-nowrap rounded-ctl px-2 text-meta font-medium transition-colors'
   const update = () => { setAsking(true); setErr(undefined); api('/update', {}).then(() => read(), (e: Error) => { setErr({ what: 'Update refused', why: e.message }); return read() }).finally(() => setAsking(false)) }
   const check = () => {
     setChecked('checking'); setErr(undefined)

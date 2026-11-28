@@ -122,7 +122,16 @@ http.createServer(async (req, res) => {
     ev('prs', listPrs); ev('exec', { actions: [], missing: [], tickets: listTickets, at: new Date().toISOString(), polling: false, configured: true, hasKey: true }); ev('alerts', [])
     return
   }
+  // MOCK_MS: every answer waits that long, as a real server's does: what a page draws before its reads land is seen
+  // (and measured: layout shifts only show when the answers are not instant)
+  if (process.env.MOCK_MS) await new Promise((r) => setTimeout(r, Number(process.env.MOCK_MS)))
   if (LIST && p === '/me') return json(res, { login: 'me', name: 'Me', avatar: '' })
+  // MOCK_WORKS=1: every other PR, and every other ticket, is part of a Work of three (the strip over the cards)
+  if (LIST && process.env.MOCK_WORKS && p === '/works') {
+    const m = new URL(req.url, 'http://x').searchParams.get('member') ?? '', n = Number(/(\d+)$/.exec(m)?.[1] ?? 0)
+    const me = { key: m, kind: m.startsWith('pr:') ? 'pr' : 'ticket', label: m.startsWith('pr:') ? `#${n}` : m.slice(7), title: 'this one' }
+    return json(res, { id: `w${n}`, target: n % 2 ? `work:w${n}` : m, members: n % 2 ? [me, { key: 'ticket:AC-205', kind: 'ticket', label: 'AC-205', title: 'a ticket' }, { key: 'pr:acme/app#101', kind: 'pr', label: '#101', title: 'a PR' }] : [me], links: [], said: [] })
+  }
   if (LIST && /^\/(prs\/[^/]+|exec\/tickets\/[^/]+)\/activity$/.test(p)) return feedJson(res, p)
   if (p === '/events') { res.writeHead(204); return res.end() }
   // settings saved: kept in memory (the company profile and the rest of config)
