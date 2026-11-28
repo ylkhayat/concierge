@@ -396,6 +396,9 @@ if (db.empty && last.size) { db.write([...last].map(([key, value]) => ({ key, va
 
 /** What changed since the last save, entry by entry (null: deleted); `last` then holds the new JSON. */
 let wholeAt = 0
+let changed = Date.now()
+/** When the state last changed here (a save that wrote something, or changes taken from another machine). */
+export const changedAt = () => changed
 const WHOLE_EVERY = 30_000
 /** What changed since the last save. `whole`: every entry is read; else the ones that stopped changing (merge.ts settled) are skipped, and read on one save in thirty seconds. */
 function changes(whole = false): { key: string; value: string | null }[] {
@@ -427,7 +430,7 @@ export function applyRemote(got: { key: string; value: string | null }[], full?:
     if (c.value === null) { drop(state as unknown as Record<string, unknown>, c.key); last.delete(c.key) }
     else { put(state as unknown as Record<string, unknown>, c.key, JSON.parse(c.value)); last.set(c.key, c.value) }
   }
-  if (applied.length) onMerged(applied.map((c) => c.key))
+  if (applied.length) { changed = Date.now(); onMerged(applied.map((c) => c.key)) }
   return applied.length
 }
 
@@ -506,7 +509,7 @@ export function save() {
       if (fence()) return
       const t = performance.now()
       const c = changes()
-      if (c.length) db.write(c)
+      if (c.length) { db.write(c); changed = Date.now() }
       slow('save state', t)
     }).catch((e) => console.error('save state:', (e as Error).message))
   }, 1000) // a busy run saves many times a second, and each save reads every entry for what changed: once a second is plenty

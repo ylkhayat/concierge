@@ -19,7 +19,7 @@ import { reloadConfig } from './config.ts'
 import { fleet } from './fleet.ts'
 import { token } from './machines.ts'
 import { CONFIG_DIR, STATE_DIR } from './paths.ts'
-import { applyRemote, db, keepBeforeReplace } from './store.ts'
+import { applyRemote, changedAt, db, keepBeforeReplace } from './store.ts'
 import { call } from './worker.ts'
 import { expired } from './retention.ts'
 
@@ -359,7 +359,16 @@ if (fleet.machine) {
   // how often: the state every 2s, files every 20s (a test sets them shorter)
   const every = Number(process.env.DECK_REPLICA_MS) || 2_000, filesEvery = Number(process.env.DECK_REPLICA_FILES_MS) || 20_000
   setInterval(() => { if (busy) return; busy = true; void pullState().finally(() => { busy = false }) }, every).unref()
-  setInterval(() => { if (filesBusy) return; filesBusy = true; void scan().then(pullFiles).finally(() => { filesBusy = false }) }, filesEvery).unref()
+  // what the other machines have that is newer is asked for every tick (a small question). Walking this machine's own
+  // files to see what changed here (about fifteen thousand of them) is done every tick only while something is going
+  // on (the state changed in the last two minutes: a run, a poll that found something); in a quiet hour, every five minutes
+  let walkedAt = 0
+  const walkDue = () => Date.now() - changedAt() < 2 * 60_000 || Date.now() - walkedAt > 5 * 60_000
+  setInterval(() => {
+    if (filesBusy) return
+    filesBusy = true
+    void (walkDue() ? scan().then(() => { walkedAt = Date.now() }) : Promise.resolve()).then(pullFiles).finally(() => { filesBusy = false })
+  }, filesEvery).unref()
   // the settings first, every 5s, until the full pull has caught up from the running machine (then it carries them)
   let settingsBusy = false
   const settingsTick = setInterval(() => {
