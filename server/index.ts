@@ -54,7 +54,7 @@ import { accountToken, accountTokenAt, applyShared, local as localKeys, SHARED_K
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { cancelSetup, cancelVisuals, enqueueSetup, enqueueVisuals, heldAfter } from './runner.ts'
+import { cancelSetup, cancelVisuals, enqueueSetup, enqueueVisuals, heldAfter, tailOf } from './runner.ts'
 import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { STORY_RULE } from './levels.ts'
@@ -1782,8 +1782,9 @@ app.post('/exec/:run/steer', async (c) => {
   const sent = run ? tell(`exec:${run.id}`, words, continueExec(run)) : 'idle'
   return sent === 'idle' ? c.json({ error: 'That run is not running' }, 409) : c.json({ ok: true, sent })
 })
-app.get('/exec/:run/activity', async (c) => c.json(await loadActivity(`exec:${c.req.param('run')}`)))
-app.get('/exec/tickets/:id/activity', async (c) => c.json(await ticketActivity(c.req.param('id'))))
+// ?tail=n: the newest part only (runner.ts tailOf)
+app.get('/exec/:run/activity', async (c) => c.json(tailOf(await loadActivity(`exec:${c.req.param('run')}`), Number(c.req.query('tail')))))
+app.get('/exec/tickets/:id/activity', async (c) => c.json(tailOf(await ticketActivity(c.req.param('id')), Number(c.req.query('tail')))))
 // you asked for it now: the whole list, not only what Linear says changed
 app.post('/exec/poll', async (c) => { forgetTickets(); await pollTickets(); return c.json(execView()) })
 // picked tickets, checked: every id well-formed, mapped to a repo with a checkout, none already running
@@ -2976,7 +2977,7 @@ app.get('/visuals/image', async (c) => {
 })
 
 app.get('/prs', (c) => { const away = scopeOf(c) === 'self' ? awayHere() : undefined; return c.json(away ? views().filter((p) => !away.has(p.repo)) : views()) })
-app.get('/prs/:id/activity', async (c) => c.json(await loadActivity(decodeURIComponent(c.req.param('id')))))
+app.get('/prs/:id/activity', async (c) => c.json(tailOf(await loadActivity(decodeURIComponent(c.req.param('id'))), Number(c.req.query('tail')))))
 app.post('/poll', async (c) => { await doPoll(true); return c.json(healthView()) })
 // a review request Auto-review starts on its own: in the Review workspace, with a checkout, and not started yet
 const autoReviews = (pr: Pr) => !pr.mine && workspaces().includes('review') && !!config.repos[pr.repo] && !pr.closed && statusOf(pr, undefined, true) === 'new'

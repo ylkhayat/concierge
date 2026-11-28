@@ -4,7 +4,7 @@ import {
   ChevronRight, type LucideIcon,
 } from 'lucide-react'
 import { memo, startTransition, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { api, here, hereIn, type Activity } from '../lib.ts'
+import { api, here, hereIn, type Activity, wholeFeed } from '../lib.ts'
 import { Md } from './Md.tsx'
 import { Tabs } from './Tabs.tsx'
 import { LANE } from './NextSteps.tsx'
@@ -32,7 +32,10 @@ const TINT = { you: 'bg-accent-soft text-accent-text', agent: 'bg-hover text-fg-
 const Time = ({ at, seconds }: { at: string; seconds?: boolean }) => <time className="hidden shrink-0 pt-[3px] font-mono text-micro tabular-nums text-fg-4 sm:block" title={stamp(at)}>{clock(at, seconds)}</time>
 
 export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { feed: Activity[]; live: boolean; bg?: { base: string; count: number }; toast?: (m: string, tone?: 'ok' | 'error') => void; after?: (a: Activity) => ReactNode; pin?: boolean }) {
-  const chapters = chaptersOf(once(feed))
+  // the line that stands for what came before the part that was read (lib.ts): a way to it, not an entry
+  const earlier = feed.find((a) => a.earlier)
+  const [reading, setReading] = useState(false)
+  const chapters = chaptersOf(once(earlier ? feed.filter((a) => !a.earlier) : feed))
   const [details] = useFeedDetails()
   // the newest chapter is open, earlier ones folded; a click flips one from its default
   const [flipped, setFlipped] = useState<Set<string>>(new Set())
@@ -193,6 +196,12 @@ export function ActivityFeed({ feed, live, bg, toast, after, pin = true }: { fee
   }
   return (
     <div ref={box} className="px-4 py-3">
+      {earlier?.feedId && (
+        <button onClick={() => { setReading(true); void wholeFeed(earlier.feedId!).catch(() => {}).finally(() => setReading(false)) }} disabled={reading}
+                className="btn-ghost btn-sm mb-3 inline-flex items-center gap-1.5">
+          {reading ? 'Reading…' : `Show the ${earlier.earlier} earlier lines`}
+        </button>
+      )}
       <ol className="relative space-y-5">
         {chapters.map((ch, ci) => (
           <Turn key={ch.key} ch={ch} open={open(ch, ci)} live={live && ci === chapters.length - 1} details={details} onToggle={() => toggle(ch.key)} tail={whole ? undefined : TAIL}

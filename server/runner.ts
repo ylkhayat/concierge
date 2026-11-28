@@ -65,6 +65,8 @@ export type Activity = {
   names?: string[] // e.g. connectors that didn't start
   skill?: string // a skill it loaded: readable on hover
   costUsd?: number; ms?: number // a result: what the turn cost, and how long it took
+  earlier?: number // the first line of a feed's newest part only (tailOf): how many lines before it weren't sent
+  feedId?: string // on that line, in the page: which feed it is of (the page's own note, never stored)
   turn?: string // a planner's reply: the draft changes it made (plans), shown under it
 }
 
@@ -218,6 +220,18 @@ export async function activityBetween(id: string, from: string, to: string): Pro
     await new Promise((r) => setImmediate(r))
   }
   return out
+}
+
+/**
+ * The newest part of a feed: about its last `n` lines, back to the start of the run they are in (a run is shown whole or
+ * not at all), behind one line that says how many came before. A page opening an item needs its latest run, not the
+ * three thousand lines of everything that ever ran on it; the rest is a click away.
+ */
+export function tailOf(feed: Activity[], n: number): Activity[] {
+  if (!(n > 0) || feed.length <= n) return feed
+  let i = feed.length - n
+  while (i > 0 && feed[i].kind !== 'section') i--
+  return i <= 0 ? feed : [{ at: feed[i].at, kind: 'event', text: '', earlier: i }, ...feed.slice(i)]
 }
 
 /** A feed if it is in memory; otherwise empty for now, and read in the background. Never waits. */

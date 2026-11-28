@@ -145,6 +145,8 @@ export function useDeck(key: string | undefined | ((exec?: ExecView) => string |
   const selected = typeof key === 'function' ? key(exec) : key
   // the SSE listener above outlives renders, so it reads the selection through a ref
   selectedRef.current = selected
+  // the earlier part of the open feed was read ("Show earlier"): shown
+  useEffect(() => { const on = (e: Event) => { const id = (e as CustomEvent<string>).detail; if (id === selectedRef.current) setFeed(feedCache.get(id) ?? []) }; addEventListener('feed-whole', on); return () => removeEventListener('feed-whole', on) }, [])
   useEffect(() => {
     setFeed(selected ? feedCache.get(selected) ?? [] : []); setFeedFor(selected)
     if (selected) { if (!feedCache.has(selected)) loadingFeed(selected, true); readFeed(selected).then((f) => { if (selectedRef.current === selected) setFeed(f) }).catch(() => {}).finally(() => loadingFeed(selected, false)) }
@@ -179,11 +181,19 @@ const prefetching = new Set<string>()
 // put back after it (they were lost: the answer replaced the feed, and the run's newest lines vanished until the next)
 const reading = new Map<string, Activity[]>()
 const lineKey = (a: Activity) => `${a.at}|${a.kind}|${(a.text ?? '').slice(0, 80)}`
-/** Read a feed whole, into the cache, keeping what arrived live meanwhile. */
+const TAIL = 600 // an item opens with about its last 600 lines (whole runs); "Show earlier" reads the rest
+const tailed = (id: string) => (id.startsWith('ticket:') || id.startsWith('exec:') || !/^[a-z-]+:/.test(id) ? `${feedUrl(id)}?tail=${TAIL}` : feedUrl(id))
+/** The whole of a feed, when its earlier part is asked for (ActivityFeed's "Show earlier"). */
+export function wholeFeed(id: string) {
+  return api(feedUrl(id)).then((f: Activity[]) => { cacheFeed(id, f); dispatchEvent(new CustomEvent('feed-whole', { detail: id })); return f })
+}
+/** Read a feed's newest part, into the cache, keeping what arrived live meanwhile. */
 function readFeed(id: string): Promise<Activity[]> {
   const since: Activity[] = reading.get(id) ?? []
   reading.set(id, since)
-  return api(feedUrl(id)).then((f: Activity[]) => {
+  return api(tailed(id)).then((got: Activity[]) => {
+    // the line that says how many came before knows which feed it is of, for the click that asks for them
+    const f = got[0]?.earlier ? [{ ...got[0], feedId: id }, ...got.slice(1)] : got
     const has = new Set(f.slice(-400).map(lineKey))
     const whole = [...f, ...since.filter((a) => !has.has(lineKey(a)))].slice(-3000)
     cacheFeed(id, whole)
