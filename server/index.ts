@@ -3857,6 +3857,16 @@ app.get('/prs/:id/body', (c) => {
   return p ? c.json({ body: p.body ?? '', bodyHtml: p.bodyHtml ?? '' }) : c.json({ error: 'not found' }, 404)
 })
 
+// what a page reads as it starts, in one answer (the page asks for these by path; lib.ts takes each from here once)
+const BOOT_READS = ['/setup?light=1', '/roles', '/repos/held']
+app.get('/boot', async (c) => {
+  const headers = new Headers(c.req.raw.headers); headers.delete('if-none-match')
+  const answers = await Promise.all(BOOT_READS.map(async (path) => {
+    try { const r = await app.request(`/api${path}`, { headers }); return r.ok ? [path, await r.json()] as const : undefined } catch { return undefined }
+  }))
+  return c.json(Object.fromEntries(answers.filter((x): x is readonly [string, unknown] => !!x)))
+})
+
 // what every page gets the same: built once for all of them (each page built its own copy of the health before, and
 // each of a run's lines was turned into text once per page)
 const everyPage = new Set<(event: 'health' | 'activity', data: string) => void>()

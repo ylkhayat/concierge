@@ -14,9 +14,22 @@ const roleHeader = (): Record<string, string> => {
   const s = chosen() // this machine or the fleet, when picked in this tab (scope.ts); else the server's default
   try { const r = localStorage.getItem('role'); return { ...(r && { 'x-concierge-role': r }), ...(s && { 'x-concierge-scope': s }) } } catch { return s ? { 'x-concierge-scope': s } : {} }
 }
+// What every page reads as it starts (the setup in short, your roles, what is held): asked for in one request, and
+// each of those reads takes its answer from it the first time.
+const BOOT = ['/setup?light=1', '/roles', '/repos/held'] // the quick ones: who you are and the version ask GitHub and git, and must not hold these back
+let boot: Promise<Record<string, unknown>> | undefined
+const booted = new Set<string>()
+const fromBoot = (path: string): Promise<unknown> | undefined => {
+  if (!BOOT.includes(path) || booted.has(path)) return undefined
+  booted.add(path)
+  boot ??= fetch('/api/boot', { headers: roleHeader() }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
+  // not in it (an older server, or that read failed there): asked for on its own
+  return boot.then((b) => (b && typeof b === 'object' && path in b ? b[path] : api(path)))
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const api = (path: string, body?: unknown): Promise<any> =>
-  fetch(`/api${path}`, body === undefined ? { headers: roleHeader() } : {
+  (body === undefined ? fromBoot(path) : undefined) ?? fetch(`/api${path}`, body === undefined ? { headers: roleHeader() } : {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...roleHeader() }, body: JSON.stringify(body),
   }).then(async (r) => {
     // an answer that isn't JSON (a proxy's error page, a server that fell over) is said as it is, not as a parse error
