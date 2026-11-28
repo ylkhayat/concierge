@@ -81,13 +81,13 @@ import { baseSlots, mustChange, ownerOf, roles, setOwner, setRoles, slot, withRo
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from './readiness.ts'
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
-import { addToProject as addPlanToProject, applyScenario as applyPlanScenario, applyVision, create as createPlan, setScenario as setPlanScenario, addToScenario, edit as editPlan, linearProjects, linearTeams, linkProject, syncProject, newPlan, planOf, plans as allPlans, removePlan, setPlan, talk as talkPlan, undoRedo as undoRedoPlan, withHistory, type Op as PlanOp } from './plans.ts'
+import { linearTeams } from './plans.ts'
 import { brokenSkillLinks, checkedOut, markClones, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
 import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today, snapshotNow } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
-import { complianceFor, githubProjects, orgs, ownerRepos, planOrg, setCompliance, setTracker, setWorkspace, workspaceOffers } from './orgs.ts'
+import { orgs, setCompliance } from './orgs.ts'
 import { nearbyMachines, tailnetOwner, tailscaleView, tsStatus, watchTailnet, type TsPeer } from './tailscale.ts'
 import { gitIdentity } from './gitIdentity.ts'
 import { bankView, writeBank } from './bank.ts'
@@ -100,6 +100,7 @@ import { agentHomesReady } from './agentHome.ts'
 import { shq } from './shell.ts'
 import { hostOk, originOk } from './guard.ts'
 import { sweep as expireOld } from './retention.ts'
+import { plansRoutes } from './routes/plans.ts'
 
 export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { aside?: boolean; queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
@@ -3185,8 +3186,6 @@ app.get('/prs/:id/explain', (c) => {
     base: { meta: loadBase(p.repo), waiting: !!p.explainAfterBase },
   })
 })
-// plans: a brief broken down with an agent, drawn live, then created in Linear (plans.ts)
-const planErr = (c: Context, e: unknown) => c.json({ error: (e as Error).message }, 400)
 // roles: the setups you joined, and who each skill belongs to (roles.ts)
 app.get('/roles', async (c) => {
   const names = [...new Set([...(await scanSkills()).map((x) => x.name), ...Object.keys(roles().skills)])]
@@ -3197,62 +3196,8 @@ app.post('/roles/skill', async (c) => {
   const { name, owner } = await c.req.json<{ name: string; owner: Owner }>()
   try { setOwner(String(name), owner); return c.json({ ok: true, owner: ownerOf(name) }) } catch (e) { return c.json({ error: (e as Error).message }, 403) }
 })
-app.get('/plans', (c) => c.json({ plans: allPlans().map(({ id, title, method, nodes, busy, creating, at }) => ({ id, title, method, count: nodes.length, made: nodes.filter((n) => n.created).length, busy, creating, at })) }))
-app.post('/plans', async (c) => { const b = await c.req.json<{ title?: string; brief?: string; method?: 'agile' | 'waterfall'; appetite?: number; org?: string }>(); return c.json(newPlan(b.title ?? '', b.brief ?? '', b.method, b.appetite, b.org)) })
-// which organization a plan is for, and the compliance profile it is checked against (its own, the shared one, or off)
-app.get('/plans/:id/checks', async (c) => {
-  const p = planOf(c.req.param('id'))
-  if (!p) return c.json({ error: 'No such plan' }, 404)
-  const org = await planOrg(p), o = (await orgs().catch(() => [])).find((x) => x.owner === org)
-  // where its tickets go: the organization's tracker (Linear, or GitHub issues in its first watched repository)
-  return c.json({ org, tracker: o?.tracker ?? 'linear', repo: o?.tracker === 'github' ? o.repos[0] : undefined, profile: (await complianceFor(org)) ?? {} })
-})
-app.get('/plans/teams', async (c) => { try { return c.json({ teams: await linearTeams() }) } catch (e) { return planErr(c, e) } })
-// an organization's projects, from where it manages its work: Linear's, or its GitHub Projects (orgs.ts). No organization
-// given: Linear's, as before
-app.get('/plans/projects', async (c) => {
-  try {
-    const owner = c.req.query('org'), o = owner ? (await orgs()).find((x) => x.owner === owner) : undefined
-    if (o?.tracker === 'github') return c.json({ source: 'github', projects: (await githubProjects(o.owner, o.personal)).map((p) => ({ ...p, mine: false })) })
-    return c.json({ source: 'linear', projects: await linearProjects() })
-  } catch (e) { return planErr(c, e) }
-})
-app.get('/orgs', async (c) => c.json(await orgs()))
-// workspaces (Settings → Workspaces): what to offer when adding one, adding or taking one away, and a workspace's
-// repositories on GitHub to pick from
-app.get('/workspaces/offers', async (c) => c.json(await workspaceOffers()))
-app.post('/workspaces', async (c) => {
-  const { owner, on } = await c.req.json<{ owner?: string; on?: boolean }>()
-  if (!owner || !/^[\w.-]{1,100}$/.test(owner)) return c.json({ error: 'Which organization' }, 400)
-  setWorkspace(owner, on !== false)
-  return c.json(await orgs())
-})
-app.get('/workspaces/:owner/repos', async (c) => {
-  const owner = c.req.param('owner')
-  if (!/^[\w.-]{1,100}$/.test(owner)) return c.json({ error: 'Which organization' }, 400)
-  try { return c.json(await ownerRepos(owner)) } catch (e) { return c.json({ error: `GitHub didn't list ${owner}'s repositories: ${(e as Error).message}` }, 502) }
-})
-app.post('/orgs', async (c) => {
-  const { owner, tracker } = await c.req.json<{ owner?: string; tracker?: string }>()
-  if (!owner || !/^[\w.-]+$/.test(owner) || (tracker !== 'linear' && tracker !== 'github')) return c.json({ error: 'An organization and linear or github' }, 400)
-  setTracker(owner, tracker)
-  return c.json(await orgs())
-})
-app.post('/plans/:id/project', async (c) => { try { const { project } = await c.req.json<{ project?: string }>().catch(() => ({ project: undefined })); if (!project) return c.json({ error: 'Which project?' }, 400); return c.json(withHistory(await linkProject(c.req.param('id'), project))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/sync', async (c) => { try { return c.json(withHistory(await syncProject(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/vision', async (c) => { try { return c.json(withHistory(await applyVision(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
-app.get('/plans/:id', (c) => { const p = planOf(c.req.param('id')); return p ? c.json(withHistory(p)) : c.json({ error: 'No such plan' }, 404) })
-app.post('/plans/:id', async (c) => { try { return c.json(withHistory(setPlan(c.req.param('id'), await c.req.json()))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/say', async (c) => { try { await talkPlan(c.req.param('id'), (await c.req.json<{ text: string }>()).text); return c.json(withHistory(planOf(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/scenario', async (c) => { try { return c.json(withHistory(setPlanScenario(c.req.param('id'), (await c.req.json<{ ops: PlanOp[] }>()).ops ?? []))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/scenario/add', async (c) => { try { return c.json(withHistory(addToScenario(c.req.param('id'), (await c.req.json<{ ops: PlanOp[] }>()).ops ?? []))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/scenario/apply', async (c) => { try { return c.json(await applyPlanScenario(c.req.param('id'))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/edit', async (c) => { try { return c.json(withHistory(editPlan(c.req.param('id'), (await c.req.json<{ ops: PlanOp[] }>()).ops))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/create', async (c) => { try { return c.json(withHistory(await createPlan(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/github-project', async (c) => { try { return c.json(withHistory(await addPlanToProject(c.req.param('id')))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/undo', (c) => { try { return c.json(withHistory(undoRedoPlan(c.req.param('id'), true))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/redo', (c) => { try { return c.json(withHistory(undoRedoPlan(c.req.param('id'), false))) } catch (e) { return planErr(c, e) } })
-app.post('/plans/:id/remove', (c) => { removePlan(c.req.param('id')); return c.json({ ok: true }) })
+// the plans routes: server/routes/plans.ts
+plansRoutes(app)
 // the product lens (Product and Design roles): kept per PR, written on request from what is already known
 app.get('/prs/:id/domain', async (c) => {
   const p = pr(c.req.param('id'))
