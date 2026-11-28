@@ -318,8 +318,7 @@ export function ExecList({ tickets: given, selected, onSelect, picked, onPick, o
                 </button>
               </h2>
               {(shut ? units.filter((u) => u.some((t) => t.id === selected)) : units).map((u) => u.length > 1
-                ? <StackCard key={runKey(u[0])} ids={u[0].stack!.ids} byId={byId} here={x} onOpen={onSelect} aside={u.some((t) => t.aside)} onAside={() => setAside(u[0], true)}
-                             onPickAll={() => onPick([...new Set([...picked, ...u[0].stack!.ids.filter((id) => { const t = byId.get(id); return !!t && !t.busy && !!t.repo })])])}>{u.map((t, i) => row(t, { up: i > 0, down: i < u.length - 1, quiet: x.id !== 'recent' && x.id !== 'pinned' && !inTier(t, x) }))}</StackCard>
+                ? <StackCard key={runKey(u[0])} ids={u[0].stack!.ids} byId={byId} here={x} onOpen={onSelect} aside={u.some((t) => t.aside)} onAside={() => setAside(u[0], true)}>{u.map((t, i) => row(t, { up: i > 0, down: i < u.length - 1, quiet: x.id !== 'recent' && x.id !== 'pinned' && !inTier(t, x) }))}</StackCard>
                 : row(u[0], { at: x.id === 'recent' ? seen.get(u[0].id) : undefined }))}
             </section>
           )
@@ -467,12 +466,10 @@ export function RunBar({ tickets, picked, onPick, onRun, missing = [] }: { missi
  * The tickets that ship as one stack, as one card: where they ship, how many, and a strip with each one's group colour in
  * the run's order (the ones that put the stack in this section bright, the others faint); the rows go below.
  */
-function StackCard({ ids, byId, here, onOpen, onPickAll, aside, onAside, children }: { ids: string[]; byId: Map<string, TicketView>; here: Tier; onOpen: (id: string) => void; onPickAll?: () => void; aside?: boolean; onAside?: () => void; children: ReactNode }) {
+function StackCard({ ids, byId, here, onOpen, aside, onAside, children }: { ids: string[]; byId: Map<string, TicketView>; here: Tier; onOpen: (id: string) => void; aside?: boolean; onAside?: () => void; children: ReactNode }) {
   const repo = byId.get(ids.find((id) => byId.get(id)?.repo) ?? '')?.repo
   return (
     <div style={repo ? appColor(repo).style : undefined} className="group/stack relative mb-1.5 rounded-ctl bg-white/50 p-1 ring-1 ring-line dark:bg-zinc-900/30 ">
-      {/* the whole group into the next run at once (Ship as one PR, or a plan), its free tickets only */}
-      {onPickAll && <button onClick={onPickAll} title="Pick every ticket of this group for the next run" className="absolute right-20 top-1.5 z-10 rounded-chip px-1.5 text-micro font-medium text-accent-text opacity-0 transition-opacity hover:underline group-hover/stack:opacity-100 focus:opacity-100">Pick all</button>}
       <button onClick={() => onOpen(`stack:ticket:${ids.find((id) => byId.has(id)) ?? ids[0]}`)} title={`Open the stack: ${ids.join(' → ')}`}
               className="flex w-full items-center gap-2 rounded-ctl px-2 pb-1 pt-1 text-left text-meta text-fg-3 transition-colors enabled:hover:bg-hover enabled:hover:text-fg-1">
         <Layers className="size-3.5 shrink-0 text-accent" />
