@@ -1660,7 +1660,7 @@ function slimTicket(t: TicketView): TicketView {
 // A burst of changes (each line of a run says 'exec') is one rebuild, at most one a second.
 const execHub = (() => {
   let byId = new Map<string, string>(), order = '', meta = '', full: ExecView | undefined
-  const pages = new Set<(data: string) => void>()
+  const pages = new Set<(data: string, id: string) => void>()
   let soon: ReturnType<typeof setTimeout> | undefined
   const refresh = () => {
     soon = undefined
@@ -1675,13 +1675,14 @@ const execHub = (() => {
     if (!set.length && !del.length && nextOrder === order && nextMeta === meta) return
     const patch = JSON.stringify({ set, del, order: tickets.map((x) => x.id), ...(nextMeta !== meta && { meta: rest }) })
     byId = next; order = nextOrder; meta = nextMeta
-    for (const send of pages) send(patch)
+    const id = recordPatch('exec-patch', patch)
+    for (const send of pages) send(patch, id)
   }
   bus.on('exec', () => { soon ??= setTimeout(refresh, 1000) })
   setInterval(() => { if (pages.size) refresh() }, 5000).unref()
   return {
-    join(send: (data: string) => void) { if (!pages.size || !full) refresh(); pages.add(send); return full! },
-    leave(send: (data: string) => void) { pages.delete(send) },
+    join(send: (data: string, id: string) => void) { if (!pages.size || !full) refresh(); pages.add(send); return full! },
+    leave(send: (data: string, id: string) => void) { pages.delete(send) },
   }
 })()
 const execView = () => ({
@@ -3804,9 +3805,28 @@ app.post('/prs/:id/resume-terminal', (c) => {
 // The PR list, worked out once for every open page and sent as patches: each page gets the whole list when it
 // connects, then only the PRs that changed and the ones that went. Recomputed after a change (several in a row make
 // one) and every 4s (crit's state lives on disk, with nothing to say it changed).
+// --- the live stream's memory: the last patches sent, numbered, so a page that comes back after a drop (a laptop that
+// slept, a network blip) is sent what it missed instead of both whole lists again. The number restarts with the server
+// (`boot` says which run of it a number is from): a page with another run's number gets the whole lists.
+const boot = Math.random().toString(36).slice(2, 8)
+let patchSeq = 0
+const sent: { n: number; event: 'prs-patch' | 'exec-patch'; data: string }[] = []
+const recordPatch = (event: 'prs-patch' | 'exec-patch', data: string): string => {
+  sent.push({ n: ++patchSeq, event, data })
+  if (sent.length > 400) sent.shift()
+  return `${boot}:${patchSeq}`
+}
+/** The patches after the one a page last got, or undefined when they can't all be given (another run of the server, or too long ago). */
+function missedSince(lastId: string | undefined): typeof sent | undefined {
+  const [b, raw] = (lastId ?? '').split(':'), n = Number(raw)
+  if (b !== boot || !Number.isInteger(n) || n > patchSeq) return undefined
+  if (n === patchSeq) return []
+  return sent.length && sent[0].n <= n + 1 ? sent.filter((x) => x.n > n) : undefined
+}
+
 const prsHub = (() => {
   let byId = new Map<string, string>(), list: PrView[] = [], order = ''
-  const pages = new Set<(event: 'prs-patch', data: string) => void>()
+  const pages = new Set<(event: 'prs-patch', data: string, id: string) => void>()
   let soon: ReturnType<typeof setTimeout> | undefined
   const refresh = () => {
     soon = undefined
@@ -3819,14 +3839,14 @@ const prsHub = (() => {
     slow('views (live update)', t)
     if (!set.length && !del.length && nextOrder === order) return
     byId = nextById; list = next; order = nextOrder
-    const data = JSON.stringify({ set, del, order: next.map((p) => p.id) })
-    for (const send of pages) send('prs-patch', data)
+    const data = JSON.stringify({ set, del, order: next.map((p) => p.id) }), id = recordPatch('prs-patch', data)
+    for (const send of pages) send('prs-patch', data, id)
   }
   bus.on('change', () => { soon ??= setTimeout(refresh, 400) }) // a run's burst of changes is one rebuild: views() is the server's heaviest read
   setInterval(() => { if (pages.size) refresh() }, 4000).unref()
   return {
-    join(send: (event: 'prs-patch', data: string) => void) { if (!pages.size) refresh(); pages.add(send); return list },
-    leave(send: (event: 'prs-patch', data: string) => void) { pages.delete(send) },
+    join(send: (event: 'prs-patch', data: string, id: string) => void) { if (!pages.size) refresh(); pages.add(send); return list },
+    leave(send: (event: 'prs-patch', data: string, id: string) => void) { pages.delete(send) },
   }
 })()
 
@@ -3836,33 +3856,43 @@ app.get('/prs/:id/body', (c) => {
   return p ? c.json({ body: p.body ?? '', bodyHtml: p.bodyHtml ?? '' }) : c.json({ error: 'not found' }, 404)
 })
 
+// what every page gets the same: built once for all of them (each page built its own copy of the health before, and
+// each of a run's lines was turned into text once per page)
+const everyPage = new Set<(event: 'health' | 'activity', data: string) => void>()
+let healthSoon: ReturnType<typeof setTimeout> | undefined
+bus.on('health', () => { healthSoon ??= setTimeout(() => { healthSoon = undefined; if (!everyPage.size) return; const data = JSON.stringify(healthView()); for (const send of everyPage) send('health', data) }, 150) })
+bus.on('activity', (id: string, a: Activity) => { if (!everyPage.size) return; const data = JSON.stringify({ id, a }); for (const send of everyPage) send('activity', data) })
+
 app.get('/events', (c) => streamSSE(c, async (stream) => {
   // self: this machine's lists only (scopeOf), filtered per page from the one list every page shares
   const self = scopeOf(c) === 'self', away = () => (self ? awayHere() : new Set<string>())
   const hiddenPrs = new Set<string>(), hiddenTickets = new Set<string>()
-  const patch = (event: 'prs-patch', data: string) => void stream.writeSSE({ event, data: self ? selfPatch(data, away(), hiddenPrs) : data })
-  const sendPrs = async () => {
-    const a = away(), list = prsHub.join(patch)
-    for (const p of list) if (a.has(p.repo)) hiddenPrs.add(p.id)
-    await stream.writeSSE({ event: 'prs', data: JSON.stringify(list.filter((p) => !hiddenPrs.has(p.id))) })
-  }
-  const sendHealth = () => stream.writeSSE({ event: 'health', data: JSON.stringify(healthView()) })
-  const onActivity = (id: string, a: Activity) => stream.writeSSE({ event: 'activity', data: JSON.stringify({ id, a }) })
+  const patch = (event: 'prs-patch', data: string, id: string) => void stream.writeSSE({ event, id, data: self ? selfPatch(data, away(), hiddenPrs) : data })
   // a burst of changes (a run's every line says 'exec') is one send, at most one a second, built once for every page
-  const execPatch = (data: string) => void stream.writeSSE({ event: 'exec-patch', data: self ? selfPatch(data, away(), hiddenTickets) : data })
+  const execPatch = (data: string, id: string) => void stream.writeSSE({ event: 'exec-patch', id, data: self ? selfPatch(data, away(), hiddenTickets) : data })
+  const same = (event: 'health' | 'activity', data: string) => void stream.writeSSE({ event, data })
   const sendAlerts = () => stream.writeSSE({ event: 'alerts', data: JSON.stringify(alerts()) })
   // what changed, by API path: gathered for a moment so a burst of saves is one message
   let pending = new Set<string>(), flush: ReturnType<typeof setTimeout> | undefined
   const onStale = (paths: string[]) => { for (const x of paths) pending.add(x); flush ??= setTimeout(() => { flush = undefined; const out = [...pending]; pending = new Set(); void stream.writeSSE({ event: 'stale', data: JSON.stringify(out) }) }, 250) }
   live.on('stale', onStale)
   bus.on('alerts', sendAlerts)
-  bus.on('health', sendHealth)
-  bus.on('activity', onActivity)
-  await sendPrs() // the whole list once; from here on prsHub sends this page patches
-  await sendHealth()
-  const board = execHub.join(execPatch), a = away()
+  everyPage.add(same)
+  // joining the lists first: each is brought up to date as it is joined (and what that changed is numbered like any
+  // patch), so what this page missed is known before anything is sent to it
+  const a = away(), list = prsHub.join(patch), board = execHub.join(execPatch)
+  for (const p of list) if (a.has(p.repo)) hiddenPrs.add(p.id)
   for (const t of board.tickets) if (t.repo && a.has(t.repo)) hiddenTickets.add(t.id)
-  await stream.writeSSE({ event: 'exec', data: JSON.stringify(self ? { ...board, tickets: board.tickets.filter((t) => !hiddenTickets.has(t.id)) } : board) }) // the whole board once; then patches
+  const missed = missedSince(c.req.header('last-event-id'))
+  if (missed) {
+    // back after a drop, and everything since is still remembered: only that, in order, in one go (nothing new can come between)
+    for (const m of missed) { if (m.event === 'prs-patch') patch(m.event, m.data, `${boot}:${m.n}`); else execPatch(m.data, `${boot}:${m.n}`) }
+  } else {
+    // the whole lists once; from here on the hubs send this page patches. The number says where the patches go on from
+    await stream.writeSSE({ event: 'prs', id: `${boot}:${patchSeq}`, data: JSON.stringify(list.filter((p) => !hiddenPrs.has(p.id))) })
+    await stream.writeSSE({ event: 'exec', id: `${boot}:${patchSeq}`, data: JSON.stringify(self ? { ...board, tickets: board.tickets.filter((t) => !hiddenTickets.has(t.id)) } : board) })
+  }
+  await stream.writeSSE({ event: 'health', data: JSON.stringify(healthView()) })
   await sendAlerts()
   const tick = setInterval(() => { stream.writeSSE({ event: 'ping', data: '' }) }, 4000)
   await new Promise<void>((resolve) => stream.onAbort(resolve))
@@ -3871,8 +3901,7 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
   bus.off('alerts', sendAlerts)
   live.off('stale', onStale); if (flush) clearTimeout(flush)
   execHub.leave(execPatch)
-  bus.off('health', sendHealth)
-  bus.off('activity', onActivity)
+  everyPage.delete(same)
 }))
 
 
