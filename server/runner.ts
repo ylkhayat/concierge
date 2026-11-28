@@ -36,6 +36,7 @@ import { busyUnder, newRun, watch as watchBackground } from './background.ts'
 import { draining, heldWhy, machines, place, route, slotsHere, signInFor, token, whyNowhere } from './machines.ts'
 import { remoteAgent } from './worker.ts'
 import { whyEnded } from './outcome.ts'
+import { didNote } from './ledger.ts'
 import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf } from './usage.ts'
 import { sharedNow } from './sharedEnv.ts'
 import { keptMethod, skillBody, skillFor } from './method.ts'
@@ -86,10 +87,11 @@ const resultIn = new Set<string>()
 let stopping = false // the server is going down: runs stay as they are, for the next start to continue
 
 // what a run stopped by a restart gets instead of its command, on its own session
-const continuePrompt = (asked: string) => `Concierge restarted while you were working (a deploy), and your process was stopped mid-run. `
+const continuePrompt = (asked: string, key?: string) => `Concierge restarted while you were working (a deploy), and your process was stopped mid-run. `
   + `Continue the same task from where you left off. It was: ${asked}\n\n`
   + 'Your last steps may or may not have landed, so look before you act: re-read the files, worktree and git state you were changing. '
   + 'Anything already posted, pushed, commented or moved on GitHub or Linear counts as done: never do it twice.\n'
+  + (key ? didNote(activity(key)) : '')
   + 'Processes you started are gone (the crit daemon, background shells and tasks, dev servers): start again only what you still need. '
   + 'The crit port is pinned, so its URL stays the same. If git reports an index.lock and no git is running, remove the lock.\n'
   + 'Then finish exactly as the original instructions say, including how to end your turn.'
@@ -1252,7 +1254,7 @@ function start(pr: Pr, on?: string) {
     key: pr.id, label: `${LABEL[job.kind]} #${pr.number}`, cwd, repo: pr.repo, provider: job.provider, on,
     onSession: (id) => { if (job.sessionId !== id) { job.sessionId = id; save() } },
     args: [
-      ...(job.continuing ? ['-p', continuePrompt(asked), '--resume', job.sessionId]
+      ...(job.continuing ? ['-p', continuePrompt(asked, pr.id), '--resume', job.sessionId]
         : isFollowUp(job.kind) ? ['-p', asked, ...(job.resumed === false ? ['--session-id', job.sessionId] : ['--resume', job.sessionId])]
         : ['-p', asked, ...(job.resumed ? ['--resume', job.sessionId] : ['--session-id', job.sessionId])]),
       '--output-format', 'stream-json', '--verbose',
@@ -1622,7 +1624,7 @@ function startExec(run: ExecRun, on?: string) {
     key, label: `${run.label ?? 'Ship'} ${run.ids.join(' → ')}`, cwd: config.repos[run.repo], repo: run.repo, on,
     provider: run.provider, onSession: (id) => { if (run.sessionId !== id) { run.sessionId = id; save() } },
     args: [
-      ...(run.continuing ? ['-p', continuePrompt(asked), '--resume', run.sessionId]
+      ...(run.continuing ? ['-p', continuePrompt(asked, key), '--resume', run.sessionId]
         : ['-p', asked, ...(run.resume ? ['--resume', run.resume] : ['--session-id', run.sessionId])]),
       '--output-format', 'stream-json', '--verbose', ...(!run.continuing && !run.resume ? runCap() : []), '--allowedTools', ...(run.allowedTools ?? config.exec.allowedTools),
       // the exec command keeps its worktrees next to the repo (<clones>/worktrees/<repo>/<ticket>): outside the working
@@ -1723,3 +1725,8 @@ function startExec(run: ExecRun, on?: string) {
     onError: (e) => { run.error = e.message },
   })
 }
+
+// The logs of the runs a restart left to continue, read now: each is told what it already sent out (ledger.ts), which
+// is read from its log, and that has to be in memory by the time it starts.
+for (const p of Object.values(state.prs)) if (p.job?.continuing) void loadActivity(p.id).catch(() => {})
+for (const r of Object.values(state.execs)) if (r.continuing) void loadActivity(`exec:${r.id}`).catch(() => {})
