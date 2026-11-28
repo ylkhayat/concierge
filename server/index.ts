@@ -16,7 +16,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { live, stale } from './live.ts'
+import { live, stale, shared } from './live.ts'
 import { baselineId, DESIGN_LABEL, imagePath, modeOf, setsOf, storybookFile, uiChange, VISUALS_MODES, wanted, type VisualsMode } from './visuals.ts'
 import { brief as workBrief, component, remember as rememberWork, workFor, type WorkStore } from './work.ts'
 import { compress } from 'hono/compress'
@@ -2811,7 +2811,10 @@ setTimeout(() => void visualsTick(), 15_000).unref()
 bus.on('visuals', () => stale('/visuals'))
 
 /** Design's list: the PRs that change what people see (or that you turned on) and the tickets marked design. */
-app.get('/visuals', async (c) => {
+app.get('/visuals', async (c) => c.json(await shared('/visuals', 15_000, visualsList)))
+// every manifest of every PR and repository Design looks at is read from disk for this: kept 15s, and forgotten when
+// a capture or a setting says it changed
+async function visualsList() {
   const prs = Object.values(state.prs).filter((p) => !p.closed && config.repos[p.repo] && (p.ui?.is || p.visualsOverride === 'on' || modeOf(p.repo) === 'always' || p.visuals))
   const list = await Promise.all(prs.map(visualsView))
   const tickets = execBoard.tickets.filter((t) => (t.labels ?? []).some((l) => DESIGN_LABEL.test(l.trim())) || list.some((v) => v.tickets.includes(t.id)))
@@ -2825,8 +2828,8 @@ app.get('/visuals', async (c) => {
         screens: base[0].shots.filter((x) => x.domain).length, domains: new Set(base[0].shots.map((x) => x.domain).filter(Boolean)).size },
       fromApp: !base.length && its.some((v) => v.sets[0]?.source === 'app') }
   }))
-  return c.json({ joined: designJoined(), repos: repoList, prs: list.map(({ sets, ...v }) => ({ ...v, latest: sets[0] && { sha: sets[0].sha, at: sets[0].at, summary: sets[0].summary, count: sets[0].shots.length, thumb: sets[0].shots.find((s) => s.after)?.after } })), tickets })
-})
+  return { joined: designJoined(), repos: repoList, prs: list.map(({ sets, ...v }) => ({ ...v, latest: sets[0] && { sha: sets[0].sha, at: sets[0].at, summary: sets[0].summary, count: sets[0].shots.length, thumb: sets[0].shots.find((s) => s.after)?.after } })), tickets }
+}
 app.get('/prs/:id/visuals', async (c) => {
   const p = state.prs[decodeURIComponent(c.req.param('id'))]
   if (!p) return c.json({ error: 'No such PR' }, 404)
@@ -4168,7 +4171,8 @@ setInterval(() => void adoptKeys().catch(() => {}), 10 * 60_000).unref()
 // every machine's numbers, this one first (Settings → Machines)
 app.get('/machines/stats', async (c) => {
   const here = [...children.values()].filter((x) => !(x as { machine?: string }).machine).length
-  const [mine, others] = await Promise.all([statsHere(ownUsage, here, slotsHere(state.settings.maxJobs)), ask<Stats>('stats', {})])
+  // every machine is asked: once for every page looking, at most every 4s (each page asked every 5s on its own)
+  const [mine, others] = await shared('/machines/stats', 4000, () => Promise.all([statsHere(ownUsage, here, slotsHere(state.settings.maxJobs)), ask<Stats>('stats', {})]))
   const all = [mine, ...others.flatMap(([, r]) => (r ? [r] : []))]
   return c.json({ machines: all.map((m) => ({ ...m, room: capped(m.name, m.slots), work: m.name === state.settings.workMachine, behind: behind(m) })), workSlots: state.settings.workSlots ?? 1, several: !!fleet.machine, latest: latestHeads() })
 })
