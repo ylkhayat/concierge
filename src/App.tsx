@@ -413,12 +413,14 @@ export function App() {
       )}
       <Head>Views</Head>
       {/* the role's views (views.ts); one accent pill slides to the active one (railPill) */}
+      {/* (each role's views are its own buttons: a view two roles share, at a different place in each, is drawn there
+          for the new role, not carried across from where it was) */}
       <span ref={pillRef} aria-hidden className={`pointer-events-none absolute hidden sel rounded-ctl ${W('left-1/2 w-10 -translate-x-1/2', 'inset-x-2')} transition-[top,height,opacity] duration-300 ease-[var(--ease-spring)] md:block`} style={{ top: pill?.top, height: pill?.height, opacity: pill ? 1 : 0 }} />
       {views.map((v) => ({ m: v.mode, Icon: v.icon, label: v.label, hint: v.hint, view: v.design, chord: v.chord, n: v.mode === 'review' ? needsYou : v.mode === 'exec' ? execWaiting : 0 }))
         .map(({ m, Icon, label, n, hint, view, chord }) => {
         const on = mode === m && !(m === 'review' && codebaseRepo) && (!view || view === designView)
         return (
-          <button key={view ? `design:${view}` : m} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m, view); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}${chord ? ` (g ${chord})` : ''}`} aria-current={on}
+          <button key={`${role}:${view ? `design:${view}` : m}`} data-rail={on ? 'on' : undefined} onClick={() => { setMode(m, view); if (m === 'review' && codebaseRepo) select(undefined) }} title={`${label} · ${hint}${chord ? ` (g ${chord})` : ''}`} aria-current={on}
                   className={`group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-ctl py-1 transition-[background-color,scale] duration-150 active:scale-[0.96] md:flex-none md:py-0 ${W('md:size-10', 'md:h-9 md:w-full md:flex-row md:justify-start md:gap-2.5 md:px-1')} ${on ? '' : 'md:hover:bg-hover'}`}>
             <span data-rail-icon className={`relative flex size-8 items-center justify-center transition-colors duration-150 ${on ? 'text-accent-text' : 'text-fg-3 group-hover:text-fg-1'}`}>
               <Icon className="size-[18px]" />

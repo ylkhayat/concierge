@@ -37,7 +37,8 @@ export function Off({ why, layout = 'block', children }: { why?: string; layout?
   return <fieldset disabled title={`Off: ${why}`} className={`m-0 min-w-0 border-0 p-0 opacity-45 [&_*]:cursor-not-allowed ${layout}`}>{children}</fieldset>
 }
 
-export function ThreadLayout<Id extends string>({ header, children, next, composer, follow, tabs, tab, onTab, pane, onAsk, subject, vitals, held }: {
+export function ThreadLayout<Id extends string>({ header, children, next, composer, follow, tabs, tab, onTab, pane, onAsk, subject, vitals, held, loading }: {
+  loading?: boolean // the conversation is being read for the first time: it is shown once it is in, at its newest
   subject?: string // the PR or ticket shown: opening another one shows it at once, with nothing animating in
   header: ReactNode
   vitals?: ReactNode // its vitals (shipping, intent, understanding): always in sight, at the head of the chat
@@ -122,7 +123,7 @@ export function ThreadLayout<Id extends string>({ header, children, next, compos
           {/* wide: the vitals head the chat, the frame for reading it (narrow: they are above, for both) */}
           {vitals && <div className="relative z-30 hidden shrink-0 border-b border-line @[1100px]/thread:block">{vitals}</div>}
           <section aria-label="Chat" className={phone ? `order-1 flex-1 ${open ? 'hidden' : ''}` : 'flex min-h-0 min-w-0 flex-1 flex-col'}>
-            <Transcript follow={follow} subject={subject} outer={phone ? page : undefined}>{children}</Transcript>
+            <Transcript follow={follow} subject={subject} outer={phone ? page : undefined} loading={loading}>{children}</Transcript>
           </section>
           {/* its box, or (no box: the agent asks) the next step: at most about half the height, scrolling inside. Narrow,
               a share of the column (not of the screen): stacked over the next step's dock, two halves of the screen
@@ -192,7 +193,7 @@ function Quotable({ children, onAsk, fill, page }: { children: ReactNode; onAsk?
 
 /** The scrolling conversation: oldest at the top, following what arrives while you are at the bottom; scrolled up,
  *  it stays where you are. */
-function Transcript({ children, follow, subject, outer }: { children: ReactNode; follow?: unknown; subject?: string; outer?: React.RefObject<HTMLDivElement | null> }) {
+function Transcript({ children, follow, subject, outer, loading }: { children: ReactNode; follow?: unknown; subject?: string; outer?: React.RefObject<HTMLDivElement | null>; loading?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   // what scrolls: the conversation itself, or (outer, a phone) the whole thread it reads in
   const box = () => outer?.current ?? ref.current
@@ -206,15 +207,33 @@ function Transcript({ children, follow, subject, outer }: { children: ReactNode;
   // what renders late (markdown, a folded chapter opening) grows it after the fact, and the docks under it growing
   // (a working bar opened, background tasks listed) make it shorter: still at the newest, it follows
   const inner = useRef<HTMLDivElement>(null)
+  // A conversation opens already at its newest, whole: it is drawn but not shown while it is read, and until its
+  // height has stopped changing (its runs off screen stand in at a guessed height until laid out, so it is scrolled to
+  // its end more than once). Shown as it arrived, its heading sat at the top for a moment and everything then ran
+  // upward. Not on a phone, where the conversation reads in the page's own scroll
+  const [shown, setShown] = useState(!!outer)
+  const settle = useRef<ReturnType<typeof setTimeout>>(undefined), waiting = useRef(loading)
+  waiting.current = loading
+  const settled = () => { clearTimeout(settle.current); if (!waiting.current) settle.current = setTimeout(() => setShown(true), 80) }
+  useLayoutEffect(() => {
+    if (outer) return setShown(true)
+    setShown(false)
+    if (loading) return
+    settled()
+    const most = setTimeout(() => setShown(true), 600) // (never held back for long: late markdown may still grow it)
+    return () => { clearTimeout(most); clearTimeout(settle.current) }
+  }, [subject, loading, outer]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const o = new ResizeObserver(end), el = box()
+    const o = new ResizeObserver(() => { end(); settled() }), el = box()
     if (inner.current) o.observe(inner.current)
     if (el) { o.observe(el); el.addEventListener('scroll', onScroll, { passive: true }) }
     return () => { o.disconnect(); el?.removeEventListener('scroll', onScroll) }
   }, [outer]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div ref={ref} className={outer ? '' : 'min-h-0 flex-1 overflow-y-auto'}>
-      <div ref={inner} className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-3 py-5 sm:px-5">{children}</div>
+    <div ref={ref} className={outer ? '' : 'min-h-0 flex-1 overflow-y-auto'} aria-busy={!shown || undefined}>
+      {/* read for a while: said, in place (it takes no room, so nothing moves when the conversation is shown) */}
+      {!shown && loading && <p className="pointer-events-none sticky top-0 flex h-0 animate-[fade-in_200ms_250ms_both] justify-center overflow-visible text-body text-fg-3"><span className="mt-8 flex h-5 items-center gap-2"><LoaderCircle className="size-4 animate-spin" />Loading the activity…</span></p>}
+      <div ref={inner} className={`mx-auto flex w-full max-w-[760px] flex-col gap-4 px-3 py-5 sm:px-5 ${shown ? '' : 'invisible'}`}>{children}</div>
     </div>
   )
 }

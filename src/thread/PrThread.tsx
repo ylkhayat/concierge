@@ -185,7 +185,7 @@ export function PrThread(props: PrThreadProps) {
 
   return (
     <>
-      <ThreadLayout
+      <ThreadLayout loading={feedLoading}
         held={held}
         subject={pr.id}
         follow={`${pr.id}:${count}:${pr.status}:${next}`}

@@ -86,7 +86,7 @@ export function TicketThread(props: TicketThreadProps) {
                  placeholder={t.busy ? 'Tell it something while it works: it reads it between steps, without stopping' : `What should ${t.id}’s implementation do differently?`} />
 
   return (
-    <ThreadLayout
+    <ThreadLayout loading={feedLoading}
       held={held}
       subject={t.id}
       follow={`${t.id}:${count}:${t.busy}:${next}`}
