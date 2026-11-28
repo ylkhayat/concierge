@@ -14,6 +14,7 @@ import { config, save, state } from '../store.ts'
 import { bankView, writeBank } from '../bank.ts'
 import { agentHomesReady } from '../agentHome.ts'
 import type { Hono as App } from 'hono'
+import { every } from '../every.ts'
 
 // what these routes use that lives in index.ts
 type Deps = { execBoard: { tickets: Ticket[] }; pushConnectors: () => void }
@@ -154,7 +155,7 @@ export function connectionsRoutes(app: App, { execBoard, pushConnectors }: Deps)
   // the connection bank, written where each account's runs are pointed at: at start, and kept in step (a key set, a
   // connector added, the sign-in changed, another account)
   const bankNow = () => writeBank(accounts().map((a) => a.id)).catch((e) => console.warn('bank:', (e as Error).message))
-  void bankNow(); setInterval(() => void bankNow(), 30_000).unref()
+  void bankNow(); every('shared connections', () => bankNow(), 30_000)
   app.get('/bank', (c) => c.json(bankView()))
   // a connection of your own in the bank: a name, its MCP address, and its key when it has one (kept with the secrets)
   app.post('/bank/add', async (c) => {

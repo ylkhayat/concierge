@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fill } from './config.ts'
 import { config, type Pr } from './store.ts'
 import { flowInOf, flowOf, statusOfFlow, type FlowIn } from './flow.ts'
+import { every } from './every.ts'
 
 export const CRIT_DIR = process.env.CRIT_DIR ?? join(homedir(), '.crit')
 const AI_AUTHOR = 'Claude Code'
@@ -102,7 +103,7 @@ async function read() {
   }
 }
 void refreshCrit()
-setInterval(() => void refreshCrit(), 3000).unref()
+every('crit', () => refreshCrit(), 3000)
 
 /**
  * Everything crit knows about PR `n`, from the last snapshot (a few seconds old at most). The session is found by

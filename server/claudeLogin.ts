@@ -8,6 +8,7 @@ import { save, state } from './store.ts'
 const run = promisify(execFile)
 // the model-only token (the shared one, else this machine's): the fallback when the full login isn't there or stops working
 import { accountToken, claudeToken, claudeTokenOff } from './sharedEnv.ts'
+import { every } from './every.ts'
 
 export type ClaudeAuth = { loggedIn: boolean; method?: string; email?: string; org?: string; plan?: string; usingLogin: boolean } // org, plan: the claude.ai organization and its tier (pro, max…)
 
@@ -91,7 +92,7 @@ export const stopUsingLogin = () => useLogin(false)
  */
 export function keepClaudeAuth() {
   void checkClaudeAuth()
-  setInterval(() => void checkClaudeAuth(), 30 * 60_000)
+  every('claude login', () => checkClaudeAuth(), 30 * 60_000)
 }
 let checking: Promise<void> | undefined
 /** Check now, once at a time: also when an agent's run says its sign-in failed, so the next one doesn't wait half an hour. */
@@ -152,7 +153,7 @@ let added: () => Added[] = () => [], heard: ((id: string, lapsed: boolean) => vo
 export function keepAccountLogins(list: () => Added[], changed: (id: string, lapsed: boolean) => void) {
   added = list; heard = changed
   void checkAccountLogins(added(), heard)
-  setInterval(() => void checkAccountLogins(added(), heard), 2 * 60_000).unref()
+  every('account logins', () => checkAccountLogins(added(), heard), 2 * 60_000)
 }
 /** For a test: the accounts lapsed here. */
 export const setLapsedForTest = (ids: string[]) => { lapsedHere.clear(); for (const id of ids) lapsedHere.add(id) }

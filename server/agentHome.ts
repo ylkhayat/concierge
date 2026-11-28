@@ -22,6 +22,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { STATE_DIR } from './paths.ts'
+import { every } from './every.ts'
 
 const run = promisify(execFile)
 /** Your own folders: what you wrote lives here, and Concierge's skill pages manage your skills here. */
@@ -191,6 +192,6 @@ export async function ensureAgentHomes() {
   const work = Promise.all([sessions(), plugins().then(shareSkills)]).catch((e: Error) => console.warn('agent home:', e.message))
   slow = Promise.race([work, new Promise((r) => setTimeout(r, 5 * 60_000).unref())])
   // your settings may change while it runs (a plugin enabled, a permission): followed every ten minutes
-  setInterval(() => void settings().then(plugins).then(refreshSkills).catch(() => {}), 10 * 60_000).unref()
+  every('agent home', () => settings().then(plugins).then(refreshSkills).catch(() => {}), 10 * 60_000)
 }
 await ensureAgentHomes() // on import: every module that starts a tool imports this first, so its folder is there before it is asked anything

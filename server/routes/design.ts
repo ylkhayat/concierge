@@ -11,6 +11,7 @@ import { loadActivity, bus } from '../runner.ts'
 import { roles } from '../roles.ts'
 import { config, save, state, type Pr } from '../store.ts'
 import type { Hono as App } from 'hono'
+import { every } from '../every.ts'
 
 // what these routes use that lives in index.ts
 type Deps = { execBoard: { tickets: Ticket[] }; ticketsOf: (p: Pr) => Ticket[] }
@@ -66,7 +67,7 @@ export function designRoutes(app: App, { execBoard, ticketsOf }: Deps) {
       }
     } finally { visualsBusy = false; stale('/visuals') }
   }
-  setInterval(() => void visualsTick(), 120_000).unref()
+  every('visuals', () => visualsTick(), 120_000)
   setTimeout(() => void visualsTick(), 15_000).unref()
   bus.on('visuals', () => stale('/visuals'))
 

@@ -16,6 +16,7 @@ import { connect } from 'node:net'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import type { AgentProcess } from './providers.ts'
+import { every } from './every.ts'
 
 // untrusted: it reads someone else's work (their PR): the worker fences its tools and keeps its secrets to what it needs,
 // as the control plane does for one it runs itself (untrusted.ts)
@@ -128,7 +129,7 @@ if (PROXY) {
     s.setTimeout(2000, () => s.destroy())
     s.on('connect', () => { proxyUp = true; s.destroy() }).on('error', () => { proxyUp = false })
   }
-  probe(); setInterval(probe, 15_000).unref()
+  probe(); every('worker probe', probe, 15_000)
 }
 /** A request to another machine at `url`: through the link's proxy when this machine reaches the tailnet only that way. */
 export function machineRequest(url: string, opts: RequestOptions, cb: (res: IncomingMessage) => void): ClientRequest {

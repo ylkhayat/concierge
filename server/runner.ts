@@ -41,6 +41,7 @@ import { STOP_AT, limitHit, refusedForLimit, spentText, spentWindow, windowsOf }
 import { sharedNow } from './sharedEnv.ts'
 import { keptMethod, skillBody, skillFor } from './method.ts'
 import { DECIDE_NOTE, fromAgent, hashOf, proseOf, type NextSteps } from './next.ts'
+import { every } from './every.ts'
 
 /** A run's final words: the prose kept as its summary, and the decisions block it ended with as its next steps. */
 function finalWords(result: string): { summary: string; next?: NextSteps } {
@@ -406,7 +407,7 @@ async function rebalance() {
     }
   }
 }
-setInterval(() => void rebalance().catch((e) => console.warn('orchestrator:', (e as Error).message)), 30_000).unref()
+every('rebalance', () => rebalance(), 30_000)
 /**
  * A Claude account's plan windows as its agents last reported them: the first account's is `usage`, others' by id.
  * The first account runs on the shared Claude token: windows reported before that token was last set are another
@@ -527,7 +528,7 @@ export const setLinkNote = (f: typeof linkNote) => { linkNote = f }
 // always start), and looks again every 30s, since memory frees up without any event to say so.
 const LOW_MB = 1536
 let held = false
-setInterval(() => pump(), 30_000).unref()
+every('pump', () => pump(), 30_000)
 
 /** Why queued work isn't starting, in a few words, or nothing when it isn't waiting on anything. */
 /** Why an account can't take work now, in a few words ("7-day plan window full until Fri 02:00"); none when it can. */
@@ -1538,7 +1539,7 @@ async function readDevlogs() {
   }
   devlogs = found.length ? `\n\nTheir local servers' recent output, newest at the end (timestamped), kept on their machine by devlog. When it matters what a server of theirs did, read it first:\n${found.join('\n')}` : ''
 }
-void readDevlogs(); setInterval(() => void readDevlogs(), 60_000).unref()
+void readDevlogs(); every('devlogs', () => readDevlogs(), 60_000)
 const devlogArgs = () => (devlogs ? ['--add-dir', DEVLOGS] : [])
 
 /**

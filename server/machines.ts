@@ -23,6 +23,7 @@ import { lapsedLogins } from './claudeLogin.ts'
 import { fleetMachines } from './perMachine.ts'
 import { call, serveWorker, tokenIn, type WorkerStatus } from './worker.ts'
 import { runningHere, type Running } from './versions.ts'
+import { every } from './every.ts'
 
 let tok: string | undefined, tokAt = 0, prev: { t: string; until: number } | undefined
 /** The token every machine shares (a file in the synced state), re-read now and then: the sync may replace it. */
@@ -86,7 +87,7 @@ async function refresh() {
   looked = true
 }
 let looked = false // the first look after a start: every machine is "new" then, not back
-if (fleet.machine) { void refresh(); setInterval(() => void refresh(), 15_000).unref() }
+if (fleet.machine) { void refresh(); every('machines', () => refresh(), 15_000) }
 
 // --- which machine does a repository's work: the placement matrix ----------------------------------------------------
 // A repository is allowed on a machine or not (Settings → Repositories, config.cloneOn: the repository, or its whole

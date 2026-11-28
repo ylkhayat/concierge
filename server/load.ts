@@ -9,6 +9,7 @@ import { state } from './store.ts'
 import { capped, hosted, machines } from './machines.ts'
 import { accountOf } from './providers.ts'
 import { fleet } from './fleet.ts'
+import { every } from './every.ts'
 
 const run = promisify(execFile)
 
@@ -183,4 +184,4 @@ export async function reapCrit() {
   if (gone.length) { term(gone.flatMap((c) => c.tree.map((p) => p.pid))); console.log(`crit: stopped ${gone.map((c) => c.name).join(', ')}`) }
   return gone.length
 }
-setInterval(() => void reapCrit().catch((e) => console.error('reapCrit', e.message)), 10 * 60_000).unref()
+every('reap crit', () => reapCrit(), 10 * 60_000)

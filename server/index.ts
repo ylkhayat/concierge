@@ -103,6 +103,7 @@ import { codebaseRoutes } from './routes/codebase.ts'
 import { skillsAdviceRoutes } from './routes/skillsAdvice.ts'
 import { standupRoutes } from './routes/standup.ts'
 import { discussionsRoutes } from './routes/discussions.ts'
+import { every, timers } from './every.ts'
 
 export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { aside?: boolean; queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
@@ -146,7 +147,7 @@ const critOfView = (p: Pr) => {
 }
 // remember each live crit session's key, so its counts survive the daemon stopping: done here, every 10s, never
 // while reading the views (a read path that writes is how a page refresh used to change what's saved)
-setInterval(() => {
+every('crit keys', () => {
   let changed = false
   for (const p of Object.values(state.prs)) {
     if (!p.job || p.closed) continue
@@ -156,7 +157,7 @@ setInterval(() => {
     }
   }
   if (changed) save()
-}, 10_000).unref()
+}, 10_000)
 
 function views(): PrView[] {
   const critOff = reviewIn() === 'concierge' // reviews read in Concierge: no crit to show or open
@@ -380,7 +381,7 @@ const refusedNote = (r: { refused?: string[] }) =>
   r.refused?.length ? `${r.refused.length} command${r.refused.length > 1 ? 's' : ''} refused (${r.refused[0].slice(0, 90)}${r.refused.length > 1 ? ', …' : ''})` : ''
 // the plan's window near its end: say so once, and that it clears itself when the window resets
 const planAlert = () => { const s = planSpent(); condition('plan', 'Claude plan', s && `Agents are paused: ${spentText(s)}. They pick up where they left off after that.`) }
-bus.on('health', planAlert); setInterval(planAlert, 60_000).unref()
+bus.on('health', planAlert); every('plan alert', planAlert, 60_000)
 bus.on('held', (short: boolean) => condition('memory', 'Memory', short ? 'Runs are waiting: under 1.5 GB of memory free on this machine' : undefined))
 // a run starting answers whatever its item was waiting on: the alert stops asking for you
 bus.on('started', (id: string, job: Job) => { const p = state.prs[id]; if (p) { alert(prTarget(p), `${JOB[job.kind] ?? 'Agent'} started`); seeAlerts([`pr:${p.id}`]) } })
@@ -1102,7 +1103,7 @@ function sharedChanged(changed: SharedKey[]) {
   if (changed.includes('GITHUB_TOKEN')) { tokenChanged(); void checks(true); void gitIdentity() } // a new sign-in: the GitHub check reads it again
   if (changed.includes('LINEAR_API_KEY')) void pollTickets()
 }
-setInterval(() => sharedChanged(applyShared()), 30_000).unref()
+every('shared keys', () => sharedChanged(applyShared()), 30_000)
 void writeGate().catch((e) => console.warn('push gate:', (e as Error).message)) // every agent's push typechecks first (gate.ts)
 void gitIdentity() // a token from an earlier sign-in: commits carry its account from the start
 // a machine's recent log (scrubbed), this one's or another's through its worker
@@ -1113,6 +1114,8 @@ app.post('/debug/ui', async (c) => {
   return c.json({ ok: true })
 })
 // where this server's thread spends its time, for a few seconds (profile.ts): ?seconds=10
+// every repeating job of this server: how often, how long its last run took, how often it failed (every.ts)
+app.get('/debug/timers', (c) => c.json(timers()))
 app.get('/debug/profile', async (c) => { try { return c.json(await profile(Number(c.req.query('seconds') ?? 10))) } catch (e) { return c.json({ error: (e as Error).message }, 409) } })
 app.get('/machines/:name/logs', async (c) => {
   const name = c.req.param('name')
@@ -1149,13 +1152,13 @@ app.post('/machines/:name/restart', async (c) => {
 // the machines out of step for 5 minutes (the one followed doesn't answer, or files can't come over): an alert that
 // clears itself once they are back in step
 let outOfStep: number | undefined
-if (fleet.machine) setInterval(() => {
+if (fleet.machine) every('out of step', () => {
   const r = replicaStatus()
   const late = r.following && (r.stateError || !r.caughtUp)
   outOfStep = late ? (outOfStep ?? Date.now()) : undefined
   const mins = outOfStep ? Math.round((Date.now() - outOfStep) / 60_000) : 0
   condition('replica', 'Machines in step', mins >= 5 ? `Not in step with ${r.following} for ${mins} minutes${r.stateError ? ` (${r.stateError})` : ''}: what happens there doesn't reach this machine` : undefined)
-}, 60_000).unref()
+}, 60_000)
 // the lane of what you are typing, read by a small model when you pause (laneModel.ts): it confirms or corrects the
 // rules the box applied at once
 app.post('/lane', async (c) => {
@@ -1303,7 +1306,7 @@ async function remindUpstream() {
   alert({ kind: 'system', id: 'upstream', label: 'Concierge updates', title: 'Concierge updates' },
     `The original Concierge has ${up.behind} new commit${up.behind === 1 ? '' : 's'} your fork lacks: Settings → Machines → Updates merges them`)
 }
-setTimeout(() => void remindUpstream(), 60_000).unref(); setInterval(() => void remindUpstream(), 3600_000).unref()
+setTimeout(() => void remindUpstream(), 60_000).unref(); every('upstream reminder', () => remindUpstream(), 3600_000)
 // "now": restart even with agents working (they continue after, losing what ran in their background)
 // this machine's update log (bin/update writes update.<machine>.log), else the shared one of an older install
 const readUpdateLog = () => readFile(join(STATE_DIR, `update${fleet.machine ? `.${fleet.machine}` : ''}.log`), 'utf8').catch(() => readFile(join(STATE_DIR, 'update.log'), 'utf8'))
@@ -1443,7 +1446,7 @@ const execHub = (() => {
     for (const send of pages) send(patch, id)
   }
   bus.on('exec', () => { soon ??= setTimeout(refresh, 1000) })
-  setInterval(() => { if (pages.size) refresh() }, 5000).unref()
+  every('ticket views', () => { if (pages.size) refresh() }, 5000)
   return {
     join(send: (data: string, id: string) => void) { if (!pages.size || !full) refresh(); pages.add(send); return full! },
     leave(send: (data: string, id: string) => void) { pages.delete(send) },
@@ -1752,13 +1755,13 @@ async function loginNotice() {
   const lines = [...where].filter(([id]) => used.has(id)).map(([id, ms]) => `${accountOf(id).label} isn't signed in on ${ms.join(' and ')}: ${accountToken(id) ? 'its runs there use its fallback token, without its claude.ai connectors' : 'that machine takes none of its work (add a fallback token so it never stops)'}`)
   condition('login-lapsed', 'Claude accounts', lines.length ? `${lines.join('; ')}. Sign in again: Settings → Accounts → the account → Sign in on the machine.` : undefined)
 }
-setInterval(() => void loginNotice(), 60_000).unref()
+every('login notice', () => loginNotice(), 60_000)
 // every account's folder has its links on this machine too (they are made where the account was added, and don't travel)
 for (const a of accounts()) if (a.home && (a.kind === 'claude' || a.kind === 'openai')) void prepareHome(a.home, a.kind).catch((e) => console.warn(`accounts: ${a.label}: ${(e as Error).message}`))
 // the organization's skills: mirrored for every machine, offered to every run (orgSkills.ts)
 const syncSkills = () => fleet.elsewhere() ? Promise.resolve() : syncOrgSkills().catch((e) => console.warn('org skills:', (e as Error).message))
 void syncSkills()
-setInterval(() => void syncSkills(), 10 * 60_000)
+every('org skills', () => syncSkills(), 10 * 60_000)
 // what a skill says, for the feed's preview: the company's (mirrored) first, then your own skills and commands
 // every skill and command here, each with the command it would run as for a workflow (?work=review|revise|stack|exec)
 app.get('/skills', async (c) => {
@@ -1811,7 +1814,7 @@ const sweep = () => {
   void autoClean('nightly sweep')
 }
 setTimeout(sweep, 2 * 60_000) // after boot, once restarted work has settled
-setInterval(sweep, 10 * 60_000)
+every('worktree sweep', sweep, 10 * 60_000)
 setTimeout(() => void worktrees().catch(() => {}), 30_000) // size them in the background before anyone opens the list
 // stopped runs go again: one (its key), or every one in the list
 app.post('/load/again', async (c) => {
@@ -1929,7 +1932,7 @@ const ownerIn = () => {
     console.log(`access: ${who} may open it through the link (every person's device on the tailnet is theirs)`)
   }, () => {})
 }
-setTimeout(ownerIn, 10_000).unref(); setInterval(ownerIn, 60_000).unref()
+setTimeout(ownerIn, 10_000).unref(); every('owner', ownerIn, 60_000)
 app.get('/access', (c) => c.json({ logins: allowedLogins(), you: whoFrom((n) => c.req.header(n)).login, proxied: whoFrom((n) => c.req.header(n)).proxied, fromEnv: (setting('ALLOW') ?? '').split(',').map((x) => x.trim()).filter(Boolean) }))
 app.post('/access', async (c) => {
   const { logins } = await c.req.json<{ logins: string[] }>()
@@ -2030,9 +2033,9 @@ app.post('/config', async (c) => {
 // who does the work: accounts (Claude, OpenAI, Llama; more of each, every one signed in on its own), one per kind of
 // work, the fallback order, budgets, models, and what each spent today (providers.ts)
 void readOpenaiAuth()
-setInterval(() => void readOpenaiAuth(), 10 * 60_000)
+every('openai auth', () => readOpenaiAuth(), 10 * 60_000)
 void watchOllamas()
-setInterval(() => void watchOllamas(), 60_000)
+every('ollama watch', () => watchOllamas(), 60_000)
 /**
  * Whose plan a Claude account spends: the claude.ai login's email, organization and tier. A setup token says none of
  * that (Anthropic doesn't tell a token's owner): for one, when it was set and by whom. Two accounts signed in as the
@@ -2058,7 +2061,7 @@ const readIdentities = () => Promise.all(accounts().filter((a) => a.kind === 'cl
   const twins = accounts().filter((a) => a.kind === 'claude' && twinOf(a.id))
   condition('same-plan', 'Claude accounts', twins.length ? `${twins.map((a) => a.label).join(' and ')} are signed in as the same claude.ai account (${identityOf(twins[0].id)!.slice(6).split('|')[0]}), so they share one plan. Sign one in to another account (Settings → Accounts → Sign in again, approved in a browser signed in to that account).` : undefined)
 })
-setTimeout(() => void readIdentities(), 5_000).unref(); setInterval(() => void readIdentities(), 5 * 60_000).unref()
+setTimeout(() => void readIdentities(), 5_000).unref(); every('identities', () => readIdentities(), 5 * 60_000)
 
 // --- one account, one login, on every machine (several machines) -------------------------------------------------------
 /** Each machine's login for `account`: this one's and what every other one says (machines.ts status.who). */
@@ -2074,7 +2077,7 @@ function pinLogin(id: string, login: string) {
 }
 // every 30s on the main server: an account without a login yet takes the first one seen (here first); a machine signed in
 // as someone else under its name takes none of its work (machines.ts loginOk), and the page says where and who
-setInterval(() => {
+every('logins per machine', () => {
   if (!fleet.machine || fleet.elsewhere() || !machines.size) return
   const off: string[] = []
   for (const a of accounts()) {
@@ -2084,7 +2087,7 @@ setInterval(() => {
     if (other.length) off.push(`${a.label} is ${loginText(a.login)}, but ${other.map(([m, w]) => `${m} has it signed in as ${loginText(w)}`).join(', ')}`)
   }
   condition('logins', 'Accounts', off.length ? `${off.join('; ')}. That machine takes none of the account's work until it signs in again as its login, or you make its login the account's (Settings → Agents).` : undefined)
-}, 30_000).unref()
+}, 30_000)
 // make `machine`'s login the account's own (it was signed in as another one on purpose): the others then sign in again
 app.post('/accounts/:id/adopt-login', async (c) => {
   const { machine } = await c.req.json<{ machine?: string }>().catch(() => ({ machine: undefined }))
@@ -2098,14 +2101,14 @@ app.post('/accounts/:id/adopt-login', async (c) => {
 // says so wherever they show (their pull requests and tickets stay to read; their runs wait). Several machines only
 app.get('/repos/held', (c) => c.json(fleet.machine ? Object.fromEntries(matrix().filter((r) => !r.order.length && r.why).map((r) => [r.repo, r.why])) : {}))
 let placedAs = ''
-setInterval(() => {
+every('placement', () => {
   if (!fleet.machine || fleet.elsewhere()) return
   const m = matrix(), now = JSON.stringify(m.map((r) => [r.repo, r.order]))
   if (now === placedAs) return
   if (placedAs) console.log(`placement: ${m.map((r) => `${r.repo} → ${r.order.join(', ') || `nowhere (${r.why})`}`).join('; ')}`)
   placedAs = now
   bus.emit('change'); pump(); stale('/repos/held')
-}, 15_000).unref()
+}, 15_000)
 const providersView = async () => ({
   use: config.providers?.use ?? {}, fallback: config.providers?.fallback ?? [], budgets: config.providers?.budgets ?? {}, stopAt: Math.round(stopAt() * 100),
   login: { claude: claudeLoginState(), openai: openaiLoginState() }, routing: routing(),
@@ -2135,7 +2138,7 @@ app.get('/usage/accounts', async (c) => {
   }))))
 })
 void readCodexWindows()
-setInterval(() => void readCodexWindows(), 2 * 60_000)
+every('codex windows', () => readCodexWindows(), 2 * 60_000)
 // is a Llama account's Ollama on the GPU, and how fast: what it has loaded (and how much of it in GPU memory), and a short
 // timed answer from its small model (or its large one, or any model it could use: ?model=, tried before it is chosen; an
 // Ollama Cloud one is fetched first, which only registers it)
@@ -2182,7 +2185,7 @@ app.get('/accounts/:id/connections', async (c) => {
 })
 const readAccountConnections = async () => { for (const a of accounts()) await accountConnections(a.id, a.kind, accountEnv(a.id)).catch(() => {}) }
 setTimeout(() => void readAccountConnections(), 30_000).unref()
-setInterval(() => void readAccountConnections(), 10 * 60_000).unref()
+every('account connections', () => readAccountConnections(), 10 * 60_000)
 app.get('/providers', async (c) => c.json(await providersView()))
 // "Does this account actually answer?": one tiny question through the same path a run takes, and what came back (its
 // words, or the error, the exit code and what it wrote to stderr), so a silent account says why
@@ -3107,7 +3110,7 @@ const prsHub = (() => {
     for (const send of pages) send('prs-patch', data, id)
   }
   bus.on('change', () => { soon ??= setTimeout(refresh, 400) }) // a run's burst of changes is one rebuild: views() is the server's heaviest read
-  setInterval(() => { if (pages.size) refresh() }, 4000).unref()
+  every('pr views', () => { if (pages.size) refresh() }, 4000)
   return {
     join(send: (event: 'prs-patch', data: string, id: string) => void) { if (!pages.size) refresh(); pages.add(send); return list },
     leave(send: (event: 'prs-patch', data: string, id: string) => void) { pages.delete(send) },
@@ -3236,24 +3239,24 @@ pump() // whatever waited in the queue before the restart starts now
 
 // Linear has its own clock, so a slow GitHub sync never holds up the ticket board
 pollTickets()
-setInterval(() => pollTickets(), config.pollSeconds * 1000)
+every('poll tickets', () => pollTickets(), config.pollSeconds * 1000)
 
 doPoll()
-setInterval(doPoll, config.pollSeconds * 1000)
+every('poll prs', doPoll, config.pollSeconds * 1000)
 // your skills, kept current from their repo (fast-forward only: local edits are never overwritten)
 // the control plane only: ~/.claude is synced, and two machines pulling into it would fight
 const pullSkills = () => fleet.elsewhere() ? undefined : [config.skillsRepo ?? []].flat().forEach((dir) => execFile('git', ['-C', dir.replace(/^~/, process.env.HOME ?? '~'), 'pull', '--ff-only', '--quiet'], { timeout: 60_000 },
   (e) => e && console.warn(`skills pull (${dir}): ${e.message.split('\n')[0]}`)))
-pullSkills(); setInterval(pullSkills, 3600_000)
+pullSkills(); every('pull skills', pullSkills, 3600_000)
 // a state.json that only grew: trimmed once a day (and at every start, store.ts)
-setInterval(() => { const n = prune(); if (n) { console.log(`state: pruned ${n} old closed PRs and exec runs`); save() } }, 86400_000).unref()
+every('prune state', () => { const n = prune(); if (n) { console.log(`state: pruned ${n} old closed PRs and exec runs`); save() } }, 86400_000)
 // what the runs leave on disk, by its keeping (retention.ts): a few minutes after a start, then daily. Off until
 // CONCIERGE_RETENTION=1: until then it only says what would go
 const expireNow = () => void expireOld().then((x) => { if (x.files) console.log(x.removed ? `retention: removed ${x.files} files past their keeping (${Math.round(x.bytes / 1e6)} MB)` : `retention is off: ${x.files} files (${Math.round(x.bytes / 1e6)} MB) are past their keeping and would go with CONCIERGE_RETENTION=1`) }, (e: Error) => console.warn(`retention: ${e.message}`))
-setTimeout(expireNow, 5 * 60_000).unref(); setInterval(expireNow, 86400_000).unref()
+setTimeout(expireNow, 5 * 60_000).unref(); every('retention', expireNow, 86400_000)
 // a copy of the state a day, seven kept (store.ts): what a start falls back to if the file can't be opened
 const copyState = () => { try { const f = snapshotNow(); if (f) console.log(`state: kept a copy (${f})`) } catch (e) { console.warn(`state: couldn't keep a copy: ${(e as Error).message}`) } }
-setTimeout(copyState, 10 * 60_000).unref(); setInterval(copyState, 6 * 3600_000).unref()
+setTimeout(copyState, 10 * 60_000).unref(); every('state snapshot', copyState, 6 * 3600_000)
 // several machines (fleet.ts): their own alerts, such as the sync between them being down
 fleet.watch?.(condition)
 // several machines: this one also runs agents another machine (the control plane) sends it (machines.ts)
@@ -3305,7 +3308,7 @@ const readCan = async () => {
   for (const a of accounts()) if (onFallbackToken(a.id) || await signedInHere(a.id).catch(() => false)) out.push(a.id)
   canHere = out
 }
-void readCan(); setInterval(() => void readCan(), 60_000).unref()
+void readCan(); every('hook rights', () => readCan(), 60_000)
 // (started here, after readCan: a lapse or a recovery is told to the control plane at once)
 keepAccountLogins(() => accounts().filter((a) => a.kind === 'claude' && !!a.home), () => { void readCan(); void loginNotice() })
 /** Whether an account works on this machine, and how: its sign-in here, or its shared key (an added Claude account's). */
@@ -3431,7 +3434,7 @@ async function adoptKeys() {
   console.log(`shared keys: took ${missing.filter((k) => shared[k]).map((k) => `${KEY_LABEL[k]} from ${shared[k]!.from}`).join(', ')}`)
 }
 setTimeout(() => void adoptKeys().catch(() => {}), 60_000).unref()
-setInterval(() => void adoptKeys().catch(() => {}), 10 * 60_000).unref()
+every('adopt keys', () => adoptKeys(), 10 * 60_000)
 // every machine's numbers, this one first (Settings → Machines)
 app.get('/machines/stats', async (c) => {
   const here = [...children.values()].filter((x) => !(x as { machine?: string }).machine).length
@@ -3450,7 +3453,7 @@ async function checkVersions() {
   condition('versions', 'Updates', late.length ? `Not on the latest commit: ${late.map((m) => `${m.name} (runs ${m.version ?? 'an older build'}${behind(m).includes('fleet') ? `, fleet ${m.fleet ?? 'older'}` : ''})`).join(', ')}. Its update log (Settings → Machines) says why.` : undefined)
 }
 setTimeout(() => void checkVersions(), 30_000).unref()
-setInterval(() => void checkVersions(), 5 * 60_000).unref()
+every('versions', () => checkVersions(), 5 * 60_000)
 // sign an account in on a machine from here: the page shows the address to approve and relays the code back
 app.post('/machines/:name/signin', async (c) => {
   const name = c.req.param('name'), b = await c.req.json() as { account?: string; step?: string; input?: string }
@@ -3542,7 +3545,7 @@ app.get('/connections/where', async (c) => {
 // which account takes the work: when it moves to a fallback (a plan window spent, a limit, a lapsed sign-in), an alert
 // says so until it moves back, and the sidebar follows at once
 let routedAs = ''
-setInterval(() => {
+every('routing', () => {
   const r = routing(), now = JSON.stringify(r.map((x) => [x.work, x.using, x.stuck]))
   if (now === routedAs) return
   const first = !routedAs
@@ -3554,7 +3557,7 @@ setInterval(() => {
   if (!first) console.log(`accounts: ${text ?? 'every kind of work is back on its own account'}`)
   condition('accounts', 'Accounts', text)
   bus.emit('health')
-}, 30_000).unref()
+}, 30_000)
 // a run that has said nothing for a while: you hear about it, once per silence
 bus.on('stalled', (key: string, label: string) => {
   const p = state.prs[key]
@@ -3641,4 +3644,4 @@ if ((setting('HOST') ?? '127.0.0.1') !== '127.0.0.1' && !setting('PASSWORD')) co
 // what is missing here is known from the start (the clones themselves wait 15s): before, a page opened in those
 // seconds took every repository for checked out on this machine
 markClones()
-setTimeout(() => void ensureClones(), 15_000).unref(); setInterval(() => void reloadConfig().then(ensureClones), 5 * 60_000).unref()
+setTimeout(() => void ensureClones(), 15_000).unref(); every('config and clones', () => reloadConfig().then(ensureClones), 5 * 60_000)

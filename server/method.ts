@@ -5,6 +5,7 @@
 import { readFile } from 'node:fs/promises'
 import { config } from './config.ts'
 import { pluginSkill, skillFile } from './setup.ts'
+import { every } from './every.ts'
 
 export const FEATURES = {
   everyRun: { skill: 'work-from-concierge', label: 'Every run', hint: 'Ground rules added to every agent run' },
@@ -60,6 +61,6 @@ export const keptBody = (f: Feature) => kept.get(f)
 export const keptMethod = (f: Feature) => (kept.get(f) ? `\n\n${kept.get(f)}` : '')
 export const missing = (f: Feature) => `${FEATURES[f].label} needs the skill "${skillFor(f)}", which isn't installed: install it, or pick another in Settings → Skills`
 async function keep() { for (const f of SYNC) kept.set(f, await skillBody(skillFor(f)).catch(() => undefined)) }
-void keep(); setInterval(() => void keep(), 60_000).unref()
+void keep(); every('method', () => keep(), 60_000)
 /** Read again now (after Settings changed a skill). */
 export const rereadMethods = () => keep()

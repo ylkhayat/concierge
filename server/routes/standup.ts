@@ -7,6 +7,7 @@ import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBef
 import { callClaude } from '../explain.ts'
 import { type Written, overBudget, save, state, addSpend } from '../store.ts'
 import type { Hono as App } from 'hono'
+import { every } from '../every.ts'
 import type { TicketView } from '../index.ts'
 
 // what these routes use that lives in index.ts
@@ -72,7 +73,7 @@ export function standupRoutes(app: App, { ticketViews }: Deps) {
   // at 07:00 on a weekday (your time zone, from the page), or as soon as the machine is up after, the morning's standup
   // is written, for every team at once
   let wroteMorning = ''
-  setInterval(() => {
+  every('morning standup', () => {
     const tz = state.settings.timezone ?? process.env.TZ ?? 'UTC', now = new Date(), day = localDay(now, tz)
     const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }).format(now))
     const weekday = new Date(`${day}T12:00:00Z`).getUTCDay() % 6 !== 0
@@ -84,7 +85,7 @@ export function standupRoutes(app: App, { ticketViews }: Deps) {
     wroteMorning = day
     // a failed write (no network yet after waking, the model down) is tried again next minute
     writeStandup(day, startOf(workdayBefore(day), tz), []).catch((e) => { wroteMorning = ''; console.error('standup at 07:00:', (e as Error).message) })
-  }, 60_000).unref()
+  }, 60_000)
   // the standup's calendar: when work happened over the last 60 days (runs that ended, PRs you opened), for its dots.
   // Times, not days: the page buckets them by its own day, which is yours, not the server's
   app.get('/standup/days', async (c) => {
