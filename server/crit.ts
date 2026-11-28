@@ -53,7 +53,11 @@ export function normOf(c: C, path?: string): Norm | undefined {
 export const deliberateNote = (why: string) => `${DELIBERATE} ${why.trim() || 'kept on purpose.'}`
 type Finish = { finishes: number; lastFinish?: Crit['lastFinish'] }
 let snap: { sessions: Session[]; counts: Map<string, Counts>; finish: Map<string, Finish>; norms: Map<string, Norm[]> } = { sessions: [], counts: new Map(), finish: new Map(), norms: new Map() }
-const wanted = new Set<string>() // session keys PRs remember, live or not: their counts are read too
+// session keys PRs remember, live or not: their counts are read too. By when each was last asked for: one nothing has
+// asked about for ten minutes (its PR closed, or went) is no longer read every three seconds, where every key ever
+// seen was, for as long as the server ran
+const wanted = new Map<string, number>()
+const WANTED_MS = 10 * 60_000
 const readJson = (p: string) => readFile(p, 'utf8').then((t) => JSON.parse(t), () => undefined)
 let reading: Promise<void> | undefined
 /** Re-read crit's files into the snapshot; a call during a refresh waits for that one. */
@@ -71,7 +75,9 @@ async function read() {
       ...all.filter((x) => x.pid && alive(x.pid) && !remote.has(x.key)),
       ...[...remote].map(([key, r]) => ({ ...all.find((x) => x.key === key), key, port: r.port, machine: r.machine, pid: undefined })),
     ]
-    const keys = new Set([...sessions.map((x) => x.key), ...wanted])
+    const fresh = Date.now() - WANTED_MS
+    for (const [k, at] of wanted) if (at < fresh) wanted.delete(k)
+    const keys = new Set([...sessions.map((x) => x.key), ...wanted.keys()])
     const counts = new Map<string, Counts>(), finish = new Map<string, Finish>(), norms = new Map<string, Norm[]>()
     await Promise.all([...keys].map(async (key) => {
       const live = sessions.find((x) => x.key === key)
@@ -105,7 +111,7 @@ setInterval(() => void refreshCrit(), 3000).unref()
 export function critFor(seen: { port?: number; key?: string }, worktree?: string): Crit {
   const session = snap.sessions.find((x) => (seen.port != null ? x.port === seen.port : !!worktree && x.cwd === worktree))
   const sessionKey: string | undefined = session?.key ?? seen.key
-  if (sessionKey) wanted.add(sessionKey)
+  if (sessionKey) wanted.set(sessionKey, Date.now())
   const c = (sessionKey && snap.counts.get(sessionKey)) || { aiComments: 0, blocking: 0, drift: 0, myComments: 0, unresolved: 0 }
   const f = (sessionKey && snap.finish.get(sessionKey)) || { finishes: 0 }
   return { port: session?.port ?? seen.port, live: !!session, machine: session?.machine, cwd: session?.cwd, pid: session?.pid, sessionKey, ...c, ...f }

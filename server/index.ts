@@ -54,7 +54,7 @@ import { accountToken, accountTokenAt, applyShared, local as localKeys, SHARED_K
 import { call } from './worker.ts'
 import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
-import { cancelSetup, cancelVisuals, enqueueSetup, enqueueVisuals } from './runner.ts'
+import { cancelSetup, cancelVisuals, enqueueSetup, enqueueVisuals, heldAfter } from './runner.ts'
 import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelBase, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
 import { basePlan, callClaude, codebase, loadBase, loadNodes, loadOverlay, loadSkeleton } from './explain.ts'
 import { STORY_RULE } from './levels.ts'
@@ -3882,6 +3882,14 @@ app.get('/events', (c) => streamSSE(c, async (stream) => {
 // a codebase map interrupted by a restart picks up where it stopped (finished batches are saved)
 for (const [repo, t] of Object.entries(state.base)) if (t.state === 'interrupted') enqueueBase(repo, t.under)
 const stoppedRestarts = (s?: string) => !!s && /restarts in a row/.test(s)
+// your words for a run that was finishing when the server stopped: given now, as they would have been when it ended
+setTimeout(() => {
+  for (const [key, text] of heldAfter()) {
+    const run = key.startsWith('exec:') ? state.execs[key.slice(5)] : undefined, p = state.prs[key]
+    try { if (run) continueExec(run)(text); else if (p) enqueue(p, 'reply', text + REPLY_NOTE, text); else console.warn(`words kept for ${key} couldn't be given: nothing runs under it any more`) }
+    catch (e) { console.warn(`words kept for ${key}: ${(e as Error).message}`) }
+  }
+}, 5000).unref()
 for (const p of Object.values(state.prs)) {
   // an explanation only reads, and you asked for it: it always picks back up
   if (p.explain?.state === 'interrupted' && !p.closed) enqueueExplain(p, p.explain.fresh)

@@ -1117,6 +1117,7 @@ export function runAgent(o: {
     o.onEnd({ code, signal, resulted, turns, stderr, cancelled: cancelled.delete(o.key), hung })
     const later = afterward.get(o.key)
     afterward.delete(o.key)
+    if (state.afterWords?.[o.key]) { delete state.afterWords[o.key]; save() }
     later?.then(later.texts.join('\n\n'))
   })
   child.on('error', o.onError)
@@ -1125,9 +1126,16 @@ export function runAgent(o: {
 const userLine = (text: string) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } }) + '\n'
 const NUDGE_NOTE = '\n\n(Sent from Concierge while you work. Nothing was stopped: keep going with this in mind.)'
 
-// words for a run that was already wrapping up: they go to its session as soon as it ends
-// ponytail: in memory, so a restart in that moment drops them; persist when that bites
+// words for a run that was already wrapping up: they go to its session as soon as it ends. The words themselves are
+// kept with the state too (afterWords), so a restart in that moment gives them at the next start (heldAfter, below)
 const afterward = new Map<string, { texts: string[]; then: (text: string) => void }>()
+
+/** The words kept for runs that were finishing when the server stopped: taken (and forgotten here), for the start to give them. */
+export function heldAfter(): [string, string][] {
+  const out = Object.entries(state.afterWords ?? {}).map(([k, texts]) => [k, texts.join('\n\n')] as [string, string])
+  if (out.length) { state.afterWords = {}; save() }
+  return out
+}
 
 /**
  * Tell a running agent something without ever stopping it: it reads your words between its steps ('now'). One already
@@ -1143,6 +1151,7 @@ export function tell(key: string, text: string, then: (text: string) => void, sh
   } else {
     const w = afterward.get(key)
     if (w) w.texts.push(text); else afterward.set(key, { texts: [text], then })
+    ;((state.afterWords ??= {})[key] ??= []).push(text); save()
     note(key, { at, kind: 'event', text: "It's finishing up: your words go to it the moment it ends." })
   }
   bus.emit('change'); bus.emit('exec')
