@@ -2,7 +2,7 @@
 import { writeGate } from './gate.ts'
 import { markNotWaiting } from './judge.ts'
 import { reviewStack, type StackItem } from './stackSteps.ts'
-import { FEATURES, method, rereadMethods, skillFor, skillPath } from './method.ts'
+import { FEATURES, rereadMethods, skillFor, skillPath } from './method.ts'
 import './sharedEnv.ts'
 import { recentLines } from './logRing.ts'
 import { profile } from './profile.ts'
@@ -52,7 +52,6 @@ import { capped, machines, serve as serveMachine, slotsHere, token as machineTok
 import { updateStatus } from './updateStatus.ts'
 import { accountToken, accountTokenAt, applyShared, local as localKeys, SHARED_KEYS, sharedNow, type SharedKey } from './sharedEnv.ts'
 import { call } from './worker.ts'
-import { factsKey, forTeams, lastWorkday, localDay, standup, startOf, workdayBefore, writeInput } from './standup.ts'
 import { areaOf, suggestPr } from './links.ts'
 import { heldAfter, tailOf } from './runner.ts'
 import { children, stopAt, planRunsWith, routing, whyNot, tell, planSpent, waitingOn, queuedWhy, windowsFor, activity, loadActivity, setLinkNote, ticketActivity, bus, cancel, note, cancelExec, runAgain, reroute, probePlan, followUnfollowed, enqueueExec, ticketBusy, cancelExplain, enqueue, enqueueBase, enqueueExplain, explainAfterBase, mapping, pump, running, shutdown, drained, waitReason, type Activity } from './runner.ts'
@@ -71,19 +70,18 @@ import { planStacks, valid, validPrep, type Prep } from './plan.ts'
 import { CONFIG_FILE, WORK_DIR, CODE_DIR_SET, configured, reloadConfig, repoPath, fill, saveConfig, userConfig, workspaces, type Workspace } from './config.ts'
 import { accountOf, accounts, available, modelsOf, spawnAgent, identityOf, loginText, markLimited, setIdentity, providerFor, envOf as accountEnv, limitedUntil, llamaPulling, modelOf, ollamaOf, readCodexWindows, watchOllamas, ollamaState, openaiAuth, openaiLoginState, prepareHome, PROVIDERS, readOpenaiAuth, startOpenaiLogin } from './providers.ts'
 import { orgSkills, setMode, syncOrgSkills } from './orgSkills.ts'
-import { improveSkill, removeSkill, skillsView, suggestSkills } from './skills.ts'
 import { adopt as adoptCards, ask as askCard, discussionsOf, markSent, reset, say, settled, type Topic } from './discussions.ts'
 import { domainOf, writeDomain, writingDomain } from './domain.ts'
 import { peers as replicaPeers, replicaExtras, replicaStatus } from './replica.ts'
 import { laneByModel } from './laneModel.ts'
 import { ask as joinAsk, decide as joinDecide, hello as joinHello, status as joinStatus, waiting as joinsWaiting } from './join.ts'
-import { baseSlots, mustChange, ownerOf, roles, setOwner, setRoles, slot, withRole, type Owner } from './roles.ts'
+import { baseSlots, ownerOf, roles, setOwner, setRoles, slot, withRole, type Owner } from './roles.ts'
 import { CERTIFICATIONS, DATA, REGIONS, REVIEWS, ROLES, type Compliance } from './readiness.ts'
 import { suggestCompliance } from './complianceScan.ts'
 import { allowed as allowedLogins, refuse, whoFrom } from './access.ts'
 import { linearTeams } from './plans.ts'
 import { brokenSkillLinks, checkedOut, markClones, notHere, reviewIn, critInstalled, checks, cloneRepo, findRepos, cloneState, ensureClones, installSourceSkills, skillSources, missingError, missingFor, whenMissingChanges, skillExists, skillFile, skillsNeeded, sourceSkills, suggestions, validate } from './setup.ts'
-import { afterMerge, type Written, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today, snapshotNow } from './store.ts'
+import { afterMerge, config, isFollowUp, overBudget, prune, save, saveNow, slow, spentToday, state, type BaseTask, type ExecRun, type Job, type StackRef, type Pr, type Settings, STATE_DIR, addSpend, today, snapshotNow } from './store.ts'
 import { planFor } from './router.ts'
 import { CONFIG_DIR, setting } from './paths.ts'
 import { githubLoginState, startGithubLogin } from './githubLogin.ts'
@@ -102,6 +100,8 @@ import { plansRoutes } from './routes/plans.ts'
 import { connectionsRoutes } from './routes/connections.ts'
 import { designRoutes } from './routes/design.ts'
 import { codebaseRoutes } from './routes/codebase.ts'
+import { skillsAdviceRoutes } from './routes/skillsAdvice.ts'
+import { standupRoutes } from './routes/standup.ts'
 
 export type Queued = { why: string; until?: number; signIn?: { machine: string; account: string } } // why queued work hasn't started, when it should, and the sign-in it waits for (queuedWhy)
 export type PrView = Omit<Pr, 'body' | 'bodyHtml'> & { aside?: boolean; queued?: Queued; hasBody: boolean; background: number; status: Status; flow: Flow; missing: string[]; crit?: Crit; op?: Op; repoPath?: string; codebaseMap?: { task?: BaseTask; mappedAt?: string }; linked: Linked[]; waiting?: { label: string; why: string; until?: number }; pinned?: boolean; stackRun?: 'queued' | 'running'; stackAnswered?: string; critOff?: boolean }
@@ -1229,87 +1229,8 @@ app.get('/fleet/nearby', async (c) => {
 // the standby writing join.json: the page hears it then (a file event, not a timer)
 try { fsWatch(STATE_DIR, (_e, f) => { if (f === 'join.json') stale('/fleet/nearby') }).unref() } catch { /* no events here: it shows on the next tailnet change */ }
 // the run history, from the event log: the latest runs (each as it ended) and per-day totals (Settings → Usage)
-// standup: since the start of the last working day by default (?since=ISO for another start)
-const standupFacts = async (since: Date) =>
-  standup({ since, runs: await runs(Math.ceil((Date.now() - since.getTime()) / 86400_000) + 1), prs: state.prs, tickets: ticketViews(), execs: state.execs })
-const writtenKey = (day: string, teams: string[]) => `${day}|${[...teams].sort().join(',')}`
-const writing = new Map<string, Promise<Written | undefined>>()
-/** Word a day's standup with the model, from the facts as they are now (for these teams), and keep it with them. */
-function writeStandup(day: string, since: Date, teams: string[]) {
-  const k = writtenKey(day, teams)
-  if (writing.has(k)) return writing.get(k)!
-  const p = (async () => {
-    const s = await standupFacts(since)
-    const did = forTeams(s.did, teams), next = forTeams(s.next, teams), blockers = forTeams(s.blockers, teams), notes = state.standupNotes?.[day] ?? {}
-    if (!did.length && !next.length && !blockers.length && !Object.values(notes).some((x) => x?.length)) return undefined
-    const { result, cost, provider, tokens } = await callClaude<{ text: string }>(writeInput(did, next, blockers, notes), tmpdir(), undefined, () => {},
-      { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, 0.3, await method('standup', 'Keep the ticket IDs exactly as given, so they can be linked. The text field holds the update.'), 'haiku')
-    addSpend(cost, provider, tokens)
-    const w: Written = { day, teams, since: since.toISOString(), key: factsKey(did, next, blockers, notes), text: result.text.trim(), at: new Date().toISOString(), costUsd: cost, tickets: new Set([...did, ...next].map((x) => x.id)).size }
-    // the newest 30 stay: a month of mornings
-    state.standups = Object.fromEntries([...Object.entries(state.standups ?? {}), [k, w] as const].sort((a, b) => a[1].at.localeCompare(b[1].at)).slice(-30))
-    save()
-    return w
-  })().finally(() => writing.delete(k))
-  writing.set(k, p)
-  return p
-}
-// the facts, live, and the written version for that day and those teams, saying whether the facts moved since
-app.get('/standup', async (c) => {
-  const q = c.req.query('since'), since = q && !isNaN(Date.parse(q)) ? new Date(q) : lastWorkday()
-  const day = c.req.query('day') ?? '', teams = (c.req.query('teams') ?? '').split(',').filter(Boolean)
-  const s = await standupFacts(since)
-  const written = day ? state.standups?.[writtenKey(day, teams)] : undefined
-  const notes = (day && state.standupNotes?.[day]) || {}
-  const now = factsKey(forTeams(s.did, teams), forTeams(s.next, teams), forTeams(s.blockers, teams), notes)
-  return c.json({ ...s, notes, written: written && { ...written, stale: written.key !== now || written.since !== since.toISOString() } })
-})
-// your own lines for a day's standup, per part (what only you know): kept with the day, said in the copy and the written one
-app.post('/standup/notes', async (c) => {
-  const b = await c.req.json<{ day?: string; part?: string; lines?: unknown }>()
-  if (!b.day || !/^\d{4}-\d\d-\d\d$/.test(b.day) || !['did', 'blockers', 'next'].includes(b.part ?? '')) return c.json({ error: 'Which day, and which part?' }, 400)
-  if (!Array.isArray(b.lines) || b.lines.length > 20 || b.lines.some((x) => typeof x !== 'string' || x.length > 300)) return c.json({ error: 'Up to 20 lines of 300 characters' }, 400)
-  const lines = (b.lines as string[]).map((x) => x.trim()).filter(Boolean)
-  const all = { ...state.standupNotes }
-  all[b.day] = { ...all[b.day], [b.part!]: lines }
-  // a month of mornings, like the written ones
-  state.standupNotes = Object.fromEntries(Object.entries(all).sort(([a], [z]) => a.localeCompare(z)).slice(-30))
-  save()
-  return c.json({ ok: true, notes: state.standupNotes[b.day] })
-})
-app.post('/standup/write', async (c) => {
-  const b = await c.req.json<{ day?: string; since?: string; teams?: string[] }>()
-  if (!b.day || !/^\d{4}-\d\d-\d\d$/.test(b.day) || !b.since || isNaN(Date.parse(b.since))) return c.json({ error: 'Which day, and since when?' }, 400)
-  if (overBudget()) return c.json({ error: "Today's budget is spent" }, 400)
-  try {
-    const w = await writeStandup(b.day, new Date(b.since), (b.teams ?? []).filter((t) => /^[A-Z]{2,5}$/.test(t)))
-    return w ? c.json(w) : c.json({ error: 'Nothing to write about for that day' }, 400)
-  } catch (e) { return c.json({ error: (e as Error).message.split('\n')[0].slice(0, 200) }, 502) }
-})
-// at 07:00 on a weekday (your time zone, from the page), or as soon as the machine is up after, the morning's standup
-// is written, for every team at once
-let wroteMorning = ''
-setInterval(() => {
-  const tz = state.settings.timezone ?? process.env.TZ ?? 'UTC', now = new Date(), day = localDay(now, tz)
-  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }).format(now))
-  const weekday = new Date(`${day}T12:00:00Z`).getUTCDay() % 6 !== 0
-  // the machine was off at 07:00: it is written when it comes up. Only a write from this morning counts as done; one
-  // from before (Saturday's for Monday, written by hand) is stale by then
-  const had = state.standups?.[writtenKey(day, [])]
-  const fresh = had && localDay(new Date(had.at), tz) === day && Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }).format(new Date(had.at))) >= 7
-  if (!weekday || hour < 7 || wroteMorning === day || fleet.elsewhere() || overBudget() || fresh) return
-  wroteMorning = day
-  // a failed write (no network yet after waking, the model down) is tried again next minute
-  writeStandup(day, startOf(workdayBefore(day), tz), []).catch((e) => { wroteMorning = ''; console.error('standup at 07:00:', (e as Error).message) })
-}, 60_000).unref()
-// the standup's calendar: when work happened over the last 60 days (runs that ended, PRs you opened), for its dots.
-// Times, not days: the page buckets them by its own day, which is yours, not the server's
-app.get('/standup/days', async (c) => {
-  const since = new Date(Date.now() - 60 * 86400_000).toISOString()
-  const at = [...(await runs(60)).filter((r) => r.to === 'done' && (r.entity === 'job' || r.entity === 'exec')).map((r) => r.at),
-    ...Object.values(state.prs).filter((p) => p.mine && p.createdAt >= since).map((p) => p.createdAt)]
-  return c.json({ at })
-})
+// the standup routes: server/routes/standup.ts
+standupRoutes(app, { ticketViews })
 // the Intent and Understanding discussions beside a PR or ticket (discussions.ts). target: "pr:<id>" or "ticket:<id>"
 // what the Explain view shows of a PR, compact, for the Understanding discussion
 async function explainedOf(id: string) {
@@ -1464,39 +1385,8 @@ app.post('/discussions/ask', async (c) => {
 app.post('/discussions/sent', async (c) => { const { target, topic, number } = await c.req.json<{ target: string; topic: Topic; number?: number }>(); markSent(target, topic, number); return c.json(discussionsOf(target)) })
 app.post('/discussions/reset', async (c) => { const { target, topic } = await c.req.json<{ target: string; topic: Topic }>(); reset(target, topic); return c.json(discussionsOf(target)) })
 
-// the skills: how they are used and how well they work (skills.ts); proposals, written on demand by the small model
-app.get('/skills/view', async (c) => c.json(await skillsView(Math.min(90, Number(c.req.query('days')) || 30))))
-// proposals take a minute or two: written in the background and kept (state.skillAdvice), so leaving the page loses
-// nothing; the page asks how it stands
-const advising = new Map<string, string | undefined>() // what is being written: 'improve:<skill>' or 'suggest', and its error once failed
-const advice = () => (state.skillAdvice ??= { improve: {} })
-app.get('/skills/advice', (c) => {
-  const name = c.req.query('name')
-  const k = name ? `improve:${name}` : 'suggest'
-  return c.json({ result: name ? advice().improve[name] : advice().suggest, busy: advising.has(k) && advising.get(k) === undefined, error: advising.get(k) })
-})
-app.post('/skills/improve', async (c) => {
-  const { name, days } = await c.req.json<{ name: string; days?: number }>()
-  try { mustChange(String(name)) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
-  const k = `improve:${name}`
-  if (advising.has(k) && advising.get(k) === undefined) return c.json({ busy: true })
-  advising.set(k, undefined)
-  improveSkill(String(name), Math.min(90, Number(days) || 30))
-    .then((r) => { advice().improve[String(name)] = r; save(); advising.delete(k) }, (e: Error) => advising.set(k, e.message))
-  return c.json({ busy: true })
-})
-app.post('/skills/remove', async (c) => {
-  const { name } = await c.req.json<{ name: string }>()
-  try { mustChange(String(name)); return c.json({ said: await removeSkill(String(name)) }) } catch (e) { return c.json({ error: (e as Error).message }, 400) }
-})
-app.post('/skills/suggest', async (c) => {
-  const { days } = await c.req.json<{ days?: number }>().catch(() => ({ days: 30 }))
-  if (advising.has('suggest') && advising.get('suggest') === undefined) return c.json({ busy: true })
-  advising.set('suggest', undefined)
-  const d = Math.min(90, Number(days) || 30)
-  suggestSkills(d).then((r) => { advice().suggest = { ...r, at: new Date().toISOString(), days: d }; save(); advising.delete('suggest') }, (e: Error) => advising.set('suggest', e.message))
-  return c.json({ busy: true })
-})
+// the skillsAdvice routes: server/routes/skillsAdvice.ts
+skillsAdviceRoutes(app)
 app.get('/runs', async (c) => {
   const days = Math.min(90, Number(c.req.query('days')) || 7)
   let list = await runs(days)
