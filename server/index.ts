@@ -2335,6 +2335,7 @@ app.post('/auto-start', async (c) => {
 })
 app.post('/settings', async (c) => {
   const b = (await c.req.json()) as Partial<Settings>
+  const before = JSON.stringify(state.settings)
   if (b.timezone !== undefined) {
     try { new Intl.DateTimeFormat('en', { timeZone: b.timezone }) } catch { return c.json({ error: 'Unknown time zone' }, 400) }
     state.settings.timezone = b.timezone
@@ -2347,6 +2348,8 @@ app.post('/settings', async (c) => {
     if (b.dailyBudgetUsd !== null && !(typeof b.dailyBudgetUsd === 'number' && b.dailyBudgetUsd >= 0 && b.dailyBudgetUsd <= 10000)) return c.json({ error: 'budget must be a dollar amount or empty' }, 400)
     state.settings.dailyBudgetUsd = b.dailyBudgetUsd
   }
+  // nothing changed (the Standup page says its time zone each time it opens): nothing saved, no page told to read again
+  if (JSON.stringify(state.settings) === before) return c.json(healthView())
   save()
   pump() // a higher cap may free queued reviews
   bus.emit('health')
