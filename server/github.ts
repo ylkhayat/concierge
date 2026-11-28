@@ -3,6 +3,11 @@ import { promisify } from 'node:util'
 import { config, save, state, type Pr, type StackRef } from './store.ts'
 import { judge, settled, verdictOf } from './judge.ts'
 import { Lru } from './lru.ts'
+import { readFileSync } from 'node:fs'
+import { rename, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { STATE_DIR } from './paths.ts'
+import { mine as ownFile } from './perMachine.ts'
 
 let token = process.env.GITHUB_TOKEN ?? ''
 /** The shared GitHub token changed (sharedEnv.ts): use it from the next call. */
@@ -13,6 +18,21 @@ async function getToken() {
 }
 
 const etags = new Lru<string, { etag: string; body: unknown }>(3000) // whole answers, by path: one not here is fetched again
+// Kept across restarts, in a file of this machine's own (a cache: never sent to another machine). Without it every
+// restart (an update, a handover: dozens a day) read every PR again in full; with it GitHub answers "not changed" and
+// the answer kept is used, which costs none of the hourly quota.
+const ETAG_FILE = ownFile(join(STATE_DIR, 'github-cache.json'))
+const KEEP_BYTES = 12 * 1024 * 1024
+try { for (const [k, v] of JSON.parse(readFileSync(ETAG_FILE, 'utf8')) as [string, { etag: string; body: unknown }][]) etags.set(k, v) } catch { /* none yet, or unreadable: fetched again */ }
+let etagsDirty = false
+setInterval(() => {
+  if (!etagsDirty) return
+  etagsDirty = false
+  // the ones used last, up to a size: written beside the state, then moved into place
+  const out: [string, unknown][] = []; let bytes = 0
+  for (const e of [...etags].reverse()) { const j = JSON.stringify(e); if ((bytes += j.length) > KEEP_BYTES) break; out.unshift(e) }
+  void writeFile(`${ETAG_FILE}.tmp`, JSON.stringify(out), { mode: 0o600 }).then(() => rename(`${ETAG_FILE}.tmp`, ETAG_FILE)).catch(() => {})
+}, 60_000).unref()
 
 // GitHub's secondary limits punish bursts (many requests at once, or too many a minute), whatever the hourly quota
 // says: every call to GitHub goes through one gate, a few at a time, and once GitHub says slow down nothing asks it
@@ -120,6 +140,7 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
       'X-GitHub-Api-Version': '2022-11-28',
       ...(cached && { 'If-None-Match': cached.etag }),
     },
+    signal: AbortSignal.timeout(30_000), // a call GitHub never answers must not hold the gate's place forever
   }))
   noteScopes(res.headers)
   const left = Number(res.headers.get('x-ratelimit-remaining')), reset = Number(res.headers.get('x-ratelimit-reset'))
@@ -141,7 +162,7 @@ export async function gh<T>(path: string, accept = 'application/vnd.github+json'
   ;(isSearch(path) ? searchCool : cool).strikes = 0
   const body = await res.json()
   const etag = res.headers.get('etag')
-  if (etag) etags.set(path, { etag, body })
+  if (etag) { etags.set(path, { etag, body }); etagsDirty = true }
   return body as T
 }
 
@@ -255,6 +276,7 @@ export async function ghSend<T>(method: 'POST' | 'PATCH', path: string, body: un
   const res = await fetch(`https://api.github.com${path}`, {
     method, body: JSON.stringify(body),
     headers: { Authorization: `Bearer ${await getToken()}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(30_000),
   })
   const json = await res.json().catch(() => ({})) as T & { message?: string }
   if (!res.ok) throw new Error(`GitHub: ${json.message ?? res.status}`)
@@ -269,6 +291,7 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
     method: 'POST',
     headers: { Authorization: `Bearer ${await getToken()}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(45_000),
   }))
   const json = await res.json().catch(() => ({})) as { data?: T & { rateLimit?: { remaining: number; resetAt: string } }; errors?: { message: string }[] }
   if (!json.data) {
