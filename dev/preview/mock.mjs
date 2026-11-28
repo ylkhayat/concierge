@@ -51,7 +51,7 @@ const big = { id: 'p2', title: 'Acme for Desktop: Administration', method: 'agil
 }
 // the setup as the server gives it, enough of it for every page of Settings to draw
 const setupMock = { configured: true, configFile: '/Users/me/.config/review-deck/config.json', reviewIn: 'concierge', critInstalled: true, skills: [], skillSources: [], features: [], needed: [], commands: { review: '/review-pr {number}', revise: '/revise {number}' },
-  config: { repos: { 'acme/app': '/code/app' }, workspaces: ['review', 'exec'], linearDesktop: false, terminal: 'Terminal', review: '/review-pr {number}', revise: '/revise {number}', stack: '', explainBudgetUsd: 1, mergeOnGreen: [], skillSources: [],
+  config: { repos: process.env.MOCK_ORGS ? { 'acme/app': '/code/app', 'acme/api': '/code/api', 'globex/site': '/code/site', 'globex/billing-service': '/code/billing' } : { 'acme/app': '/code/app' }, workspaces: ['review', 'exec'], linearDesktop: false, terminal: 'Terminal', review: '/review-pr {number}', revise: '/revise {number}', stack: '', explainBudgetUsd: 1, mergeOnGreen: [], skillSources: [],
     exec: { command: '/ship-tickets {id}', actions: [], allowedTools: ['Read', 'Edit', 'Bash(npm:*)', 'mcp__linear-key'] } } }
 setupMock.config.company = { regions: ['eu'], certifications: ['soc2'], data: ['personal', 'recordings'], reviews: ['security'], team: [{ name: 'Mira Okafor', role: 'engineer', pace: 6 }, { name: 'Jonas Weber', role: 'engineer' }] }
 // --- Design: a baseline with its board (the blueprint), and a PR's capture through its lenses -------------------------
@@ -90,6 +90,8 @@ const vTask = undefined
 const prView = { id: 'ylkhayat/elbuffeh#21', repo: 'ylkhayat/elbuffeh', number: 21, title: 'feat(rumanna): courses, fast fitted corrections and learner choices', url: 'https://github.com/ylkhayat/elbuffeh/pull/21', author: 'ylkhayat', mine: true, draft: false, headSha: 'abc1234', mode: 'auto', ui: { is: true, why: '14 files people see: CourseCard.tsx, LevelChip.tsx, page.tsx…', files: [], head: 'abc1234', at: new Date().toISOString() }, wanted: true, task: vTask, tickets: ['ELBU-3'] }
 // MOCK_LIST=n: a busy day for timing the lists (switching items): n PRs and n tickets over the event stream, each
 // with a feed of MOCK_FEED entries (default 300, in runs of MOCK_RUN: 50) that answers after MOCK_FEED_MS (default 60)
+// MOCK_ORGS=1: the list's PRs are spread over four repositories of two organizations (the picker's groups)
+const repoOf = (i) => (process.env.MOCK_ORGS ? ['acme/app', 'acme/api', 'globex/site', 'globex/billing-service'][i % 4] : 'acme/app')
 const LIST = Number(process.env.MOCK_LIST) || 0, FEED = Number(process.env.MOCK_FEED) || 300, RUN = Number(process.env.MOCK_RUN) || 50, FEED_MS = Number(process.env.MOCK_FEED_MS ?? 60)
 const words = 'the agent read the diff and checked how billing handles a paused seat before it changes the proration path'.split(' ')
 const say = (i, n) => Array.from({ length: n }, (_, j) => words[(i * 7 + j) % words.length]).join(' ')
@@ -103,7 +105,7 @@ const feedOf = (seed) => Array.from({ length: FEED }, (_, i) => {
 const STATUSES = ['ready', 'in-review', 'new', 'preparing', 'reviewed', 'new', 'no-checkout']
 const listPrs = Array.from({ length: LIST }, (_, i) => {
   const mine = i % 4 === 3, status = mine ? ['new', 'answered', 'clear', 'approved'][i % 4] : STATUSES[i % STATUSES.length]
-  return { id: `acme/app#${100 + i}`, repo: 'acme/app', number: 100 + i, title: `${['feat', 'fix', 'chore'][i % 3]}(billing): ${say(i, 6 + (i % 5))}`, url: `https://github.com/acme/app/pull/${100 + i}`,
+  return { id: `${repoOf(i)}#${100 + i}`, repo: repoOf(i), number: 100 + i, title: `${['feat', 'fix', 'chore'][i % 3]}(billing): ${say(i, 6 + (i % 5))}`, url: `https://github.com/acme/app/pull/${100 + i}`,
     author: { login: `dev${i % 6}`, avatar: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }, draft: false, base: 'main', head: `b${i}`, headSha: `sha${i}`, additions: 10 + i * 3, deletions: i, changedFiles: 1 + (i % 9),
     createdAt: new Date(now - i * 3600e3).toISOString(), updatedAt: new Date(now - i * 600e3).toISOString(), firstSeenAt: new Date(now - i * 3600e3).toISOString(),
     requested: !mine, mine, closed: false, dismissed: false, hasBody: false, background: 0, status, missing: [], linked: [],
