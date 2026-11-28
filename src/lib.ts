@@ -36,7 +36,8 @@ export const api = (path: string, body?: unknown): Promise<any> =>
     const text = await r.text()
     let json: any
     try { json = text ? JSON.parse(text) : {} } catch { throw new Error(r.ok ? `Unreadable answer from ${path}` : `${r.status} ${text.slice(0, 200) || r.statusText}`) }
-    if (!r.ok) throw new Error(json.error ?? r.statusText)
+    // the sentence to show, with the code and status to decide on (server: every refusal carries a code)
+    if (!r.ok) throw Object.assign(new Error(json.error ?? r.statusText), { code: json.code as string | undefined, status: r.status })
     // a read never pays: when what it wants isn't worked out yet, the server says where to ask for it, and that is asked
     if (body === undefined && json?.pending === true && typeof json.ask === 'string') return api(json.ask, {})
     return json

@@ -729,6 +729,18 @@ app.use('*', async (c, next) => {
   if (site === 'cross-site') return c.json({ error: 'Refused: this request came from another website' }, 403)
   await next()
 })
+// every refusal carries a code beside its sentence, so a page (or a script) decides on the code and shows the sentence:
+// the route's own when it gave one (elsewhere, held, busy, handed_over), else the kind its status means
+const CODE: Record<number, string> = { 400: 'invalid', 401: 'signed_out', 403: 'forbidden', 404: 'not_found', 409: 'conflict', 413: 'too_large', 429: 'limited', 502: 'unreachable', 503: 'unavailable' }
+app.use('*', async (c, next) => {
+  await next()
+  if (c.res.status < 400 || !c.res.headers.get('content-type')?.includes('json')) return
+  const body = await c.res.clone().json().catch(() => undefined) as { error?: unknown; code?: unknown } | undefined
+  if (!body || typeof body !== 'object' || body.error === undefined || body.code !== undefined) return
+  const res = c.res
+  c.res = undefined
+  c.res = new Response(JSON.stringify({ ...body, code: CODE[res.status] ?? (res.status >= 500 ? 'failed' : 'refused') }), { status: res.status, headers: res.headers })
+})
 // what is sent is bounded (a snapshot of a page is the largest thing a page sends: a few megabytes), so one request
 // can't make the server hold whatever it is given
 app.use('*', bodyLimit({ maxSize: 32 * 1024 * 1024, onError: (c) => c.json({ error: 'That is too large to send (32 MB at most)' }, 413) }))
@@ -784,7 +796,7 @@ app.use('*', async (c, next) => {
     return new Response(r.text, { status: r.status, headers: { 'content-type': r.type ?? 'application/json' } })
   } catch (e) { console.warn(`api: couldn't hand ${c.req.method} ${c.req.path} to ${main.name}: ${(e as Error).message}`) }
   if (c.req.method === 'GET') return next() // the main server didn't answer: this machine's own view, as before
-  return c.json({ error: fleet.whyNot?.() ?? `${fleet.elsewhere() ?? 'Another machine'} runs Concierge now: nothing done here is kept. Reload in a moment.` }, 409)
+  return c.json({ error: fleet.whyNot?.() ?? `${fleet.elsewhere() ?? 'Another machine'} runs Concierge now: nothing done here is kept. Reload in a moment.`, code: 'elsewhere' }, 409)
 })
 // one click sent twice (a double click, a slow network, two tabs): the same words to the same agent within a few seconds
 // go once; the second is answered as if sent. On the machine that acts (a follower hands it on above)
@@ -822,7 +834,7 @@ app.use('*', async (c, next) => {
   if (c.req.method !== 'POST' || !fleet.machine) return next()
   const why = await heldTarget(c)
   if (!why) return next()
-  return c.json({ error: `No machine can work on this now: ${why}. It is here to read; actions wait until one of its machines is back.`, held: true }, 409)
+  return c.json({ error: `No machine can work on this now: ${why}. It is here to read; actions wait until one of its machines is back.`, held: true, code: 'held' }, 409)
 })
 app.get('/alerts', (c) => c.json(alerts()))
 // dim a ticket for now: it stays listed, faded and last in its group, until its state changes
@@ -1116,7 +1128,7 @@ app.post('/debug/ui', async (c) => {
 // where this server's thread spends its time, for a few seconds (profile.ts): ?seconds=10
 // every repeating job of this server: how often, how long its last run took, how often it failed (every.ts)
 app.get('/debug/timers', (c) => c.json(timers()))
-app.get('/debug/profile', async (c) => { try { return c.json(await profile(Number(c.req.query('seconds') ?? 10))) } catch (e) { return c.json({ error: (e as Error).message }, 409) } })
+app.get('/debug/profile', async (c) => { if (setting('DEBUG') !== '1') return c.json({ error: 'Profiling is off: set CONCIERGE_DEBUG=1 on this machine to allow it' }, 403); try { return c.json(await profile(Number(c.req.query('seconds') ?? 10))) } catch (e) { return c.json({ error: (e as Error).message }, 409) } })
 app.get('/machines/:name/logs', async (c) => {
   const name = c.req.param('name')
   if (name === (fleet.machine ?? 'this machine')) return c.json({ lines: recentLines().map(scrub) })
@@ -1314,7 +1326,7 @@ app.post('/update', async (c) => {
   const { now, upstream } = await c.req.json<{ now?: boolean; upstream?: boolean }>().catch(() => ({ now: false, upstream: false }))
   // one at a time: while one is under way a second ask only restarts it, so it is refused, except "now" (it's a skip)
   const lock = await stat(join(STATE_DIR, 'update.lock.d')).catch(() => undefined)
-  if (!now && lock && Date.now() - lock.mtimeMs < 3 * 3600_000) return c.json({ error: 'An update is already under way: Settings → Machines shows where it stands' }, 409)
+  if (!now && lock && Date.now() - lock.mtimeMs < 3 * 3600_000) return c.json({ error: 'An update is already under way: Settings → Machines shows where it stands', code: 'busy' }, 409)
   const text = now ? `now ${Math.floor(Date.now() / 1000)}` : `${upstream ? 'upstream ' : ''}${new Date().toISOString()}`
   await writeFile(join(STATE_DIR, 'update-asked'), text)
   // the other machines too: each reads its own update-asked (it never travels), so the button reached only the
@@ -1547,7 +1559,7 @@ app.post('/exec/:run/steer', async (c) => {
   if (!words) return c.json({ error: 'Write what it should do first' }, 400)
   const run = state.execs[c.req.param('run')]
   const sent = run ? tell(`exec:${run.id}`, words, continueExec(run)) : 'idle'
-  return sent === 'idle' ? c.json({ error: 'That run is not running' }, 409) : c.json({ ok: true, sent })
+  return sent === 'idle' ? c.json({ error: 'That run is not running', code: 'busy' }, 409) : c.json({ ok: true, sent })
 })
 // ?tail=n: the newest part only (runner.ts tailOf)
 app.get('/exec/:run/activity', async (c) => c.json(tailOf(await loadActivity(`exec:${c.req.param('run')}`), Number(c.req.query('tail')))))
@@ -1590,7 +1602,7 @@ app.post('/exec', async (c) => {
   if (mode === 'one-pr') {
     if (new Set(picked.map((t) => t.repo)).size > 1) return c.json({ error: 'One PR is one repository: pick tickets of one repository' }, 400)
     const ids1 = picked.map((t) => t.id), { run, merge } = shipTogether(ids1, note)
-    if (!run) return c.json({ error: 'It couldn\'t start: one of them is busy' }, 409)
+    if (!run) return c.json({ error: 'It couldn\'t start: one of them is busy', code: 'busy' }, 409)
     return c.json({ stacks: [ids1], why: '', runs: [run], merge })
   }
   let plan: { stacks: string[][]; why: string; prep?: Prep }
@@ -1614,7 +1626,7 @@ app.post('/exec/action', async (c) => {
   if (!t) return c.json({ error: 'Unknown ticket' }, 404)
   const repo = repoFor(t.id, config.exec.repoByPrefix)
   if (!repo) return c.json({ error: `No repository mapped for ${t.team}` }, 400)
-  if (ticketBusy(t.id)) return c.json({ error: `${t.id} is running; its session is in use until the run ends` }, 409)
+  if (ticketBusy(t.id)) return c.json({ error: `${t.id} is running; its session is in use until the run ends`, code: 'busy' }, 409)
   const text = typeof note === 'string' ? note.trim().slice(0, 4000) : ''
   // refuse before anything is posted when the run would need a skill this machine lacks
   const lacks = missingFor(action === 'reply' ? slot('exec') : config.exec.actions.find((x) => x.id === action)?.prompt)
@@ -2347,7 +2359,7 @@ app.post('/prs/:id/submit', async (c) => {
   const p = pr(c.req.param('id'))
   if (p?.mine) return c.json({ error: 'you cannot review your own PR' }, 400)
   if (!p?.job?.reviewDone) return c.json({ error: 'run the review before posting it' }, 400)
-  if (p.job.state === 'running' || p.job.state === 'queued') return c.json({ error: 'an agent run is already in progress' }, 409)
+  if (p.job.state === 'running' || p.job.state === 'queued') return c.json({ error: 'an agent run is already in progress', code: 'busy' }, 409)
   const b = await c.req.json() as { event?: string; note?: string; gif?: string; findings?: 'post' | 'drop' }
   if (b.event !== 'APPROVE' && b.event !== 'COMMENT') return c.json({ error: 'event must be APPROVE or COMMENT' }, 400)
   const note = (b.note ?? '').trim().slice(0, 4000)
@@ -2464,7 +2476,7 @@ app.post('/prs/:id/publish', async (c) => {
   const p = pr(c.req.param('id'))
   if (!p?.mine) return c.json({ error: 'publish is for your own PRs' }, 400)
   if (!p.job?.reviewDone) return c.json({ error: 'run revise before publishing' }, 400)
-  if (p.job.state === 'running' || p.job.state === 'queued') return c.json({ error: 'an agent run is already in progress' }, 409)
+  if (p.job.state === 'running' || p.job.state === 'queued') return c.json({ error: 'an agent run is already in progress', code: 'busy' }, 409)
   // stacked on a PR that moved: you may ask for this branch to be rebased onto it first (the one rewrite you approve here)
   const { rebaseFirst } = await c.req.json<{ rebaseFirst?: boolean }>().catch(() => ({ rebaseFirst: false }))
   const first = rebaseFirst && p.behindBase
@@ -2607,7 +2619,7 @@ app.get('/prs/:id/diff', async (c) => {
   const path = c.req.query('path') ?? ''
   const o = p && loadOverlay(p)
   const repo = p && config.repos[p.repo]
-  if (p && !checkedOut(p.repo)) return c.json({ error: `${p.repo} isn't checked out on this machine: ${heldWhy(p.repo) ?? 'its diff is read where it is'}` }, 409)
+  if (p && !checkedOut(p.repo)) return c.json({ error: `${p.repo} isn't checked out on this machine: ${heldWhy(p.repo) ?? 'its diff is read where it is'}`, code: 'held' }, 409)
   if (!o || !repo || !o.facts.changes.some((x) => x.path === path)) return c.json({ error: 'not a file this PR changes' }, 404)
   const diff = await git(repo, 'diff', '--no-color', '-U3', o.baseSha, o.headSha, '--', path).catch((e: Error) => `could not read the diff: ${e.message}`)
   return c.json({ diff: diff.length > 60_000 ? diff.slice(0, 60_000) + '\n… (cut: open it on GitHub for the rest)' : diff })
@@ -2874,7 +2886,7 @@ app.post('/stacks/drive', async (c) => {
   const p = b.pr ? pr(b.pr) : undefined
   if (!p || !config.repos[p.repo]) return c.json({ error: 'Unknown pull request, or no local checkout for its repository' }, 400)
   const key = driveKey(p)
-  if (ticketBusy(key)) return c.json({ error: 'The stack already has a run going: it reads new words once it ends' }, 409)
+  if (ticketBusy(key)) return c.json({ error: 'The stack already has a run going: it reads new words once it ends', code: 'busy' }, 409)
   if (b.text?.trim()) rememberSaid(`pr:${p.id}`, b.text)
   const chain = treeChain(p), dir = directionOf(p)?.text, check = await cachedStackCheck(chain)
   const lines = chain.map((s, i) => { const t = state.prs[`${s.repo}#${s.number}`]; return `${i + 1}. #${s.number} "${s.title}" branch ${t?.head ?? '?'} into ${s.base}${t?.mine ? '' : " (not the person's: never change it)"}` })
@@ -2928,7 +2940,7 @@ app.post('/exec/:run/reply', async (c) => {
   if (!msg) return c.json({ error: 'Pick something or write your answer' }, 400)
   // handed over to its PR: the ticket's own session is done talking (a page from before the handover could still ask);
   // new words go through the ticket's box, which routes them to the PR's agent or a new stacked PR
-  if (run.state !== 'running' && run.state !== 'queued' && run.ids.some((id) => activeHandover(state.handed?.[id], run))) return c.json({ error: 'This ticket was handed over to its pull request: write in the ticket\'s box, which sends it to the PR\'s agent (or a new stacked PR)' }, 409)
+  if (run.state !== 'running' && run.state !== 'queued' && run.ids.some((id) => activeHandover(state.handed?.[id], run))) return c.json({ error: 'This ticket was handed over to its pull request: write in the ticket\'s box, which sends it to the PR\'s agent (or a new stacked PR)', code: 'handed_over' }, 409)
   for (const id of run.ids) if (execBoard.tickets.some((t) => t.id === id)) { rememberSaid(`ticket:${id}`, msg); linkMentions(`ticket:${id}`, msg, run.repo); break }
   // still at it: a running one reads your words between steps; a queued one, the moment it starts
   if (run.state === 'queued') { holdWords(run, `exec:${run.id}`, msg); return c.json({ ok: true, sent: 'queued' }) }
@@ -3007,7 +3019,7 @@ app.post('/exec/tickets/:id/steer', async (c) => {
     const sent = run ? tell(`exec:${run.id}`, msg, continueExec(run)) : 'idle'
     if (sent !== 'idle') return c.json({ ok: true, sent })
     for (let i = 0; i < 40 && ticketBusy(t.id); i++) await new Promise((r) => setTimeout(r, 250))
-    if (ticketBusy(t.id)) return c.json({ error: 'The agent is busy; try again in a moment' }, 409)
+    if (ticketBusy(t.id)) return c.json({ error: 'The agent is busy; try again in a moment', code: 'busy' }, 409)
   }
   const pr = t.pr ?? t.run?.prs[0]
   // the ticket's session (sessionOf, inside enqueueExec) already knows the ticket; a fresh one is told where the work is
